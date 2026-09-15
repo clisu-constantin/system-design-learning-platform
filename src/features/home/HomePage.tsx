@@ -34,7 +34,7 @@ export function HomePage() {
         />
         <div className="relative mx-auto max-w-6xl px-5 py-16 lg:px-8 lg:py-20">
           <Badge tone="brand" className="mb-5">
-            {LABS.length} interactive labs - {CONCEPTS.length} concepts - no backend required
+            {LABS.length} interactive labs - {CONCEPTS.length} concepts
           </Badge>
           <h1 className="max-w-3xl text-4xl font-semibold leading-tight tracking-tight text-ink lg:text-5xl">
             System Design
