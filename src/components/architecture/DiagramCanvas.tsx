@@ -1,0 +1,225 @@
+import { useMemo, type ReactNode } from 'react';
+import { cn } from '@/utils/cn';
+import type { RequestOutcome } from '@/types';
+import { curveBetween, curveToPath, midpoint, pointOnCurve, type Curve, type Layout } from './geometry';
+
+export type EdgeTone = 'default' | 'brand' | 'ok' | 'warn' | 'danger' | 'violet' | 'info' | 'muted';
+
+export interface DiagramEdge {
+  from: string;
+  to: string;
+  tone?: EdgeTone;
+  dashed?: boolean;
+  /** Marching-ants animation - use it to mark an actively used path. */
+  animated?: boolean;
+  label?: string;
+  /** Where the label sits along the edge, 0..1. Defaults to the midpoint. */
+  labelT?: number;
+  curvature?: number;
+  faded?: boolean;
+  width?: number;
+}
+
+export interface ParticleView {
+  id: number;
+  from: string;
+  to: string;
+  /** Progress along the edge, 0..1 */
+  t: number;
+  outcome: RequestOutcome;
+  onClick?: () => void;
+  highlighted?: boolean;
+}
+
+const EDGE_STROKE: Record<EdgeTone, string> = {
+  default: 'rgb(var(--c-faint) / 0.55)',
+  brand: 'rgb(var(--c-brand) / 0.85)',
+  ok: 'rgb(var(--c-ok) / 0.8)',
+  warn: 'rgb(var(--c-warn) / 0.85)',
+  danger: 'rgb(var(--c-danger) / 0.85)',
+  violet: 'rgb(var(--c-violet) / 0.85)',
+  info: 'rgb(var(--c-info) / 0.8)',
+  muted: 'rgb(var(--c-faint) / 0.25)',
+};
+
+export const OUTCOME_STYLE: Record<RequestOutcome, { fill: string; label: string; shape: 'circle' | 'diamond' | 'triangle' | 'cross' }> = {
+  success: { fill: 'rgb(var(--c-brand))', label: 'Request / response', shape: 'circle' },
+  'cache-hit': { fill: 'rgb(var(--c-ok))', label: 'Cache hit', shape: 'diamond' },
+  warning: { fill: 'rgb(var(--c-warn))', label: 'Warning / retry', shape: 'triangle' },
+  failure: { fill: 'rgb(var(--c-danger))', label: 'Failure', shape: 'cross' },
+};
+
+interface DiagramCanvasProps {
+  width?: number;
+  height?: number;
+  layout: Layout;
+  edges?: DiagramEdge[];
+  particles?: ParticleView[];
+  children?: ReactNode;
+  className?: string;
+  /** Extra SVG drawn under the nodes (zones, brackets, annotations). */
+  underlay?: ReactNode;
+  grid?: boolean;
+}
+
+/**
+ * The shared stage for every lab: an SVG wiring layer with animated request
+ * particles, and HTML node cards positioned on top of it.
+ *
+ * On small screens the canvas scrolls horizontally instead of shrinking into an
+ * unreadable diagram.
+ */
+export function DiagramCanvas({
+  width = 960,
+  height = 520,
+  layout,
+  edges = [],
+  particles = [],
+  children,
+  className,
+  underlay,
+  grid = true,
+}: DiagramCanvasProps) {
+  const curves = useMemo(() => {
+    const map = new Map<string, Curve>();
+    for (const edge of edges) {
+      const from = layout[edge.from];
+      const to = layout[edge.to];
+      if (!from || !to) continue;
+      map.set(`${edge.from}->${edge.to}`, curveBetween(from, to, edge.curvature));
+    }
+    return map;
+  }, [edges, layout]);
+
+  const curveFor = (from: string, to: string) => {
+    const cached = curves.get(`${from}->${to}`);
+    if (cached) return cached;
+    const a = layout[from];
+    const b = layout[to];
+    return a && b ? curveBetween(a, b) : null;
+  };
+
+  return (
+    <div className={cn('w-full overflow-x-auto overflow-y-hidden rounded-2xl', className)}>
+      <div
+        className={cn('relative', grid && 'grid-bg')}
+        style={{ width, height, minWidth: width }}
+      >
+        <svg
+          width={width}
+          height={height}
+          className="absolute inset-0 overflow-visible"
+          aria-hidden
+        >
+          {underlay}
+          {edges.map((edge) => {
+            const curve = curveFor(edge.from, edge.to);
+            if (!curve) return null;
+            const tone = edge.tone ?? 'default';
+            const label = edge.label
+              ? edge.labelT === undefined
+                ? midpoint(curve)
+                : pointOnCurve(curve, edge.labelT)
+              : null;
+            return (
+              <g key={`${edge.from}->${edge.to}-${edge.label ?? ''}`} opacity={edge.faded ? 0.25 : 1}>
+                <path
+                  d={curveToPath(curve)}
+                  fill="none"
+                  stroke={EDGE_STROKE[tone]}
+                  strokeWidth={edge.width ?? 1.75}
+                  strokeLinecap="round"
+                  strokeDasharray={edge.dashed ? '5 5' : edge.animated ? '6 6' : undefined}
+                  className={edge.animated ? 'animate-dash' : undefined}
+                />
+                {label && edge.label ? (
+                  <g>
+                    {/* Chip behind the text: edge labels sit over the grid and
+                        sometimes near a node, and must stay readable. */}
+                    <rect
+                      x={label.x - (edge.label.length * 5.1) / 2 - 5}
+                      y={label.y - 16}
+                      width={edge.label.length * 5.1 + 10}
+                      height={15}
+                      rx={4}
+                      className="fill-[rgb(var(--c-surface))] stroke-[rgb(var(--c-line))]"
+                      strokeWidth={1}
+                    />
+                    <text
+                      x={label.x}
+                      y={label.y - 5}
+                      textAnchor="middle"
+                      className="fill-[rgb(var(--c-muted))] font-mono"
+                      style={{ fontSize: 9.5 }}
+                    >
+                      {edge.label}
+                    </text>
+                  </g>
+                ) : null}
+              </g>
+            );
+          })}
+
+          {particles.map((particle) => {
+            const curve = curveFor(particle.from, particle.to);
+            if (!curve) return null;
+            const point = pointOnCurve(curve, Math.min(1, Math.max(0, particle.t)));
+            const style = OUTCOME_STYLE[particle.outcome];
+            return (
+              <g
+                key={particle.id}
+                transform={`translate(${point.x} ${point.y})`}
+                onClick={particle.onClick}
+                style={{ cursor: particle.onClick ? 'pointer' : undefined, pointerEvents: 'auto' }}
+              >
+                {particle.highlighted ? (
+                  <circle r={9} fill="none" stroke={style.fill} strokeWidth={1.5} opacity={0.9} />
+                ) : null}
+                <ParticleShape shape={style.shape} fill={style.fill} />
+              </g>
+            );
+          })}
+        </svg>
+        {children}
+      </div>
+    </div>
+  );
+}
+
+function ParticleShape({ shape, fill }: { shape: 'circle' | 'diamond' | 'triangle' | 'cross'; fill: string }) {
+  switch (shape) {
+    case 'diamond':
+      return <rect x={-4} y={-4} width={8} height={8} rx={1} fill={fill} transform="rotate(45)" />;
+    case 'triangle':
+      return <polygon points="0,-5 4.5,3.5 -4.5,3.5" fill={fill} />;
+    case 'cross':
+      return (
+        <g stroke={fill} strokeWidth={2.2} strokeLinecap="round">
+          <line x1={-3.5} y1={-3.5} x2={3.5} y2={3.5} />
+          <line x1={-3.5} y1={3.5} x2={3.5} y2={-3.5} />
+        </g>
+      );
+    default:
+      return <circle r={4.2} fill={fill} />;
+  }
+}
+
+/** Shape + colour + text legend so status is never colour-only. */
+export function ParticleLegend({ outcomes, className }: { outcomes?: RequestOutcome[]; className?: string }) {
+  const list = outcomes ?? (['success', 'cache-hit', 'warning', 'failure'] as RequestOutcome[]);
+  return (
+    <div className={cn('flex flex-wrap items-center gap-x-4 gap-y-1.5', className)}>
+      {list.map((outcome) => {
+        const style = OUTCOME_STYLE[outcome];
+        return (
+          <span key={outcome} className="flex items-center gap-1.5 text-[11px] text-muted">
+            <svg width={14} height={14} viewBox="-7 -7 14 14" aria-hidden>
+              <ParticleShape shape={style.shape} fill={style.fill} />
+            </svg>
+            {style.label}
+          </span>
+        );
+      })}
+    </div>
+  );
+}
