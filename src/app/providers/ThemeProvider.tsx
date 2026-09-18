@@ -7,6 +7,7 @@ import {
   useState,
   type ReactNode,
 } from 'react';
+import { safeLocalStorage } from '@/utils/safeStorage';
 
 export type Theme = 'dark' | 'light';
 
@@ -30,7 +31,7 @@ const ThemeContext = createContext<ThemeContextValue | null>(null);
 
 function readStoredTheme(): Theme {
   if (typeof window === 'undefined') return 'dark';
-  const stored = window.localStorage.getItem(STORAGE_KEY);
+  const stored = safeLocalStorage.get(STORAGE_KEY);
   if (stored === 'dark' || stored === 'light') return stored;
   return window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark';
 }
@@ -67,7 +68,7 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     const root = document.documentElement;
     root.classList.toggle('dark', theme === 'dark');
     root.style.colorScheme = theme;
-    window.localStorage.setItem(STORAGE_KEY, theme);
+    safeLocalStorage.set(STORAGE_KEY, theme);
     // Read after the class change so charts pick up the new palette.
     setColors(readColors());
   }, [theme]);

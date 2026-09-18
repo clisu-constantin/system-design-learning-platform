@@ -66,7 +66,8 @@ export function AppShell() {
         ) : null}
 
         <main className="min-w-0 flex-1 overflow-y-auto">
-          <ErrorBoundary area="Workspace">
+          {/* Keyed by path so that one crashed page does not keep every other route showing its error. */}
+          <ErrorBoundary area="Workspace" key={location.pathname}>
             <Outlet />
           </ErrorBoundary>
         </main>
