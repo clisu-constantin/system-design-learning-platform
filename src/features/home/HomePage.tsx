@@ -2,7 +2,7 @@ import { Link } from 'react-router-dom';
 import { ArrowRight, FlaskConical, Layers3, Play, Route, Waypoints } from 'lucide-react';
 import { CategoryIcon } from '@/data/categoryIcons';
 import { FlowVisual } from '@/components/architecture/FlowVisual';
-import { HERO_VISUAL } from '@/data/visuals';
+import { HERO_VISUAL } from '@/data/visuals/hero';
 import { Badge, difficultyTone } from '@/components/ui';
 import { CATEGORIES } from '@/data/categories';
 import { CONCEPTS, CONCEPTS_BY_CATEGORY } from '@/data/concepts';

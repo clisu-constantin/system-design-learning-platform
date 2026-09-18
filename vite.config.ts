@@ -1,9 +1,10 @@
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 import { fileURLToPath, URL } from 'node:url';
+import { conceptIndex } from './scripts/vite-plugin-concept-index';
 
 export default defineConfig({
-  plugins: [react()],
+  plugins: [react(), conceptIndex()],
   resolve: {
     alias: {
       '@': fileURLToPath(new URL('./src', import.meta.url)),

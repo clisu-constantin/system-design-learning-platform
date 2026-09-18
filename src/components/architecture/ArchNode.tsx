@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react';
-import { motion } from 'framer-motion';
+import { motion, useReducedMotion } from 'framer-motion';
 import { cn } from '@/utils/cn';
 import type { NodeKind, NodeStatus } from '@/types';
 import { NODE_KINDS } from './nodeKinds';
@@ -46,14 +46,16 @@ export function ArchNode({
   // Nodes appear and move with a spring, so adding a server reads as the
   // architecture changing rather than the diagram being redrawn.
   const Element = interactive ? motion.button : motion.div;
+  // With the OS "reduce motion" setting, nodes simply appear where they belong.
+  const reduceMotion = useReducedMotion() ?? false;
 
   return (
     <Element
       type={interactive ? 'button' : undefined}
       onClick={onClick}
       aria-pressed={interactive && selected ? true : undefined}
-      layout
-      initial={{ opacity: 0, scale: 0.85 }}
+      layout={!reduceMotion}
+      initial={reduceMotion ? false : { opacity: 0, scale: 0.85 }}
       animate={{ opacity: 1, scale: 1 }}
       transition={{ type: 'spring', stiffness: 320, damping: 28 }}
       style={

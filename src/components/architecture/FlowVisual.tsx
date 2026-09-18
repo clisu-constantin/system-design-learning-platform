@@ -1,9 +1,12 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { Pause, Play } from 'lucide-react';
 import { cn } from '@/utils/cn';
 import { clamp } from '@/utils/math';
 import type { NodeKind, NodeStatus, RequestOutcome } from '@/types';
 import { advanceParticles, nextParticleId, useTicker, type Particle } from '@/simulations/engine';
 import { useRerender } from '@/hooks/useRerender';
+import { useInView } from '@/hooks/useInView';
+import { usePrefersReducedMotion } from '@/hooks/usePrefersReducedMotion';
 import { ArchNode, NodeStatRow } from './ArchNode';
 import { DiagramCanvas, type DiagramEdge, type ParticleView } from './DiagramCanvas';
 import type { Layout } from './geometry';
@@ -97,6 +100,42 @@ const toLayout = (spec: VisualSpec): Layout =>
     spec.nodes.map((node) => [node.id, { x: node.x, y: node.y, w: node.w ?? 150, h: node.h ?? 74 }]),
   );
 
+/**
+ * Play/pause state for a diagram that animates on its own: it starts paused
+ * when the OS asks for reduced motion, and the ticker only runs while the
+ * diagram is on screen. WCAG 2.2.2 requires the explicit pause either way.
+ */
+function useAutoplay() {
+  const reducedMotion = usePrefersReducedMotion();
+  const [playing, setPlaying] = useState(!reducedMotion);
+  const ref = useRef<HTMLElement>(null);
+  const inView = useInView(ref);
+
+  useEffect(() => {
+    if (reducedMotion) setPlaying(false);
+  }, [reducedMotion]);
+
+  return { ref, playing, setPlaying, running: playing && inView, reducedMotion };
+}
+
+function PlayPauseButton({ playing, onToggle, className }: { playing: boolean; onToggle: () => void; className?: string }) {
+  const Icon = playing ? Pause : Play;
+  return (
+    <button
+      type="button"
+      onClick={onToggle}
+      aria-label={playing ? 'Pause animation' : 'Play animation'}
+      className={cn(
+        'inline-flex items-center gap-1 rounded-lg border border-line bg-surface/90 px-2 py-1 text-[11px] text-muted transition-colors hover:border-brand hover:text-brand',
+        className,
+      )}
+    >
+      <Icon className="h-3 w-3" aria-hidden />
+      {playing ? 'Pause' : 'Play'}
+    </button>
+  );
+}
+
 const renderNodes = (spec: VisualSpec, layout: Layout, activeIds?: Set<string>) =>
   spec.nodes.map((node) => (
     <ArchNode
@@ -134,9 +173,29 @@ export function FlowVisual({
   const particles = useRef<Particle[]>([]);
   const carry = useRef<number[]>(spec.edges.map(() => 0));
   const rerender = useRerender(30);
-  const layout = toLayout(spec);
+  const autoplay = useAutoplay();
 
-  useTicker(true, (dt) => {
+  // Only the particles change from frame to frame. Keeping layout, edges and
+  // node elements referentially stable lets DiagramCanvas reuse its curves and
+  // lets React skip the node cards entirely - each is a framer-motion `layout`
+  // component, which measures the DOM whenever it re-renders.
+  const layout = useMemo(() => toLayout(spec), [spec]);
+  const edges = useMemo(
+    () =>
+      spec.edges.map((edge) => ({
+        from: edge.from,
+        to: edge.to,
+        tone: edge.tone ?? 'default',
+        label: edge.label,
+        labelT: edge.labelT,
+        dashed: edge.dashed,
+        curvature: edge.curvature,
+      })),
+    [spec],
+  );
+  const nodes = useMemo(() => renderNodes(spec, layout), [spec, layout]);
+
+  useTicker(autoplay.running, (dt) => {
     spec.edges.forEach((edge, index) => {
       const rate = edge.rate ?? 0;
       if (rate <= 0) return;
@@ -172,34 +231,32 @@ export function FlowVisual({
   const { ref, scale } = useFitScale(width, zoom);
 
   return (
-    <figure className={cn('overflow-hidden rounded-2xl border border-line bg-canvas', className)}>
+    <figure ref={autoplay.ref} className={cn('overflow-hidden rounded-2xl border border-line bg-canvas', className)}>
       <div ref={ref} className="w-full">
         <div style={{ height: height * scale, overflow: 'hidden' }}>
           <div style={{ transform: `scale(${scale})`, transformOrigin: 'top left', width, height }}>
             <DiagramCanvas
               layout={layout}
-              edges={spec.edges.map((edge) => ({
-                from: edge.from,
-                to: edge.to,
-                tone: edge.tone ?? 'default',
-                label: edge.label,
-                labelT: edge.labelT,
-                dashed: edge.dashed,
-                curvature: edge.curvature,
-              }))}
+              edges={edges}
               particles={particleViews}
               width={width}
               height={height}
               grid={grid}
             >
-              {renderNodes(spec, layout)}
+              {nodes}
             </DiagramCanvas>
           </div>
         </div>
       </div>
-      {spec.caption ? (
-        <figcaption className="border-t border-line px-4 py-2 text-xs text-muted">{spec.caption}</figcaption>
-      ) : null}
+      {/* The control sits under the canvas, not over it, so it can never cover a node. */}
+      <div className="flex items-center gap-3 border-t border-line px-4 py-2">
+        {spec.caption ? <figcaption className="min-w-0 flex-1 text-xs text-muted">{spec.caption}</figcaption> : null}
+        <PlayPauseButton
+          playing={autoplay.playing}
+          onToggle={() => autoplay.setPlaying((value) => !value)}
+          className="ml-auto shrink-0"
+        />
+      </div>
     </figure>
   );
 }
@@ -211,15 +268,17 @@ export function FlowVisual({
 export function SequenceFlow({ spec, className }: { spec: VisualSpec; className?: string }) {
   const steps = spec.steps ?? [];
   const [index, setIndex] = useState(0);
-  const [playing, setPlaying] = useState(true);
-  const progress = useRef(0);
+  const autoplay = useAutoplay();
+  // With reduced motion the request is shown parked mid-edge instead of travelling.
+  const restingProgress = autoplay.reducedMotion ? 0.5 : 0;
+  const progress = useRef(restingProgress);
   const rerender = useRerender(30);
-  const layout = toLayout(spec);
+  const layout = useMemo(() => toLayout(spec), [spec]);
   const width = spec.width ?? 760;
   const height = spec.height ?? 320;
   const { ref, scale } = useFitScale(width);
 
-  useTicker(playing && steps.length > 0, (dt) => {
+  useTicker(autoplay.running && steps.length > 0, (dt) => {
     progress.current += dt * 0.85;
     if (progress.current >= 1.25) {
       progress.current = 0;
@@ -229,13 +288,30 @@ export function SequenceFlow({ spec, className }: { spec: VisualSpec; className?
   });
 
   const active = steps[Math.min(index, Math.max(steps.length - 1, 0))];
-  const activeIds = new Set(active ? [active.from, active.to] : []);
+  const activeFrom = active?.from;
+  const activeTo = active?.to;
+
+  // Nodes and wiring change once per step, not once per frame.
+  const nodes = useMemo(
+    () => renderNodes(spec, layout, new Set([activeFrom, activeTo].filter((id): id is string => Boolean(id)))),
+    [spec, layout, activeFrom, activeTo],
+  );
+  const edges = useMemo(
+    () =>
+      steps.map((step, position) => ({
+        from: step.from,
+        to: step.to,
+        tone: position === index ? ('brand' as const) : ('muted' as const),
+        animated: position === index,
+      })),
+    [steps, index],
+  );
 
   if (steps.length === 0 || !active) return <FlowVisual spec={spec} className={className} />;
 
   return (
     <div className={cn('space-y-3', className)}>
-      <figure className="relative overflow-hidden rounded-2xl border border-line bg-canvas">
+      <figure ref={autoplay.ref} className="relative overflow-hidden rounded-2xl border border-line bg-canvas">
         {/* The caption is a banner, not an edge label: on a short edge it would
             land on top of a node and become unreadable. */}
         <span className="absolute left-3 top-3 z-20 inline-flex items-center gap-2 rounded-lg border border-brand/40 bg-surface px-2.5 py-1.5 text-[11px] font-medium text-brand shadow-card">
@@ -249,12 +325,7 @@ export function SequenceFlow({ spec, className }: { spec: VisualSpec; className?
             <div style={{ transform: `scale(${scale})`, transformOrigin: 'top left', width, height }}>
               <DiagramCanvas
                 layout={layout}
-                edges={steps.map((step, position) => ({
-                  from: step.from,
-                  to: step.to,
-                  tone: position === index ? 'brand' : 'muted',
-                  animated: position === index,
-                }))}
+                edges={edges}
                 particles={[
                   {
                     id: 1,
@@ -267,7 +338,7 @@ export function SequenceFlow({ spec, className }: { spec: VisualSpec; className?
                 width={width}
                 height={height}
               >
-                {renderNodes(spec, layout, activeIds)}
+                {nodes}
               </DiagramCanvas>
             </div>
           </div>
@@ -281,8 +352,8 @@ export function SequenceFlow({ spec, className }: { spec: VisualSpec; className?
             type="button"
             onClick={() => {
               setIndex(position);
-              setPlaying(false);
-              progress.current = 0;
+              autoplay.setPlaying(false);
+              progress.current = restingProgress;
             }}
             className={cn(
               'rounded-lg border px-2.5 py-1.5 text-[11px] font-medium transition-colors',
@@ -295,13 +366,11 @@ export function SequenceFlow({ spec, className }: { spec: VisualSpec; className?
             {step.label}
           </button>
         ))}
-        <button
-          type="button"
-          onClick={() => setPlaying((value) => !value)}
-          className="ml-auto rounded-lg border border-line px-2.5 py-1.5 text-[11px] text-muted transition-colors hover:border-brand hover:text-brand"
-        >
-          {playing ? 'Pause' : 'Play'}
-        </button>
+        <PlayPauseButton
+          playing={autoplay.playing}
+          onToggle={() => autoplay.setPlaying((value) => !value)}
+          className="ml-auto px-2.5 py-1.5"
+        />
       </div>
     </div>
   );

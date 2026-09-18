@@ -1,11 +1,11 @@
 import { Link } from 'react-router-dom';
 import { Check, FlaskConical } from 'lucide-react';
-import type { Concept } from '@/types';
+import type { ConceptSummary } from '@/types';
 import { Badge, Button, difficultyTone } from '@/components/ui';
 import { CATEGORY_BY_ID } from '@/data/categories';
 import { useProgress } from '@/app/providers/ProgressProvider';
 
-export function ConceptHeader({ concept }: { concept: Concept }) {
+export function ConceptHeader({ concept }: { concept: ConceptSummary }) {
   const { completed, toggleCompleted } = useProgress();
   const isDone = Boolean(completed[concept.slug]);
   const category = CATEGORY_BY_ID[concept.category];

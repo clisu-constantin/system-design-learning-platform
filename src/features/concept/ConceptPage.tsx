@@ -18,15 +18,23 @@ import {
   Sparkles,
 } from 'lucide-react';
 import { ConceptHeader, AsciiBlock, ExplanationCard, QuizCard } from '@/components/learning';
-import { Badge, ErrorBoundary, Expandable, Tabs, type TabItem } from '@/components/ui';
+import { Badge, Button, ErrorBoundary, Expandable, Tabs, type TabItem } from '@/components/ui';
 import { FlowVisual, SequenceFlow } from '@/components/architecture/FlowVisual';
-import { getConcept, resolveRelated } from '@/data/concepts';
+import { getConcept, loadConcept, peekConcept, resolveRelated } from '@/data/concepts';
 import { loadDepth } from '@/data/concepts/deep';
 import { getVisual } from '@/data/visuals';
 import { useProgress } from '@/app/providers/ProgressProvider';
 import { getLab } from '@/features/labs/registry';
 import { cn } from '@/utils/cn';
-import type { Analogy, Concept, ConceptDepth, DeepDiveSection, JargonTerm, WorkedExample } from '@/types';
+import type {
+  Analogy,
+  Concept,
+  ConceptDepth,
+  ConceptSummary,
+  DeepDiveSection,
+  JargonTerm,
+  WorkedExample,
+} from '@/types';
 
 /** Keeps sidebar chips to one readable line instead of a paragraph. */
 const short = (text: string, max = 78) => {
@@ -36,19 +44,95 @@ const short = (text: string, max = 78) => {
 
 export function ConceptPage() {
   const { slug } = useParams();
-  const concept = getConcept(slug);
+  // The index answers "does it exist" and draws the header at once; the lesson
+  // itself arrives with its category chunk.
+  const summary = getConcept(slug);
+  const { concept, failed } = useFullConcept(summary);
   const { markVisited } = useProgress();
 
   useEffect(() => {
-    if (concept) markVisited(concept.slug);
-  }, [concept, markVisited]);
+    if (summary) markVisited(summary.slug);
+  }, [summary, markVisited]);
 
-  const related = useMemo(() => (concept ? resolveRelated(concept) : []), [concept]);
-  const lab = concept?.lab ? getLab(concept.lab) : undefined;
-  const visual = concept ? getVisual(concept.slug) : undefined;
+  if (!summary) {
+    return (
+      <div className="mx-auto max-w-2xl px-5 py-16 text-center">
+        <h1 className="text-xl font-semibold text-ink">Concept not found</h1>
+        <p className="mt-2 text-sm text-muted">Press Ctrl+K to search, or browse a category.</p>
+        <Link to="/" className="mt-6 inline-block text-sm text-brand hover:underline">
+          Back to the dashboard
+        </Link>
+      </div>
+    );
+  }
+
+  return (
+    <article>
+      <ConceptHeader concept={summary} />
+      {concept ? (
+        <ConceptBody concept={concept} />
+      ) : failed ? (
+        <div className="mx-auto max-w-2xl px-5 py-12 text-center">
+          <AlertTriangle className="mx-auto h-5 w-5 text-danger" aria-hidden />
+          <p className="mt-2 text-sm text-ink">This lesson could not be loaded.</p>
+          <p className="mt-1 text-xs text-muted">
+            Usually a new version was deployed while the page was open. Reloading fetches it.
+          </p>
+          <Button variant="primary" className="mt-4" onClick={() => window.location.reload()}>
+            Reload the page
+          </Button>
+        </div>
+      ) : (
+        <div className="flex h-64 items-center justify-center gap-2 text-sm text-muted">
+          <Loader2 className="h-4 w-4 animate-spin" />
+          Loading lesson...
+        </div>
+      )}
+    </article>
+  );
+}
+
+/**
+ * The full lesson for a concept from the index. A category is one chunk, so
+ * the first concept opened in it fetches it and the rest render immediately
+ * from memory. Retries once for the same stale-deploy reason as useConceptDepth.
+ */
+function useFullConcept(summary: ConceptSummary | undefined): { concept?: Concept; failed: boolean } {
+  const category = summary?.category;
+  const slug = summary?.slug;
+  const [state, setState] = useState<{ slug?: string; concept?: Concept; failed: boolean }>({ failed: false });
+  const cached = category && slug ? peekConcept(category, slug) : undefined;
+
+  useEffect(() => {
+    if (!category || !slug || peekConcept(category, slug)) return;
+    let current = true;
+    const load = () => loadConcept(category, slug);
+
+    load()
+      .catch(() => new Promise((resolve) => setTimeout(resolve, 400)).then(load))
+      .then((concept) => {
+        if (current) setState({ slug, concept, failed: !concept });
+      })
+      .catch(() => {
+        if (current) setState({ slug, failed: true });
+      });
+
+    return () => {
+      current = false;
+    };
+  }, [category, slug]);
+
+  if (cached) return { concept: cached, failed: false };
+  // Ignore a result that belongs to the previous slug.
+  return state.slug === slug ? state : { failed: false };
+}
+
+function ConceptBody({ concept }: { concept: Concept }) {
+  const related = useMemo(() => resolveRelated(concept), [concept]);
+  const lab = concept.lab ? getLab(concept.lab) : undefined;
+  const visual = getVisual(concept.slug);
 
   const tabs = useMemo<TabItem[]>(() => {
-    if (!concept) return [];
     const items: TabItem[] = [];
 
     if (visual) {
@@ -119,123 +203,107 @@ export function ConceptPage() {
     return items;
   }, [concept, lab, visual]);
 
-  if (!concept) {
-    return (
-      <div className="mx-auto max-w-2xl px-5 py-16 text-center">
-        <h1 className="text-xl font-semibold text-ink">Concept not found</h1>
-        <p className="mt-2 text-sm text-muted">Press Ctrl+K to search, or browse a category.</p>
-        <Link to="/" className="mt-6 inline-block text-sm text-brand hover:underline">
-          Back to the dashboard
-        </Link>
-      </div>
-    );
-  }
-
   const when = concept.when ?? [];
   const costs = concept.tradeoffs?.[0]?.costs ?? [];
   const gains = concept.advantages ?? concept.tradeoffs?.[0]?.gains ?? [];
 
   return (
-    <article>
-      <ConceptHeader concept={concept} />
-
-      <div className="px-5 py-5 lg:px-8">
-        <div className="mx-auto grid max-w-[1600px] gap-4 xl:grid-cols-[minmax(0,1fr)_320px]">
-          {/* Diagram first - it is the content, not an illustration */}
-          <div className="min-w-0">
-            <Tabs items={tabs} />
-          </div>
-
-          {/* Short notes only. Anything longer lives in Full explanation. */}
-          <aside className="space-y-3 xl:sticky xl:top-[4.5rem] xl:self-start">
-            {concept.what ? (
-              <div className="card p-4">
-                <p className="label mb-1.5">In one line</p>
-                <p className="text-sm leading-relaxed text-ink">{short(concept.what, 150)}.</p>
-              </div>
-            ) : null}
-
-            {lab ? (
-              <Link
-                to={`/labs/${lab.id}`}
-                className="flex items-center gap-3 rounded-2xl border border-brand/40 bg-brand/5 p-4 transition-colors hover:bg-brand/10"
-              >
-                <FlaskConical className="h-4 w-4 shrink-0 text-brand" />
-                <span className="min-w-0 flex-1">
-                  <span className="block text-sm font-medium text-brand">Open the lab</span>
-                  <span className="block truncate text-[11px] text-muted">{lab.title}</span>
-                </span>
-                <ArrowRight className="h-3.5 w-3.5 shrink-0 text-brand" />
-              </Link>
-            ) : null}
-
-            {when.length ? (
-              <div className="card p-4">
-                <p className="label mb-2 text-ok">Use it when</p>
-                <ul className="space-y-1.5">
-                  {when.slice(0, 3).map((item) => (
-                    <li key={item} className="flex gap-2 text-xs leading-relaxed text-muted">
-                      <Check className="mt-0.5 h-3.5 w-3.5 shrink-0 text-ok" />
-                      {short(item, 90)}
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            ) : null}
-
-            {costs.length ? (
-              <div className="card p-4">
-                <p className="label mb-2 text-danger">What it costs</p>
-                <ul className="space-y-1.5">
-                  {costs.slice(0, 3).map((item) => (
-                    <li key={item} className="flex gap-2 text-xs leading-relaxed text-muted">
-                      <Minus className="mt-0.5 h-3.5 w-3.5 shrink-0 text-danger" />
-                      {short(item, 90)}
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            ) : null}
-
-            {gains.length ? (
-              <div className="card p-4">
-                <p className="label mb-2 text-brand">What you gain</p>
-                <ul className="space-y-1.5">
-                  {gains.slice(0, 3).map((item) => (
-                    <li key={item} className="flex gap-2 text-xs leading-relaxed text-muted">
-                      <Plus className="mt-0.5 h-3.5 w-3.5 shrink-0 text-brand" />
-                      {short(item, 90)}
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            ) : null}
-
-            {related.length ? (
-              <div className="card p-4">
-                <p className="label mb-2">Next</p>
-                <div className="flex flex-wrap gap-1.5">
-                  {related.map((item) => (
-                    <Link
-                      key={item.slug}
-                      to={`/concepts/${item.slug}`}
-                      className="rounded-full border border-line px-2.5 py-1 text-[11px] text-muted transition-colors hover:border-brand hover:text-brand"
-                    >
-                      {item.title}
-                    </Link>
-                  ))}
-                </div>
-              </div>
-            ) : null}
-          </aside>
+    <div className="px-5 py-5 lg:px-8">
+      <div className="mx-auto grid max-w-[1600px] gap-4 xl:grid-cols-[minmax(0,1fr)_320px]">
+        {/* Diagram first - it is the content, not an illustration */}
+        <div className="min-w-0">
+          <Tabs items={tabs} />
         </div>
+
+        {/* Short notes only. Anything longer lives in Full explanation. */}
+        <aside className="space-y-3 xl:sticky xl:top-[4.5rem] xl:self-start">
+          {concept.what ? (
+            <div className="card p-4">
+              <p className="label mb-1.5">In one line</p>
+              <p className="text-sm leading-relaxed text-ink">{short(concept.what, 150)}.</p>
+            </div>
+          ) : null}
+
+          {lab ? (
+            <Link
+              to={`/labs/${lab.id}`}
+              className="flex items-center gap-3 rounded-2xl border border-brand/40 bg-brand/5 p-4 transition-colors hover:bg-brand/10"
+            >
+              <FlaskConical className="h-4 w-4 shrink-0 text-brand" />
+              <span className="min-w-0 flex-1">
+                <span className="block text-sm font-medium text-brand">Open the lab</span>
+                <span className="block truncate text-[11px] text-muted">{lab.title}</span>
+              </span>
+              <ArrowRight className="h-3.5 w-3.5 shrink-0 text-brand" />
+            </Link>
+          ) : null}
+
+          {when.length ? (
+            <div className="card p-4">
+              <p className="label mb-2 text-ok">Use it when</p>
+              <ul className="space-y-1.5">
+                {when.slice(0, 3).map((item) => (
+                  <li key={item} className="flex gap-2 text-xs leading-relaxed text-muted">
+                    <Check className="mt-0.5 h-3.5 w-3.5 shrink-0 text-ok" />
+                    {short(item, 90)}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ) : null}
+
+          {costs.length ? (
+            <div className="card p-4">
+              <p className="label mb-2 text-danger">What it costs</p>
+              <ul className="space-y-1.5">
+                {costs.slice(0, 3).map((item) => (
+                  <li key={item} className="flex gap-2 text-xs leading-relaxed text-muted">
+                    <Minus className="mt-0.5 h-3.5 w-3.5 shrink-0 text-danger" />
+                    {short(item, 90)}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ) : null}
+
+          {gains.length ? (
+            <div className="card p-4">
+              <p className="label mb-2 text-brand">What you gain</p>
+              <ul className="space-y-1.5">
+                {gains.slice(0, 3).map((item) => (
+                  <li key={item} className="flex gap-2 text-xs leading-relaxed text-muted">
+                    <Plus className="mt-0.5 h-3.5 w-3.5 shrink-0 text-brand" />
+                    {short(item, 90)}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ) : null}
+
+          {related.length ? (
+            <div className="card p-4">
+              <p className="label mb-2">Next</p>
+              <div className="flex flex-wrap gap-1.5">
+                {related.map((item) => (
+                  <Link
+                    key={item.slug}
+                    to={`/concepts/${item.slug}`}
+                    className="rounded-full border border-line px-2.5 py-1 text-[11px] text-muted transition-colors hover:border-brand hover:text-brand"
+                  >
+                    {item.title}
+                  </Link>
+                ))}
+              </div>
+            </div>
+          ) : null}
+        </aside>
       </div>
-    </article>
+    </div>
   );
 }
 
 /** Gains and costs as compact chips rather than prose. */
-function TradeOffBoard({ concept }: { concept: NonNullable<ReturnType<typeof getConcept>> }) {
+function TradeOffBoard({ concept }: { concept: Concept }) {
   return (
     <div className="space-y-3">
       {(concept.tradeoffs ?? []).map((tradeoff) => (

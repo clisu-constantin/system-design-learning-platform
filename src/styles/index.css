@@ -116,3 +116,17 @@
   border: 1px solid rgb(var(--c-line));
   border-radius: 12px;
 }
+
+/* The OS "reduce motion" setting: CSS animations and transitions (dash, pulse,
+   fade-in, hover transitions) finish immediately. Self-running diagrams start
+   paused on their own, see useAutoplay in FlowVisual. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

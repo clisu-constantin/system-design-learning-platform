@@ -5,7 +5,8 @@ import { SegmentedControl, Slider } from '@/components/ui';
 import { useTicker } from '@/simulations/engine';
 import { useRerender } from '@/hooks/useRerender';
 import type { RequestOutcome } from '@/types';
-import { CONCEPT_BY_SLUG } from '@/data/concepts';
+// Imported directly: this lab is its own lazy chunk, and it needs the full trade-offs, not the index.
+import { performanceConcepts } from '@/data/concepts/performance';
 
 type Strategy = 'cache-aside' | 'read-through' | 'write-through' | 'write-behind' | 'write-around';
 type Operation = 'read' | 'write';
@@ -157,7 +158,7 @@ export function CacheStrategiesLab() {
     },
   ];
 
-  const concept = CONCEPT_BY_SLUG.get('cache-strategies');
+  const concept = performanceConcepts.find((item) => item.slug === 'cache-strategies');
 
   return (
     <LabShell

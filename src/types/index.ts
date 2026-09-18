@@ -104,6 +104,17 @@ export interface Concept {
 }
 
 /**
+ * The part of a concept that navigation, search, progress and lists need. It is
+ * all the main bundle carries - the lesson body (what/why/how, trade-offs,
+ * quiz...) is loaded per category when a concept page opens. Built from the
+ * full catalogue at build time, see src/data/concepts/summaries.ts.
+ */
+export type ConceptSummary = Pick<
+  Concept,
+  'slug' | 'title' | 'tagline' | 'category' | 'difficulty' | 'lab' | 'keywords'
+>;
+
+/**
  * The long-form, junior-friendly half of a lesson, shown on the "Full
  * explanation" tab. It is deliberately not part of `Concept`: it is far larger
  * than the rest of the catalogue and is loaded on demand, per category, from

@@ -74,13 +74,18 @@ useTicker(running, (dt) => { /* mutate state.current */ rerender(); });
 
 ### A new concept (content only)
 
-1. Add a `Concept` object to the right file in `src/data/concepts/<category>.ts`.
+1. Add a `Concept` object to `src/data/concepts/<category>.ts` - the file named after its
+   `category`, because the concept page loads lessons per category file (`check:content` enforces it).
 2. Add an animated diagram for it in `src/data/visuals/` - **this is the important half**. A concept
    page leads with its diagram; the prose is secondary and collapsed.
 3. Add a `ConceptDepth` entry to `src/data/concepts/deep/<category>.ts`, keyed by slug. This is the
    "Full explanation" tab and `check:content` fails the build without it. See below.
 4. That is it — the sidebar, search, glossary links, category page and progress tracking all read
-   from `CONCEPTS`.
+   from `CONCEPTS`. That export (`@/data/concepts`) is a light `ConceptSummary` index generated at
+   build time by `scripts/vite-plugin-concept-index.ts`; the lesson body is fetched with
+   `loadConcept(category, slug)`. Never import `concepts/all.ts`, `concepts/summaries.ts` or a
+   category file from shell code - that puts every lesson back into the main bundle. A lab, being
+   its own lazy chunk, may import its category file directly (see `CacheStrategiesLab`).
 5. `related` slugs are resolved defensively (`resolveRelated`), so a typo degrades instead of
    crashing — but fix typos anyway.
 
@@ -158,6 +163,10 @@ interchangeable, which contradicts the entire stateless/horizontal-scaling lesso
   on a short edge an edge label always lands on a node.
 - `FlowVisual` auto-fits its spec to the container width (0.5x-1.3x), so a spec authored at 760px
   fills a wider card instead of stopping halfway across it. Pass `zoom` only to pin a scale.
+- `FlowVisual` and `SequenceFlow` have a Pause/Play control, start paused under
+  `prefers-reduced-motion`, and stop ticking while scrolled off screen (`useAutoplay`). Their nodes
+  and edges are memoized on `spec`, so only the particle layer re-renders per frame - keep it that
+  way; every `ArchNode` is a framer-motion `layout` component that measures the DOM on re-render.
 
 ## Content conventions
 
