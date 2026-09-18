@@ -469,21 +469,20 @@ function DeepDive({ concept }: { concept: Concept }) {
  * plus a note, rather than an endless spinner.
  */
 function useConceptDepth(concept: Concept): { depth?: ConceptDepth; failed: boolean } {
-  const [state, setState] = useState<{ depth?: ConceptDepth; failed: boolean }>({ failed: false });
+  const [state, setState] = useState<{ slug?: string; depth?: ConceptDepth; failed: boolean }>({ failed: false });
 
   useEffect(() => {
     let current = true;
-    setState({ failed: false });
-
-    const load = () => loadDepth(concept.category, concept.slug);
+    const slug = concept.slug;
+    const load = () => loadDepth(concept.category, slug);
 
     load()
       .catch(() => new Promise((resolve) => setTimeout(resolve, 400)).then(load))
       .then((depth) => {
-        if (current) setState({ depth, failed: !depth });
+        if (current) setState({ slug, depth, failed: !depth });
       })
       .catch(() => {
-        if (current) setState({ failed: true });
+        if (current) setState({ slug, failed: true });
       });
 
     return () => {
@@ -491,7 +490,8 @@ function useConceptDepth(concept: Concept): { depth?: ConceptDepth; failed: bool
     };
   }, [concept.category, concept.slug]);
 
-  return state;
+  // A result for the previous concept reads as "still loading" for this one.
+  return state.slug === concept.slug ? state : { failed: false };
 }
 
 /** The picture the learner already has in their head, borrowed for the concept. */

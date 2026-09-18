@@ -74,25 +74,22 @@ export interface VisualSpec {
  */
 function useFitScale(designWidth: number, override?: number) {
   const ref = useRef<HTMLDivElement>(null);
-  const [scale, setScale] = useState(override ?? 1);
+  const [fitted, setFitted] = useState(1);
 
   useEffect(() => {
-    if (override !== undefined) {
-      setScale(override);
-      return;
-    }
+    if (override !== undefined) return;
     const element = ref.current;
     if (!element || typeof ResizeObserver === 'undefined') return;
 
     const observer = new ResizeObserver((entries) => {
       const width = entries[0]?.contentRect.width ?? 0;
-      if (width > 0) setScale(clamp(width / designWidth, 0.5, 1.3));
+      if (width > 0) setFitted(clamp(width / designWidth, 0.5, 1.3));
     });
     observer.observe(element);
     return () => observer.disconnect();
   }, [designWidth, override]);
 
-  return { ref, scale };
+  return { ref, scale: override ?? fitted };
 }
 
 const toLayout = (spec: VisualSpec): Layout =>
@@ -107,13 +104,14 @@ const toLayout = (spec: VisualSpec): Layout =>
  */
 function useAutoplay() {
   const reducedMotion = usePrefersReducedMotion();
-  const [playing, setPlaying] = useState(!reducedMotion);
+  // null until the learner presses Play/Pause; until then the OS setting decides.
+  const [choice, setChoice] = useState<boolean | null>(null);
   const ref = useRef<HTMLElement>(null);
   const inView = useInView(ref);
 
-  useEffect(() => {
-    if (reducedMotion) setPlaying(false);
-  }, [reducedMotion]);
+  const playing = choice ?? !reducedMotion;
+  const setPlaying = (next: boolean | ((current: boolean) => boolean)) =>
+    setChoice(typeof next === 'function' ? next(playing) : next);
 
   return { ref, playing, setPlaying, running: playing && inView, reducedMotion };
 }
@@ -266,7 +264,7 @@ export function FlowVisual({
  * a numbered list of paragraphs in the "How it works" tab.
  */
 export function SequenceFlow({ spec, className }: { spec: VisualSpec; className?: string }) {
-  const steps = spec.steps ?? [];
+  const steps = useMemo(() => spec.steps ?? [], [spec.steps]);
   const [index, setIndex] = useState(0);
   const autoplay = useAutoplay();
   // With reduced motion the request is shown parked mid-edge instead of travelling.

@@ -53,7 +53,8 @@ Other scripts:
 | Script            | What it does                                            |
 | ----------------- | ------------------------------------------------------- |
 | `npm run dev`     | Vite dev server with hot reload                         |
-| `npm run build`   | Type-checks in strict mode, then builds to `dist/`      |
+| `npm run build`   | Content/diagram checks, strict typecheck, build to `dist/`, bundle budget |
+| `npm run lint`    | ESLint (TypeScript + React hooks rules)                 |
 | `npm run preview` | Serves the production build locally                     |
 
 ## What's inside

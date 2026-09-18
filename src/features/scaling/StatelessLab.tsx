@@ -159,7 +159,7 @@ export function StatelessLab() {
       }
 
       let ok = true;
-      let detail = '';
+      let detail: string;
       const route: string[] = ['users', 'lb', server.id];
 
       if (mode === 'local') {

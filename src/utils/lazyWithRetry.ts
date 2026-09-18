@@ -19,7 +19,7 @@ export function lazyWithRetry<T extends ComponentType<any>>(factory: () => Promi
       const module = await factory();
       safeSessionStorage.remove(RELOAD_FLAG);
       return module;
-    } catch (error) {
+    } catch {
       // A single retry covers a momentary network or dev-server hiccup.
       try {
         await new Promise((resolve) => setTimeout(resolve, 400));

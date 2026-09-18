@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { useRef, useState, type ReactNode } from 'react';
 import { cn } from '@/utils/cn';
 
 export interface TabItem {
@@ -18,14 +18,10 @@ interface TabsProps {
 /** Underlined tab bar with roving focus (arrow keys move between tabs). */
 export function Tabs({ items, value, onChange, className }: TabsProps) {
   const [internal, setInternal] = useState(items[0]?.id ?? '');
-  const active = value ?? internal;
+  // If the chosen tab disappears (the item list changed), fall back to the first one.
+  const requested = value ?? internal;
+  const active = items.some((item) => item.id === requested) ? requested : (items[0]?.id ?? '');
   const listRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    if (!items.some((item) => item.id === active) && items[0]) {
-      setInternal(items[0].id);
-    }
-  }, [items, active]);
 
   const select = (id: string) => {
     setInternal(id);

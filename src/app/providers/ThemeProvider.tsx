@@ -69,7 +69,9 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     root.classList.toggle('dark', theme === 'dark');
     root.style.colorScheme = theme;
     safeLocalStorage.set(STORAGE_KEY, theme);
-    // Read after the class change so charts pick up the new palette.
+    // Read after the class change so charts pick up the new palette. The values
+    // only exist in the DOM once the class is applied, hence state set in an effect.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setColors(readColors());
   }, [theme]);
 

@@ -33,6 +33,9 @@ export function AppShell() {
   }, []);
 
   useEffect(() => {
+    // Any navigation closes the mobile drawer, including back/forward, which
+    // never passes through the sidebar's own onNavigate.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setMobileNavOpen(false);
     document.querySelector('main')?.scrollTo({ top: 0 });
   }, [location.pathname]);

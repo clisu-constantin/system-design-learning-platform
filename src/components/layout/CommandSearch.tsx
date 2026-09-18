@@ -23,6 +23,11 @@ interface CommandSearchProps {
  * navigable with arrows and Enter.
  */
 export function CommandSearch({ open, onClose }: CommandSearchProps) {
+  // Mounted only while open, so every opening starts from an empty query.
+  return open ? <SearchDialog onClose={onClose} /> : null;
+}
+
+function SearchDialog({ onClose }: { onClose: () => void }) {
   const [query, setQuery] = useState('');
   const [active, setActive] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -30,17 +35,16 @@ export function CommandSearch({ open, onClose }: CommandSearchProps) {
 
   const results = useMemo(() => search(query), [query]);
 
+  // A new query means a new result list - the highlight goes back to the top.
+  const changeQuery = (next: string) => {
+    setQuery(next);
+    setActive(0);
+  };
+
   useEffect(() => {
-    if (open) {
-      setQuery('');
-      setActive(0);
-      window.setTimeout(() => inputRef.current?.focus(), 10);
-    }
-  }, [open]);
-
-  useEffect(() => setActive(0), [query]);
-
-  if (!open) return null;
+    const timer = window.setTimeout(() => inputRef.current?.focus(), 10);
+    return () => window.clearTimeout(timer);
+  }, []);
 
   const go = (result: SearchResult | undefined) => {
     if (!result) return;
@@ -80,7 +84,7 @@ export function CommandSearch({ open, onClose }: CommandSearchProps) {
           <input
             ref={inputRef}
             value={query}
-            onChange={(event) => setQuery(event.target.value)}
+            onChange={(event) => changeQuery(event.target.value)}
             onKeyDown={onKeyDown}
             placeholder="Search concepts, labs, scenarios, glossary..."
             aria-label="Search query"
@@ -105,7 +109,7 @@ export function CommandSearch({ open, onClose }: CommandSearchProps) {
                 <button
                   key={suggestion}
                   type="button"
-                  onClick={() => setQuery(suggestion)}
+                  onClick={() => changeQuery(suggestion)}
                   className="mx-1 rounded-md border border-line px-2 py-0.5 text-xs text-ink transition-colors hover:border-brand hover:text-brand"
                 >
                   {suggestion}

@@ -15,15 +15,23 @@ Non-negotiable product rule: **if a page's only possible action is scrolling, it
 ```bash
 npm install      # install dependencies
 npm run dev      # dev server on http://localhost:5173
-npm run build    # check:visuals + check:content + tsc -b + vite build  (this is the check that must pass)
+npm run build    # check:visuals + check:content + tsc -b + vite build + check:bundle  (must pass)
+npm run lint     # ESLint (typescript-eslint + react-hooks); CI fails on any finding
 npm run check:visuals   # diagram geometry + wiring: overlap, overflow, truncated labels, replica consistency
-npm run check:content   # every concept has its long-form lesson, and it is not a stub
+npm run check:content   # every concept has its long-form lesson, and sits in its category file
+npm run check:bundle    # initial JS (entry + modulepreloads) stays under the gzip budget
 npm run preview  # serve the production build
 npx tsc --noEmit -p tsconfig.app.json   # fast typecheck of src/ only
 ```
 
 There is no test runner and no backend. `npm run build` is the gate: it typechecks in strict mode
-(including `noUnusedLocals`/`noUnusedParameters`) and then bundles.
+(including `noUnusedLocals`/`noUnusedParameters`), bundles, and enforces the bundle budget.
+`.github/workflows/ci.yml` runs `npm ci`, `lint`, `build` and `npm audit --omit=dev --audit-level=high`
+on every push to master and every PR.
+
+ESLint turns off the React Compiler rules `refs`, `purity` and `immutability` on purpose - they
+forbid the ref-based simulation pattern below. `set-state-in-effect` stays on: derive state during
+render where you can, and only suppress it with a comment saying what external thing is synced.
 
 ## Architecture
 
