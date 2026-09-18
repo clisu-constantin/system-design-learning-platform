@@ -9,7 +9,7 @@
     "build": "node scripts/check-visuals.mjs && node scripts/check-content.mjs && tsc -b && vite build",
     "start": "serve -s dist -l ${PORT:-3000}",
     "preview": "vite preview",
-    "typecheck": "tsc -b --noEmit false --emitDeclarationOnly false",
+    "typecheck": "tsc -b",
     "lint": "eslint .",
     "check:visuals": "node scripts/check-visuals.mjs",
     "check:content": "node scripts/check-content.mjs"

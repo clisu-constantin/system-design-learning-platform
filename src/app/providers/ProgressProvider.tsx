@@ -1,6 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
 import type { CategoryId } from '@/types';
 import { CONCEPTS, CONCEPTS_BY_CATEGORY } from '@/data/concepts';
+import { safeLocalStorage } from '@/utils/safeStorage';
 
 const STORAGE_KEY = 'sdi:progress:v1';
 
@@ -29,13 +30,45 @@ const EMPTY: ProgressState = { visited: {}, completed: {}, quiz: {} };
 
 const ProgressContext = createContext<ProgressContextValue | null>(null);
 
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  typeof value === 'object' && value !== null && !Array.isArray(value);
+
+/** Keeps only the entries whose value passes `keep` - anything else in storage is dropped. */
+function pick<T>(value: unknown, keep: (entry: unknown) => entry is T): Record<string, T> {
+  if (!isRecord(value)) return {};
+  const result: Record<string, T> = {};
+  for (const [key, entry] of Object.entries(value)) {
+    // `__proto__` is an own key after JSON.parse, but assigning it would swap the prototype.
+    if (key !== '__proto__' && keep(entry)) result[key] = entry;
+  }
+  return result;
+}
+
+const isFiniteNumber = (entry: unknown): entry is number => typeof entry === 'number' && Number.isFinite(entry);
+const isTrue = (entry: unknown): entry is true => entry === true;
+const isQuizResult = (entry: unknown): entry is QuizResult =>
+  isRecord(entry) &&
+  isFiniteNumber(entry.correct) &&
+  isFiniteNumber(entry.total) &&
+  entry.total > 0 &&
+  isFiniteNumber(entry.at);
+
+/**
+ * Storage is outside our control - an older schema, a manual edit or a
+ * truncated write must not crash the app later in `recordQuiz` or the
+ * progress page, so the saved state is rebuilt field by field.
+ */
 function load(): ProgressState {
-  if (typeof window === 'undefined') return EMPTY;
+  const raw = safeLocalStorage.get(STORAGE_KEY);
+  if (!raw) return EMPTY;
   try {
-    const raw = window.localStorage.getItem(STORAGE_KEY);
-    if (!raw) return EMPTY;
-    const parsed = JSON.parse(raw) as Partial<ProgressState>;
-    return { ...EMPTY, ...parsed };
+    const parsed: unknown = JSON.parse(raw);
+    if (!isRecord(parsed)) return EMPTY;
+    return {
+      visited: pick(parsed.visited, isFiniteNumber),
+      completed: pick(parsed.completed, isTrue),
+      quiz: pick(parsed.quiz, isQuizResult),
+    };
   } catch {
     return EMPTY;
   }
@@ -49,11 +82,8 @@ export function ProgressProvider({ children }: { children: ReactNode }) {
   const [state, setState] = useState<ProgressState>(load);
 
   useEffect(() => {
-    try {
-      window.localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
-    } catch {
-      // Storage can be unavailable (private mode) - progress is a nice-to-have.
-    }
+    // Storage can be unavailable (private mode) - progress is a nice-to-have.
+    safeLocalStorage.set(STORAGE_KEY, JSON.stringify(state));
   }, [state]);
 
   const markVisited = useCallback((slug: string) => {

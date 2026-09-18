@@ -1,4 +1,5 @@
 import { lazy, type ComponentType } from 'react';
+import { safeSessionStorage } from './safeStorage';
 
 const RELOAD_FLAG = 'sdi:chunk-reload';
 
@@ -16,20 +17,23 @@ export function lazyWithRetry<T extends ComponentType<any>>(factory: () => Promi
   return lazy(async () => {
     try {
       const module = await factory();
-      sessionStorage.removeItem(RELOAD_FLAG);
+      safeSessionStorage.remove(RELOAD_FLAG);
       return module;
     } catch (error) {
       // A single retry covers a momentary network or dev-server hiccup.
       try {
         await new Promise((resolve) => setTimeout(resolve, 400));
         const module = await factory();
-        sessionStorage.removeItem(RELOAD_FLAG);
+        safeSessionStorage.remove(RELOAD_FLAG);
         return module;
       } catch (retryError) {
-        const alreadyReloaded = sessionStorage.getItem(RELOAD_FLAG) === '1';
+        const alreadyReloaded = safeSessionStorage.get(RELOAD_FLAG) === '1';
         if (!alreadyReloaded && typeof window !== 'undefined') {
+          safeSessionStorage.set(RELOAD_FLAG, '1');
+          // Without storage the flag cannot survive the reload, so reloading
+          // would loop forever - surface the error to the boundary instead.
+          if (safeSessionStorage.get(RELOAD_FLAG) !== '1') throw retryError;
           // The document references chunks that no longer exist - reload once.
-          sessionStorage.setItem(RELOAD_FLAG, '1');
           window.location.reload();
           // Keep the promise pending while the page reloads.
           return new Promise<{ default: T }>(() => {});
