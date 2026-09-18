@@ -6,12 +6,13 @@
   "description": "Interactive System Design laboratory - learn architecture by seeing systems work.",
   "scripts": {
     "dev": "vite",
-    "build": "node scripts/check-visuals.mjs && tsc -b && vite build",
+    "build": "node scripts/check-visuals.mjs && node scripts/check-content.mjs && tsc -b && vite build",
     "start": "serve -s dist -l ${PORT:-3000}",
     "preview": "vite preview",
     "typecheck": "tsc -b --noEmit false --emitDeclarationOnly false",
     "lint": "eslint .",
-    "check:visuals": "node scripts/check-visuals.mjs"
+    "check:visuals": "node scripts/check-visuals.mjs",
+    "check:content": "node scripts/check-content.mjs"
   },
   "engines": {
     "node": ">=20"

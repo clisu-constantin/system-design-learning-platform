@@ -1,26 +1,32 @@
-import { Suspense, useEffect, useMemo } from 'react';
+import { Suspense, useEffect, useMemo, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import {
   AlertTriangle,
   ArrowRight,
   BookOpen,
+  Calculator,
   Check,
   FlaskConical,
   HelpCircle,
+  Languages,
+  Lightbulb,
   Loader2,
   Minus,
   Play,
   Plus,
   Scale,
+  Sparkles,
 } from 'lucide-react';
 import { ConceptHeader, AsciiBlock, ExplanationCard, QuizCard } from '@/components/learning';
 import { Badge, ErrorBoundary, Expandable, Tabs, type TabItem } from '@/components/ui';
 import { FlowVisual, SequenceFlow } from '@/components/architecture/FlowVisual';
 import { getConcept, resolveRelated } from '@/data/concepts';
+import { loadDepth } from '@/data/concepts/deep';
 import { getVisual } from '@/data/visuals';
 import { useProgress } from '@/app/providers/ProgressProvider';
 import { getLab } from '@/features/labs/registry';
 import { cn } from '@/utils/cn';
+import type { Analogy, Concept, ConceptDepth, DeepDiveSection, JargonTerm, WorkedExample } from '@/types';
 
 /** Keeps sidebar chips to one readable line instead of a paragraph. */
 const short = (text: string, max = 78) => {
@@ -292,16 +298,41 @@ function TradeOffBoard({ concept }: { concept: NonNullable<ReturnType<typeof get
   );
 }
 
-/** All the prose, kept off the default path. */
-function DeepDive({ concept }: { concept: NonNullable<ReturnType<typeof getConcept>> }) {
+/**
+ * The long-form lesson. Ordered the way a junior actually learns a new idea:
+ * a picture they already understand, then the definition, then the mechanics,
+ * then a worked example with real numbers, then the words to use for it.
+ */
+function DeepDive({ concept }: { concept: Concept }) {
+  const { depth, failed } = useConceptDepth(concept);
+
   return (
     <div className="space-y-3">
+      {depth ? <AnalogyCard analogy={depth.analogy} /> : null}
+      {!depth && !failed ? (
+        <div className="flex items-center gap-2 rounded-2xl border border-line bg-surface p-5 text-sm text-muted">
+          <Loader2 className="h-4 w-4 animate-spin" />
+          Loading the full lesson...
+        </div>
+      ) : null}
+      {failed ? (
+        <div className="flex gap-3 rounded-2xl border border-warn/30 bg-warn/5 p-5 text-sm text-muted">
+          <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-warn" aria-hidden />
+          <span>The extended lesson could not be loaded. Reload the page to try again.</span>
+        </div>
+      ) : null}
+
       {concept.what ? (
         <ExplanationCard title="What is it?" tone="brand">
           {concept.what}
         </ExplanationCard>
       ) : null}
       {concept.why ? <ExplanationCard title="Why does it exist?">{concept.why}</ExplanationCard> : null}
+
+      {depth?.deepDive.map((section) => <DeepDiveBlock key={section.heading} section={section} />)}
+
+      {depth?.examples.map((example) => <ExampleCard key={example.title} example={example} />)}
+
       {concept.how?.length ? (
         <Expandable title="How it works, step by step" defaultOpen>
           <ol className="space-y-2">
@@ -346,6 +377,10 @@ function DeepDive({ concept }: { concept: NonNullable<ReturnType<typeof getConce
           </ul>
         </Expandable>
       ) : null}
+
+      {depth ? <JargonCard terms={depth.jargon} /> : null}
+      {depth ? <RememberCard lines={depth.remember} /> : null}
+
       <div className="flex flex-wrap items-center gap-2 pt-1">
         <Badge>{concept.difficulty}</Badge>
         {(concept.keywords ?? []).slice(0, 6).map((keyword) => (
@@ -353,6 +388,152 @@ function DeepDive({ concept }: { concept: NonNullable<ReturnType<typeof getConce
         ))}
       </div>
     </div>
+  );
+}
+
+/**
+ * Fetches the long-form content for this concept. It is a separate chunk per
+ * category, so nothing of it is downloaded until a learner opens this tab.
+ *
+ * The retry is the same problem `lazyWithRetry` solves: after a redeploy the
+ * open document points at a chunk that no longer exists. Here that must not
+ * take the page down, so a second failure degrades to the short explanation
+ * plus a note, rather than an endless spinner.
+ */
+function useConceptDepth(concept: Concept): { depth?: ConceptDepth; failed: boolean } {
+  const [state, setState] = useState<{ depth?: ConceptDepth; failed: boolean }>({ failed: false });
+
+  useEffect(() => {
+    let current = true;
+    setState({ failed: false });
+
+    const load = () => loadDepth(concept.category, concept.slug);
+
+    load()
+      .catch(() => new Promise((resolve) => setTimeout(resolve, 400)).then(load))
+      .then((depth) => {
+        if (current) setState({ depth, failed: !depth });
+      })
+      .catch(() => {
+        if (current) setState({ failed: true });
+      });
+
+    return () => {
+      current = false;
+    };
+  }, [concept.category, concept.slug]);
+
+  return state;
+}
+
+/** The picture the learner already has in their head, borrowed for the concept. */
+function AnalogyCard({ analogy }: { analogy: Analogy }) {
+  return (
+    <section className="flex gap-3 rounded-2xl border border-violet/30 bg-violet/5 p-5">
+      <Lightbulb className="mt-0.5 h-4 w-4 shrink-0 text-violet" aria-hidden />
+      <div className="min-w-0">
+        <p className="label text-violet">Think of it like</p>
+        <h3 className="mt-1 text-sm font-semibold text-ink">{analogy.title}</h3>
+        <p className="mt-1.5 text-sm leading-relaxed text-muted">{analogy.body}</p>
+      </div>
+    </section>
+  );
+}
+
+/** One long-form teaching section: prose, optional bullets, optional snippet. */
+function DeepDiveBlock({ section }: { section: DeepDiveSection }) {
+  return (
+    <section className="rounded-2xl border border-line bg-surface p-5">
+      <h3 className="text-sm font-semibold text-ink">{section.heading}</h3>
+      <div className="mt-2 space-y-2.5 text-sm leading-relaxed text-muted">
+        {section.paragraphs.map((paragraph) => (
+          <p key={paragraph}>{paragraph}</p>
+        ))}
+      </div>
+      {section.bullets?.length ? (
+        <ul className="mt-3 space-y-2">
+          {section.bullets.map((item) => (
+            <li key={item} className="flex gap-2.5 text-sm leading-relaxed text-muted">
+              <span className="mt-[7px] h-1.5 w-1.5 shrink-0 rounded-full bg-faint" aria-hidden />
+              <span>{item}</span>
+            </li>
+          ))}
+        </ul>
+      ) : null}
+      {section.code ? (
+        <div className="mt-3">
+          {section.code.caption ? (
+            <p className="mb-1.5 text-[11px] text-faint">{section.code.caption}</p>
+          ) : null}
+          <AsciiBlock>{section.code.body}</AsciiBlock>
+        </div>
+      ) : null}
+    </section>
+  );
+}
+
+/** Numbers make an abstract idea concrete, and concrete ideas are remembered. */
+function ExampleCard({ example }: { example: WorkedExample }) {
+  return (
+    <section className="rounded-2xl border border-info/30 bg-info/5 p-5">
+      <p className="label flex items-center gap-1.5 text-info">
+        <Calculator className="h-3.5 w-3.5" aria-hidden />
+        Worked example
+      </p>
+      <h3 className="mt-1 text-sm font-semibold text-ink">{example.title}</h3>
+      <p className="mt-1.5 text-sm leading-relaxed text-muted">{example.setup}</p>
+      <ol className="mt-3 space-y-2">
+        {example.walkthrough.map((step, index) => (
+          <li key={step} className="flex gap-2.5 text-sm leading-relaxed text-muted">
+            <span className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full border border-info/40 font-mono text-[10px] text-info">
+              {index + 1}
+            </span>
+            <span>{step}</span>
+          </li>
+        ))}
+      </ol>
+      <p className="mt-3 border-t border-info/20 pt-3 text-sm leading-relaxed text-ink">{example.result}</p>
+    </section>
+  );
+}
+
+/** The words seniors say without explaining them. */
+function JargonCard({ terms }: { terms: JargonTerm[] }) {
+  return (
+    <section className="rounded-2xl border border-line bg-surface p-5">
+      <p className="label flex items-center gap-1.5">
+        <Languages className="h-3.5 w-3.5" aria-hidden />
+        Jargon decoder
+      </p>
+      <dl className="mt-3 space-y-2.5">
+        {terms.map((term) => (
+          <div key={term.term} className="grid gap-1 sm:grid-cols-[minmax(0,180px)_minmax(0,1fr)] sm:gap-3">
+            <dt className="text-sm font-medium text-ink">{term.term}</dt>
+            <dd className="text-sm leading-relaxed text-muted">{term.plain}</dd>
+          </div>
+        ))}
+      </dl>
+    </section>
+  );
+}
+
+/** The few lines worth carrying out of the page. */
+function RememberCard({ lines }: { lines: string[] }) {
+  return (
+    <section className="rounded-2xl border border-ok/30 bg-ok/5 p-5">
+      <p className="label flex items-center gap-1.5 text-ok">
+        <Sparkles className="h-3.5 w-3.5" aria-hidden />
+        Remember this
+      </p>
+      <ul className="mt-3 space-y-2">
+        {lines.map((line) => (
+          <li key={line} className="flex gap-2.5 text-sm leading-relaxed text-ink">
+            <Check className="mt-0.5 h-4 w-4 shrink-0 text-ok" aria-hidden />
+            <span>{line}</span>
+          </li>
+        ))}
+      </ul>
+    </section>
   );
 }
 

@@ -17,6 +17,10 @@ import { patternConcepts } from './patterns';
 /**
  * The full concept catalogue. Order inside a category is the order shown in the
  * sidebar, so new concepts should be inserted where they belong pedagogically.
+ *
+ * Long-form teaching content is NOT here: it lives in ./deep and is loaded per
+ * category on demand, because it is several times the size of this file and is
+ * only read on one tab of one concept.
  */
 export const CONCEPTS: Concept[] = [
   ...gettingStartedConcepts,

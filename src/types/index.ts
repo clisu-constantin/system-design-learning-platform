@@ -30,6 +30,43 @@ export interface TradeOff {
   costs: string[];
 }
 
+/**
+ * A memorable everyday comparison. Juniors remember the picture long after they
+ * forget the definition, so every concept gets exactly one.
+ */
+export interface Analogy {
+  /** Short label for the picture, e.g. "The supermarket checkout". */
+  title: string;
+  /** Two to four sentences that map the picture back onto the concept. */
+  body: string;
+}
+
+/** One teaching section of the long-form explanation. */
+export interface DeepDiveSection {
+  heading: string;
+  paragraphs: string[];
+  bullets?: string[];
+  /** Optional fixed-width block: code, a config snippet or a small table. */
+  code?: { caption?: string; body: string };
+}
+
+/** A concrete worked example with real numbers a junior can follow along with. */
+export interface WorkedExample {
+  title: string;
+  /** The situation, in one or two sentences. */
+  setup: string;
+  /** Ordered steps. Each one should carry a concrete number or value. */
+  walkthrough: string[];
+  /** What the numbers end up saying - the point of the example. */
+  result: string;
+}
+
+/** A word seniors use without explaining it, translated into plain language. */
+export interface JargonTerm {
+  term: string;
+  plain: string;
+}
+
 export interface QuizQuestion {
   id: string;
   prompt: string;
@@ -64,6 +101,21 @@ export interface Concept {
   diagram?: string;
   related?: string[];
   quiz?: QuizQuestion[];
+}
+
+/**
+ * The long-form, junior-friendly half of a lesson, shown on the "Full
+ * explanation" tab. It is deliberately not part of `Concept`: it is far larger
+ * than the rest of the catalogue and is loaded on demand, per category, from
+ * `src/data/concepts/deep`.
+ */
+export interface ConceptDepth {
+  analogy: Analogy;
+  deepDive: DeepDiveSection[];
+  examples: WorkedExample[];
+  jargon: JargonTerm[];
+  /** Three to five one-line takeaways worth memorising. */
+  remember: string[];
 }
 
 export type LabId =

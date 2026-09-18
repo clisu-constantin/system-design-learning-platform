@@ -1,0 +1,86 @@
+/**
+ * Coverage check for the long-form teaching content.
+ *
+ * The "Full explanation" tab is assembled from src/data/concepts/deep. A concept
+ * missing its entry renders as three short cards, which is the failure this app
+ * exists to avoid. This asserts every concept carries the full teaching payload,
+ * and that the payload is not a stub. Run with `npm run check:content`.
+ */
+import { build } from 'esbuild';
+import { pathToFileURL } from 'node:url';
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+
+const dir = mkdtempSync(join(tmpdir(), 'sdi-content-'));
+
+// Minimums, not targets. They catch a stub; they do not grade the writing.
+const MIN_ANALOGY_CHARS = 120;
+const MIN_DEEP_SECTIONS = 2;
+const MIN_SECTION_CHARS = 200;
+const MIN_WALKTHROUGH_STEPS = 3;
+const MIN_JARGON_TERMS = 4;
+const MIN_REMEMBER_LINES = 3;
+
+try {
+  await build({
+    entryPoints: { concepts: 'src/data/concepts/index.ts', deep: 'src/data/concepts/deep/index.ts' },
+    bundle: true,
+    splitting: true, // the depth modules are loaded with dynamic import on purpose
+    platform: 'node',
+    format: 'esm',
+    outdir: dir,
+    outExtension: { '.js': '.mjs' },
+    logLevel: 'error',
+  });
+
+  const { CONCEPTS } = await import(pathToFileURL(join(dir, 'concepts.mjs')).href);
+  const { loadDepth } = await import(pathToFileURL(join(dir, 'deep.mjs')).href);
+  const problems = [];
+
+  for (const concept of CONCEPTS) {
+    const at = (message) => problems.push(`${concept.slug}: ${message}`);
+    const depth = await loadDepth(concept.category, concept.slug);
+
+    if (!depth) {
+      at('no entry in src/data/concepts/deep - the Full explanation tab would be nearly empty');
+      continue;
+    }
+
+    if (!depth.analogy) at('no analogy - the lesson needs one memorable picture');
+    else if ((depth.analogy.body ?? '').length < MIN_ANALOGY_CHARS)
+      at(`analogy body is ${depth.analogy.body.length} chars, expected at least ${MIN_ANALOGY_CHARS}`);
+
+    const sections = depth.deepDive ?? [];
+    if (sections.length < MIN_DEEP_SECTIONS)
+      at(`${sections.length} deep-dive section(s), expected at least ${MIN_DEEP_SECTIONS}`);
+    for (const section of sections) {
+      const prose = (section.paragraphs ?? []).join(' ');
+      if (prose.length < MIN_SECTION_CHARS)
+        at(`section "${section.heading}" has ${prose.length} chars of prose, expected ${MIN_SECTION_CHARS}+`);
+    }
+
+    const examples = depth.examples ?? [];
+    if (!examples.length) at('no worked example - a junior needs concrete numbers');
+    for (const example of examples) {
+      if ((example.walkthrough ?? []).length < MIN_WALKTHROUGH_STEPS)
+        at(`example "${example.title}" has fewer than ${MIN_WALKTHROUGH_STEPS} walkthrough steps`);
+      if (!example.result) at(`example "${example.title}" has no result line`);
+    }
+
+    if ((depth.jargon ?? []).length < MIN_JARGON_TERMS)
+      at(`${(depth.jargon ?? []).length} jargon term(s), expected at least ${MIN_JARGON_TERMS}`);
+    if ((depth.remember ?? []).length < MIN_REMEMBER_LINES)
+      at(`${(depth.remember ?? []).length} takeaway line(s), expected at least ${MIN_REMEMBER_LINES}`);
+  }
+
+  if (problems.length) {
+    console.error(problems.join('\n'));
+    console.error(`\n${problems.length} problem(s) in ${CONCEPTS.length} concepts`);
+    process.exit(1);
+  }
+
+  console.log(`${CONCEPTS.length} concepts checked - full explanation content present`);
+} finally {
+  rmSync(dir, { recursive: true, force: true });
+}

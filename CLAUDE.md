@@ -15,8 +15,9 @@ Non-negotiable product rule: **if a page's only possible action is scrolling, it
 ```bash
 npm install      # install dependencies
 npm run dev      # dev server on http://localhost:5173
-npm run build    # check:visuals + tsc -b + vite build  (this is the check that must pass)
+npm run build    # check:visuals + check:content + tsc -b + vite build  (this is the check that must pass)
 npm run check:visuals   # diagram geometry: overlap, overflow, truncated labels
+npm run check:content   # every concept has its long-form lesson, and it is not a stub
 npm run preview  # serve the production build
 npx tsc --noEmit -p tsconfig.app.json   # fast typecheck of src/ only
 ```
@@ -36,6 +37,7 @@ src/
 │   ├── learning/       LabShell, MetricsPanel, QuizCard, TradeOffTable, RequestInspector
 │   └── ui/             Button, Slider, Toggle, Tabs, Meter, Stat, ... (barrel: ui/index.ts)
 ├── data/           concepts/ (per category), scenarios/, glossary, categories  <- all content
+│   └── concepts/deep/  long-form lesson per concept, code-split per category
 ├── features/       one folder per domain; labs and pages live here
 ├── hooks/          useRerender
 ├── simulations/
@@ -75,10 +77,29 @@ useTicker(running, (dt) => { /* mutate state.current */ rerender(); });
 1. Add a `Concept` object to the right file in `src/data/concepts/<category>.ts`.
 2. Add an animated diagram for it in `src/data/visuals/` - **this is the important half**. A concept
    page leads with its diagram; the prose is secondary and collapsed.
-3. That is it — the sidebar, search, glossary links, category page and progress tracking all read
+3. Add a `ConceptDepth` entry to `src/data/concepts/deep/<category>.ts`, keyed by slug. This is the
+   "Full explanation" tab and `check:content` fails the build without it. See below.
+4. That is it — the sidebar, search, glossary links, category page and progress tracking all read
    from `CONCEPTS`.
-4. `related` slugs are resolved defensively (`resolveRelated`), so a typo degrades instead of
+5. `related` slugs are resolved defensively (`resolveRelated`), so a typo degrades instead of
    crashing — but fix typos anyway.
+
+### The long-form lesson (`src/data/concepts/deep/`)
+
+Written for a junior who has never met the idea. Every concept has one, and the shape is fixed:
+
+- `analogy` — one everyday picture with a title. The thing they will still remember next week.
+- `deepDive` — 2-3 sections of real prose, optionally with `bullets` and one fixed-width `code`
+  block (ASCII only, aligned — it renders through `AsciiBlock`).
+- `examples` — at least one worked example with **concrete numbers** in every walkthrough step, and
+  a `result` line saying what the numbers proved.
+- `jargon` — 4-6 terms seniors use without explaining, in plain language.
+- `remember` — 3-5 one-line takeaways.
+
+Two rules that are easy to miss: it is loaded **lazily, per category** (`loadDepth`), so never
+import these modules statically — that would put ~700 KB of prose into the main bundle. And the
+strings are single-quoted TypeScript, so prose avoids apostrophes ("does not", "the budget of the
+caller") rather than escaping them.
 
 ### A new interactive lab
 
