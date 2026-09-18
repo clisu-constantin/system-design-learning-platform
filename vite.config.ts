@@ -1,7 +1,7 @@
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 import { fileURLToPath, URL } from 'node:url';
-import { conceptIndex } from './scripts/vite-plugin-concept-index';
+import { conceptIndex } from './scripts/vite-plugin-concept-index.ts';
 
 export default defineConfig({
   plugins: [react(), conceptIndex()],

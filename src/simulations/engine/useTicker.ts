@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useLayoutEffect, useRef } from 'react';
 
 type TickCallback = (dt: number, elapsed: number) => void;
 
@@ -10,7 +10,12 @@ type TickCallback = (dt: number, elapsed: number) => void;
  */
 export function useTicker(running: boolean, onTick: TickCallback, maxStep = 0.1) {
   const callbackRef = useRef(onTick);
-  callbackRef.current = onTick;
+  // Updated after commit, not during render: a render React discards (StrictMode,
+  // a concurrent re-render) must not leave the loop calling its closure. A layout
+  // effect runs before the next animation frame, so the loop never sees a stale one.
+  useLayoutEffect(() => {
+    callbackRef.current = onTick;
+  });
 
   useEffect(() => {
     if (!running) return;

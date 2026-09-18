@@ -7,6 +7,11 @@ import { Sidebar } from './Sidebar';
 import { TopBar } from './TopBar';
 import { CommandSearch } from './CommandSearch';
 
+/** True while focus is somewhere "/" is a character, not a shortcut. */
+const isTyping = (element: Element | null) =>
+  element instanceof HTMLElement &&
+  (element.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT'].includes(element.tagName));
+
 /**
  * Two-column application layout: persistent navigation on the left, the active
  * workspace on the right. The sidebar collapses into an overlay below lg.
@@ -23,7 +28,7 @@ export function AppShell() {
         event.preventDefault();
         setSearchOpen(true);
       }
-      if (event.key === '/' && document.activeElement?.tagName !== 'INPUT') {
+      if (event.key === '/' && !isTyping(document.activeElement)) {
         event.preventDefault();
         setSearchOpen(true);
       }
