@@ -29,7 +29,7 @@ server, switch to least-connections, kill server 2, and watch health checks pull
 
 ## Requirements
 
-- **Node.js 18 or newer** (developed on Node 24)
+- **Node.js 20.19+ or 22.12+** (required by Vite 8; developed on Node 24)
 - npm 9+
 
 Nothing else. No database, no Docker, no API keys, no cloud account, no login.
