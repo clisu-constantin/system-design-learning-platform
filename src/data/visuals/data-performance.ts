@@ -158,6 +158,7 @@ export const dataVisuals: Record<string, VisualSpec> = {
   },
 
   partitioning: {
+    asymmetric: 'Only the September partition is scanned - pruning the others is the lesson.',
     width: 760,
     height: 290,
     caption: 'One logical table, several physical pieces. The planner skips the ones that cannot match.',
@@ -246,6 +247,7 @@ export const dataVisuals: Record<string, VisualSpec> = {
   },
 
   'nosql-databases': {
+    asymmetric: 'A key lookup reaches exactly one partition; the others are never touched.',
     width: 760,
     height: 290,
     caption: 'The partition key decides where a record lives - and it is in almost every query.',

@@ -54,6 +54,13 @@ export interface VisualSpec {
   height?: number;
   /** One short line under the diagram. */
   caption?: string;
+  /**
+   * Why replicas in this diagram are deliberately wired differently - a failed
+   * node, one partition holding the key, one attempt that succeeds. Setting it
+   * exempts the spec from the replica-wiring rule in scripts/check-visuals.mjs,
+   * so it must say what the asymmetry is teaching.
+   */
+  asymmetric?: string;
 }
 
 /**

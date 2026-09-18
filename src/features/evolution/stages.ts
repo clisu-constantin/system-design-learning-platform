@@ -28,6 +28,8 @@ export interface Stage {
   introduced?: { component: string; because: string; cost: string; concept: string };
   nodes: StageNode[];
   edges: DiagramEdge[];
+  /** See VisualSpec.asymmetric - why replicas here are wired differently. */
+  asymmetric?: string;
   metrics: { label: string; value: string; tone?: 'ok' | 'warn' | 'danger' }[];
 }
 
@@ -92,7 +94,7 @@ export const STAGES: Stage[] = [
         label: 'Run several servers behind a load balancer',
         recommended: true,
         feedback:
-          'Right. Multiple instances give you redundancy and rolling deploys, and remove the hardware ceiling. The precondition is that the app must be stateless.',
+          'Right. Multiple instances give you redundancy and rolling deploys, and remove the hardware ceiling. Two preconditions: the app must be stateless, and the balancer needs a standby of its own - otherwise you have moved the single point of failure rather than removed it.',
       },
       {
         label: 'Deploy at night when nobody notices',
@@ -150,21 +152,25 @@ export const STAGES: Stage[] = [
       },
     ],
     introduced: {
-      component: 'Load balancer + 3 servers',
+      component: 'Load balancer pair + 3 servers',
       because: 'One machine could not provide redundancy or zero-downtime deploys.',
-      cost: 'Local state now breaks, the balancer itself must be redundant, and the database sees traffic from every instance.',
+      cost: 'Local state now breaks, the balancer needs a standby or it is the new single point of failure, and the database sees traffic from every instance.',
       concept: 'load-balancing',
     },
+    // The standby is drawn, not implied: a single balancer in front of three
+    // servers is still a system with one box that takes everything down.
     nodes: [
-      { id: 'client', kind: 'client', title: 'Clients', placed: box(400, 20, 180, 64) },
-      { id: 'lb', kind: 'load-balancer', title: 'Load Balancer', placed: box(395, 130, 190, 84), isNew: true },
-      { id: 'api1', kind: 'server', title: 'API 1', placed: box(200, 270, 160, 88), isNew: true },
-      { id: 'api2', kind: 'server', title: 'API 2', placed: box(400, 270, 160, 88), isNew: true },
-      { id: 'api3', kind: 'server', title: 'API 3', placed: box(600, 270, 160, 88), isNew: true },
-      { id: 'db', kind: 'sql', title: 'PostgreSQL', placed: box(400, 420, 180, 76) },
+      { id: 'client', kind: 'client', title: 'Clients', placed: box(400, 16, 180, 64) },
+      { id: 'lb', kind: 'load-balancer', title: 'Load Balancer', subtitle: 'active, holds the VIP', placed: box(245, 120, 190, 84), isNew: true },
+      { id: 'lb2', kind: 'load-balancer', title: 'Standby LB', subtitle: 'takes over on failure', placed: box(530, 120, 190, 84), isNew: true },
+      { id: 'api1', kind: 'server', title: 'API 1', placed: box(170, 285, 160, 88), isNew: true },
+      { id: 'api2', kind: 'server', title: 'API 2', placed: box(400, 285, 160, 88), isNew: true },
+      { id: 'api3', kind: 'server', title: 'API 3', placed: box(630, 285, 160, 88), isNew: true },
+      { id: 'db', kind: 'sql', title: 'PostgreSQL', placed: box(400, 440, 180, 80) },
     ],
     edges: [
       { from: 'client', to: 'lb', tone: 'brand', width: 2 },
+      { from: 'client', to: 'lb2', tone: 'muted', dashed: true, label: 'on failover' },
       { from: 'lb', to: 'api1', tone: 'ok' },
       { from: 'lb', to: 'api2', tone: 'ok' },
       { from: 'lb', to: 'api3', tone: 'ok' },
@@ -207,14 +213,17 @@ export const STAGES: Stage[] = [
       cost: 'Cached data can be stale, invalidation becomes your problem, and Redis is now critical infrastructure needing its own HA.',
       concept: 'caching',
     },
+    // Every instance reaches both the cache and the database. Drawing only some
+    // of the arrows would describe instances that are not interchangeable, which
+    // is the opposite of what stage 3 just established.
     nodes: [
-      { id: 'client', kind: 'client', title: 'Clients', placed: box(400, 14, 180, 60) },
-      { id: 'lb', kind: 'load-balancer', title: 'Load Balancer', placed: box(395, 110, 190, 76) },
-      { id: 'api1', kind: 'server', title: 'API 1', placed: box(220, 240, 150, 84) },
-      { id: 'api2', kind: 'server', title: 'API 2', placed: box(400, 240, 150, 84) },
-      { id: 'api3', kind: 'server', title: 'API 3', placed: box(580, 240, 150, 84) },
-      { id: 'cache', kind: 'cache', title: 'Redis', subtitle: 'cache + sessions', placed: box(120, 390, 170, 84), isNew: true },
-      { id: 'db', kind: 'sql', title: 'PostgreSQL', placed: box(420, 390, 170, 84) },
+      { id: 'client', kind: 'client', title: 'Clients', placed: box(400, 12, 180, 64) },
+      { id: 'lb', kind: 'load-balancer', title: 'Load Balancer', subtitle: '2 nodes, multi-AZ', placed: box(395, 100, 190, 78) },
+      { id: 'api1', kind: 'server', title: 'API 1', placed: box(215, 232, 150, 84) },
+      { id: 'api2', kind: 'server', title: 'API 2', placed: box(400, 232, 150, 84) },
+      { id: 'api3', kind: 'server', title: 'API 3', placed: box(585, 232, 150, 84) },
+      { id: 'cache', kind: 'cache', title: 'Redis', subtitle: 'cache + sessions', placed: box(285, 392, 175, 84), isNew: true },
+      { id: 'db', kind: 'sql', title: 'PostgreSQL', placed: box(500, 392, 175, 84) },
     ],
     edges: [
       { from: 'client', to: 'lb', tone: 'brand', width: 2 },
@@ -223,6 +232,8 @@ export const STAGES: Stage[] = [
       { from: 'lb', to: 'api3', tone: 'ok' },
       { from: 'api1', to: 'cache', tone: 'danger' },
       { from: 'api2', to: 'cache', tone: 'danger' },
+      { from: 'api3', to: 'cache', tone: 'danger' },
+      { from: 'api1', to: 'db', tone: 'info' },
       { from: 'api2', to: 'db', tone: 'info' },
       { from: 'api3', to: 'db', tone: 'info' },
     ],
@@ -261,25 +272,26 @@ export const STAGES: Stage[] = [
       cost: 'Replication lag causes stale reads, and the application must decide per query where it is safe to read.',
       concept: 'read-replicas',
     },
+    // The API tier collapses to one box here, as it does from stage 6 onward.
+    // Three instances x (cache + primary + two replicas) is twelve arrows that
+    // say one thing: every instance writes to the primary and reads from a
+    // replica. The lesson of this stage is the data tier, so draw that clearly.
     nodes: [
-      { id: 'lb', kind: 'load-balancer', title: 'Load Balancer', placed: box(395, 20, 190, 70) },
-      { id: 'api1', kind: 'server', title: 'API 1', placed: box(230, 150, 150, 80) },
-      { id: 'api2', kind: 'server', title: 'API 2', placed: box(400, 150, 150, 80) },
-      { id: 'api3', kind: 'server', title: 'API 3', placed: box(570, 150, 150, 80) },
-      { id: 'cache', kind: 'cache', title: 'Redis', placed: box(100, 300, 160, 76) },
-      { id: 'db', kind: 'sql', title: 'Primary DB', placed: box(410, 290, 170, 80) },
-      { id: 'r1', kind: 'sql', title: 'Replica 1', placed: box(300, 420, 150, 72), isNew: true },
-      { id: 'r2', kind: 'sql', title: 'Replica 2', placed: box(540, 420, 150, 72), isNew: true },
+      { id: 'lb', kind: 'load-balancer', title: 'Load Balancer', subtitle: '2 nodes, multi-AZ', placed: box(385, 16, 190, 78) },
+      { id: 'api', kind: 'server', title: 'API x3', subtitle: 'stateless, any instance', placed: box(385, 140, 190, 84) },
+      { id: 'cache', kind: 'cache', title: 'Redis', subtitle: 'cache + sessions', placed: box(90, 150, 170, 84) },
+      { id: 'db', kind: 'sql', title: 'Primary DB', subtitle: 'all writes', placed: box(385, 290, 190, 84) },
+      { id: 'r1', kind: 'sql', title: 'Replica 1', subtitle: 'reads', placed: box(175, 430, 175, 80), isNew: true },
+      { id: 'r2', kind: 'sql', title: 'Replica 2', subtitle: 'reads', placed: box(600, 430, 175, 80), isNew: true },
     ],
     edges: [
-      { from: 'lb', to: 'api1', tone: 'ok' },
-      { from: 'lb', to: 'api2', tone: 'ok' },
-      { from: 'lb', to: 'api3', tone: 'ok' },
-      { from: 'api1', to: 'cache', tone: 'danger' },
-      { from: 'api2', to: 'db', tone: 'info', label: 'writes' },
+      { from: 'lb', to: 'api', tone: 'ok', width: 2 },
+      { from: 'api', to: 'cache', tone: 'danger' },
+      { from: 'api', to: 'db', tone: 'info', label: 'writes' },
+      { from: 'api', to: 'r1', tone: 'ok', label: 'reads', labelT: 0.62 },
+      { from: 'api', to: 'r2', tone: 'ok' },
       { from: 'db', to: 'r1', tone: 'violet', dashed: true, label: 'replication' },
       { from: 'db', to: 'r2', tone: 'violet', dashed: true },
-      { from: 'api3', to: 'r2', tone: 'ok', label: 'reads' },
     ],
     metrics: [
       { label: 'Replicas', value: '2', tone: 'ok' },
@@ -317,12 +329,12 @@ export const STAGES: Stage[] = [
       concept: 'cdn',
     },
     nodes: [
-      { id: 'client', kind: 'client', title: 'Global users', placed: box(400, 14, 180, 60) },
-      { id: 'cdn', kind: 'cdn', title: 'CDN edge', placed: box(395, 110, 190, 76), isNew: true },
-      { id: 'lb', kind: 'load-balancer', title: 'Load Balancer', placed: box(395, 220, 190, 72) },
-      { id: 'api', kind: 'server', title: 'API x3', placed: box(400, 330, 180, 76) },
-      { id: 'cache', kind: 'cache', title: 'Redis', placed: box(140, 330, 160, 76) },
-      { id: 'db', kind: 'sql', title: 'Primary + replicas', placed: box(390, 440, 200, 66) },
+      { id: 'client', kind: 'client', title: 'Global users', placed: box(400, 12, 180, 64) },
+      { id: 'cdn', kind: 'cdn', title: 'CDN edge', placed: box(395, 108, 190, 76), isNew: true },
+      { id: 'lb', kind: 'load-balancer', title: 'Load Balancer', subtitle: '2 nodes, multi-AZ', placed: box(395, 222, 190, 78) },
+      { id: 'api', kind: 'server', title: 'API x3', placed: box(400, 336, 180, 76) },
+      { id: 'cache', kind: 'cache', title: 'Redis', placed: box(140, 336, 160, 76) },
+      { id: 'db', kind: 'sql', title: 'Primary + replicas', placed: box(390, 448, 200, 76) },
     ],
     edges: [
       { from: 'client', to: 'cdn', tone: 'brand', width: 2 },
@@ -367,13 +379,13 @@ export const STAGES: Stage[] = [
       concept: 'message-queues',
     },
     nodes: [
-      { id: 'cdn', kind: 'cdn', title: 'CDN', placed: box(400, 14, 170, 60) },
-      { id: 'lb', kind: 'load-balancer', title: 'Load Balancer', placed: box(395, 110, 180, 68) },
+      { id: 'cdn', kind: 'cdn', title: 'CDN', placed: box(400, 12, 170, 64) },
+      { id: 'lb', kind: 'load-balancer', title: 'Load Balancer', subtitle: '2 nodes, multi-AZ', placed: box(395, 104, 180, 78) },
       { id: 'api', kind: 'server', title: 'API x3', placed: box(395, 220, 180, 76) },
       { id: 'cache', kind: 'cache', title: 'Redis', placed: box(120, 220, 160, 76) },
-      { id: 'queue', kind: 'queue', title: 'Message Queue', placed: box(680, 220, 190, 80), isNew: true },
-      { id: 'worker', kind: 'worker', title: 'Workers x4', placed: box(690, 360, 170, 80), isNew: true },
-      { id: 'db', kind: 'sql', title: 'Primary + replicas', placed: box(370, 400, 200, 70) },
+      { id: 'queue', kind: 'queue', title: 'Message Queue', placed: box(680, 220, 195, 84), isNew: true },
+      { id: 'worker', kind: 'worker', title: 'Workers x4', placed: box(690, 365, 175, 80), isNew: true },
+      { id: 'db', kind: 'sql', title: 'Primary + replicas', placed: box(370, 400, 200, 76) },
     ],
     edges: [
       { from: 'cdn', to: 'lb', tone: 'violet', dashed: true },
@@ -421,27 +433,30 @@ export const STAGES: Stage[] = [
       concept: 'microservices',
     },
     nodes: [
-      { id: 'cdn', kind: 'cdn', title: 'CDN', placed: box(410, 12, 160, 56) },
-      { id: 'gw', kind: 'api-gateway', title: 'API Gateway', placed: box(395, 100, 190, 68) },
-      { id: 'orders', kind: 'service', title: 'Orders', placed: box(150, 210, 165, 80) },
-      { id: 'payments', kind: 'service', title: 'Payments', placed: box(400, 210, 165, 80), isNew: true },
-      { id: 'notify', kind: 'service', title: 'Notifications', placed: box(650, 210, 165, 80), isNew: true },
-      { id: 'cache', kind: 'cache', title: 'Redis', placed: box(60, 360, 150, 72) },
-      { id: 'ordersdb', kind: 'sql', title: 'Orders DB', placed: box(250, 360, 150, 72) },
-      { id: 'paydb', kind: 'sql', title: 'Payments DB', placed: box(430, 360, 150, 72), isNew: true },
-      { id: 'queue', kind: 'queue', title: 'Event bus', placed: box(660, 360, 150, 72) },
-      { id: 'monitor', kind: 'monitoring', title: 'Tracing', placed: box(660, 460, 150, 60), isNew: true },
+      { id: 'cdn', kind: 'cdn', title: 'CDN', placed: box(410, 10, 160, 64) },
+      { id: 'gw', kind: 'api-gateway', title: 'API Gateway', subtitle: 'redundant pair', placed: box(380, 98, 190, 78) },
+      { id: 'monitor', kind: 'monitoring', title: 'Tracing', subtitle: 'every request', placed: box(700, 98, 160, 76), isNew: true },
+      { id: 'orders', kind: 'service', title: 'Orders', placed: box(120, 218, 165, 80) },
+      { id: 'payments', kind: 'service', title: 'Payments', placed: box(380, 218, 165, 80), isNew: true },
+      { id: 'notify', kind: 'service', title: 'Notifications', placed: box(640, 218, 190, 80), isNew: true },
+      { id: 'cache', kind: 'cache', title: 'Redis', placed: box(45, 380, 150, 76) },
+      { id: 'ordersdb', kind: 'sql', title: 'Orders DB', placed: box(225, 380, 160, 76) },
+      { id: 'paydb', kind: 'sql', title: 'Payments DB', placed: box(420, 380, 175, 76), isNew: true },
+      { id: 'queue', kind: 'queue', title: 'Event bus', placed: box(650, 380, 160, 76) },
     ],
     edges: [
       { from: 'cdn', to: 'gw', tone: 'violet', dashed: true },
       { from: 'gw', to: 'orders', tone: 'ok' },
       { from: 'gw', to: 'payments', tone: 'ok' },
+      // Tracing collects spans from the entry point down, so it hangs off the
+      // gateway - not off the event bus, which carries business events.
+      { from: 'gw', to: 'monitor', tone: 'muted', dashed: true },
       { from: 'orders', to: 'cache', tone: 'danger' },
       { from: 'orders', to: 'ordersdb', tone: 'info' },
       { from: 'payments', to: 'paydb', tone: 'info' },
       { from: 'orders', to: 'queue', tone: 'warn', label: 'events' },
+      { from: 'payments', to: 'queue', tone: 'warn' },
       { from: 'queue', to: 'notify', tone: 'warn' },
-      { from: 'queue', to: 'monitor', tone: 'muted', dashed: true },
     ],
     metrics: [
       { label: 'Deployable units', value: '3', tone: 'ok' },

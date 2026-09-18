@@ -224,6 +224,7 @@ export const systemVisuals: Record<string, VisualSpec> = {
   },
 
   kafka: {
+    asymmetric: 'Each partition is assigned to one consumer per group - that is how groups divide work.',
     width: 760,
     height: 310,
     caption: 'Ordered per partition, replayable, and read independently by each consumer group.',
@@ -363,6 +364,7 @@ export const systemVisuals: Record<string, VisualSpec> = {
   },
 
   retry: {
+    asymmetric: 'The first two attempts fail and the third succeeds - the sequence is the lesson.',
     width: 760,
     height: 289,
     caption: 'Retry transient errors only, with a cap - and only when the operation is idempotent.',
@@ -403,6 +405,7 @@ export const systemVisuals: Record<string, VisualSpec> = {
   },
 
   'health-checks': {
+    asymmetric: 'api-2 failed its probes and was ejected from the pool, which is the point.',
     width: 760,
     height: 294,
     caption: 'Three consecutive failures eject an instance; successes put it back.',
@@ -591,6 +594,7 @@ export const systemVisuals: Record<string, VisualSpec> = {
   },
 
   consensus: {
+    asymmetric: 'A lagging node does not acknowledge; a majority commits without it.',
     width: 760,
     height: 294,
     caption: 'An entry commits once a majority has stored it - so no two quorums can disagree.',
@@ -762,6 +766,7 @@ export const systemVisuals: Record<string, VisualSpec> = {
   },
 
   serverless: {
+    asymmetric: 'The cold-starting instance is not serving yet, which is the cost being shown.',
     width: 760,
     height: 283,
     caption: 'One instance per concurrent request - and one database connection per instance.',
@@ -868,7 +873,11 @@ export const systemVisuals: Record<string, VisualSpec> = {
       { from: 'client', to: 's1', tone: 'brand', rate: 1.6 },
       { from: 'client', to: 's2', tone: 'brand', rate: 1.6 },
       { from: 'client', to: 's3', tone: 'brand', rate: 1.6 },
+      // Every service fetches the public key, not just one of them - that is
+      // exactly what makes local verification possible everywhere.
+      { from: 's1', to: 'keys', tone: 'muted', dashed: true },
       { from: 's2', to: 'keys', tone: 'muted', dashed: true },
+      { from: 's3', to: 'keys', tone: 'muted', dashed: true },
     ],
   },
 
@@ -1004,6 +1013,7 @@ export const systemVisuals: Record<string, VisualSpec> = {
   },
 
   websockets: {
+    asymmetric: 'The socket lives on one gateway node; the other reaches the user through pub/sub.',
     width: 760,
     height: 290,
     caption: 'The connection is state: the node holding it must be reachable to deliver a message.',

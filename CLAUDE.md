@@ -16,7 +16,7 @@ Non-negotiable product rule: **if a page's only possible action is scrolling, it
 npm install      # install dependencies
 npm run dev      # dev server on http://localhost:5173
 npm run build    # check:visuals + check:content + tsc -b + vite build  (this is the check that must pass)
-npm run check:visuals   # diagram geometry: overlap, overflow, truncated labels
+npm run check:visuals   # diagram geometry + wiring: overlap, overflow, truncated labels, replica consistency
 npm run check:content   # every concept has its long-form lesson, and it is not a stub
 npm run preview  # serve the production build
 npx tsc --noEmit -p tsconfig.app.json   # fast typecheck of src/ only
@@ -128,10 +128,32 @@ The product complaint that shaped this app was "too much text". Concept pages th
   at a time with a caption of **six words or fewer**.
 - The concept page shows: diagram tab, step-by-step tab, lab tab, trade-offs as chips, quiz, and one
   "Full explanation" tab that holds all the prose. The right column is short cards only.
-- Run `npm run check:visuals` after editing a spec. It fails the build on overlapping boxes, nodes
-  past the canvas, labels too long for their box, step captions over six words, and **edge labels
-  that land behind a node card** (the SVG wiring layer is painted under the HTML nodes, so such a
-  label is simply invisible). Move one with `labelT`, shorten it, or drop it.
+- Run `npm run check:visuals` after editing a spec. It covers `src/data/visuals`, the home hero and
+  the `src/features/evolution` stage layouts, and fails the build on overlapping boxes, nodes past
+  the canvas, labels too long for their box, step captions over six words, nodes with no edges, and
+  **edge labels that land behind a node card** (the SVG wiring layer is painted under the HTML
+  nodes, so such a label is simply invisible). Move one with `labelT`, shorten it, or drop it.
+- A node carrying a badge (`isNew` in the evolution stages) needs about 47px more width - the badge
+  sits on the title row and the title is `truncate`, so "Replica 1" silently becomes "Replic...".
+  The check knows this; trust it over eyeballing the box.
+### Diagrams must be true, not balanced
+
+A diagram is read as an architecture claim, so wiring it for visual balance teaches the wrong thing.
+The rule the check enforces: **nodes that are replicas of each other must have identical
+connections.** "API 1 talks to Redis but API 2 does not" describes instances that are not
+interchangeable, which contradicts the entire stateless/horizontal-scaling lesson.
+
+- Replicas are same-kind nodes whose labels differ only by a trailing number (`API 1`/`API 2`).
+  Roles in a chain (`Service A` -> `Service B`) are not replicas and are left alone.
+- When the asymmetry *is* the lesson - a failed node ejected from the pool, one partition holding
+  the key, the third retry succeeding - set `asymmetric: '<reason>'` on the spec or stage. The
+  reason is required, so the intent is reviewable instead of assumed.
+- If the honest wiring needs too many arrows (3 instances x 4 dependencies), collapse the tier into
+  one node (`API x3`), as stages 5-7 do. Collapsing is honest; drawing one arrow out of three is not.
+- Anything that fronts the whole system is redundant in reality. Draw the pair where it is
+  introduced and label it afterwards (`2 nodes, multi-AZ`) rather than leaving a single box that
+  quietly says "this is where everything goes down".
+
 - `SequenceFlow` shows the active step caption as a banner over the canvas, never as an edge label -
   on a short edge an edge label always lands on a node.
 - `FlowVisual` auto-fits its spec to the container width (0.5x-1.3x), so a spec authored at 760px
