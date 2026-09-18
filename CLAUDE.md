@@ -40,7 +40,7 @@ src/
 ├── app/            App, router, providers (theme, progress)
 ├── components/
 │   ├── architecture/   DiagramCanvas, ArchNode, geometry, node kinds  <- shared visual language
-│   ├── charts/         Recharts wrappers (LiveChart, DistributionBar)
+│   ├── charts/         LiveChart (plain SVG, no chart library), DistributionBar
 │   ├── layout/         AppShell, Sidebar, TopBar, CommandSearch
 │   ├── learning/       LabShell, MetricsPanel, QuizCard, TradeOffTable, RequestInspector
 │   └── ui/             Button, Slider, Toggle, Tabs, Meter, Stat, ... (barrel: ui/index.ts)
@@ -197,7 +197,9 @@ These are editorial rules, not style preferences. They are the reason the app is
 - Colors come from CSS variables in `src/styles/index.css`, exposed to Tailwind as semantic names:
   `canvas surface elevated line ink muted faint brand ok warn danger info violet`. Never hard-code a
   hex value in a component.
-- Recharts and SVG attributes cannot read `var()`; use `useThemeColors()` for real color strings.
+- SVG presentation attributes (and anything computed in JS) cannot read `var()`; use
+  `useThemeColors()` for real color strings. Do not add a chart library for a new chart - extend
+  `LiveChart`; recharts was removed because it cost every chart lab ~96 KB gzip.
 - Status is never communicated by color alone — particles have distinct shapes (circle, diamond,
   triangle, cross) and every status has a text label (`HealthIndicator`, `ParticleLegend`).
 - Dark mode is the default and is the theme diagrams are tuned for; both themes must stay readable.

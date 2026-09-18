@@ -23,7 +23,7 @@ interface ThemeContextValue {
   theme: Theme;
   setTheme: (theme: Theme) => void;
   toggle: () => void;
-  /** Concrete rgb() strings - Recharts and SVG attributes cannot read var(). */
+  /** Concrete rgb() strings - SVG presentation attributes cannot read var(). */
   colors: ThemeColors;
 }
 

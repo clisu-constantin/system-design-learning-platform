@@ -105,7 +105,7 @@ Other scripts:
 ## Architecture
 
 **Stack:** React 18 · TypeScript (strict) · Vite · React Router · Tailwind CSS · Framer Motion ·
-Lucide React · React Flow · Recharts.
+Lucide React · React Flow.
 
 Three layers do most of the work:
 
@@ -132,7 +132,7 @@ src/
 │   └── providers/           ThemeProvider (dark/light + chart colors), ProgressProvider
 ├── components/
 │   ├── architecture/        DiagramCanvas, ArchNode, HealthIndicator, geometry, nodeKinds
-│   ├── charts/              LiveChart (Recharts), DistributionBar
+│   ├── charts/              LiveChart (SVG), DistributionBar
 │   ├── layout/              AppShell, Sidebar, TopBar, CommandSearch
 │   ├── learning/            LabShell, MetricsPanel, QuizCard, TradeOffTable, RequestInspector
 │   └── ui/                  Button, Slider, Toggle, Select, Tabs, Meter, Stat, ErrorBoundary...
