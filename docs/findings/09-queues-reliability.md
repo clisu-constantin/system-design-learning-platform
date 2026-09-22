@@ -163,7 +163,12 @@ Ticket extras, checked:
   retries are already spread, and full jitter pulls retries back into the first seconds on top of the
   initial wave. The numbers teach the opposite of the text. Immediate vs backoff is shown correctly (6.72x vs 1.00x).
 - **Severity:** misleading
-- **Status:** decided in #16 (pick A) - split out as #17 (correlated-failure load model); a model redesign, too large for the sweep branch
+- **Status:** fixed in #17 (decided in #16, pick A). The load model moved to
+  `src/features/reliability/retryLoadModel.ts` (a pure function): every client's first request fails within
+  the same 100 ms, only retries are counted, in 250 ms buckets shown as req/s. Defaults (exponential, 1000 ms,
+  5 attempts, 70%, 2,000 clients): jitter off 8,000 req/s (4.00x) in synchronized spikes, jitter on 2,504 req/s
+  (1.25x), immediate 18,544 req/s (9.27x). With a base delay of 100-300 ms jitter has no room to spread
+  retries and can raise the peak (it halves the mean wait); the insight text says so instead of claiming a drop.
 
 ### F09-013 - Retry sketch ignores Max attempts
 

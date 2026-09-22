@@ -6,8 +6,7 @@ import { Button, SegmentedControl, Slider, Toggle } from '@/components/ui';
 import { formatLatency, formatNumber } from '@/utils/format';
 import { cn } from '@/utils/cn';
 import { mulberry32 } from '@/utils/math';
-
-type Strategy = 'immediate' | 'fixed' | 'exponential';
+import { BUCKET_MS, FAILURE_WINDOW_MS, delayFor, simulateFleetLoad, type Strategy } from './retryLoadModel';
 
 const STRATEGIES: { value: Strategy; label: string }[] = [
   { value: 'immediate', label: 'Immediate retry' },
@@ -20,15 +19,6 @@ interface Attempt {
   delayMs: number;
   startMs: number;
   success: boolean;
-}
-
-/** Delay before attempt n (1-based), in milliseconds. */
-function delayFor(strategy: Strategy, attempt: number, baseMs: number, jitter: boolean, random: () => number) {
-  if (attempt <= 1) return 0;
-  if (strategy === 'immediate') return 0;
-  const raw = strategy === 'fixed' ? baseMs : baseMs * 2 ** (attempt - 2);
-  const capped = Math.min(raw, 30000);
-  return jitter ? capped * random() : capped;
 }
 
 export function RetryBackoffLab() {
@@ -59,32 +49,21 @@ export function RetryBackoffLab() {
   const succeeded = attempts.some((attempt) => attempt.success);
   const totalTime = attempts.length ? attempts[attempts.length - 1].startMs + 120 : 0;
 
-  /** Load the failing service sees, second by second, from all retrying clients. */
-  const loadSeries = useMemo(() => {
-    const buckets = 20;
-    const points: { t: number; load: number; capacity: number }[] = [];
-    const random = mulberry32(seed + 1);
-    const arrivals = new Array<number>(buckets).fill(0);
-
-    for (let client = 0; client < Math.min(clients, 3000); client += 1) {
-      let clock = random() * 1000;
-      for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
-        clock += delayFor(strategy, attempt, baseMs, jitter, random);
-        const bucket = Math.floor(clock / 1000);
-        if (bucket >= 0 && bucket < buckets) arrivals[bucket] += 1;
-        if (random() > failureRate) break;
-      }
-    }
-
-    const scale = clients / Math.min(clients, 3000);
-    for (let index = 0; index < buckets; index += 1) {
-      points.push({ t: index, load: Math.round(arrivals[index] * scale), capacity: clients * 0.6 });
-    }
-    return points;
-  }, [strategy, baseMs, maxAttempts, jitter, failureRate, clients, seed]);
-
-  const peakLoad = Math.max(...loadSeries.map((point) => point.load));
-  const capacity = clients * 0.6;
+  /**
+   * Retry load the failing service sees from the whole fleet after a correlated
+   * failure, plus the same run with jitter flipped so the insight can compare.
+   */
+  const fleet = useMemo(
+    () => simulateFleetLoad({ strategy, baseMs, maxAttempts, jitter, failureRate, clients, seed }),
+    [strategy, baseMs, maxAttempts, jitter, failureRate, clients, seed],
+  );
+  const otherPeak = useMemo(
+    () => simulateFleetLoad({ strategy, baseMs, maxAttempts, jitter: !jitter, failureRate, clients, seed }).peak,
+    [strategy, baseMs, maxAttempts, jitter, failureRate, clients, seed],
+  );
+  const loadSeries = fleet.series;
+  const peakLoad = fleet.peak;
+  const capacity = fleet.capacity;
 
   const replay = useCallback(() => setSeed((value) => value + 1), []);
 
@@ -104,23 +83,48 @@ export function RetryBackoffLab() {
       }
       insight={
         <Insight>
-          {strategy === 'immediate' ? (
+          {maxAttempts <= 1 ? (
             <>
-              Immediate retries give up no time at all. With {formatNumber(clients)} clients retrying, the failing
-              service sees a peak of {formatNumber(peakLoad)} requests/sec against {formatNumber(capacity)} of
-              capacity - the retries are now the outage. This is a retry storm.
+              With a cap of one attempt nobody retries: every client sees the failure and stops, so the failing
+              service gets no retry load at all. Raise Max attempts to see what each retry policy adds.
+            </>
+          ) : strategy === 'immediate' ? (
+            <>
+              Immediate retries give up no time at all. All {formatNumber(clients)} clients failed within{' '}
+              {FAILURE_WINDOW_MS} ms of each other and fire every retry back to back, so the failing service sees a peak
+              of {formatNumber(peakLoad)} requests/sec against {formatNumber(capacity)} of capacity - the retries are
+              now the outage. This is a retry storm.
             </>
           ) : !jitter ? (
             <>
-              Backoff without jitter still leaves every client synchronised: they all failed at the same moment, so
-              they all wait the same {baseMs} ms and retry together. The peak is {formatNumber(peakLoad)} requests/sec.
-              Turn jitter on and watch the same total volume spread out.
+              Backoff without jitter still leaves every client synchronised: they all failed within {FAILURE_WINDOW_MS}{' '}
+              ms of each other, so they all wait the same {baseMs} ms and retry together - each wave is a spike on the
+              chart, peaking at {formatNumber(peakLoad)} requests/sec.{' '}
+              {otherPeak < peakLoad ? (
+                <>
+                  Turn jitter on and the same total volume spreads out, to a peak of about {formatNumber(otherPeak)}{' '}
+                  requests/sec.
+                </>
+              ) : (
+                <>
+                  At a {baseMs} ms base delay jitter has little room to spread them - raise the base delay, then
+                  compare jitter on and off.
+                </>
+              )}
+            </>
+          ) : otherPeak > peakLoad ? (
+            <>
+              Full jitter spreads the same retries over time: peak load drops to about {formatNumber(peakLoad)}{' '}
+              requests/sec, down from {formatNumber(otherPeak)} without jitter, which gives the dependency room to
+              recover. The individual request waits longer - {formatLatency(totalTime)} in this run - which is the price
+              of not making the outage worse.
             </>
           ) : (
             <>
-              Exponential delays with full jitter spread retries over time: peak load drops to about{' '}
-              {formatNumber(peakLoad)} requests/sec, which gives the dependency room to recover. The individual request
-              waits longer - {formatLatency(totalTime)} in this run - which is the price of not making the outage worse.
+              With a {baseMs} ms base delay, jitter has almost no room to work: the delays are about as short as the
+              window the clients failed in, and full jitter halves the average wait, so retries arrive sooner. Peak is{' '}
+              {formatNumber(peakLoad)} requests/sec with jitter against {formatNumber(otherPeak)} without. Raise the base
+              delay and jitter starts to flatten the waves.
             </>
           )}
         </Insight>
@@ -144,14 +148,14 @@ export function RetryBackoffLab() {
                 value: formatNumber(peakLoad),
                 unit: 'req/s',
                 tone: peakLoad > capacity ? 'danger' : 'ok',
-                hint: 'Highest per-second load the failing service sees from all retrying clients.',
+                hint: `Highest retry rate the failing service sees, counted in ${BUCKET_MS} ms buckets. Simplified model, not a measurement.`,
               },
               {
                 key: 'amplification',
                 label: 'Load amplification',
                 value: `${(peakLoad / Math.max(clients, 1)).toFixed(2)}x`,
                 tone: peakLoad / clients > 1 ? 'danger' : 'ok',
-                hint: 'Peak load divided by the original client count.',
+                hint: 'Peak retry rate divided by the client count.',
               },
             ]}
           />
@@ -191,11 +195,11 @@ export function RetryBackoffLab() {
           </div>
 
           <div className="card p-4">
-            <p className="label mb-3">Load on the failing service ({formatNumber(clients)} clients)</p>
+            <p className="label mb-3">Retry load on the failing service ({formatNumber(clients)} clients, first 20 s)</p>
             <LiveChart
               data={loadSeries}
               series={[
-                { key: 'load', label: 'Requests/sec', color: strategy === 'immediate' ? 'danger' : 'brand' },
+                { key: 'load', label: 'Retries/sec', color: strategy === 'immediate' ? 'danger' : 'brand' },
                 { key: 'capacity', label: 'Capacity', color: 'ok', dashed: true },
               ]}
               variant="line"
@@ -203,8 +207,9 @@ export function RetryBackoffLab() {
             />
             <p className="mt-2 text-xs text-faint">
               Same number of clients and the same failure rate in every scenario - only the retry policy changes.
-              Simplified model, not a measurement: every attempt fails at the chosen rate, and capacity is assumed to
-              be 60% of the client count.
+              Simplified model, not a measurement: the dependency goes down and the first request of every client fails
+              within the same {FAILURE_WINDOW_MS} ms, each retry fails at the chosen rate, retries are counted in{' '}
+              {BUCKET_MS} ms buckets and shown per second, and capacity is assumed to be 60% of the client count.
             </p>
           </div>
         </>
@@ -276,7 +281,7 @@ export function RetryBackoffLab() {
             step={100}
             onChange={setClients}
             format={(value) => formatNumber(value)}
-            hint="Every one of them retries with the same policy at roughly the same time."
+            hint={`They all fail within ${FAILURE_WINDOW_MS} ms of each other and retry with the same policy.`}
           />
           {/* Immediate retries have no delay to randomise; the Jitter toggle above is
               disabled then, so this shortcut is hidden instead of doing nothing. */}
