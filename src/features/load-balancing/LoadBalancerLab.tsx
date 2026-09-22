@@ -301,7 +301,7 @@ export function LoadBalancerLab() {
         server.handled += 1;
         state.handled += 1;
         state.accepted.add(1, now);
-        state.latency.push(latency);
+        state.latency.push(latency, now);
       }
 
       if (!animate) continue;
@@ -346,12 +346,14 @@ export function LoadBalancerLab() {
     const { alive } = advanceParticles(state.particles, dt);
     state.particles = alive.length > PARTICLE_BUDGET ? alive.slice(-PARTICLE_BUDGET) : alive;
 
-    const snapshot = state.latency.snapshot();
+    const snapshot = state.latency.snapshot(now);
     push(
       {
         rps: state.accepted.rate(now),
-        p95: snapshot.p95,
-        avg: snapshot.avg,
+        // No request served in the last 2 s (every server down): NaN breaks the
+        // line instead of drawing a stale or zero latency.
+        p95: snapshot.p95 ?? NaN,
+        avg: snapshot.avg ?? NaN,
         errors: state.rejected.rate(now),
       },
       now,
@@ -413,7 +415,7 @@ export function LoadBalancerLab() {
   );
 
   const now = performance.now();
-  const snapshot = state.latency.snapshot();
+  const snapshot = state.latency.snapshot(now);
   const acceptedRate = state.accepted.rate(now);
   const rejectedRate = state.rejected.rate(now);
   const totalRate = acceptedRate + rejectedRate;
@@ -455,8 +457,8 @@ export function LoadBalancerLab() {
             items={[
               { key: 'rps', label: 'Requests/sec', value: formatNumber(acceptedRate), tone: 'brand' },
               { key: 'latency', label: 'Avg latency', value: formatLatency(snapshot.avg), hint: 'Time to serve one request. Computed by a simplified model, not measured.' },
-              { key: 'p95', label: 'P95 latency', value: formatLatency(snapshot.p95), tone: snapshot.p95 > 500 ? 'warn' : 'neutral', hint: '95% of requests finish faster than this. Computed by a simplified model, not measured.' },
-              { key: 'p99', label: 'P99 latency', value: formatLatency(snapshot.p99), tone: snapshot.p99 > 1000 ? 'danger' : 'neutral' },
+              { key: 'p95', label: 'P95 latency', value: formatLatency(snapshot.p95), tone: snapshot.p95 !== null && snapshot.p95 > 500 ? 'warn' : 'neutral', hint: '95% of requests finish faster than this. Computed by a simplified model, not measured.' },
+              { key: 'p99', label: 'P99 latency', value: formatLatency(snapshot.p99), tone: snapshot.p99 !== null && snapshot.p99 > 1000 ? 'danger' : 'neutral' },
               {
                 key: 'cpu',
                 label: 'Avg utilization',

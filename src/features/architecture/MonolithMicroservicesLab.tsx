@@ -158,7 +158,7 @@ export function MonolithMicroservicesLab() {
         if (failed) current.failed.add(1, now);
         else {
           current.handled.add(1, now);
-          current.latency.push(monolithLoad.latencyMs);
+          current.latency.push(monolithLoad.latencyMs, now);
         }
         if (!animate()) continue;
         current.particles.push({
@@ -181,7 +181,7 @@ export function MonolithMicroservicesLab() {
         if (failed) current.failed.add(1, now);
         else {
           current.handled.add(1, now);
-          current.latency.push(load.latencyMs + 12 + (extraHop ? serviceLoads.Payments.latencyMs : 0));
+          current.latency.push(load.latencyMs + 12 + (extraHop ? serviceLoads.Payments.latencyMs : 0), now);
         }
         if (!animate()) continue;
         current.particles.push({
@@ -211,11 +211,10 @@ export function MonolithMicroservicesLab() {
   const failedQps = current.failed.rate(now);
   const servedQps = current.handled.rate(now) + failedQps;
   const errorRate = servedQps ? failedQps / servedQps : 0;
-  // With every request failing there is no latency to average - show that
-  // instead of a 0 ms that reads as "very fast".
-  const hasLatency = current.latency.count > 0;
-  const avgLatency = current.latency.avg;
-  const latencyText = hasLatency ? formatLatency(avgLatency) : 'n/a';
+  // With every request failing (or none sent in the last 2 s) there is no
+  // latency to average - the window reports null and it renders as a dash,
+  // instead of a 0 ms that reads as "very fast" or a stale last value.
+  const latencyText = formatLatency(current.latency.snapshot(now).avg);
 
   const layout = mode === 'monolith' ? MONO_LAYOUT : MICRO_LAYOUT;
 

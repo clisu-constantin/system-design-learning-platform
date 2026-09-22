@@ -154,8 +154,8 @@ export function CdnLab() {
         current.originRate.add(1, now);
       }
 
-      stats.latency.push(latency);
-      current.latency.push(latency);
+      stats.latency.push(latency, now);
+      current.latency.push(latency, now);
 
       if (Math.random() >= share) continue;
       current.particles.push({
@@ -175,7 +175,9 @@ export function CdnLab() {
 
   const current = state.current;
   const now = performance.now();
-  const snapshot = current.latency.snapshot();
+  const snapshot = current.latency.snapshot(now);
+  // Per-region averages over the same 2 s horizon; null when a region saw no request (lab paused).
+  const regionLatency = (id: string) => current.stats[id].latency.snapshot(now).avg;
   const originQps = current.originRate.rate(now);
   const totalQps = current.totalRate.rate(now);
   const offload = totalQps > 0 ? 1 - originQps / totalQps : 0;
@@ -227,7 +229,7 @@ export function CdnLab() {
         <>
           <MetricsPanel
             items={[
-              { key: 'latency', label: 'Avg latency', value: formatLatency(snapshot.avg), tone: snapshot.avg > 120 ? 'danger' : 'ok', hint: 'Round trip from distance to the edge or origin. Computed by a simplified model, not measured.' },
+              { key: 'latency', label: 'Avg latency', value: formatLatency(snapshot.avg), tone: snapshot.avg === null ? 'neutral' : snapshot.avg > 120 ? 'danger' : 'ok', hint: 'Round trip from distance to the edge or origin. Computed by a simplified model, not measured.' },
               { key: 'p95', label: 'P95 latency', value: formatLatency(snapshot.p95), hint: '95% of requests finish faster than this. Computed by a simplified model, not measured.' },
               { key: 'hitRate', label: 'Edge hit rate', value: cdnEnabled ? formatPercent(hitRatio) : '0%', tone: cdnEnabled ? 'ok' : 'danger' },
               { key: 'rps', label: 'Total traffic', value: formatNumber(totalQps), unit: 'req/s' },
@@ -252,17 +254,17 @@ export function CdnLab() {
             <p className="label mb-3">Latency by region</p>
             <DistributionBar
               items={REGIONS.map((region) => {
-                const stats = current.stats[region.id];
-                const value = stats.latency.avg;
+                const value = regionLatency(region.id);
                 return {
                   label: region.name,
-                  value,
-                  ratio: Math.min(1, value / 250),
-                  hot: value > 150,
-                  suffix: 'ms',
+                  // NaN renders as a dash below, with an empty bar.
+                  value: value ?? NaN,
+                  ratio: value === null ? 0 : Math.min(1, value / 250),
+                  hot: value !== null && value > 150,
+                  suffix: value === null ? undefined : 'ms',
                 };
               })}
-              formatValue={(value) => Math.round(value).toString()}
+              formatValue={(value) => (Number.isFinite(value) ? Math.round(value).toString() : '-')}
             />
             <p className="mt-3 text-xs text-faint">
               Distance is a hard floor: about {Math.round(rtt(11500))} ms round trip between Asia Pacific and a US
@@ -345,7 +347,7 @@ export function CdnLab() {
         })}
 
         {REGIONS.map((region) => {
-          const stats = current.stats[region.id];
+          const latency = regionLatency(region.id);
           return (
             <ArchNode
               key={region.id}
@@ -357,8 +359,8 @@ export function CdnLab() {
             >
               <NodeStatRow
                 label="Latency"
-                value={formatLatency(stats.latency.avg)}
-                tone={stats.latency.avg > 150 ? 'text-danger' : 'text-ok'}
+                value={formatLatency(latency)}
+                tone={latency === null ? 'text-muted' : latency > 150 ? 'text-danger' : 'text-ok'}
               />
             </ArchNode>
           );

@@ -181,7 +181,7 @@ export function CachingLab() {
         }
       }
 
-      current.latency.push(latency);
+      current.latency.push(latency, now);
 
       if (Math.random() >= share) continue;
 
@@ -234,7 +234,8 @@ export function CachingLab() {
       {
         hitRate: served ? (current.hits.rate(now) / served) * 100 : 0,
         dbQps: current.dbQueries.rate(now),
-        latency: current.latency.avg,
+        // NaN breaks the chart line while nothing is served, instead of a fake 0 ms.
+        latency: current.latency.snapshot(now).avg ?? NaN,
       },
       now,
     );
@@ -252,7 +253,7 @@ export function CachingLab() {
   const hitRate = servedQps ? current.hits.rate(now) / servedQps : 0;
   const dbQps = current.dbQueries.rate(now);
   const dbLoad = computeLoad(dbQps, DB_CAPACITY, { baseLatencyMs: 110, kneeAt: 0.6 });
-  const snapshot = current.latency.snapshot();
+  const snapshot = current.latency.snapshot(now);
 
   const particleViews: ParticleView[] = current.particles.map((particle) => ({
     id: particle.id,
