@@ -9,11 +9,22 @@ import { cn } from '@/utils/cn';
 type Choice = 'cp' | 'ap';
 
 interface WriteResult {
-  id: number;
+  /** Attempt number - unique even for rejected writes, which never get a version. */
+  attempt: number;
+  /** Version the write created, or null when it was rejected. */
+  version: number | null;
   node: 'a' | 'b';
   accepted: boolean;
   note: string;
 }
+
+/** Writes each side accepted while the partition was up - a conflict needs both. */
+interface SideWrites {
+  a: number;
+  b: number;
+}
+
+const NO_SIDE_WRITES: SideWrites = { a: 0, b: 0 };
 
 const LAYOUT: Layout = {
   clientA: { x: 70, y: 40, w: 160, h: 70 },
@@ -29,6 +40,8 @@ export function CapTheoremLab() {
   const [valueB, setValueB] = useState(1);
   const [version, setVersion] = useState(1);
   const [writes, setWrites] = useState<WriteResult[]>([]);
+  const [attempts, setAttempts] = useState(0);
+  const [sideWrites, setSideWrites] = useState<SideWrites>(NO_SIDE_WRITES);
   const { events, log, clear } = useEventLog(30);
 
   const reset = useCallback(() => {
@@ -37,17 +50,25 @@ export function CapTheoremLab() {
     setValueB(1);
     setVersion(1);
     setWrites([]);
+    setAttempts(0);
+    setSideWrites(NO_SIDE_WRITES);
     clear();
   }, [clear]);
 
   const write = useCallback(
     (node: 'a' | 'b') => {
       const next = version + 1;
+      const attempt = attempts + 1;
+      setAttempts(attempt);
+      const record = (entry: Omit<WriteResult, 'attempt' | 'node'>) =>
+        setWrites((list) => [{ attempt, node, ...entry }, ...list].slice(0, 8));
+      const countSide = () => setSideWrites((sides) => ({ ...sides, [node]: sides[node] + 1 }));
+
       if (!partitioned) {
         setValueA(next);
         setValueB(next);
         setVersion(next);
-        setWrites((list) => [{ id: next, node, accepted: true, note: 'replicated to both nodes' }, ...list].slice(0, 8));
+        record({ version: next, accepted: true, note: 'replicated to both nodes' });
         log(`Write v${next} on node ${node.toUpperCase()} - replicated normally`, 'ok');
         return;
       }
@@ -57,43 +78,52 @@ export function CapTheoremLab() {
         if (isMajority) {
           setValueA(next);
           setVersion(next);
-          setWrites((list) => [{ id: next, node, accepted: true, note: 'majority side accepted' }, ...list].slice(0, 8));
+          countSide();
+          record({ version: next, accepted: true, note: 'majority side accepted' });
           log(`Write v${next} accepted on node A (majority side)`, 'ok');
         } else {
-          setWrites((list) =>
-            [{ id: next, node, accepted: false, note: 'rejected: minority side cannot reach quorum' }, ...list].slice(0, 8),
-          );
+          record({ version: null, accepted: false, note: 'rejected: minority side cannot reach quorum' });
           log('Write on node B REJECTED - minority side cannot guarantee consistency', 'danger');
         }
       } else {
         if (node === 'a') setValueA(next);
         else setValueB(next);
         setVersion(next);
-        setWrites((list) =>
-          [{ id: next, node, accepted: true, note: 'accepted locally - will need reconciliation' }, ...list].slice(0, 8),
-        );
+        countSide();
+        record({ version: next, accepted: true, note: 'accepted locally - will need reconciliation' });
         log(`Write v${next} accepted on node ${node.toUpperCase()} - the two sides now disagree`, 'warn');
       }
     },
-    [choice, partitioned, version, log],
+    [attempts, choice, partitioned, version, log],
   );
 
   const heal = useCallback(() => {
     setPartitioned(false);
-    if (choice === 'ap' && valueA !== valueB) {
-      const winner = Math.max(valueA, valueB);
+    setSideWrites(NO_SIDE_WRITES);
+    const winner = Math.max(valueA, valueB);
+    setValueA(winner);
+    setValueB(winner);
+    // A conflict needs writes on BOTH sides. If only one side wrote, the other is
+    // merely behind and catches up - nothing is thrown away. This is decided by
+    // what happened, not by the current CP/AP choice, which can change mid-partition.
+    if (sideWrites.a > 0 && sideWrites.b > 0) {
       const loser = Math.min(valueA, valueB);
-      setValueA(winner);
-      setValueB(winner);
       log(`Partition healed. Conflict resolved by last-write-wins: v${winner} kept, v${loser} silently discarded`, 'danger');
+    } else if (valueA !== valueB) {
+      const behind = valueA < valueB ? 'A' : 'B';
+      log(`Partition healed. Node ${behind} catches up to v${winner} - only one side took writes, so nothing conflicts`, 'ok');
     } else {
-      setValueA(Math.max(valueA, valueB));
-      setValueB(Math.max(valueA, valueB));
       log('Partition healed. Both nodes converge - no conflicts to resolve', 'ok');
     }
-  }, [choice, valueA, valueB, log]);
+  }, [sideWrites, valueA, valueB, log]);
 
-  const diverged = valueA !== valueB;
+  // A CP system refuses every request on the minority side, so its stale copy is
+  // never served - no client can read two different values. Only a stale copy
+  // that is still being served (AP, or before the partition heals) is an
+  // inconsistency a client can observe.
+  const minorityRefuses = partitioned && choice === 'cp';
+  const diverged = valueA !== valueB && !minorityRefuses;
+  const staleHidden = valueA !== valueB && minorityRefuses;
 
   const edges: DiagramEdge[] = [
     { from: 'clientA', to: 'nodeA', tone: 'brand' },
@@ -156,13 +186,20 @@ export function CapTheoremLab() {
           <MetricsPanel
             items={[
               { key: 'a', label: 'Node A value', value: `v${valueA}`, tone: 'brand', hint: 'Value stored on the majority side.' },
-              { key: 'b', label: 'Node B value', value: `v${valueB}`, tone: diverged ? 'danger' : 'brand', hint: 'Value stored on the minority side.' },
+              {
+                key: 'b',
+                label: 'Node B value',
+                value: `v${valueB}`,
+                unit: staleHidden ? 'not served' : undefined,
+                tone: diverged ? 'danger' : staleHidden ? 'warn' : 'brand',
+                hint: 'Value stored on the minority side. In CP mode it refuses every request during a partition, so a stale copy is never read.',
+              },
               {
                 key: 'consistent',
                 label: 'Consistent',
                 value: diverged ? 'No' : 'Yes',
                 tone: diverged ? 'danger' : 'ok',
-                hint: 'Do both nodes agree on the current value?',
+                hint: 'Could two clients read two different values right now? A copy that refuses requests cannot be read.',
               },
               {
                 key: 'available',
@@ -171,7 +208,7 @@ export function CapTheoremLab() {
                 tone: partitioned && choice === 'cp' ? 'warn' : 'ok',
                 hint: 'Can a client on either node complete a write right now?',
               },
-              { key: 'writes', label: 'Writes attempted', value: writes.length },
+              { key: 'writes', label: 'Writes attempted', value: attempts },
             ]}
           />
 
@@ -197,8 +234,9 @@ distributed system - you are choosing CP or AP.`}</pre>
             ) : (
               <ul className="space-y-1.5 font-mono text-[11px]">
                 {writes.map((item) => (
-                  <li key={`${item.id}-${item.node}-${item.note}`} className={item.accepted ? 'text-muted' : 'text-danger'}>
-                    <span className="text-faint">node {item.node.toUpperCase()}</span> write v{item.id}{' '}
+                  <li key={item.attempt} className={item.accepted ? 'text-muted' : 'text-danger'}>
+                    <span className="text-faint">node {item.node.toUpperCase()}</span>{' '}
+                    {item.version === null ? 'write' : `write v${item.version}`}{' '}
                     <Badge tone={item.accepted ? 'ok' : 'danger'} className="ml-1">
                       {item.accepted ? '200 OK' : '503 Unavailable'}
                     </Badge>{' '}

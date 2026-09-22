@@ -36,6 +36,9 @@ const TRAFFIC_SHARE: Record<Feature, number> = {
   Notifications: 0.1,
 };
 
+/** Share of Orders requests that call Payments synchronously (one extra hop). */
+const ORDERS_CALLING_PAYMENTS = 0.5;
+
 interface State {
   particles: Particle[];
   /**
@@ -143,22 +146,28 @@ export function MonolithMicroservicesLab() {
         });
       } else {
         const load = serviceLoads[feature];
-        const failed = broken === feature || Math.random() < load.errorRate;
-        // Orders calls Payments synchronously - one extra network hop.
-        const extraHop = feature === 'Orders' && !failed && Math.random() < 0.5;
+        const ownFailure = broken === feature || Math.random() < load.errorRate;
+        // Orders calls Payments synchronously - one extra network hop, and Orders
+        // is only as available as Payments: if the call fails, the order fails.
+        const extraHop = feature === 'Orders' && !ownFailure && Math.random() < ORDERS_CALLING_PAYMENTS;
+        const dependencyFailure =
+          extraHop && (broken === 'Payments' || Math.random() < serviceLoads.Payments.errorRate);
+        const failed = ownFailure || dependencyFailure;
         if (failed) current.failed.add(1, now);
         else {
           current.handled.add(1, now);
-          current.latency.push(load.latencyMs + 12 + (extraHop ? 25 : 0));
+          current.latency.push(load.latencyMs + 12 + (extraHop ? serviceLoads.Payments.latencyMs : 0));
         }
         if (!animate()) continue;
         current.particles.push({
           id: nextParticleId(),
-          route: failed
+          route: ownFailure
             ? ['client', 'gateway', `svc-${feature}`]
-            : extraHop
-              ? ['client', 'gateway', 'svc-Orders', 'svc-Payments', 'db-Payments']
-              : ['client', 'gateway', `svc-${feature}`, `db-${feature}`],
+            : dependencyFailure
+              ? ['client', 'gateway', 'svc-Orders', 'svc-Payments']
+              : extraHop
+                ? ['client', 'gateway', 'svc-Orders', 'svc-Payments', 'db-Payments']
+                : ['client', 'gateway', `svc-${feature}`, `db-${feature}`],
           leg: 0,
           t: 0,
           speed: 1.3,
@@ -177,7 +186,11 @@ export function MonolithMicroservicesLab() {
   const failedQps = current.failed.rate(now);
   const servedQps = current.handled.rate(now) + failedQps;
   const errorRate = servedQps ? failedQps / servedQps : 0;
+  // With every request failing there is no latency to average - show that
+  // instead of a 0 ms that reads as "very fast".
+  const hasLatency = current.latency.count > 0;
   const avgLatency = current.latency.avg;
+  const latencyText = hasLatency ? formatLatency(avgLatency) : 'n/a';
 
   const layout = mode === 'monolith' ? MONO_LAYOUT : MICRO_LAYOUT;
 
@@ -201,7 +214,9 @@ export function MonolithMicroservicesLab() {
             to: `db-${feature}`,
             tone: 'info',
           })),
-          { from: 'svc-Orders', to: 'svc-Payments', tone: 'warn', dashed: true, label: 'sync call' },
+          // No edge label: the two cards are 30px apart, so any label lands behind a
+          // node. The Orders card subtitle says "calls Payments" instead.
+          { from: 'svc-Orders', to: 'svc-Payments', tone: broken === 'Payments' ? 'danger' : 'warn', dashed: true },
         ];
 
   const particleViews: ParticleView[] = current.particles
@@ -284,6 +299,12 @@ export function MonolithMicroservicesLab() {
                 <strong className="text-ink">every</strong> capability is down - including checkout, which has nothing
                 to do with the bug.
               </>
+            ) : broken === 'Payments' ? (
+              <>
+                Payments is down, and so is every order that calls it synchronously - Users and Notifications keep
+                serving, but Orders fails whenever it needs Payments. Fault isolation only holds where there is no
+                synchronous dependency, or where the caller degrades gracefully instead of failing with it.
+              </>
             ) : (
               <>
                 The {broken} service is down, but the other three keep serving. Fault isolation is real - as long as
@@ -292,13 +313,13 @@ export function MonolithMicroservicesLab() {
             )
           ) : mode === 'monolith' ? (
             <>
-              One deployment, one database, in-process calls. Average latency is {formatLatency(avgLatency)} with no
+              One deployment, one database, in-process calls. Average latency is {latencyText} with no
               network hops between features. The costs are coarse scaling and a shared release train - not performance.
             </>
           ) : (
             <>
               Each service scales and fails on its own, at the price of network hops: latency is{' '}
-              {formatLatency(avgLatency)}, and the synchronous Orders {'->'} Payments call means Orders is only as
+              {latencyText}, and the synchronous Orders {'->'} Payments call means Orders is only as
               available as Payments. Microservices are an organisational tool before they are a technical one.
             </>
           )}
@@ -309,7 +330,12 @@ export function MonolithMicroservicesLab() {
           <MetricsPanel
             items={[
               { key: 'rps', label: 'Traffic', value: formatNumber(traffic), unit: 'req/s', tone: 'brand' },
-              { key: 'latency', label: 'Avg latency', value: formatLatency(avgLatency) },
+              {
+                key: 'latency',
+                label: 'Avg latency',
+                value: latencyText,
+                hint: 'Average over successful requests. n/a when every request is failing.',
+              },
               {
                 key: 'errorRate',
                 label: 'Error rate',
@@ -319,7 +345,13 @@ export function MonolithMicroservicesLab() {
               {
                 key: 'blast',
                 label: 'Blast radius',
-                value: broken ? (mode === 'monolith' ? 'All features' : `${broken} only`) : 'None',
+                value: broken
+                  ? mode === 'monolith'
+                    ? 'All features'
+                    : broken === 'Payments'
+                      ? 'Payments + some Orders'
+                      : `${broken} only`
+                  : 'None',
                 tone: broken && mode === 'monolith' ? 'danger' : broken ? 'warn' : 'ok',
                 hint: 'What stops working when one capability fails.',
               },
@@ -398,7 +430,9 @@ export function MonolithMicroservicesLab() {
                     next
                       ? mode === 'monolith'
                         ? `${feature} crashed - the whole monolith process is down`
-                        : `${feature} service down - other services unaffected`
+                        : feature === 'Payments'
+                          ? 'Payments service down - Orders requests that call it fail too'
+                          : `${feature} service down - other services unaffected`
                       : `${feature} recovered`,
                     next ? 'danger' : 'ok',
                   );
@@ -411,10 +445,16 @@ export function MonolithMicroservicesLab() {
           <div className="rounded-xl border border-line bg-elevated p-3">
             <p className="label mb-2">Utilization</p>
             {mode === 'monolith' ? (
-              <Meter label="Application" value={monolithLoad.cpu} />
+              <Meter label="Application" value={broken ? 0 : monolithLoad.cpu} />
             ) : (
               FEATURES.map((feature) => (
-                <Meter key={feature} label={feature} value={serviceLoads[feature].cpu} size="xs" className="mb-1.5" />
+                <Meter
+                  key={feature}
+                  label={feature}
+                  value={broken === feature ? 0 : serviceLoads[feature].cpu}
+                  size="xs"
+                  className="mb-1.5"
+                />
               ))
             )}
           </div>
@@ -461,7 +501,7 @@ export function MonolithMicroservicesLab() {
                 key={feature}
                 kind="service"
                 title={`${feature} Service`}
-                subtitle={feature === 'Orders' ? `x${instances}` : 'x1'}
+                subtitle={feature === 'Orders' ? `x${instances}, calls Payments` : 'x1'}
                 placed={layout[`svc-${feature}`]}
                 status={broken === feature ? 'down' : serviceLoads[feature].errorRate > 0.2 ? 'degraded' : 'healthy'}
                 alert={serviceLoads[feature].saturated}
@@ -483,13 +523,14 @@ export function MonolithMicroservicesLab() {
           </>
         )}
       </DiagramCanvas>
-      <div className="flex items-center gap-4 px-4 pb-3 pt-1 text-[11px] text-faint">
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-1 px-4 pb-3 pt-1 text-[11px] text-faint">
         <span className="flex items-center gap-1.5">
           <Rocket className="h-3.5 w-3.5" /> Deployable units: {mode === 'monolith' ? 1 : FEATURES.length}
         </span>
         <span className="flex items-center gap-1.5">
           <Zap className="h-3.5 w-3.5" /> Network hops per request: {mode === 'monolith' ? 1 : '2-3'}
         </span>
+        <span className="ml-auto">Simplified load model - latency and errors are illustrative, not measured.</span>
       </div>
     </LabShell>
   );
