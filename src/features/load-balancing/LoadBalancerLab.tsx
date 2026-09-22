@@ -193,6 +193,12 @@ export function LoadBalancerLab() {
     [log, rerender],
   );
 
+  const isSlow = (server: ServerModel) => slowFirst && server.id === 's0';
+  /**
+   * A slow server (bad disk, noisy neighbour) takes twice as long per request,
+   * so each worker is busy twice as long and it absorbs half the traffic.
+   */
+  const durationOf = (server: ServerModel) => (isSlow(server) ? duration * 2 : duration);
   /**
    * A weighted pool sends more traffic to bigger servers, so under that
    * algorithm a server with weight N is modelled as N times the machine -
@@ -200,12 +206,6 @@ export function LoadBalancerLab() {
    * The tick, the node cards and the pool-capacity meter all read this one
    * function so they cannot disagree about whether a server is coping.
    */
-  const isSlow = (server: ServerModel) => slowFirst && server.id === 's0';
-  /**
-   * A slow server (bad disk, noisy neighbour) takes twice as long per request,
-   * so each worker is busy twice as long and it absorbs half the traffic.
-   */
-  const durationOf = (server: ServerModel) => (isSlow(server) ? duration * 2 : duration);
   const capacityOf = (server: ServerModel) =>
     (algorithm === 'weighted' ? capacity * server.weight : capacity) / (isSlow(server) ? 2 : 1);
 
@@ -456,14 +456,15 @@ export function LoadBalancerLab() {
           <MetricsPanel
             items={[
               { key: 'rps', label: 'Requests/sec', value: formatNumber(acceptedRate), tone: 'brand' },
-              { key: 'latency', label: 'Avg latency', value: formatLatency(snapshot.avg), hint: 'Time to serve one request. Computed by a simplified model, not measured.' },
-              { key: 'p95', label: 'P95 latency', value: formatLatency(snapshot.p95), tone: snapshot.p95 !== null && snapshot.p95 > 500 ? 'warn' : 'neutral', hint: '95% of requests finish faster than this. Computed by a simplified model, not measured.' },
-              { key: 'p99', label: 'P99 latency', value: formatLatency(snapshot.p99), tone: snapshot.p99 !== null && snapshot.p99 > 1000 ? 'danger' : 'neutral' },
+              { key: 'latency', label: 'Avg latency', value: formatLatency(snapshot.avg), hint: 'Time to serve one request.', simulated: true },
+              { key: 'p95', label: 'P95 latency', value: formatLatency(snapshot.p95), tone: snapshot.p95 !== null && snapshot.p95 > 500 ? 'warn' : 'neutral', hint: '95% of requests finish faster than this.', simulated: true },
+              { key: 'p99', label: 'P99 latency', value: formatLatency(snapshot.p99), tone: snapshot.p99 !== null && snapshot.p99 > 1000 ? 'danger' : 'neutral', simulated: true },
               {
                 key: 'cpu',
                 label: 'Avg utilization',
                 value: formatPercent(avgCpu),
                 tone: avgCpu > 0.85 ? 'danger' : avgCpu > 0.7 ? 'warn' : 'ok',
+                simulated: true,
               },
               {
                 key: 'errorRate',
@@ -471,6 +472,7 @@ export function LoadBalancerLab() {
                 value: formatPercent(errorRatio, 1),
                 tone: errorRatio > 0.01 ? 'danger' : 'ok',
                 sub: `${formatNumber(state.failed)} total`,
+                simulated: true,
               },
               { key: 'activeConnections', label: 'Active conns', value: formatNumber(totalActive) },
               {

@@ -221,6 +221,7 @@ export function IndexingLab() {
                 value: result ? formatLatency(result.timeMs) : '-',
                 tone: result?.mode === 'index' ? 'ok' : result ? 'danger' : 'neutral',
                 hint: 'Estimated from rows read - the shape of the curve is what matters.',
+                simulated: true,
               },
               { key: 'tableSize', label: 'Table rows', value: formatNumber(tableSize), hint: 'Rows in the users table.' },
               {
@@ -234,14 +235,16 @@ export function IndexingLab() {
                 label: 'Write overhead',
                 value: hasIndex ? `+${Math.round(writeOverhead * 100)}%` : '0%',
                 tone: hasIndex ? 'warn' : 'ok',
-                hint: 'Extra structures updated per INSERT/UPDATE/DELETE: the table, plus one per index. Simplified model.',
+                hint: 'Extra structures updated per INSERT/UPDATE/DELETE: the table, plus one per index.',
+                simulated: true,
               },
               {
                 key: 'writeLatency',
                 label: 'Write latency',
                 value: formatLatency(writeLoad.latencyMs),
                 tone: writeLoad.saturated ? 'danger' : writeLoad.cpu > 0.7 ? 'warn' : 'ok',
-                hint: 'Time per INSERT at the current write rate. An index is paid for here. Simulated by a simplified queueing model, not measured.',
+                hint: 'Time per INSERT at the current write rate. An index is paid for here.',
+                simulated: true,
               },
               {
                 key: 'storage',

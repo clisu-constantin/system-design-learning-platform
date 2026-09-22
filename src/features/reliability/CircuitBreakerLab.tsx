@@ -364,7 +364,8 @@ export function CircuitBreakerLab() {
                 label: 'Avg latency',
                 value: formatLatency(avgLatency),
                 tone: latencyTone(avgLatency, 800),
-                hint: 'Simplified model, not a measurement: a success costs 60 ms, a failure the full call timeout, a short-circuit 2 ms. Failing fast is what keeps this number low during an outage.',
+                hint: 'A success costs 60 ms, a failure the full call timeout, a short-circuit 2 ms. Failing fast is what keeps this number low during an outage.',
+                simulated: true,
               },
               { key: 'transitions', label: 'State changes', value: formatNumber(current.transitions) },
             ]}

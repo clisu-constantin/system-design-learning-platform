@@ -212,18 +212,21 @@ export function HorizontalScalingLab() {
                 label: 'CPU per server',
                 value: formatPercent(perServer.cpu),
                 tone: perServer.cpu > 0.9 ? 'danger' : perServer.cpu > 0.7 ? 'warn' : 'ok',
+                simulated: true,
               },
               {
                 key: 'latency',
                 label: 'Latency',
                 value: formatLatency(perServer.latencyMs),
-                hint: 'Time to serve one request. Computed by a simplified queueing model, not measured.',
+                hint: 'Time to serve one request, from a queueing model.',
+                simulated: true,
               },
               {
                 key: 'errorRate',
                 label: 'Errors',
                 value: formatPercent(perServer.errorRate, 1),
                 tone: perServer.errorRate > 0 ? 'danger' : 'ok',
+                simulated: true,
               },
             ]}
           />

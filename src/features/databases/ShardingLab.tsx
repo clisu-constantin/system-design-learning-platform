@@ -273,7 +273,8 @@ export function ShardingLab() {
                 label: 'Worst latency',
                 value: formatLatency(worstLatency),
                 tone: worstLatency > 300 ? 'danger' : 'neutral',
-                hint: 'Latency on the slowest shard. Simulated by a simplified queueing model (capped at 4 s), not measured.',
+                hint: 'Latency on the slowest shard, from a queueing model capped at 4 s.',
+                simulated: true,
               },
               {
                 key: 'crossShard',

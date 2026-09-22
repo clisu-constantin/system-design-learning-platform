@@ -371,7 +371,8 @@ export function ReplicationLab() {
                 label: 'Write latency',
                 value: formatLatency(writeLatency),
                 tone: mode === 'sync' ? 'warn' : 'ok',
-                hint: 'Time until the write is acknowledged. Simulated by a simplified model, not measured.',
+                hint: 'Time until the write is acknowledged.',
+                simulated: true,
               },
               {
                 key: 'lost',

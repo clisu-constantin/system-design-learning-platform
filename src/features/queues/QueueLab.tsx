@@ -230,7 +230,8 @@ export function QueueLab() {
                 label: 'Wait time',
                 value: Number.isFinite(waitSeconds) ? formatLatency(waitSeconds * 1000) : 'unbounded',
                 tone: waitSeconds > 5 ? 'danger' : 'neutral',
-                hint: 'How long a message entering now waits before being processed.',
+                hint: 'How long a message entering now waits before being processed: queue depth divided by capacity.',
+                simulated: true,
               },
               {
                 key: 'rejected',
