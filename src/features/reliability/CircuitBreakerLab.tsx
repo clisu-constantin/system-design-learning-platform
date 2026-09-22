@@ -58,7 +58,22 @@ interface State {
    */
   latency: MetricWindow;
   transitions: number;
+  /**
+   * Bumped on every entry to HALF-OPEN. A trial call carries the epoch it was
+   * sent in, so a trial still in flight after the breaker moved on is counted
+   * but can no longer flip the state.
+   */
+  halfOpenEpoch: number;
 }
+
+/** Carried on a trial call's particle: the result is applied when it reaches the dependency. */
+interface TrialMeta {
+  trial: true;
+  failed: boolean;
+  epoch: number;
+}
+
+const isTrial = (particle: Particle) => (particle.meta as Partial<TrialMeta> | undefined)?.trial === true;
 
 const createState = (): State => ({
   breaker: 'closed',
@@ -73,12 +88,13 @@ const createState = (): State => ({
   shortCircuited: 0,
   latency: new MetricWindow(300),
   transitions: 0,
+  halfOpenEpoch: 0,
 });
 
 const LAYOUT: Layout = {
   client: { x: 40, y: 200, w: 160, h: 84 },
   api: { x: 265, y: 190, w: 180, h: 104 },
-  breaker: { x: 500, y: 180, w: 190, h: 124 },
+  breaker: { x: 470, y: 180, w: 250, h: 124 },
   payment: { x: 745, y: 100, w: 175, h: 108 },
   fallback: { x: 745, y: 300, w: 175, h: 96 },
 };
@@ -115,6 +131,7 @@ export function CircuitBreakerLab() {
         current.window = [];
       }
       if (next === 'half-open') {
+        current.halfOpenEpoch += 1;
         current.trials = 0;
         current.trialSuccesses = 0;
       }
@@ -127,6 +144,22 @@ export function CircuitBreakerLab() {
   useTicker(running, (dt) => {
     const current = state.current;
     const now = performance.now();
+
+    /** Counts one call that reached the dependency. */
+    const record = (failed: boolean) => {
+      if (failed) {
+        current.failed += 1;
+        current.latency.push(timeout);
+        current.calls.unshift({ id: nextParticleId(), result: 'fail' });
+      } else {
+        current.passed += 1;
+        current.latency.push(60);
+        current.calls.unshift({ id: nextParticleId(), result: 'ok' });
+      }
+      current.calls = current.calls.slice(0, 40);
+      current.window.push(!failed);
+      if (current.window.length > WINDOW_SIZE) current.window.shift();
+    };
 
     if (breakerEnabled && current.breaker === 'open' && now - current.openedAt >= cooldown * 1000) {
       transition('half-open', `cooldown of ${cooldown}s elapsed, sending ${TRIAL_CALLS} trial calls`);
@@ -169,22 +202,25 @@ export function CircuitBreakerLab() {
       }
 
       const failed = Math.random() < failureRate;
-      if (breakerEnabled && current.breaker === 'half-open') current.trials += 1;
 
-      if (failed) {
-        current.failed += 1;
-        current.latency.push(timeout);
-        current.calls.unshift({ id: nextParticleId(), result: 'fail' });
-      } else {
-        current.passed += 1;
-        current.latency.push(60);
-        current.calls.unshift({ id: nextParticleId(), result: 'ok' });
-        if (breakerEnabled && current.breaker === 'half-open') current.trialSuccesses += 1;
+      if (breakerEnabled && current.breaker === 'half-open') {
+        // A trial call. Its result is applied when its particle reaches the
+        // Payment Service, so HALF-OPEN stays on screen while the probe travels.
+        current.trials += 1;
+        const meta: TrialMeta = { trial: true, failed, epoch: current.halfOpenEpoch };
+        current.particles.push({
+          id: nextParticleId(),
+          route: ['client', 'api', 'breaker', 'payment'],
+          leg: 0,
+          t: 0,
+          speed: 1.2,
+          outcome: failed ? 'failure' : 'success',
+          meta: { ...meta },
+        });
+        continue;
       }
 
-      current.calls = current.calls.slice(0, 40);
-      current.window.push(!failed);
-      if (current.window.length > WINDOW_SIZE) current.window.shift();
+      record(failed);
 
       current.particles.push({
         id: nextParticleId(),
@@ -196,13 +232,7 @@ export function CircuitBreakerLab() {
       });
 
       if (breakerEnabled) {
-        if (current.breaker === 'half-open') {
-          if (failed) {
-            transition('open', 'trial call failed - back to open, cooldown restarts');
-          } else if (current.trialSuccesses >= TRIAL_CALLS) {
-            transition('closed', `${TRIAL_CALLS} trial calls succeeded`);
-          }
-        } else if (current.breaker === 'closed' && current.window.length >= 10) {
+        if (current.breaker === 'closed' && current.window.length >= 10) {
           const failures = current.window.filter((ok) => !ok).length;
           const ratio = failures / current.window.length;
           if (ratio * 100 >= threshold) {
@@ -212,8 +242,23 @@ export function CircuitBreakerLab() {
       }
     }
 
-    const { alive } = advanceParticles(current.particles, dt);
-    current.particles = alive.slice(-60);
+    const { alive, finished } = advanceParticles(current.particles, dt);
+    for (const particle of finished) {
+      if (!isTrial(particle)) continue;
+      const trial = particle.meta as unknown as TrialMeta;
+      record(trial.failed);
+      if (!breakerEnabled || current.breaker !== 'half-open' || trial.epoch !== current.halfOpenEpoch) continue;
+      if (trial.failed) {
+        transition('open', 'trial call failed - back to open, cooldown restarts');
+      } else {
+        current.trialSuccesses += 1;
+        if (current.trialSuccesses >= TRIAL_CALLS) transition('closed', `${TRIAL_CALLS} trial calls succeeded`);
+      }
+    }
+    // Trial calls are never evicted by the particle cap: the state machine waits for them.
+    const trials = alive.filter(isTrial);
+    const others = alive.filter((particle) => !isTrial(particle));
+    current.particles = [...others.slice(-Math.max(0, 60 - trials.length)), ...trials];
     rerender();
   });
 
@@ -389,6 +434,7 @@ export function CircuitBreakerLab() {
                 current.window = [];
                 current.trials = 0;
                 current.trialSuccesses = 0;
+                current.halfOpenEpoch += 1;
               }
               log(
                 value ? 'Circuit breaker enabled - starts CLOSED' : 'Circuit breaker disabled - every call goes to the dependency',

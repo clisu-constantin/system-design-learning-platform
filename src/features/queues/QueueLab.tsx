@@ -40,10 +40,13 @@ export function QueueLab() {
   const { events, log, clear } = useEventLog();
   const { points, push, reset: resetSeries } = useSeries(60, 400);
   const warned = useRef(false);
+  /** Set while the depth is over a bound that shrank under it, so the event is logged once. */
+  const overBound = useRef(false);
 
   const reset = useCallback(() => {
     state.current = createState();
     warned.current = false;
+    overBound.current = false;
     clear();
     resetSeries();
   }, [clear, resetSeries]);
@@ -53,6 +56,21 @@ export function QueueLab() {
   useTicker(running, (dt) => {
     const current = state.current;
     const now = performance.now();
+
+    // A bound lowered under the current depth keeps the excess (a broker refuses
+    // new publishes, it does not delete accepted messages) and says so once.
+    if (bounded && current.depth > maxDepth) {
+      if (!overBound.current) {
+        overBound.current = true;
+        warned.current = true;
+        log(
+          `Queue is over its new bound (${formatNumber(current.depth)} > ${formatNumber(maxDepth)}) - refusing new messages until it drains`,
+          'warn',
+        );
+      }
+    } else {
+      overBound.current = false;
+    }
 
     // Produce
     const produced = sampleArrivals(producerRate, dt);

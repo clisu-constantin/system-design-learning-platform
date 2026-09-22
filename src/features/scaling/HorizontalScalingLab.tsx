@@ -20,6 +20,10 @@ import { clamp, sampleArrivals } from '@/utils/math';
 import { formatLatency, formatNumber, formatPercent } from '@/utils/format';
 
 const SERVER_CAPACITY = 400;
+const MAX_SERVERS = 8;
+// Traffic tops out at what the largest pool can serve, so every overload in
+// this lab is fixable by adding servers.
+const MAX_TRAFFIC = MAX_SERVERS * SERVER_CAPACITY;
 
 interface Snapshot {
   label: string;
@@ -50,7 +54,7 @@ export function HorizontalScalingLab() {
   // Logged outside the state updater: StrictMode runs updaters twice, which
   // wrote every add/remove into the event log twice.
   const addServer = useCallback(() => {
-    if (servers >= 8) return;
+    if (servers >= MAX_SERVERS) return;
     setServers(servers + 1);
     log(`Added Server ${servers + 1} - pool capacity now ${formatNumber((servers + 1) * SERVER_CAPACITY)} req/sec`, 'ok');
   }, [servers, log]);
@@ -157,7 +161,7 @@ export function HorizontalScalingLab() {
             <Minus className="h-4 w-4" />
             Remove
           </Button>
-          <Button variant="primary" onClick={addServer} disabled={servers >= 8}>
+          <Button variant="primary" onClick={addServer} disabled={servers >= MAX_SERVERS}>
             <Plus className="h-4 w-4" />
             Add server
           </Button>
@@ -290,11 +294,11 @@ export function HorizontalScalingLab() {
             label="Traffic"
             value={traffic}
             min={100}
-            max={5000}
+            max={MAX_TRAFFIC}
             step={50}
             onChange={setTraffic}
             format={(value) => `${formatNumber(value)} req/sec`}
-            scale={['100', '5000']}
+            scale={['100', formatNumber(MAX_TRAFFIC)]}
             tone={traffic > capacity ? 'danger' : 'brand'}
           />
           <div className="rounded-xl border border-line bg-elevated p-3">

@@ -250,7 +250,12 @@ export function UrlJourneyLab() {
             onChange={setWarm}
             description="DNS cached, connection reused, TLS session resumed"
           />
-          <Toggle label="CDN in front" checked={cdnEnabled} onChange={setCdnEnabled} description="Edge cache before your origin" />
+          <Toggle
+            label="CDN in front (always a miss)"
+            checked={cdnEnabled}
+            onChange={setCdnEnabled}
+            description="Dynamic page: the edge forwards it to your origin"
+          />
           <Toggle label="Cache hit" checked={cacheHit} onChange={setCacheHit} description="Off: the request reaches the database" />
           <div className="rounded-xl border border-line bg-elevated p-3 text-[11px] text-muted">
             <p className="label mb-2">Notice</p>

@@ -77,10 +77,7 @@ no NaN, Infinity or negative times at either end of any control.
 - **Happened:** a 2-node cluster split 1/1 has no majority, so a real CP system would refuse writes on both sides.
   The lab labels node A "majority" without saying which other nodes are with it.
 - **Severity:** judgment-call
-- **Status:** open. Question: should the lab show the quorum honestly? Option A: add a third node on node A's side
-  (A1 + A2 vs B), so "majority" is visibly 2 of 3. Option B: keep two boxes and change the subtitle to "majority side
-  (2 of 3 replicas)". **Pick: B.** It is one string, it keeps the layout, and it makes the claim true. Option A
-  is closer to building lab content.
+- **Status:** decided in #16 (pick B) - fixed in `src/features/distributed/CapTheoremLab.tsx`
 
 ## Monolith vs Microservices Lab (`monolith-microservices`)
 
@@ -154,11 +151,7 @@ no NaN, Infinity or negative times at either end of any control.
   Payments, but its meter does not count them. Counting them would saturate Payments at the default 900 req/s, so
   it was left out rather than retuning capacities.
 - **Severity:** judgment-call
-- **Status:** open. Question: how should microservices scaling work in this lab? Option A: the slider scales every
-  service in proportion to its share, and the monolith's scaling cost is shown as wasted capacity. Option B: keep
-  Orders-only scaling, cap Traffic so the fixed services stay just under saturation (about 2000 req/s), and count
-  Orders -> Payments calls toward Payments' load. **Pick: B.** It keeps the lesson ("scale only the hot service")
-  and stops the lab from producing a failure that no control can fix.
+- **Status:** decided in #16 (pick B) - fixed in `src/features/architecture/MonolithMicroservicesLab.tsx`
 
 ### F10-013 - "Network hops per request" counts the two architectures differently
 
@@ -168,10 +161,7 @@ no NaN, Infinity or negative times at either end of any control.
 - **Happened:** Monolith shows 1 (app -> db; the load balancer -> app hop is not counted). Microservices shows 2-3
   (gateway -> service is counted). Counted the same way, it is 2 against 2-3.
 - **Severity:** judgment-call
-- **Status:** open. Question: which hops count? Option A: count every hop after the entry point (monolith 2,
-  microservices 2-3). Option B: count only hops between internal components (monolith 1, microservices 1-2).
-  **Pick: A.** The load balancer and the gateway are both real network hops, and the difference then comes
-  from the Orders -> Payments call, which is the true cost.
+- **Status:** decided in #16 (pick A) - fixed in `src/features/architecture/MonolithMicroservicesLab.tsx`
 
 ## Distributed Tracing Lab (`tracing`)
 
@@ -236,10 +226,7 @@ no NaN, Infinity or negative times at either end of any control.
 - **Happened:** the kafka span just disappears and the total drops by 4 ms. Turning async off makes the request
   faster, and nothing is notified.
 - **Severity:** judgment-call
-- **Status:** open. Question: what should "off" mean? Option A: off = the order service calls a notification service
-  synchronously (for example a ~150 ms `notification-service send` span), which shows why async publishing
-  exists. Option B: keep the behaviour and rename the toggle "Publish order.updated event". **Pick: A.** It
-  turns the toggle into a lesson. B is only the honest fallback.
+- **Status:** decided in #16 (pick A) - fixed in `src/features/observability/TracingLab.tsx`
 
 ## Shared components
 

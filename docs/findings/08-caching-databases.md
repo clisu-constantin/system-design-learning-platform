@@ -137,9 +137,7 @@ Checks the ticket asked for:
   B-trees have a fan-out in the hundreds, so 50,000 rows need about 3 levels. The O(log n) lesson
   holds, but "B-tree = binary tree" is the wrong picture.
 - **Severity:** judgment-call
-- **Status:** open. Question: (a) keep log2 and label it "binary search, simplified - real B-trees
-  are much shallower", or (b) model a fan-out (say 100) and show depth 3. I would pick (a). It is a
-  one-line label, and the halving story is easier for a junior to follow.
+- **Status:** decided in #16 (pick A) - fixed in `src/features/databases/IndexingLab.tsx`
 
 ### F08-011 - Should the lab keep both query results side by side?
 
@@ -150,8 +148,7 @@ Checks the ticket asked for:
 - **Happened:** only the last run is kept. Running with the index blanks the scan panel back to `-`,
   so the learner has to remember 262 ms to compare it with 5.0 ms.
 - **Severity:** judgment-call
-- **Status:** open. Question: (a) keep one result per mode until the table size or target changes,
-  or (b) keep one result at a time as now. I would pick (a).
+- **Status:** decided in #16 (pick A) - fixed in `src/features/databases/IndexingLab.tsx`
 
 ### F08-012 - Stale reads go above 100%
 
@@ -213,9 +210,7 @@ Checks the ticket asked for:
 - **Happened:** 98-99% stale at 20 writes/sec and 400 ms lag. The model treats the whole database as
   one key, so any replica behind by any write counts as stale.
 - **Severity:** judgment-call
-- **Status:** open. Question: (a) model reads over many keys, so only recently written keys count as
-  stale, or (b) keep the one-key model and rename the metric "Reads behind the primary". I would
-  pick (b). It is a label, and the number is then honest.
+- **Status:** decided in #16 (pick B) - fixed in `src/features/databases/ReplicationLab.tsx`
 
 ### F08-017 - Sync write latency depends on a slider that is disabled
 
@@ -225,9 +220,7 @@ Checks the ticket asked for:
 - **Happened:** write latency = 8 + lag x 0.25 (108 ms at 400 ms), but the Replication lag slider is
   disabled in sync mode. The cost of sync depends on a value the learner can only set in async mode.
 - **Severity:** judgment-call
-- **Status:** open. Question: (a) keep the slider enabled in sync mode and relabel it "network delay
-  to replicas", or (b) use a fixed sync round trip. I would pick (a). It lets the learner see that
-  a slow replica slows every writer, which the insight already claims.
+- **Status:** decided in #16 (pick A) - fixed in `src/features/databases/ReplicationLab.tsx`
 
 ### F08-018 - The diagram is cut off on a 1440px screen, including the hot shard
 
@@ -240,9 +233,7 @@ Checks the ticket asked for:
   Shard D. Shard D is the hot shard for created_at, the one the lab is about. Screenshot: scratchpad
   `t08/shard-created.png`.
 - **Severity:** judgment-call
-- **Status:** escalated (shared component, and CLAUDE.md sets the fixed 960px design). Question:
-  (a) let DiagramCanvas scale to its container like FlowVisual does (0.5x-1x), or (b) keep the
-  scroll and compact each lab's layout to about 740px. I would pick (a). It fixes every lab at once.
+- **Status:** decided in #16 (pick A) - split out as #19 (`DiagramCanvas` scales to fit); shared component and a CLAUDE.md rule change
 
 ### F08-019 - The sharding concept diagram shows hash(user_id) as the hot-shard key
 

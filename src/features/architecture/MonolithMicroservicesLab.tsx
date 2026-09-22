@@ -39,6 +39,31 @@ const TRAFFIC_SHARE: Record<Feature, number> = {
 /** Share of Orders requests that call Payments synchronously (one extra hop). */
 const ORDERS_CALLING_PAYMENTS = 0.5;
 
+/**
+ * Traffic ceiling. Only Orders scales in microservices mode, so the fixed
+ * services are sized to stay under capacity at this maximum (the busiest,
+ * Payments and Users, run at about 85%) - no
+ * setting of the controls produces a failure that no control can fix.
+ */
+const MAX_TRAFFIC = 2000;
+
+/**
+ * Fixed capacity of the services that do not scale. Payments is larger because
+ * it also serves the synchronous calls Orders makes to it: at MAX_TRAFFIC it
+ * sees 20% + 50% x 50% = 45% of traffic (900 req/s), Users 400 and
+ * Notifications 200 req/s.
+ */
+const FIXED_CAPACITY: Record<Exclude<Feature, 'Orders'>, number> = {
+  Users: 450,
+  Payments: 1000,
+  Notifications: 450,
+};
+
+/** Requests per second each service receives: its own share plus calls from other services. */
+const serviceDemand = (feature: Feature, traffic: number) =>
+  traffic * TRAFFIC_SHARE[feature] +
+  (feature === 'Payments' ? traffic * TRAFFIC_SHARE.Orders * ORDERS_CALLING_PAYMENTS : 0);
+
 interface State {
   particles: Particle[];
   /**
@@ -97,13 +122,13 @@ export function MonolithMicroservicesLab() {
 
   // Monolith: all features share one pool. Microservices: capacity per service.
   const monolithCapacity = instances * 700;
-  const serviceCapacity = (feature: Feature) => (feature === 'Orders' ? instances * 500 : 400);
+  const serviceCapacity = (feature: Feature) => (feature === 'Orders' ? instances * 500 : FIXED_CAPACITY[feature]);
 
   const monolithLoad = computeLoad(traffic, monolithCapacity, { baseLatencyMs: 35, kneeAt: 0.65 });
   const serviceLoads = Object.fromEntries(
     FEATURES.map((feature) => [
       feature,
-      computeLoad(traffic * TRAFFIC_SHARE[feature], serviceCapacity(feature), { baseLatencyMs: 30, kneeAt: 0.65 }),
+      computeLoad(serviceDemand(feature, traffic), serviceCapacity(feature), { baseLatencyMs: 30, kneeAt: 0.65 }),
     ]),
   ) as Record<Feature, ReturnType<typeof computeLoad>>;
 
@@ -396,10 +421,11 @@ export function MonolithMicroservicesLab() {
             label="Traffic"
             value={traffic}
             min={100}
-            max={5000}
+            max={MAX_TRAFFIC}
             step={100}
             onChange={setTraffic}
             format={(value) => `${formatNumber(value)} req/sec`}
+            hint="Capped so the services that do not scale stay under capacity."
           />
           <Slider
             label="Instances"
@@ -528,7 +554,7 @@ export function MonolithMicroservicesLab() {
           <Rocket className="h-3.5 w-3.5" /> Deployable units: {mode === 'monolith' ? 1 : FEATURES.length}
         </span>
         <span className="flex items-center gap-1.5">
-          <Zap className="h-3.5 w-3.5" /> Network hops per request: {mode === 'monolith' ? 1 : '2-3'}
+          <Zap className="h-3.5 w-3.5" /> Network hops per request: {mode === 'monolith' ? 2 : '2-3'}
         </span>
         <span className="ml-auto">Simplified load model - latency and errors are illustrative, not measured.</span>
       </div>

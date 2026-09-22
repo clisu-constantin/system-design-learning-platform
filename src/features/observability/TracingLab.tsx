@@ -58,6 +58,9 @@ function layoutSpans(specs: SpanSpec[]): Span[] {
   return root ? place(root, 0, 0) : [];
 }
 
+/** Illustrative cost of sending the notification inside the request (an email provider call). */
+const SYNC_NOTIFY_MS = 150;
+
 export function TracingLab() {
   const [gatewayMs, setGatewayMs] = useState(18);
   const [orderMs, setOrderMs] = useState(35);
@@ -126,19 +129,28 @@ export function TracingLab() {
         kind: 'db',
         attributes: { 'db.system': 'postgresql', 'db.operation': 'INSERT' },
       },
-      ...(asyncNotify
-        ? [
-            {
-              id: 'queue',
-              parent: 'order',
-              name: 'kafka publish order.updated',
-              component: 'kafka',
-              selfMs: 4,
-              kind: 'queue' as const,
-              attributes: { 'messaging.system': 'kafka', 'messaging.destination': 'order.updated' },
-            },
-          ]
-        : []),
+      // Async: publish an event and move on - the notification is sent later, off
+      // the request path. Sync: the order service waits for the notification
+      // service to send it, and the user waits too.
+      asyncNotify
+        ? {
+            id: 'queue',
+            parent: 'order',
+            name: 'kafka publish order.updated',
+            component: 'kafka',
+            selfMs: 4,
+            kind: 'queue',
+            attributes: { 'messaging.system': 'kafka', 'messaging.destination': 'order.updated' },
+          }
+        : {
+            id: 'notify',
+            parent: 'order',
+            name: 'notification-service send',
+            component: 'notification-service',
+            selfMs: SYNC_NOTIFY_MS,
+            kind: 'service',
+            attributes: { 'peer.service': 'email-provider', 'notification.channel': 'email' },
+          },
     ];
 
     return layoutSpans(specs);
@@ -283,7 +295,7 @@ export function TracingLab() {
             label="Async notification"
             checked={asyncNotify}
             onChange={setAsyncNotify}
-            description="Publish to Kafka - context must be propagated into the message"
+            description={`On: publish to Kafka and return - context must be propagated into the message. Off: call the notification service synchronously (~${SYNC_NOTIFY_MS} ms on the request path)`}
           />
           <div className="rounded-xl border border-line bg-elevated p-3 font-mono text-[10px] leading-relaxed text-muted">
             traceparent: 00-4bf92f3577b34da6-00f067aa0ba902b7-01

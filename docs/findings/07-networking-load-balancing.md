@@ -53,7 +53,7 @@ appeared in any lab, before or after the fixes. Dark theme and reduced motion re
 - **Expected:** the ticket asks that each algorithm visibly distribute differently
 - **Happened:** Weighted is visibly different. The other three give every server 38-40% CPU and 15-16 conns. That is the true behaviour for identical servers, but the Least Connections note promises "slow servers stop receiving new work" and the lab has no slow server, so a junior cannot see why it exists.
 - **Severity:** judgment-call
-- **Status:** open. Question: how should the lab make Least Connections observable? Option A - a "Server 1 is slow" toggle (doubles its request duration), so Round Robin overloads it and Least Connections routes around it. Option B - make Server 1 the bigger machine under every algorithm (not only Weighted), so Round Robin under-uses it and Weighted/Least Connections balance it. Pick: A - it isolates the one thing Least Connections is for and leaves Weighted as the sizing lesson.
+- **Status:** decided in #16 (pick A) - fixed in `src/features/load-balancing/LoadBalancerLab.tsx`
 
 ### F07-006 - Load balancer: latency metrics lag, and stay populated when nothing is served
 
@@ -62,7 +62,7 @@ appeared in any lab, before or after the fixes. Dark theme and reduced motion re
 - **Expected:** latency falls with utilization; with every server down there is no latency to report
 - **Happened:** 4 s after recovery Avg latency still read 2.72 s next to 0% utilization, because `MetricWindow(500)` is sized in samples and 50 req/sec takes 10 s to refill it. With all servers down, Avg latency kept showing the last value (101 ms) beside 0 req/sec served.
 - **Severity:** misleading
-- **Status:** open - the lag comes from the sample-count window in the shared `src/simulations/engine/metrics.ts`; a time-based window is an engine change that affects other labs, so it is left for ticket 11 to decide.
+- **Status:** decided in #16 (pick A) - split out as #18 (time-based `MetricWindow`); shared engine change needs its own sweep of the labs
 
 ### F07-007 - API gateway: pipeline shows the previous request after a control changes
 
@@ -107,7 +107,7 @@ appeared in any lab, before or after the fixes. Dark theme and reduced motion re
 - **Expected:** an edge that is simply not in use reads as "not in use", not as a failure
 - **Happened:** the subtitle says "not in use" but the status line says "Down" with a greyed card, the same way a crashed server is shown in the load balancer lab. A junior may read "the CDN is broken".
 - **Severity:** misleading
-- **Status:** open - `ArchNode` has no way to pass a custom status label (`HealthIndicator` already accepts `label`), so the fix needs a small prop on the shared `src/components/architecture/ArchNode.tsx`. Left for ticket 11 rather than changing a shared component for a wording issue.
+- **Status:** decided in #16 (pick A) - fixed in `src/components/architecture/ArchNode.tsx` (shared: new optional `statusLabel` prop passed to `HealthIndicator`), `src/features/networking/CdnLab.tsx` (edges read "Off" while the CDN is disabled)
 
 ### F07-012 - URL journey: a cache miss is free on a warm connection
 
@@ -134,7 +134,7 @@ appeared in any lab, before or after the fixes. Dark theme and reduced motion re
 - **Expected:** the toggle description says "Edge cache before your origin", so a junior expects it to make the page faster at least sometimes
 - **Happened:** the CDN stage is always modelled as a miss, so turning it on always adds 6-12 ms and removes nothing. The lab never shows the edge answering. The CDN stage detail text describes a hit, but the numbers never produce one.
 - **Severity:** judgment-call
-- **Status:** open. Question: should this lab show a CDN hit? Option A - add a "CDN hit" state: the journey ends at the edge and the load balancer, app, cache and database rows drop out. Option B - keep the always-miss model (the page `/products/42` is dynamic) and relabel the toggle "CDN in front (dynamic page, always a miss)". Pick: B - the CDN Lab already teaches hits, and this lab is about the full path to the origin.
+- **Status:** decided in #16 (pick B) - fixed in `src/features/networking/UrlJourneyLab.tsx`
 
 ### F07-015 - Latency numbers read as measured
 

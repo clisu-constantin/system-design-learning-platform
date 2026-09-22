@@ -49,10 +49,7 @@ Acceptance summary:
   (6.5 px/char). Titles with many capitals exceed the 6.4 px estimate, so the check is not a
   reliable guarantee for badge nodes
 - **Severity:** bug
-- **Status:** open - `scripts/` is outside this ticket's area and raising the constant would move
-  Orchestrator note: a capitals-vs-lower-case estimate (7.6 / 6.2 px) was tried and still under-shoots "Message Queue" (83 vs 94 px), because width depends on the letter (m, g, u are wide). A real fix needs per-letter font metrics; left open for ticket 11.
-  the threshold for all 115 diagrams; for the orchestrator to decide where it lands (a per-char
-  width of ~7.3, or a small safety margin on badge nodes only)
+- **Status:** decided in #16 (pick A) - fixed in `scripts/check-visuals.mjs` (per-letter title width table measured in headless Chromium), `src/data/visuals/data-performance.ts` (partitioning `query` 205 -> 210 px)
 
 ### F05-004 - Evolution diagram is cut off at every desktop width; stage 7 hides its new components
 
@@ -139,10 +136,8 @@ Acceptance summary:
   `prefers-reduced-motion`, show Pause/Play and stop off screen, but does not mention this page
 - **Happened:** particles run permanently: under reduced motion, off screen, with no pause control
 - **Severity:** judgment-call
-- **Status:** open. Question: should the evolution diagram follow the FlowVisual autoplay rules?
-  Option A: reuse `useAutoplay` and add the same Pause/Play control. Option B: leave it always
-  running, since particles are only decoration here. I would pick A - same accessibility promise
-  on every animated diagram, and a background tab stops burning a rAF loop
+- **Status:** decided in #16 (pick A) - fixed in `src/features/evolution/EvolutionPage.tsx` and
+  `src/components/architecture/FlowVisual.tsx` (shared: `useAutoplay` and `PlayPauseButton` now exported)
 
 ### F05-011 - At 1280-1400 px the fitted evolution diagram has small text
 
@@ -152,11 +147,7 @@ Acceptance summary:
 - **Happened:** the full diagram is now visible, but at 0.6x (1280) and 0.7x (1400) the 12 px
   titles render at about 7-8 px
 - **Severity:** judgment-call
-- **Status:** open. Question: keep the two-column layout with a scaled diagram, or stack the right
-  column under the diagram below ~1700 px so it stays 1:1? Option A (current): scale to fit -
-  diagram and question side by side, smaller text. Option B: stack - full-size diagram, the
-  question card moves below it and needs a scroll. I would pick B for a learning page, where the
-  diagram is the lesson; A is what shipped here because it keeps the current layout
+- **Status:** decided in #16 (pick B) - fixed in `src/features/evolution/EvolutionPage.tsx`
 
 ### F05-012 - Standby LB has no wiring to the API servers
 
@@ -167,7 +158,5 @@ Acceptance summary:
   edge from Clients and no edges onward, so the diagram does not show what the standby reaches.
   The check does not flag it (different titles, not replicas by its rule)
 - **Severity:** judgment-call
-- **Status:** open. Question: draw the standby's onward edges? Option A: add three dashed, muted
-  Standby LB -> API edges (honest about failover, busier diagram). Option B: leave it - the
-  subtitle "takes over on failure" and the dashed edge carry the meaning. I would pick A, with the
-  edges dashed so they read as "only after failover"
+- **Status:** decided in #16 (pick A) - fixed in `src/features/evolution/stages.ts` and
+  `src/features/evolution/EvolutionPage.tsx` (no particles on any edge touching a standby node)

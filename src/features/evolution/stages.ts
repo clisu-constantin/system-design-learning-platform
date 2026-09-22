@@ -9,7 +9,7 @@ export interface StageNode {
   placed: { x: number; y: number; w: number; h: number };
   /** Marks the component introduced at this stage. */
   isNew?: boolean;
-  /** A hot standby: wired in, but carries no traffic until the active node fails. */
+  /** A hot standby: wired in, but carries no traffic (in or out) until the active node fails. */
   standby?: boolean;
 }
 
@@ -176,6 +176,11 @@ export const STAGES: Stage[] = [
       { from: 'lb', to: 'api1', tone: 'ok' },
       { from: 'lb', to: 'api2', tone: 'ok' },
       { from: 'lb', to: 'api3', tone: 'ok' },
+      // What the standby would reach once it takes over: dashed and muted, and
+      // no particles (EvolutionPage skips every edge touching a standby node).
+      { from: 'lb2', to: 'api1', tone: 'muted', dashed: true },
+      { from: 'lb2', to: 'api2', tone: 'muted', dashed: true },
+      { from: 'lb2', to: 'api3', tone: 'muted', dashed: true },
       { from: 'api1', to: 'db', tone: 'info' },
       { from: 'api2', to: 'db', tone: 'info' },
       { from: 'api3', to: 'db', tone: 'info' },

@@ -11,6 +11,8 @@ interface ArchNodeProps {
   title: ReactNode;
   subtitle?: ReactNode;
   status?: NodeStatus;
+  /** Replaces the default status text ("Down", "Healthy"...), e.g. "Off" for a node that is switched off. */
+  statusLabel?: string;
   /** Absolute placement inside a DiagramCanvas. Omit to render inline. */
   placed?: Placed;
   children?: ReactNode;
@@ -32,6 +34,7 @@ export function ArchNode({
   title,
   subtitle,
   status = 'healthy',
+  statusLabel,
   placed,
   children,
   onClick,
@@ -86,7 +89,7 @@ export function ArchNode({
         </div>
       </div>
       {children ? <div className="space-y-1.5">{children}</div> : null}
-      <HealthIndicator status={status} className="mt-auto pt-0.5" />
+      <HealthIndicator status={status} label={statusLabel} className="mt-auto pt-0.5" />
     </Element>
   );
 }

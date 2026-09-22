@@ -304,7 +304,7 @@ distributed system - you are choosing CP or AP.`}</pre>
         <ArchNode
           kind="sql"
           title="Node A"
-          subtitle="majority side"
+          subtitle="majority side (2 of 3 replicas)"
           placed={LAYOUT.nodeA}
           status={partitioned ? 'degraded' : 'healthy'}
         >
@@ -314,7 +314,7 @@ distributed system - you are choosing CP or AP.`}</pre>
         <ArchNode
           kind="sql"
           title="Node B"
-          subtitle="minority side"
+          subtitle="minority side (1 of 3 replicas)"
           placed={LAYOUT.nodeB}
           status={partitioned ? (choice === 'cp' ? 'down' : 'degraded') : 'healthy'}
           alert={diverged}

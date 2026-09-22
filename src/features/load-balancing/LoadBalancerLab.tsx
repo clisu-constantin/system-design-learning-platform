@@ -12,7 +12,7 @@ import {
 } from '@/components/architecture';
 import { LiveChart } from '@/components/charts';
 import { Insight, LabShell, MetricsPanel, RequestInspector } from '@/components/learning';
-import { Button, Meter, Select, Slider, Stepper } from '@/components/ui';
+import { Button, Meter, Select, Slider, Stepper, Toggle } from '@/components/ui';
 import {
   advanceParticles,
   MetricWindow,
@@ -127,6 +127,7 @@ export function LoadBalancerLab() {
   const [algorithm, setAlgorithm] = useState<Algorithm>('round-robin');
   const [capacity, setCapacity] = useState(400);
   const [duration, setDuration] = useState(80);
+  const [slowFirst, setSlowFirst] = useState(false);
   const [inspected, setInspected] = useState<SimulatedRequest | null>(null);
 
   const sim = useRef<SimState>(createState(3));
@@ -199,7 +200,14 @@ export function LoadBalancerLab() {
    * The tick, the node cards and the pool-capacity meter all read this one
    * function so they cannot disagree about whether a server is coping.
    */
-  const capacityOf = (server: ServerModel) => (algorithm === 'weighted' ? capacity * server.weight : capacity);
+  const isSlow = (server: ServerModel) => slowFirst && server.id === 's0';
+  /**
+   * A slow server (bad disk, noisy neighbour) takes twice as long per request,
+   * so each worker is busy twice as long and it absorbs half the traffic.
+   */
+  const durationOf = (server: ServerModel) => (isSlow(server) ? duration * 2 : duration);
+  const capacityOf = (server: ServerModel) =>
+    (algorithm === 'weighted' ? capacity * server.weight : capacity) / (isSlow(server) ? 2 : 1);
 
   /** Picks a backend according to the selected algorithm. */
   const pickServer = (state: SimState, healthy: ServerModel[]): ServerModel => {
@@ -252,7 +260,7 @@ export function LoadBalancerLab() {
         continue;
       }
       const incoming = server.rate.rate(now);
-      const load = computeLoad(incoming, capacityOf(server), { baseLatencyMs: duration, kneeAt: 0.65 });
+      const load = computeLoad(incoming, capacityOf(server), { baseLatencyMs: durationOf(server), kneeAt: 0.65 });
       server.cpu = load.cpu;
       server.latency = load.latencyMs;
       server.errorRate = load.errorRate;
@@ -543,6 +551,15 @@ export function LoadBalancerLab() {
             format={(value) => `${value} ms`}
             hint="Base processing time per request with no queueing."
           />
+          <Toggle
+            label="Server 1 is slow"
+            checked={slowFirst}
+            onChange={(next) => {
+              setSlowFirst(next);
+              log(next ? 'Server 1 now takes 2x as long per request' : 'Server 1 back to normal speed', next ? 'warn' : 'ok');
+            }}
+            description="Each request takes 2x as long there. Compare Round Robin and Least Connections."
+          />
           <div className="rounded-xl border border-line bg-elevated p-3">
             <p className="label mb-2">Pool capacity</p>
             <Meter
@@ -587,7 +604,11 @@ export function LoadBalancerLab() {
             key={server.id}
             kind="server"
             title={server.name}
-            subtitle={algorithm === 'weighted' ? `weight ${server.weight}` : undefined}
+            subtitle={
+              [algorithm === 'weighted' ? `weight ${server.weight}` : '', isSlow(server) ? '2x slower' : '']
+                .filter(Boolean)
+                .join(', ') || undefined
+            }
             placed={layout[server.id]}
             status={server.status}
             alert={server.status === 'healthy' && server.cpu > 0.9}

@@ -83,10 +83,7 @@ reload; both themes readable on home, labs, glossary, progress, compare, 404 and
 - **Expected:** the ticket says "select two concepts"; the page offers 4 curated pairs
 - **Happened:** 4 hand-written comparisons, each with authored rows and verdict; they all work
 - **Severity:** judgment-call
-- **Status:** open. Question: should Compare Mode (a) stay a set of curated pairs whose rows are
-  written trade-offs, or (b) let the learner pick any two concepts and build the table from their
-  `tradeOffs` data? I would pick (a): the value is in the authored dimension-by-dimension rows, and an
-  auto-built table of two unrelated concepts would teach nothing. Treat the acceptance box as met.
+- **Status:** decided in #16 (pick A) - no change. Curated pairs stay; the acceptance box counts as met.
 
 ### F02-006 - Compare Mode has a second, duplicate pair selector with truncated labels
 
@@ -97,8 +94,7 @@ reload; both themes readable on home, labs, glossary, progress, compare, 404 and
   first half of each title: "Vertical", "Monolith", "Strong", "Synchronous". Works, but "Strong" alone
   does not say strong what
 - **Severity:** judgment-call
-- **Status:** open. Question: (a) remove the bottom selector, or (b) keep it as a "next comparison"
-  shortcut with full titles? I would pick (a) - the top buttons are always one scroll away.
+- **Status:** decided in #16 (pick A) - fixed in `src/features/compare/ComparePage.tsx` (bottom selector removed)
 
 ### F02-007 - First visit follows the OS theme, while CLAUDE.md calls dark the default
 
@@ -108,6 +104,4 @@ reload; both themes readable on home, labs, glossary, progress, compare, 404 and
 - **Happened:** with no saved choice the app follows `prefers-color-scheme`, so a light-OS learner
   starts in light mode. Both paths agree (init script and provider), and light is readable
 - **Severity:** judgment-call
-- **Status:** open. Question: should first paint (a) follow the OS preference, or (b) always start
-  dark until the learner toggles? I would pick (a) - it is the least surprising and light is readable;
-  CLAUDE.md could say "dark when the OS does not ask for light".
+- **Status:** decided in #16 (pick A) - no code change; `CLAUDE.md` now says first paint follows `prefers-color-scheme`

@@ -102,7 +102,7 @@ const toLayout = (spec: VisualSpec): Layout =>
  * when the OS asks for reduced motion, and the ticker only runs while the
  * diagram is on screen. WCAG 2.2.2 requires the explicit pause either way.
  */
-function useAutoplay() {
+export function useAutoplay() {
   const reducedMotion = usePrefersReducedMotion();
   // null until the learner presses Play/Pause; until then the OS setting decides.
   const [choice, setChoice] = useState<boolean | null>(null);
@@ -116,7 +116,7 @@ function useAutoplay() {
   return { ref, playing, setPlaying, running: playing && inView, reducedMotion };
 }
 
-function PlayPauseButton({ playing, onToggle, className }: { playing: boolean; onToggle: () => void; className?: string }) {
+export function PlayPauseButton({ playing, onToggle, className }: { playing: boolean; onToggle: () => void; className?: string }) {
   const Icon = playing ? Pause : Play;
   return (
     <button

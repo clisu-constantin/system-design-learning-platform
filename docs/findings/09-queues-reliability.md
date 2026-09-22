@@ -55,10 +55,7 @@ Ticket extras, checked:
 - **Happened:** the node says "bounded at 50" while depth reads 2,030; new messages are rejected and
   the backlog drains at the worker rate.
 - **Severity:** judgment-call
-- **Status:** open. Question: when the bound shrinks under the current depth, should the lab
-  (a) keep the excess and only refuse new messages (today; matches a broker that refuses publishes), or
-  (b) drop the oldest excess messages at once and count them as rejected (matches `x-max-length` drop-head)?
-  I would pick (a) and add one log line ("Queue is over its new bound - refusing new messages until it drains").
+- **Status:** decided in #16 (pick A) - fixed in `src/features/queues/QueueLab.tsx`
 
 ### F09-004 - Rate limiting "Send a burst" is logged but not counted
 
@@ -154,10 +151,7 @@ Ticket extras, checked:
   decided the moment a call arrives, while its particle takes about 2 s to reach the Payment Service,
   so the state flips back before the trial is visibly sent. The event log does record every transition.
 - **Severity:** judgment-call
-- **Status:** open. Question: should a trial call (a) be decided when its particle reaches the
-  dependency, so HALF-OPEN lasts as long as the trip, or (b) stay as is, with HALF-OPEN held for a minimum
-  dwell (say 1.5 s) before the next transition is shown? I would pick (a): it makes the probe itself
-  visible and keeps the animation and the state machine telling the same story.
+- **Status:** decided in #16 (pick A) - fixed in `src/features/reliability/CircuitBreakerLab.tsx`
 
 ### F09-012 - Retry lab: turning jitter on raises the peak it claims to lower
 
@@ -169,11 +163,7 @@ Ticket extras, checked:
   retries are already spread, and full jitter pulls retries back into the first seconds on top of the
   initial wave. The numbers teach the opposite of the text. Immediate vs backoff is shown correctly (6.72x vs 1.00x).
 - **Severity:** misleading
-- **Status:** escalated - fixing it means redesigning the load model, which CLAUDE.md does not settle.
-  Options: (a) model a correlated failure - all clients fail within ~100 ms, count in 100-250 ms
-  buckets and report the peak of the retry waves, so no-jitter shows spikes and jitter flattens them; or
-  (b) keep the model and change the claim - show total retry volume/amplification and say jitter
-  spreads the same volume rather than lowering the peak. I would pick (a); it is the lesson the concept page teaches.
+- **Status:** decided in #16 (pick A) - split out as #17 (correlated-failure load model); a model redesign, too large for the sweep branch
 
 ### F09-013 - Retry sketch ignores Max attempts
 
@@ -206,3 +196,12 @@ Ticket extras, checked:
 - **Severity:** misleading
 - **Status:** fixed in `src/features/reliability/RetryBackoffLab.tsx` (chart caption adds "Simplified model,
   not a measurement ...").
+
+### F09-016 - Circuit breaker node title cut to "Circuit ..." next to the state badge
+
+- **Area:** Circuit breaker lab, Circuit Breaker node
+- **Clicked:** Break the dependency, watched the breaker reach HALF-OPEN (found while implementing F09-011 in #16)
+- **Expected:** the full title "Circuit Breaker" next to its state badge
+- **Happened:** the 190px box left the title 52px beside the wide HALF-OPEN badge; it needs 88px
+- **Severity:** bug
+- **Status:** fixed in `src/features/reliability/CircuitBreakerLab.tsx` (box 190 -> 250px, still clear of its neighbours); title measured 88/88px in CLOSED, OPEN and HALF-OPEN in headless Chromium

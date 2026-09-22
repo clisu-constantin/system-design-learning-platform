@@ -336,6 +336,7 @@ export function CdnLab() {
               subtitle={cdnEnabled ? `${region.edgeKm} km from users` : 'not in use'}
               placed={LAYOUT[region.edgeId]}
               status={cdnEnabled ? 'healthy' : 'down'}
+              statusLabel={cdnEnabled ? undefined : 'Off'}
             >
               <NodeStatRow label="Hit rate" value={cdnEnabled ? formatPercent(regionHitRate) : '-'} tone="text-ok" />
               <NodeStatRow label="Edge RTT" value={formatLatency(rtt(region.edgeKm))} />

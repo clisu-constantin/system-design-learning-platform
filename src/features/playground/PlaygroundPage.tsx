@@ -52,8 +52,9 @@ function PlaygroundCanvas() {
     ...node,
     data: {
       ...node.data,
-      load: running ? Math.round(analysis.load[node.id] ?? 0) : 0,
-      bottleneck: running && analysis.bottlenecks.includes(node.id),
+      // The analysis is a static calculation, so cards always show it; Start only animates the particles.
+      load: Math.round(analysis.load[node.id] ?? 0),
+      bottleneck: analysis.bottlenecks.includes(node.id),
     },
   }));
 
@@ -345,7 +346,7 @@ function PlaygroundCanvas() {
             )}
           </div>
 
-          {running && analysis.bottlenecks.length > 0 ? (
+          {analysis.bottlenecks.length > 0 ? (
             <div className="rounded-xl border border-warn/40 bg-warn/5 p-3">
               <p className="label mb-2 text-warn">Bottlenecks</p>
               {analysis.bottlenecks.map((id) => {

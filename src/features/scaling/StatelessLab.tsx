@@ -272,7 +272,7 @@ export function StatelessLab() {
       ? current.servers.map<DiagramEdge>((server) => ({
           from: server.id,
           to: 'redis',
-          tone: current.redisUp ? 'danger' : 'muted',
+          tone: current.redisUp ? 'ok' : 'muted',
           dashed: !current.redisUp,
         }))
       : []),

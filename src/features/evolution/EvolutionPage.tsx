@@ -1,7 +1,8 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState, type RefObject } from 'react';
 import { Link } from 'react-router-dom';
 import { AlertTriangle, ArrowRight, Check, ChevronLeft, ChevronRight, Sparkles } from 'lucide-react';
 import { ArchNode, DiagramCanvas, ParticleLegend, type ParticleView } from '@/components/architecture';
+import { PlayPauseButton, useAutoplay } from '@/components/architecture/FlowVisual';
 import { Badge, Button, Stat } from '@/components/ui';
 import { advanceParticles, nextParticleId, useTicker, type Particle } from '@/simulations/engine';
 import { useRerender } from '@/hooks/useRerender';
@@ -13,8 +14,10 @@ const DESIGN_WIDTH = 960;
 const DESIGN_HEIGHT = 540;
 
 /**
- * Shrinks the 960px stage to the column it sits in. The right-hand column
- * leaves the diagram about 670-780px, so without this the stage's new
+ * Shrinks the 960px stage to the column it sits in. The question column only
+ * sits beside the diagram from 1700px up, where the diagram gets its full
+ * 960px; below that it stacks underneath, so this only kicks in when the
+ * content area itself is narrower than the canvas. Without it the stage's new
  * components (the queue and workers in stage 7) sat off to the right behind an
  * overlay scrollbar the learner never sees. Same approach as FlowVisual.
  */
@@ -43,6 +46,9 @@ export function EvolutionPage() {
   const stage = STAGES[index];
   const layout = stageLayout(stage);
   const fit = useFitScale();
+  // Same promise as every other animated diagram: starts paused under reduced
+  // motion, has an explicit Pause/Play, and stops ticking while off screen.
+  const autoplay = useAutoplay();
 
   const go = useCallback((next: number) => {
     setIndex(next);
@@ -52,12 +58,12 @@ export function EvolutionPage() {
 
   // Send a trickle of requests along the current stage's edges so every
   // architecture is shown working, not just drawn. A hot standby carries no
-  // traffic until the active node fails, so its edge stays quiet. Only reads
+  // traffic until the active node fails, so its edges (in and out) stay quiet. Only reads
   // from the cache are drawn as cache hits; queue and event traffic is normal
   // work, not a warning or a retry.
-  useTicker(true, (dt) => {
+  useTicker(autoplay.running, (dt) => {
     const busy = stage.edges.filter(
-      (edge) => !stage.nodes.some((node) => node.id === edge.to && node.standby),
+      (edge) => !stage.nodes.some((node) => node.standby && (node.id === edge.to || node.id === edge.from)),
     );
     if (Math.random() < dt * 6 && busy.length > 0) {
       const edge = busy[Math.floor(Math.random() * busy.length)];
@@ -91,7 +97,7 @@ export function EvolutionPage() {
 
   return (
     <div className="px-5 py-8 lg:px-8">
-      <div className="mx-auto max-w-6xl">
+      <div className="mx-auto max-w-6xl min-[1700px]:max-w-[1340px]">
         <header>
           <h1 className="text-2xl font-semibold tracking-tight text-ink">System Evolution</h1>
           <p className="mt-1.5 max-w-3xl text-sm text-muted">
@@ -122,9 +128,12 @@ export function EvolutionPage() {
           ))}
         </ol>
 
-        <div className="mt-4 grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1fr)_360px]">
+        {/* The diagram is the lesson, so it keeps its full 960px: the question
+            column sits beside it only when both fit (1700px with the sidebar),
+            and stacks underneath below that. */}
+        <div className="mt-4 grid grid-cols-1 gap-4 min-[1700px]:grid-cols-[minmax(0,1fr)_360px]">
           <div className="space-y-4">
-            <div className="card overflow-hidden">
+            <div ref={autoplay.ref as RefObject<HTMLDivElement>} className="card overflow-hidden">
               <div className="flex flex-wrap items-center justify-between gap-3 border-b border-line px-5 py-3">
                 <h2 className="text-sm font-semibold text-ink">{stage.title}</h2>
                 <div className="flex flex-wrap gap-2">
@@ -151,6 +160,7 @@ export function EvolutionPage() {
               {/* Below 0.6x the labels get unreadable, so a phone scrolls sideways instead. */}
               <div ref={fit.ref} className="w-full overflow-x-auto">
                 <div
+                  className="mx-auto"
                   style={{ width: DESIGN_WIDTH * fit.scale, height: DESIGN_HEIGHT * fit.scale, overflow: 'hidden' }}
                 >
                   <div
@@ -186,8 +196,13 @@ export function EvolutionPage() {
                 </div>
               </div>
 
-              <div className="border-t border-line px-5 py-2.5">
+              <div className="flex items-center gap-3 border-t border-line px-5 py-2.5">
                 <ParticleLegend outcomes={['success', 'cache-hit']} />
+                <PlayPauseButton
+                  playing={autoplay.playing}
+                  onToggle={() => autoplay.setPlaying((value) => !value)}
+                  className="ml-auto shrink-0"
+                />
               </div>
             </div>
 

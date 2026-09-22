@@ -177,7 +177,7 @@ ladder caption ("16x capacity, 65x cost") matches the data. No change needed.
 - **Expected:** unclear - the insight says "adding a server divides the load"
 - **Happened:** 8 x 400 = 3,200 req/s, so above 3,200 there is no way to stop errors (36% at 5,000 with 8 servers).
 - **Severity:** judgment-call
-- **Status:** open. Question: should the slider top out at the largest pool (A: max 3,200, every overload is fixable) or keep 5,000 (B: shows that horizontal scaling also has a ceiling - the database or a pool limit)? I would pick A: this is the Beginner lab that should end with "adding servers fixed it"; the ceiling is already taught by Auto Scaling's max instances.
+- **Status:** decided in #16 (pick A) - fixed in `src/features/scaling/HorizontalScalingLab.tsx`
 
 ### F06-019 - Requirements lab complexity is 100 with nothing selected
 
@@ -186,7 +186,7 @@ ladder caption ("16x capacity, 65x cost") matches the data. No change needed.
 - **Expected:** unclear
 - **Happened:** "Requirements 0 ... Complexity score 100" while the scope summary says "Nothing selected - there is nothing to design". The score is mostly driven by the non-functional sliders.
 - **Severity:** judgment-call
-- **Status:** open. Question: A: show 0 / "-" when no functional requirement is selected, or B: keep it (the score is labelled a heuristic and quality targets do cost complexity on their own)? I would pick A, since the lab's own text says there is nothing to design.
+- **Status:** decided in #16 (pick A) - fixed in `src/features/fundamentals/RequirementsLab.tsx`
 
 ### F06-020 - Stateless lab draws healthy Redis links in the danger colour
 
@@ -195,4 +195,4 @@ ladder caption ("16x capacity, 65x cost") matches the data. No change needed.
 - **Expected:** healthy wiring in a neutral or ok tone; red is the failure colour in the particle legend
 - **Happened:** server -> Redis edges use `tone: 'danger'` while Redis is up (muted and dashed when it is down). The shape and text labels still carry status, so this is not colour-only status.
 - **Severity:** judgment-call
-- **Status:** open. Question: A: switch to `ok`/`default` while up, or B: keep red to flag Redis as the new critical dependency the mode note mentions? I would pick A and let the note carry the "critical dependency" point.
+- **Status:** decided in #16 (pick A) - fixed in `src/features/scaling/StatelessLab.tsx`

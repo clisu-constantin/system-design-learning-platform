@@ -129,10 +129,7 @@ zero scores.
 - **Happened:** the card shows `0 req/s 0%` (loads are zeroed while stopped) while the Selected meter shows
   `800 / 1,000 req/s` and the risk list already reports "1 component(s) receiving more traffic than they can serve"
 - **Severity:** judgment-call
-- **Status:** open. Question: should the analysis be live only while the simulation runs? Option A: always show the
-  computed load on cards too (Start only animates particles). Option B: hide loads and the bottleneck risk until the
-  learner presses Start. I would pick A - the analysis is a static calculation and hiding it adds a click without
-  teaching anything
+- **Status:** decided in #16 (pick A) - fixed in `src/features/playground/PlaygroundPage.tsx`
 
 ### F04-011 - A CDN absorbs 85% of all requests, API calls included
 
@@ -141,9 +138,7 @@ zero scores.
 - **Expected:** a CDN offloads static assets; dynamic API calls still reach the load balancer
 - **Happened:** the load balancer receives 120 req/s and each API 40 req/s, so the CDN looks like it cuts API load by 85%
 - **Severity:** judgment-call
-- **Status:** open. Question: how much traffic should a CDN hold back? Option A: keep 0.15 (big visible effect).
-  Option B: treat Client -> CDN traffic as mostly dynamic (pass-through near 1) and let the Redis cache be what
-  protects the database. I would pick B - a junior should not learn that a CDN shields the API tier
+- **Status:** decided in #16 (pick B) - fixed in `src/features/playground/analysis.ts`
 
 ### F04-012 - Heuristic scores can reach 100 / 100
 
@@ -152,9 +147,7 @@ zero scores.
 - **Expected:** a heuristic that checks a handful of things does not award a perfect score
 - **Happened:** Scalability 100 / 100 (Availability is now 90 because of F04-005)
 - **Severity:** judgment-call
-- **Status:** open. Question: cap the scores? Option A: keep 0-100 with the existing disclaimer and the risk list.
-  Option B: cap at 90 and say "the rest depends on things this canvas cannot model". I would pick A now that the
-  risk list names the single load balancer and the empty-state text no longer implies readiness
+- **Status:** decided in #16 (pick A) - no change
 
 ### F04-013 - Cache misses counted twice when a cache is also wired to the store
 
@@ -166,6 +159,4 @@ zero scores.
   miss rate. The model treats a component wired to a cache as cache-aside and a cache wired to a store as read-through,
   and applies both when a learner draws both
 - **Severity:** judgment-call
-- **Status:** open. Question: which caching pattern does the playground model? Option A: cache-aside only (ignore
-  Cache -> store edges for load). Option B: read-through when the cache has a downstream store, and then the direct
-  App -> store edge carries only writes. I would pick A - it matches the presets and the cache-aside lab
+- **Status:** decided in #16 (pick A) - fixed in `src/features/playground/analysis.ts`. After review: a Cache -> store edge is ignored only when the caller also has a direct edge to that store; with App -> Cache -> store alone, that edge carries the misses. Checked with the analysis function: all three wirings give the database 160 of 800 req/s, a canvas with no cache gives 800

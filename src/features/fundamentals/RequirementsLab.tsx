@@ -214,8 +214,9 @@ export function RequirementsLab() {
               {
                 key: 'complexity',
                 label: 'Complexity score',
-                value: complexity,
-                tone: complexity > 70 ? 'danger' : complexity > 40 ? 'warn' : 'ok',
+                // With no functional requirement there is nothing to design, so no score.
+                value: chosen.length === 0 ? '-' : complexity,
+                tone: chosen.length === 0 ? 'neutral' : complexity > 70 ? 'danger' : complexity > 40 ? 'warn' : 'ok',
                 hint: 'An educational heuristic, not an engineering measurement.',
               },
               {

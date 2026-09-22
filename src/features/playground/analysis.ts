@@ -14,9 +14,17 @@ export interface AnalysisResult {
   dropped: number;
 }
 
-/** Share of traffic a component passes on to its downstream dependencies. */
+/** Stores a cache could sit in front of. */
+const STORES: ReadonlySet<NodeKind> = new Set<NodeKind>(['sql', 'nosql', 'storage', 'search']);
+
+/**
+ * Share of traffic a component passes on to its downstream dependencies.
+ * A CDN only answers static assets; the Client traffic here is mostly dynamic
+ * API calls, so nearly all of it still reaches the load balancer. The Redis
+ * cache, not the CDN, is what shields the database.
+ */
 const PASS_THROUGH: Partial<Record<NodeKind, number>> = {
-  cdn: 0.15,
+  cdn: 0.9,
   cache: 0.2,
   queue: 1,
 };
@@ -124,6 +132,18 @@ export function analyze(
     for (const target of targets) {
       if (item.path.includes(target)) continue;
       const kind = byId.get(target)?.data.kind;
+      /**
+       * The playground models cache-aside only: the application reads the
+       * cache and, on a miss, goes to the store itself. When the caller is also
+       * wired to this store, its direct edge already carries the misses, so the
+       * Cache -> store edge carries none - otherwise every miss counts twice.
+       * Without a direct edge the Cache -> store edge is the only way to draw
+       * the miss path, so the misses flow through it.
+       */
+      const caller = item.path[item.path.length - 2];
+      if (node.data.kind === 'cache' && kind && STORES.has(kind) && caller && outgoing.get(caller)?.includes(target)) {
+        continue;
+      }
       const fronted = kind === 'cache' || kind === 'cdn';
       queue.push({
         id: target,

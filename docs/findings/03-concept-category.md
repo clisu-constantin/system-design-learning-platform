@@ -29,7 +29,7 @@ Findings for ticket 03 - Sweep the concept and category pages. Format and severi
 - **Expected:** CLAUDE.md says every concept must answer its trade-offs, and quizzes are scenario-based
 - **Happened:** no crash - the tabs are simply absent - but e.g. `http-https`, `single-point-of-failure`, `sla`, `circuit-breaker-pattern` have no Trade-offs tab, and most concepts have no Quiz, so they can only be completed with "Mark as complete"
 - **Severity:** judgment-call
-- **Status:** open. Question: (a) write the missing quizzes and trade-offs in a content ticket, or (b) accept that only some concepts are quizzed. Writing content is out of scope for this sweep. I would pick (a) for trade-offs (CLAUDE.md requires them) and leave quizzes optional.
+- **Status:** decided in #16 (pick A) - split out as #20 (missing trade-offs); quizzes stay optional
 
 ### F03-004 - Load Balancing step-by-step shows Server 2 "Down" from step 1
 
@@ -38,7 +38,7 @@ Findings for ticket 03 - Sweep the concept and category pages. Format and severi
 - **Expected:** Server 2 turns Down at step 3 "Server 2 fails checks"
 - **Happened:** Server 2 is drawn Down (0% CPU) in every step, so the story is told out of order. The spec sets a static `status` on the node; `SequenceFlow` has no per-step status.
 - **Severity:** misleading
-- **Status:** open - the visual spec is shared data outside this ticket's area, and fixing it needs either a per-step status in `SequenceFlow` (a feature) or a spec change for the load balancing owner (ticket 07).
+- **Status:** decided in #16 (pick B) - fixed in `src/data/visuals/scaling.ts` (step 3 caption is now "Server 2 already failed checks", so the static Down status is true from step 1)
 
 ### F03-005 - Lab tab is called "Interactive lab", docs and ticket call it "Interactive Demo"
 
@@ -47,7 +47,7 @@ Findings for ticket 03 - Sweep the concept and category pages. Format and severi
 - **Expected:** CLAUDE.md ("A new interactive lab") says the lab appears on the concept page's "Interactive Demo" tab
 - **Happened:** the tab reads "Interactive lab", matching the header badge, sidebar card and the Labs page
 - **Severity:** judgment-call
-- **Status:** open. Question: (a) rename the tab to "Interactive Demo", or (b) update CLAUDE.md to say "Interactive lab". I would pick (b): "lab" is the word used everywhere else in the UI.
+- **Status:** decided in #16 (pick B) - no code change; `CLAUDE.md` now says "Interactive lab"
 
 ## Verified with no finding (headless Chromium, `scratchpad/t03/*.cjs`)
 

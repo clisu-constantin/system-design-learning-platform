@@ -334,14 +334,15 @@ export function ReplicationLab() {
             <>
               Asynchronous replication acknowledges the write as soon as the primary has it, so writes cost about{' '}
               {formatLatency(writeLatency)} - but replicas are up to {lagMs} ms behind, which is why{' '}
-              {formatPercent(staleRate, 1)} of replica reads are stale. Kill the primary and any write not yet shipped
+              {formatPercent(staleRate, 1)} of replica reads come from a replica that is behind the primary. Kill the primary and any write not yet shipped
               is lost on promotion.
             </>
           ) : (
             <>
               Synchronous replication waits for replicas before acknowledging, so no acknowledged write can be lost -
               but every write now pays about {formatLatency(writeLatency)}, and a slow replica slows every writer.
-              That is the durability-versus-latency trade in one slider.
+              Drag the network delay to replicas and watch write latency follow - that is the durability-versus-latency
+              trade in one slider.
             </>
           )}
         </Insight>
@@ -354,10 +355,10 @@ export function ReplicationLab() {
               { key: 'reads', label: 'Reads', value: formatNumber(current.reads), hint: 'Total reads served.' },
               {
                 key: 'staleReads',
-                label: 'Stale reads',
+                label: 'Reads behind',
                 value: formatPercent(staleRate, 1),
                 tone: staleRate > 0.05 ? 'warn' : 'ok',
-                hint: 'Reads that returned data older than the newest committed write.',
+                hint: 'Reads behind the primary: replica reads served while that replica had not yet applied the newest write. Simplified: the model treats the database as one key, so any lag counts. In a real system a read is only stale if it asks for a row that just changed, so the stale share is far lower.',
               },
               {
                 key: 'replicationLag',
@@ -454,16 +455,19 @@ export function ReplicationLab() {
             format={(value) => `${value} reads/sec`}
           />
           <Slider
-            label="Replication lag"
+            label="Network delay to replicas"
             value={lagMs}
             min={50}
             max={3000}
             step={50}
             onChange={setLagMs}
-            disabled={mode === 'sync'}
             format={(value) => `${value} ms`}
             tone={lagMs > 1000 ? 'danger' : 'warn'}
-            hint="How long a change takes to reach a replica under asynchronous replication."
+            hint={
+              mode === 'sync'
+                ? 'Synchronous: every write waits for the replicas to confirm, so a slower network means slower writes (simplified model).'
+                : 'Asynchronous: how long a change takes to reach a replica. This is the replication lag.'
+            }
           />
           <div className="flex items-center justify-between gap-2 rounded-xl border border-line bg-elevated p-3">
             <span className="text-xs text-muted">Route reads to replicas</span>
