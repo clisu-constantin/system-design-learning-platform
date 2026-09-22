@@ -39,25 +39,13 @@ export function VerticalScalingLab() {
   const tier = MACHINE_TIERS[tierIndex];
   const load = computeLoad(traffic, tier.capacity, { baseLatencyMs: 30, kneeAt: 0.6 });
 
-  const upgrade = useCallback(() => {
-    if (tierIndex >= MACHINE_TIERS.length - 1) return;
-    const next = MACHINE_TIERS[tierIndex + 1];
-    setTierIndex(tierIndex + 1);
-    log(`Upgraded to ${next.name}: ${next.cpu} vCPU, ${next.ramGb} GB, ~${next.capacity} req/sec`, 'ok');
-    log('Restart required - this is downtime unless you have a standby', 'warn');
-  }, [tierIndex, log]);
-
-  const downgrade = useCallback(() => {
-    if (tierIndex === 0) return;
-    const next = MACHINE_TIERS[tierIndex - 1];
-    setTierIndex(tierIndex - 1);
-    log(`Downgraded to ${next.name} (~${next.capacity} req/sec)`, 'info');
-  }, [tierIndex, log]);
-
-  /** Jumping straight to a tier on the ladder is still a resize, so it logs like one. */
+  /**
+   * Every resize goes through here - the Upgrade/Downgrade buttons and a jump straight to a tier on
+   * the ladder log the same way. Out-of-range indexes are ignored.
+   */
   const selectTier = useCallback(
     (index: number) => {
-      if (index === tierIndex) return;
+      if (index === tierIndex || index < 0 || index >= MACHINE_TIERS.length) return;
       const next = MACHINE_TIERS[index];
       setTierIndex(index);
       if (index > tierIndex) {
@@ -69,6 +57,9 @@ export function VerticalScalingLab() {
     },
     [tierIndex, log],
   );
+
+  const upgrade = useCallback(() => selectTier(tierIndex + 1), [selectTier, tierIndex]);
+  const downgrade = useCallback(() => selectTier(tierIndex - 1), [selectTier, tierIndex]);
 
   const reset = useCallback(() => {
     particles.current = [];

@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from 'react';
+import { Fragment, useCallback, useRef, useState } from 'react';
 import { Rocket, Zap } from 'lucide-react';
 import { ArchNode, DiagramCanvas, NodeStatRow, ParticleLegend, type DiagramEdge, type Layout, type ParticleView } from '@/components/architecture';
 import { Insight, LabShell, MetricsPanel } from '@/components/learning';
@@ -36,13 +36,28 @@ const TRAFFIC_SHARE: Record<Feature, number> = {
   Notifications: 0.1,
 };
 
-/** Share of Orders requests that call Payments synchronously (one extra hop). */
-const ORDERS_CALLING_PAYMENTS = 0.5;
+/**
+ * Synchronous service-to-service calls, caller -> callee. Every site that depends on the
+ * dependency (demand, failures, routes, the diagram edge, the copy) is derived from this map.
+ */
+const CALLS: Partial<Record<Feature, Feature>> = { Orders: 'Payments' };
+
+/** Share of a caller's requests that make its synchronous call (one extra hop). */
+const SYNC_CALL_SHARE = 0.5;
+
+/** Services that call `feature` synchronously - they fail with it. */
+const callersOf = (feature: Feature) => FEATURES.filter((caller) => CALLS[caller] === feature);
+
+/** The dependency map as [caller, callee] pairs, for the diagram and the copy. */
+const CALL_PAIRS = FEATURES.flatMap((caller) => {
+  const callee = CALLS[caller];
+  return callee ? [[caller, callee] as const] : [];
+});
 
 /**
  * Traffic ceiling. Only Orders scales in microservices mode, so the fixed
  * services are sized to stay under capacity at this maximum (the busiest,
- * Payments and Users, run at about 85%) - no
+ * Payments at 90% and Users at about 89%) - no
  * setting of the controls produces a failure that no control can fix.
  */
 const MAX_TRAFFIC = 2000;
@@ -61,8 +76,10 @@ const FIXED_CAPACITY: Record<Exclude<Feature, 'Orders'>, number> = {
 
 /** Requests per second each service receives: its own share plus calls from other services. */
 const serviceDemand = (feature: Feature, traffic: number) =>
-  traffic * TRAFFIC_SHARE[feature] +
-  (feature === 'Payments' ? traffic * TRAFFIC_SHARE.Orders * ORDERS_CALLING_PAYMENTS : 0);
+  callersOf(feature).reduce(
+    (demand, caller) => demand + traffic * TRAFFIC_SHARE[caller] * SYNC_CALL_SHARE,
+    traffic * TRAFFIC_SHARE[feature],
+  );
 
 interface State {
   particles: Particle[];
@@ -172,27 +189,30 @@ export function MonolithMicroservicesLab() {
       } else {
         const load = serviceLoads[feature];
         const ownFailure = broken === feature || Math.random() < load.errorRate;
-        // Orders calls Payments synchronously - one extra network hop, and Orders
-        // is only as available as Payments: if the call fails, the order fails.
-        const extraHop = feature === 'Orders' && !ownFailure && Math.random() < ORDERS_CALLING_PAYMENTS;
+        // A synchronous call (Orders -> Payments) is one extra network hop, and the
+        // caller is only as available as the callee: if the call fails, the request fails.
+        const dependency = CALLS[feature];
+        const callee = dependency && !ownFailure && Math.random() < SYNC_CALL_SHARE ? dependency : undefined;
         const dependencyFailure =
-          extraHop && (broken === 'Payments' || Math.random() < serviceLoads.Payments.errorRate);
+          callee !== undefined && (broken === callee || Math.random() < serviceLoads[callee].errorRate);
         const failed = ownFailure || dependencyFailure;
         if (failed) current.failed.add(1, now);
         else {
           current.handled.add(1, now);
-          current.latency.push(load.latencyMs + 12 + (extraHop ? serviceLoads.Payments.latencyMs : 0), now);
+          current.latency.push(load.latencyMs + 12 + (callee ? serviceLoads[callee].latencyMs : 0), now);
         }
         if (!animate()) continue;
+        // A failed service is where the particle stops; a failed call stops at the callee.
+        const route = ['client', 'gateway', `svc-${feature}`];
+        if (callee) {
+          route.push(`svc-${callee}`);
+          if (!dependencyFailure) route.push(`db-${callee}`);
+        } else if (!ownFailure) {
+          route.push(`db-${feature}`);
+        }
         current.particles.push({
           id: nextParticleId(),
-          route: ownFailure
-            ? ['client', 'gateway', `svc-${feature}`]
-            : dependencyFailure
-              ? ['client', 'gateway', 'svc-Orders', 'svc-Payments']
-              : extraHop
-                ? ['client', 'gateway', 'svc-Orders', 'svc-Payments', 'db-Payments']
-                : ['client', 'gateway', `svc-${feature}`, `db-${feature}`],
+          route,
           leg: 0,
           t: 0,
           speed: 1.3,
@@ -217,6 +237,7 @@ export function MonolithMicroservicesLab() {
   const latencyText = formatLatency(current.latency.snapshot(now).avg);
 
   const layout = mode === 'monolith' ? MONO_LAYOUT : MICRO_LAYOUT;
+  const brokenCallers = broken ? callersOf(broken) : [];
 
   const edges: DiagramEdge[] =
     mode === 'monolith'
@@ -239,8 +260,13 @@ export function MonolithMicroservicesLab() {
             tone: 'info',
           })),
           // No edge label: the two cards are 30px apart, so any label lands behind a
-          // node. The Orders card subtitle says "calls Payments" instead.
-          { from: 'svc-Orders', to: 'svc-Payments', tone: broken === 'Payments' ? 'danger' : 'warn', dashed: true },
+          // node. The caller card subtitle says "calls Payments" instead.
+          ...CALL_PAIRS.map<DiagramEdge>(([caller, callee]) => ({
+            from: `svc-${caller}`,
+            to: `svc-${callee}`,
+            tone: broken === callee ? 'danger' : 'warn',
+            dashed: true,
+          })),
         ];
 
   const particleViews: ParticleView[] = current.particles
@@ -323,11 +349,13 @@ export function MonolithMicroservicesLab() {
                 <strong className="text-ink">every</strong> capability is down - including checkout, which has nothing
                 to do with the bug.
               </>
-            ) : broken === 'Payments' ? (
+            ) : brokenCallers.length > 0 ? (
               <>
-                Payments is down, and so is every order that calls it synchronously - Users and Notifications keep
-                serving, but Orders fails whenever it needs Payments. Fault isolation only holds where there is no
-                synchronous dependency, or where the caller degrades gracefully instead of failing with it.
+                {broken} is down, and so is every {brokenCallers.join(' and ')} request that calls it synchronously
+                - {FEATURES.filter((feature) => feature !== broken && !brokenCallers.includes(feature)).join(' and ')}{' '}
+                keep serving, but {brokenCallers.join(' and ')} fails whenever it needs {broken}. Fault isolation only
+                holds where there is no synchronous dependency, or where the caller degrades gracefully instead of
+                failing with it.
               </>
             ) : (
               <>
@@ -343,8 +371,13 @@ export function MonolithMicroservicesLab() {
           ) : (
             <>
               Each service scales and fails on its own, at the price of network hops: latency is{' '}
-              {latencyText}, and the synchronous Orders {'->'} Payments call means Orders is only as
-              available as Payments. Microservices are an organisational tool before they are a technical one.
+              {latencyText}
+              {CALL_PAIRS.map(([caller, callee]) => (
+                <Fragment key={caller}>
+                  , and the synchronous {caller} {'->'} {callee} call means {caller} is only as available as {callee}
+                </Fragment>
+              ))}
+              . Microservices are an organisational tool before they are a technical one.
             </>
           )}
         </Insight>
@@ -457,8 +490,8 @@ export function MonolithMicroservicesLab() {
                     next
                       ? mode === 'monolith'
                         ? `${feature} crashed - the whole monolith process is down`
-                        : feature === 'Payments'
-                          ? 'Payments service down - Orders requests that call it fail too'
+                        : callersOf(feature).length > 0
+                          ? `${feature} service down - ${callersOf(feature).join(' and ')} requests that call it fail too`
                           : `${feature} service down - other services unaffected`
                       : `${feature} recovered`,
                     next ? 'danger' : 'ok',
@@ -528,7 +561,9 @@ export function MonolithMicroservicesLab() {
                 key={feature}
                 kind="service"
                 title={`${feature} Service`}
-                subtitle={feature === 'Orders' ? `x${instances}, calls Payments` : 'x1'}
+                subtitle={[feature === 'Orders' ? `x${instances}` : 'x1', CALLS[feature] && `calls ${CALLS[feature]}`]
+                  .filter(Boolean)
+                  .join(', ')}
                 placed={layout[`svc-${feature}`]}
                 status={broken === feature ? 'down' : serviceLoads[feature].errorRate > 0.2 ? 'degraded' : 'healthy'}
                 alert={serviceLoads[feature].saturated}

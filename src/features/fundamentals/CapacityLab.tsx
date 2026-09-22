@@ -9,6 +9,8 @@ const SECONDS_PER_DAY = 86_400;
 /** Rates below 10/sec keep two decimals, so a tiny product does not read as "0 req/sec". */
 const formatRate = (value: number) => (value < 10 ? value.toFixed(2) : formatNumber(value));
 
+const formatCopies = (count: number) => `${count} ${count > 1 ? 'copies' : 'copy'}`;
+
 interface Step {
   label: string;
   formula: string;
@@ -215,7 +217,7 @@ export function CapacityLab() {
             min={1}
             max={5}
             onChange={setReplicationFactor}
-            format={(value) => `${value} cop${value > 1 ? 'ies' : 'y'}`}
+            format={formatCopies}
             hint="Durability costs storage: three copies means three times the bill."
           />
         </>
@@ -260,7 +262,7 @@ export function CapacityLab() {
           <div className="rounded-xl border border-line bg-elevated p-4">
             <p className="label">{retentionYears}-year storage</p>
             <p className="metric-value mt-1 text-ink">{formatBytes(derived.storedWithReplication)}</p>
-            <p className="mt-1 text-[11px] text-faint">including replication ({replicationFactor} cop{replicationFactor > 1 ? 'ies' : 'y'})</p>
+            <p className="mt-1 text-[11px] text-faint">including replication ({formatCopies(replicationFactor)})</p>
           </div>
         </div>
       </div>
