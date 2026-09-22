@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState, type RefObject } from 'react';
+import { useCallback, useRef, useState, type RefObject } from 'react';
 import { Link } from 'react-router-dom';
 import { AlertTriangle, ArrowRight, Check, ChevronLeft, ChevronRight, Sparkles } from 'lucide-react';
 import { ArchNode, DiagramCanvas, ParticleLegend, type ParticleView } from '@/components/architecture';
@@ -7,7 +7,6 @@ import { Badge, Button, Stat } from '@/components/ui';
 import { advanceParticles, nextParticleId, useTicker, type Particle } from '@/simulations/engine';
 import { useRerender } from '@/hooks/useRerender';
 import { cn } from '@/utils/cn';
-import { clamp } from '@/utils/math';
 import { STAGES, stageLayout } from './stages';
 
 const DESIGN_WIDTH = 960;
@@ -21,21 +20,7 @@ const DESIGN_HEIGHT = 540;
  * components (the queue and workers in stage 7) sat off to the right behind an
  * overlay scrollbar the learner never sees. Same approach as FlowVisual.
  */
-function useFitScale() {
-  const ref = useRef<HTMLDivElement>(null);
-  const [scale, setScale] = useState(1);
-  useEffect(() => {
-    const element = ref.current;
-    if (!element || typeof ResizeObserver === 'undefined') return;
-    const observer = new ResizeObserver((entries) => {
-      const width = entries[0]?.contentRect.width ?? 0;
-      if (width > 0) setScale(clamp(width / DESIGN_WIDTH, 0.6, 1));
-    });
-    observer.observe(element);
-    return () => observer.disconnect();
-  }, []);
-  return { ref, scale };
-}
+const EVOLUTION_FIT = { min: 0.6, max: 1 };
 
 export function EvolutionPage() {
   const [index, setIndex] = useState(0);
@@ -45,7 +30,6 @@ export function EvolutionPage() {
 
   const stage = STAGES[index];
   const layout = stageLayout(stage);
-  const fit = useFitScale();
   // Same promise as every other animated diagram: starts paused under reduced
   // motion, has an explicit Pause/Play, and stops ticking while off screen.
   const autoplay = useAutoplay();
@@ -158,43 +142,28 @@ export function EvolutionPage() {
               </div>
 
               {/* Below 0.6x the labels get unreadable, so a phone scrolls sideways instead. */}
-              <div ref={fit.ref} className="w-full overflow-x-auto">
-                <div
-                  className="mx-auto"
-                  style={{ width: DESIGN_WIDTH * fit.scale, height: DESIGN_HEIGHT * fit.scale, overflow: 'hidden' }}
-                >
-                  <div
-                    style={{
-                      transform: `scale(${fit.scale})`,
-                      transformOrigin: 'top left',
-                      width: DESIGN_WIDTH,
-                      height: DESIGN_HEIGHT,
-                    }}
-                  >
-                    <DiagramCanvas
-                      layout={layout}
-                      edges={stage.edges}
-                      particles={particleViews}
-                      width={DESIGN_WIDTH}
-                      height={DESIGN_HEIGHT}
-                      className="bg-canvas"
-                    >
-                      {stage.nodes.map((node) => (
-                        <ArchNode
-                          key={node.id}
-                          kind={node.kind}
-                          title={node.title}
-                          subtitle={node.subtitle}
-                          placed={node.placed}
-                          compact
-                          selected={node.isNew}
-                          badge={node.isNew ? <Badge tone="brand">new</Badge> : undefined}
-                        />
-                      ))}
-                    </DiagramCanvas>
-                  </div>
-                </div>
-              </div>
+              <DiagramCanvas
+                layout={layout}
+                edges={stage.edges}
+                particles={particleViews}
+                width={DESIGN_WIDTH}
+                height={DESIGN_HEIGHT}
+                className="bg-canvas"
+                fit={EVOLUTION_FIT}
+              >
+                {stage.nodes.map((node) => (
+                  <ArchNode
+                    key={node.id}
+                    kind={node.kind}
+                    title={node.title}
+                    subtitle={node.subtitle}
+                    placed={node.placed}
+                    compact
+                    selected={node.isNew}
+                    badge={node.isNew ? <Badge tone="brand">new</Badge> : undefined}
+                  />
+                ))}
+              </DiagramCanvas>
 
               <div className="flex items-center gap-3 border-t border-line px-5 py-2.5">
                 <ParticleLegend outcomes={['success', 'cache-hit']} />
