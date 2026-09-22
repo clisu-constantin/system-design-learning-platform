@@ -391,7 +391,7 @@ export function MonolithMicroservicesLab() {
                 key: 'latency',
                 label: 'Avg latency',
                 value: latencyText,
-                hint: 'Average over successful requests. n/a when every request is failing.',
+                hint: 'Average over successful requests. Shows a dash when no request succeeded in the last few seconds.',
                 simulated: true,
               },
               {
@@ -407,8 +407,8 @@ export function MonolithMicroservicesLab() {
                 value: broken
                   ? mode === 'monolith'
                     ? 'All features'
-                    : broken === 'Payments'
-                      ? 'Payments + some Orders'
+                    : brokenCallers.length > 0
+                      ? `${broken} + some ${brokenCallers.join(' + ')}`
                       : `${broken} only`
                   : 'None',
                 tone: broken && mode === 'monolith' ? 'danger' : broken ? 'warn' : 'ok',
