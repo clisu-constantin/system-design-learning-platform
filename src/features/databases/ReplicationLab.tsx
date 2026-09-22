@@ -105,6 +105,10 @@ export function ReplicationLab() {
       if (node.role === 'primary') {
         log('Primary unreachable - health checks failing', 'danger');
         current.failoverAt = performance.now() + 3000;
+        // Writes still waiting to ship died with the primary. Letting them land
+        // afterwards meant every replica caught up during the failover delay, so
+        // "Lost writes" stayed 0 at any lag under ~2s - the opposite of the lesson.
+        current.pending = [];
       } else {
         log(`${node.name} down - read capacity reduced`, 'warn');
       }
@@ -119,9 +123,20 @@ export function ReplicationLab() {
       const node = current.nodes.find((item) => item.id === id);
       if (!node) return;
       node.status = 'healthy';
-      node.role = current.nodes.some((item) => item.role === 'primary' && item.status !== 'down')
-        ? 'replica'
-        : node.role;
+      // Compare against the other nodes: this one is already marked healthy, so
+      // matching itself turned a recovered primary into a replica and left the
+      // cluster with no primary until the pending failover promoted one.
+      const otherPrimary = current.nodes.some(
+        (item) => item !== node && item.role === 'primary' && item.status !== 'down',
+      );
+      if (node.role === 'primary' && !otherPrimary) {
+        current.failoverAt = null;
+        node.applied = current.version;
+        log(`${node.name} recovered before failover - it stays the primary`, 'ok');
+        rerender();
+        return;
+      }
+      node.role = 'replica';
       node.applied = current.version;
       log(`${node.name} recovered and caught up as a replica`, 'ok');
       rerender();
@@ -141,6 +156,12 @@ export function ReplicationLab() {
         const winner = candidates.reduce((best, node) => (node.applied > best.applied ? node : best), candidates[0]);
         const lost = current.version - winner.applied;
         current.lostWrites += Math.max(0, lost);
+        // The failed primary is no longer the primary; if it comes back it
+        // rejoins as a replica. Leaving it as 'primary' kept the dead node in
+        // the diagram and hid the promoted one.
+        for (const node of current.nodes) {
+          if (node.role === 'primary') node.role = 'replica';
+        }
         winner.role = 'primary';
         winner.name = `${winner.name} (promoted)`;
         current.version = winner.applied;
@@ -235,8 +256,12 @@ export function ReplicationLab() {
   const current = state.current;
   const primary = current.nodes.find((node) => node.role === 'primary');
   const replicas = current.nodes.filter((node) => node.role === 'replica');
-  const recentReadQps = current.recentReads.rate(performance.now());
-  const staleRate = recentReadQps ? current.recentStale.rate(performance.now()) / recentReadQps : 0;
+  // One timestamp for both counters: reading them at two different instants
+  // (the first read also starts each ring) put their buckets out of step, and
+  // the stale share climbed past 100%.
+  const renderNow = performance.now();
+  const recentReadQps = current.recentReads.rate(renderNow);
+  const staleRate = recentReadQps ? Math.min(1, current.recentStale.rate(renderNow) / recentReadQps) : 0;
   const writeLatency = mode === 'sync' ? 8 + lagMs * 0.25 : 8;
 
   const xs = spread(replicas.length, 480, 170, 30);
@@ -309,14 +334,15 @@ export function ReplicationLab() {
             <>
               Asynchronous replication acknowledges the write as soon as the primary has it, so writes cost about{' '}
               {formatLatency(writeLatency)} - but replicas are up to {lagMs} ms behind, which is why{' '}
-              {formatPercent(staleRate, 1)} of replica reads are stale. Kill the primary and any write not yet shipped
+              {formatPercent(staleRate, 1)} of replica reads come from a replica that is behind the primary. Kill the primary and any write not yet shipped
               is lost on promotion.
             </>
           ) : (
             <>
               Synchronous replication waits for replicas before acknowledging, so no acknowledged write can be lost -
               but every write now pays about {formatLatency(writeLatency)}, and a slow replica slows every writer.
-              That is the durability-versus-latency trade in one slider.
+              Drag the network delay to replicas and watch write latency follow - that is the durability-versus-latency
+              trade in one slider.
             </>
           )}
         </Insight>
@@ -329,10 +355,10 @@ export function ReplicationLab() {
               { key: 'reads', label: 'Reads', value: formatNumber(current.reads), hint: 'Total reads served.' },
               {
                 key: 'staleReads',
-                label: 'Stale reads',
+                label: 'Reads behind',
                 value: formatPercent(staleRate, 1),
                 tone: staleRate > 0.05 ? 'warn' : 'ok',
-                hint: 'Reads that returned data older than the newest committed write.',
+                hint: 'Reads behind the primary: replica reads served while that replica had not yet applied the newest write. Simplified: the model treats the database as one key, so any lag counts. In a real system a read is only stale if it asks for a row that just changed, so the stale share is far lower.',
               },
               {
                 key: 'replicationLag',
@@ -340,7 +366,13 @@ export function ReplicationLab() {
                 value: mode === 'sync' ? '0 ms' : `${lagMs} ms`,
                 tone: mode === 'sync' ? 'ok' : 'warn',
               },
-              { key: 'latency', label: 'Write latency', value: formatLatency(writeLatency), tone: mode === 'sync' ? 'warn' : 'ok' },
+              {
+                key: 'latency',
+                label: 'Write latency',
+                value: formatLatency(writeLatency),
+                tone: mode === 'sync' ? 'warn' : 'ok',
+                hint: 'Time until the write is acknowledged. Simulated by a simplified model, not measured.',
+              },
               {
                 key: 'lost',
                 label: 'Lost writes',
@@ -423,16 +455,19 @@ export function ReplicationLab() {
             format={(value) => `${value} reads/sec`}
           />
           <Slider
-            label="Replication lag"
+            label="Network delay to replicas"
             value={lagMs}
             min={50}
             max={3000}
             step={50}
             onChange={setLagMs}
-            disabled={mode === 'sync'}
             format={(value) => `${value} ms`}
             tone={lagMs > 1000 ? 'danger' : 'warn'}
-            hint="How long a change takes to reach a replica under asynchronous replication."
+            hint={
+              mode === 'sync'
+                ? 'Synchronous: every write waits for the replicas to confirm, so a slower network means slower writes (simplified model).'
+                : 'Asynchronous: how long a change takes to reach a replica. This is the replication lag.'
+            }
           />
           <div className="flex items-center justify-between gap-2 rounded-xl border border-line bg-elevated p-3">
             <span className="text-xs text-muted">Route reads to replicas</span>

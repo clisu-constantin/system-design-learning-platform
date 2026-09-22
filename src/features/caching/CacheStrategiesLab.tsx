@@ -1,5 +1,13 @@
 import { useCallback, useMemo, useRef, useState } from 'react';
-import { ArchNode, DiagramCanvas, NodeStatRow, type DiagramEdge, type Layout, type ParticleView } from '@/components/architecture';
+import {
+  ArchNode,
+  DiagramCanvas,
+  NodeStatRow,
+  ParticleLegend,
+  type DiagramEdge,
+  type Layout,
+  type ParticleView,
+} from '@/components/architecture';
 import { Insight, LabShell, TradeOffTable } from '@/components/learning';
 import { SegmentedControl, Slider } from '@/components/ui';
 import { useTicker } from '@/simulations/engine';
@@ -136,6 +144,9 @@ export function CacheStrategiesLab() {
     const unique = new Map<string, DiagramEdge>();
     for (const step of steps) {
       const key = `${step.from}->${step.to}`;
+      // Two steps can share an edge (cache-aside: GET key, later SET key).
+      // Keep the active one, or step 1 would be drawn muted and unlabelled.
+      if (unique.get(key)?.animated) continue;
       unique.set(key, {
         from: step.from,
         to: step.to,
@@ -167,6 +178,7 @@ export function CacheStrategiesLab() {
       running={running}
       onToggleRun={() => setRunning((value) => !value)}
       onReset={reset}
+      legend={<ParticleLegend outcomes={['success', 'cache-hit', 'warning']} />}
       insight={
         <Insight title={`Step ${progress.current.step + 1} of ${steps.length}`}>
           <strong className="text-ink">{active.label}:</strong> {active.note}

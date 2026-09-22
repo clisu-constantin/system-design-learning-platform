@@ -122,7 +122,7 @@ caller") rather than escaping them.
 4. Add a row to `LABS` in `src/features/labs/registry.ts` (lazy import).
 5. Set `lab: '<id>'` on the concept that should host it.
 
-The lab then appears on the concept page's "Interactive Demo" tab, at `/labs/<id>`, in search, and
+The lab then appears on the concept page's "Interactive lab" tab, at `/labs/<id>`, in search, and
 on the labs index — no other wiring.
 
 ### A new playground component kind
@@ -202,7 +202,7 @@ These are editorial rules, not style preferences. They are the reason the app is
   `LiveChart`; recharts was removed because it cost every chart lab ~96 KB gzip.
 - Status is never communicated by color alone — particles have distinct shapes (circle, diamond,
   triangle, cross) and every status has a text label (`HealthIndicator`, `ParticleLegend`).
-- Dark mode is the default and is the theme diagrams are tuned for; both themes must stay readable.
+- Dark mode is the default when the OS does not ask for light (first paint follows `prefers-color-scheme`), and it is the theme diagrams are tuned for; both themes must stay readable.
 
 ## Gotchas
 
@@ -216,13 +216,27 @@ These are editorial rules, not style preferences. They are the reason the app is
   module". Heavy deps reached only from lazy chunks are listed in `optimizeDeps.include` so Vite
   never re-optimizes and force-reloads mid-session.
 - Labs that size node boxes at runtime (load balancer, horizontal scaling, auto scaling, queue) must
-  keep the widest label readable: minimum width is 52 + 6.4 per character, and the whole row must
+  keep the widest label readable: minimum width is 52 + the title width (the per-letter table in `scripts/check-visuals.mjs`, about 7px a letter), and the whole row must
   stay inside the 960px canvas.
 - The Bash tool on this machine has had trouble with large heredocs containing `.tsx`; prefer the
   Write tool for source files.
 - `ArchNode` grows to fit its content and truncates its title, so an undersized box silently
   clips its label or overlaps the node below. `npm run check:visuals` catches both; it runs as part
   of `npm run build`. Minimum height is 62 + 12 (subtitle) + 16 (stat row); minimum width is
-  52 + 6.4 per title character.
+  52 + the per-letter title width table in `scripts/check-visuals.mjs` (about 7px a letter).
 - Everything persists to `localStorage` only (`sdi:theme`, `sdi:progress:v1`). No backend, no auth,
   no network calls at runtime — keep it that way.
+
+## Agent skills
+
+### Issue tracker
+
+GitHub Issues on `clisu-constantin/system-design-learning-platform`, via the `gh` CLI. See `docs/agents/issue-tracker.md`.
+
+### Triage labels
+
+The five default labels, unchanged. See `docs/agents/triage-labels.md`.
+
+### Domain docs
+
+Single-context: `CONTEXT.md` + `docs/adr/` at the repo root. See `docs/agents/domain.md`.

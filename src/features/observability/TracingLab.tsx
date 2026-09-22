@@ -6,8 +6,11 @@ import { cn } from '@/utils/cn';
 
 interface SpanSpec {
   id: string;
+  /** Id of the span that made this call; absent for the root span. */
+  parent?: string;
   name: string;
-  depth: number;
+  /** The process that recorded the span - what the "Components" metric counts. */
+  component: string;
   /** Own work, excluding children. */
   selfMs: number;
   kind: 'gateway' | 'service' | 'db' | 'cache' | 'queue';
@@ -15,17 +18,48 @@ interface SpanSpec {
 }
 
 interface Span extends SpanSpec {
+  depth: number;
   startMs: number;
+  /** Duration including every child span, as a tracing UI shows it. */
   totalMs: number;
 }
 
+/**
+ * Colour is only the span kind - it never means "error". Red is kept out so a
+ * cache span does not read as a failed one; the kind is also named in the
+ * span detail badge.
+ */
 const KIND_TONE = {
   gateway: 'bg-brand',
   service: 'bg-ok',
   db: 'bg-info',
-  cache: 'bg-danger',
+  cache: 'bg-violet',
   queue: 'bg-warn',
 } as const;
+
+/**
+ * Teaching simplification: a span does its own work first, then calls its
+ * children one after another (no parallel calls). A parent span therefore lasts
+ * its own time plus all of its children, and the self times of every span add
+ * up exactly to the root duration.
+ */
+function layoutSpans(specs: SpanSpec[]): Span[] {
+  const place = (spec: SpanSpec, startMs: number, depth: number): Span[] => {
+    let cursor = startMs + spec.selfMs;
+    const descendants: Span[] = [];
+    for (const child of specs.filter((item) => item.parent === spec.id)) {
+      const placed = place(child, cursor, depth + 1);
+      descendants.push(...placed);
+      cursor = placed[0].startMs + placed[0].totalMs;
+    }
+    return [{ ...spec, depth, startMs, totalMs: cursor - startMs }, ...descendants];
+  };
+  const root = specs.find((spec) => spec.parent === undefined);
+  return root ? place(root, 0, 0) : [];
+}
+
+/** Illustrative cost of sending the notification inside the request (an email provider call). */
+const SYNC_NOTIFY_MS = 150;
 
 export function TracingLab() {
   const [gatewayMs, setGatewayMs] = useState(18);
@@ -41,23 +75,25 @@ export function TracingLab() {
       {
         id: 'gateway',
         name: 'API Gateway GET /api/orders/123',
-        depth: 0,
+        component: 'api-gateway',
         selfMs: gatewayMs,
         kind: 'gateway',
         attributes: { 'http.method': 'GET', 'http.route': '/api/orders/:id', 'user.id': 'user_42' },
       },
       {
         id: 'order',
+        parent: 'gateway',
         name: 'order-service handle',
-        depth: 1,
+        component: 'order-service',
         selfMs: orderMs,
         kind: 'service',
         attributes: { 'service.version': '2.14.0', 'peer.service': 'payment-service' },
       },
       {
         id: 'cache',
+        parent: 'order',
         name: `redis GET order:123 (${cacheHit ? 'HIT' : 'MISS'})`,
-        depth: 2,
+        component: 'redis',
         selfMs: cacheHit ? 3 : 5,
         kind: 'cache',
         attributes: { 'db.system': 'redis', 'cache.hit': String(cacheHit) },
@@ -67,8 +103,9 @@ export function TracingLab() {
         : [
             {
               id: 'db',
+              parent: 'order',
               name: 'postgres SELECT orders',
-              depth: 2,
+              component: 'postgres',
               selfMs: dbMs,
               kind: 'db' as const,
               attributes: { 'db.system': 'postgresql', 'db.statement': 'SELECT * FROM orders WHERE id = $1' },
@@ -76,50 +113,53 @@ export function TracingLab() {
           ]),
       {
         id: 'payment',
+        parent: 'order',
         name: 'payment-service authorize',
-        depth: 2,
+        component: 'payment-service',
         selfMs: paymentMs,
         kind: 'service',
         attributes: { 'peer.service': 'stripe', 'retry.count': '0' },
       },
       {
         id: 'payment-db',
+        parent: 'payment',
         name: 'postgres INSERT payment',
-        depth: 3,
+        component: 'postgres',
         selfMs: dbMs,
         kind: 'db',
         attributes: { 'db.system': 'postgresql', 'db.operation': 'INSERT' },
       },
-      ...(asyncNotify
-        ? [
-            {
-              id: 'queue',
-              name: 'kafka publish order.updated',
-              depth: 2,
-              selfMs: 4,
-              kind: 'queue' as const,
-              attributes: { 'messaging.system': 'kafka', 'messaging.destination': 'order.updated' },
-            },
-          ]
-        : []),
+      // Async: publish an event and move on - the notification is sent later, off
+      // the request path. Sync: the order service waits for the notification
+      // service to send it, and the user waits too.
+      asyncNotify
+        ? {
+            id: 'queue',
+            parent: 'order',
+            name: 'kafka publish order.updated',
+            component: 'kafka',
+            selfMs: 4,
+            kind: 'queue',
+            attributes: { 'messaging.system': 'kafka', 'messaging.destination': 'order.updated' },
+          }
+        : {
+            id: 'notify',
+            parent: 'order',
+            name: 'notification-service send',
+            component: 'notification-service',
+            selfMs: SYNC_NOTIFY_MS,
+            kind: 'service',
+            attributes: { 'peer.service': 'email-provider', 'notification.channel': 'email' },
+          },
     ];
 
-    // Lay spans out sequentially within their parent, which is close enough for
-    // a teaching waterfall and keeps the arithmetic obvious.
-    const result: Span[] = [];
-    let clock = 0;
-    for (const spec of specs) {
-      const startMs = spec.depth === 0 ? 0 : clock;
-      const totalMs = spec.selfMs;
-      result.push({ ...spec, startMs, totalMs });
-      if (spec.depth > 0) clock += spec.selfMs;
-    }
-    const total = clock + gatewayMs;
-    return result.map((span) => (span.depth === 0 ? { ...span, totalMs: total } : span));
+    return layoutSpans(specs);
   }, [gatewayMs, orderMs, paymentMs, dbMs, cacheHit, asyncNotify]);
 
   const root = spans[0];
   const totalMs = root.totalMs;
+  // Slowest by self time: the span whose own work costs the most, not a parent
+  // that is long only because it waits on its children.
   const slowest = spans.slice(1).reduce((worst, span) => (span.selfMs > worst.selfMs ? span : worst), spans[1]);
   const active = spans.find((span) => span.id === selected) ?? null;
 
@@ -151,13 +191,18 @@ export function TracingLab() {
             items={[
               { key: 'total', label: 'Total duration', value: formatLatency(totalMs), tone: totalMs > 300 ? 'warn' : 'ok' },
               { key: 'spans', label: 'Spans', value: spans.length, hint: 'Operations recorded in this trace.' },
-              { key: 'services', label: 'Services', value: new Set(spans.map((span) => span.kind)).size, hint: 'Distinct components involved in one request.' },
+              {
+                key: 'components',
+                label: 'Components',
+                value: new Set(spans.map((span) => span.component)).size,
+                hint: 'Distinct processes (gateway, services, stores, broker) involved in one request.',
+              },
               {
                 key: 'slowest',
-                label: 'Slowest span',
+                label: 'Slowest span (self)',
                 value: formatLatency(slowest.selfMs),
                 tone: 'danger',
-                hint: 'The hop that dominates the request.',
+                hint: 'The hop whose own work dominates the request - time spent waiting on children is not counted.',
               },
               {
                 key: 'depth',
@@ -178,6 +223,10 @@ export function TracingLab() {
               <dl className="mt-3 grid gap-x-6 gap-y-1.5 font-mono text-[11px] sm:grid-cols-2">
                 <div className="flex justify-between gap-4">
                   <dt className="text-faint">duration</dt>
+                  <dd className="text-ink">{formatLatency(active.totalMs)}</dd>
+                </div>
+                <div className="flex justify-between gap-4">
+                  <dt className="text-faint">self time</dt>
                   <dd className="text-ink">{formatLatency(active.selfMs)}</dd>
                 </div>
                 <div className="flex justify-between gap-4">
@@ -246,7 +295,7 @@ export function TracingLab() {
             label="Async notification"
             checked={asyncNotify}
             onChange={setAsyncNotify}
-            description="Publish to Kafka - context must be propagated into the message"
+            description={`On: publish to Kafka and return - context must be propagated into the message. Off: call the notification service synchronously (~${SYNC_NOTIFY_MS} ms on the request path)`}
           />
           <div className="rounded-xl border border-line bg-elevated p-3 font-mono text-[10px] leading-relaxed text-muted">
             traceparent: 00-4bf92f3577b34da6-00f067aa0ba902b7-01
@@ -264,39 +313,48 @@ export function TracingLab() {
         </div>
         <div className="space-y-1.5">
           {spans.map((span) => {
-            const width = Math.max(1.5, (span.selfMs / totalMs) * 100);
-            const offset = span.depth === 0 ? 0 : (span.startMs / totalMs) * 100;
+            // Keep tiny spans visible (1.5% minimum) without pushing the bar past
+            // the right edge - a span at the very end is nudged left instead.
+            const width = Math.max(1.5, (span.totalMs / totalMs) * 100);
+            const offset = Math.min((span.startMs / totalMs) * 100, 100 - width);
             return (
               <button
                 key={span.id}
                 type="button"
                 onClick={() => setSelected(span.id === selected ? null : span.id)}
                 className={cn(
-                  'flex w-full items-center gap-3 rounded-lg px-2 py-1.5 text-left transition-colors',
+                  // On a phone the name takes its own line; side by side it would leave the bar 0px wide.
+                  'flex w-full flex-wrap items-center gap-x-3 gap-y-1 rounded-lg px-2 py-1.5 text-left transition-colors sm:flex-nowrap',
                   selected === span.id ? 'bg-elevated' : 'hover:bg-elevated',
                 )}
               >
                 <span
-                  className="w-56 shrink-0 truncate font-mono text-[11px] text-muted"
+                  className="w-full shrink-0 truncate font-mono text-[11px] text-muted sm:w-56"
+                  title={span.name}
                   style={{ paddingLeft: span.depth * 12 }}
                 >
                   {span.name}
                 </span>
-                <span className="relative h-4 flex-1 overflow-hidden rounded bg-line/40">
+                <span className="relative h-4 min-w-0 flex-1 overflow-hidden rounded bg-line/40">
                   <span
                     className={cn('absolute inset-y-0 rounded', KIND_TONE[span.kind])}
                     style={{ left: `${offset}%`, width: `${width}%` }}
                   />
                 </span>
                 <span className="w-16 shrink-0 text-right font-mono text-[11px] text-ink">
-                  {formatLatency(span.selfMs)}
+                  {formatLatency(span.totalMs)}
                 </span>
               </button>
             );
           })}
         </div>
-        <p className="mt-4 text-xs text-faint">
-          Click a span to inspect its attributes. Sampling decides which traces you keep - tail-based sampling keeps the
+        <p className="mt-4 font-mono text-[11px] text-muted">
+          Self times add up to the total: {spans.map((span) => formatNumber(span.selfMs)).join(' + ')} ={' '}
+          {formatNumber(totalMs)} ms. A parent bar spans its children, so its duration includes their time.
+        </p>
+        <p className="mt-2 text-xs text-faint">
+          Simplified: every call here runs one after another. Real services often call in parallel, and then children
+          overlap. Click a span to inspect its attributes. Sampling decides which traces you keep - tail-based sampling keeps the
           slow and failed ones, which are the {formatNumber(1)}% you actually wanted.
         </p>
       </div>

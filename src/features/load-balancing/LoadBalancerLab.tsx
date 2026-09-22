@@ -12,7 +12,7 @@ import {
 } from '@/components/architecture';
 import { LiveChart } from '@/components/charts';
 import { Insight, LabShell, MetricsPanel, RequestInspector } from '@/components/learning';
-import { Button, Meter, Select, Slider, Stepper } from '@/components/ui';
+import { Button, Meter, Select, Slider, Stepper, Toggle } from '@/components/ui';
 import {
   advanceParticles,
   MetricWindow,
@@ -41,7 +41,7 @@ const ALGORITHMS: { value: Algorithm; label: string }[] = [
 
 const ALGORITHM_NOTE: Record<Algorithm, string> = {
   'round-robin': 'Each server takes the next request in turn. Even distribution, but it ignores how busy a server is.',
-  weighted: 'Bigger servers receive proportionally more requests. Server 1 has weight 3, the rest weight 1.',
+  weighted: 'Bigger servers receive proportionally more requests. Server 1 has weight 3 (a machine three times the size), the rest weight 1.',
   'least-connections': 'The server with the fewest in-flight requests wins, so slow servers stop receiving new work.',
   random: 'Uniformly random choice. Surprisingly close to round robin at high volume, with no shared counter.',
 };
@@ -127,6 +127,7 @@ export function LoadBalancerLab() {
   const [algorithm, setAlgorithm] = useState<Algorithm>('round-robin');
   const [capacity, setCapacity] = useState(400);
   const [duration, setDuration] = useState(80);
+  const [slowFirst, setSlowFirst] = useState(false);
   const [inspected, setInspected] = useState<SimulatedRequest | null>(null);
 
   const sim = useRef<SimState>(createState(3));
@@ -192,6 +193,22 @@ export function LoadBalancerLab() {
     [log, rerender],
   );
 
+  /**
+   * A weighted pool sends more traffic to bigger servers, so under that
+   * algorithm a server with weight N is modelled as N times the machine -
+   * "proportionally more requests" only holds if the weight matches the size.
+   * The tick, the node cards and the pool-capacity meter all read this one
+   * function so they cannot disagree about whether a server is coping.
+   */
+  const isSlow = (server: ServerModel) => slowFirst && server.id === 's0';
+  /**
+   * A slow server (bad disk, noisy neighbour) takes twice as long per request,
+   * so each worker is busy twice as long and it absorbs half the traffic.
+   */
+  const durationOf = (server: ServerModel) => (isSlow(server) ? duration * 2 : duration);
+  const capacityOf = (server: ServerModel) =>
+    (algorithm === 'weighted' ? capacity * server.weight : capacity) / (isSlow(server) ? 2 : 1);
+
   /** Picks a backend according to the selected algorithm. */
   const pickServer = (state: SimState, healthy: ServerModel[]): ServerModel => {
     switch (algorithm) {
@@ -243,18 +260,13 @@ export function LoadBalancerLab() {
         continue;
       }
       const incoming = server.rate.rate(now);
-      // A weighted pool sends more traffic to bigger servers, so Server 1 is
-      // modelled as a bigger machine. The same capacity has to be used when
-      // settling its requests below, or the node card and the metrics strip
-      // would disagree about whether it is coping.
-      const effectiveCapacity =
-        algorithm === 'weighted' && server.weight > 1 ? capacity * 1.6 : capacity;
-      const load = computeLoad(incoming, effectiveCapacity, { baseLatencyMs: duration, kneeAt: 0.65 });
+      const load = computeLoad(incoming, capacityOf(server), { baseLatencyMs: durationOf(server), kneeAt: 0.65 });
       server.cpu = load.cpu;
       server.latency = load.latencyMs;
       server.errorRate = load.errorRate;
-      // Little's law: in-flight requests = arrival rate x time in system.
-      server.active = Math.round(incoming * (load.latencyMs / 1000));
+      // Little's law: in-flight requests = arrival rate x time in system. Only
+      // the requests the server accepts stay in flight; rejected ones fail fast.
+      server.active = Math.round(incoming * (1 - load.errorRate) * (load.latencyMs / 1000));
     }
 
     // Arrivals. Every request is counted here; only a sample of them is
@@ -350,6 +362,10 @@ export function LoadBalancerLab() {
 
   const state = sim.current;
   const servers = state.servers;
+  // `servers` is mutated in place (stepper, kill, restart), so its reference
+  // never changes. Memoize on what the diagram actually depends on instead,
+  // or added servers get no layout and an ejected server keeps a live edge.
+  const poolKey = servers.map((server) => `${server.id}:${server.status}`).join(',');
 
   const layout = useMemo<Layout>(() => {
     const count = servers.length;
@@ -363,7 +379,8 @@ export function LoadBalancerLab() {
       result[server.id] = { x: xs[index], y: 352, w: width, h: 132 };
     });
     return result;
-  }, [servers]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- poolKey tracks the in-place mutations of servers
+  }, [servers, poolKey]);
 
   const edges = useMemo<DiagramEdge[]>(
     () => [
@@ -375,7 +392,8 @@ export function LoadBalancerLab() {
         dashed: server.status !== 'healthy',
       })),
     ],
-    [servers],
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- poolKey tracks the in-place mutations of servers
+    [servers, poolKey],
   );
 
   const particleViews = useMemo<ParticleView[]>(
@@ -403,7 +421,9 @@ export function LoadBalancerLab() {
   const healthyCount = servers.filter((server) => server.status === 'healthy').length;
   const avgCpu = healthyCount ? servers.reduce((sum, server) => sum + server.cpu, 0) / healthyCount : 0;
   const totalActive = servers.reduce((sum, server) => sum + server.active, 0);
-  const poolCapacity = healthyCount * capacity;
+  const poolCapacity = servers
+    .filter((server) => server.status === 'healthy')
+    .reduce((sum, server) => sum + capacityOf(server), 0);
 
   return (
     <LabShell
@@ -434,8 +454,8 @@ export function LoadBalancerLab() {
           <MetricsPanel
             items={[
               { key: 'rps', label: 'Requests/sec', value: formatNumber(acceptedRate), tone: 'brand' },
-              { key: 'latency', label: 'Avg latency', value: formatLatency(snapshot.avg) },
-              { key: 'p95', label: 'P95 latency', value: formatLatency(snapshot.p95), tone: snapshot.p95 > 500 ? 'warn' : 'neutral' },
+              { key: 'latency', label: 'Avg latency', value: formatLatency(snapshot.avg), hint: 'Time to serve one request. Computed by a simplified model, not measured.' },
+              { key: 'p95', label: 'P95 latency', value: formatLatency(snapshot.p95), tone: snapshot.p95 > 500 ? 'warn' : 'neutral', hint: '95% of requests finish faster than this. Computed by a simplified model, not measured.' },
               { key: 'p99', label: 'P99 latency', value: formatLatency(snapshot.p99), tone: snapshot.p99 > 1000 ? 'danger' : 'neutral' },
               {
                 key: 'cpu',
@@ -531,6 +551,15 @@ export function LoadBalancerLab() {
             format={(value) => `${value} ms`}
             hint="Base processing time per request with no queueing."
           />
+          <Toggle
+            label="Server 1 is slow"
+            checked={slowFirst}
+            onChange={(next) => {
+              setSlowFirst(next);
+              log(next ? 'Server 1 now takes 2x as long per request' : 'Server 1 back to normal speed', next ? 'warn' : 'ok');
+            }}
+            description="Each request takes 2x as long there. Compare Round Robin and Least Connections."
+          />
           <div className="rounded-xl border border-line bg-elevated p-3">
             <p className="label mb-2">Pool capacity</p>
             <Meter
@@ -575,10 +604,17 @@ export function LoadBalancerLab() {
             key={server.id}
             kind="server"
             title={server.name}
-            subtitle={algorithm === 'weighted' ? `weight ${server.weight}` : undefined}
+            subtitle={
+              [algorithm === 'weighted' ? `weight ${server.weight}` : '', isSlow(server) ? '2x slower' : '']
+                .filter(Boolean)
+                .join(', ') || undefined
+            }
             placed={layout[server.id]}
             status={server.status}
             alert={server.status === 'healthy' && server.cpu > 0.9}
+            // At 8 servers a box is ~107px wide; the regular padding would
+            // truncate "Server 8" to "Serve...".
+            compact={servers.length > 6}
           >
             <Meter label="CPU" value={server.cpu} size="xs" />
             <NodeStatRow label="Conns" value={server.active} />

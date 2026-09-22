@@ -204,8 +204,16 @@ function ConceptBody({ concept }: { concept: Concept }) {
   }, [concept, lab, visual]);
 
   const when = concept.when ?? [];
-  const costs = concept.tradeoffs?.[0]?.costs ?? [];
-  const gains = concept.advantages ?? concept.tradeoffs?.[0]?.gains ?? [];
+  // With several approaches, the first one is an option (Sticky sessions, Round
+  // robin), not the concept itself - so its gains and costs are labelled with its
+  // name instead of reading as the gains and costs of the whole concept.
+  const firstTradeoff = concept.tradeoffs?.[0];
+  const option = (concept.tradeoffs?.length ?? 0) > 1 ? firstTradeoff?.approach : undefined;
+  const costs = firstTradeoff?.costs ?? [];
+  const costsLabel = option ? `${option}: what it costs` : 'What it costs';
+  const gains = concept.advantages ?? firstTradeoff?.gains ?? [];
+  const gainsLabel = !concept.advantages && option ? `${option}: what you gain` : 'What you gain';
+  const oneLine = concept.what ? short(concept.what, 150) : '';
 
   return (
     <div className="px-5 py-5 lg:px-8">
@@ -220,7 +228,9 @@ function ConceptBody({ concept }: { concept: Concept }) {
           {concept.what ? (
             <div className="card p-4">
               <p className="label mb-1.5">In one line</p>
-              <p className="text-sm leading-relaxed text-ink">{short(concept.what, 150)}.</p>
+              <p className="text-sm leading-relaxed text-ink">
+                {oneLine.endsWith('...') ? oneLine : `${oneLine}.`}
+              </p>
             </div>
           ) : null}
 
@@ -254,7 +264,7 @@ function ConceptBody({ concept }: { concept: Concept }) {
 
           {costs.length ? (
             <div className="card p-4">
-              <p className="label mb-2 text-danger">What it costs</p>
+              <p className="label mb-2 text-danger">{costsLabel}</p>
               <ul className="space-y-1.5">
                 {costs.slice(0, 3).map((item) => (
                   <li key={item} className="flex gap-2 text-xs leading-relaxed text-muted">
@@ -268,7 +278,7 @@ function ConceptBody({ concept }: { concept: Concept }) {
 
           {gains.length ? (
             <div className="card p-4">
-              <p className="label mb-2 text-brand">What you gain</p>
+              <p className="label mb-2 text-brand">{gainsLabel}</p>
               <ul className="space-y-1.5">
                 {gains.slice(0, 3).map((item) => (
                   <li key={item} className="flex gap-2 text-xs leading-relaxed text-muted">

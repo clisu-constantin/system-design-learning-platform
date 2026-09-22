@@ -138,7 +138,7 @@ export const dataVisuals: Record<string, VisualSpec> = {
     caption: 'Each shard owns a slice of the data. A skewed key concentrates traffic on one of them.',
     nodes: [
       { id: 'app', kind: 'server', label: 'Application', x: 305, y: 10, w: 150, h: 68 },
-      { id: 'router', kind: 'api-gateway', label: 'Shard router', sub: 'hash(user_id)', x: 295, y: 118, w: 170, h: 80 },
+      { id: 'router', kind: 'api-gateway', label: 'Shard router', sub: 'range(user_id)', x: 295, y: 118, w: 170, h: 80 },
       { id: 'a', kind: 'sql', label: 'Shard A', sub: 'users 1-3M', x: 70, y: 240, w: 150, h: 96, stat: ['Load', '90%'], alert: true },
       { id: 'b', kind: 'sql', label: 'Shard B', sub: 'users 3-6M', x: 305, y: 240, w: 150, h: 96, stat: ['Load', '20%'] },
       { id: 'c', kind: 'sql', label: 'Shard C', sub: 'users 6-10M', x: 540, y: 240, w: 150, h: 96, stat: ['Load', '18%'] },
@@ -163,7 +163,7 @@ export const dataVisuals: Record<string, VisualSpec> = {
     height: 290,
     caption: 'One logical table, several physical pieces. The planner skips the ones that cannot match.',
     nodes: [
-      { id: 'query', kind: 'client', label: 'WHERE created_at >= Sep', x: 30, y: 105, w: 205, h: 76 },
+      { id: 'query', kind: 'client', label: 'WHERE created_at >= Sep', x: 30, y: 105, w: 210, h: 76 },
       { id: 'p1', kind: 'sql', label: 'events_2026_07', sub: 'pruned', x: 320, y: 10, w: 170, h: 80, status: 'down' },
       { id: 'p2', kind: 'sql', label: 'events_2026_08', sub: 'pruned', x: 320, y: 100, w: 170, h: 80, status: 'down' },
       { id: 'p3', kind: 'sql', label: 'events_2026_09', sub: 'scanned', x: 320, y: 190, w: 170, h: 80 },

@@ -203,6 +203,8 @@ export function RetryBackoffLab() {
             />
             <p className="mt-2 text-xs text-faint">
               Same number of clients and the same failure rate in every scenario - only the retry policy changes.
+              Simplified model, not a measurement: every attempt fails at the chosen rate, and capacity is assumed to
+              be 60% of the client count.
             </p>
           </div>
         </>
@@ -276,33 +278,56 @@ export function RetryBackoffLab() {
             format={(value) => formatNumber(value)}
             hint="Every one of them retries with the same policy at roughly the same time."
           />
-          <SegmentedControl
-            size="sm"
-            className="w-full"
-            value={jitter ? 'jitter' : 'none'}
-            options={[
-              { value: 'none', label: 'No jitter' },
-              { value: 'jitter', label: 'Full jitter' },
-            ]}
-            onChange={(value) => setJitter(value === 'jitter')}
-          />
+          {/* Immediate retries have no delay to randomise; the Jitter toggle above is
+              disabled then, so this shortcut is hidden instead of doing nothing. */}
+          {strategy !== 'immediate' ? (
+            <SegmentedControl
+              size="sm"
+              className="w-full"
+              value={jitter ? 'jitter' : 'none'}
+              options={[
+                { value: 'none', label: 'No jitter' },
+                { value: 'jitter', label: 'Full jitter' },
+              ]}
+              onChange={(value) => setJitter(value === 'jitter')}
+            />
+          ) : null}
         </>
       }
     >
       <div className="p-5">
-        <pre className="ascii">{`Client                          Failing service
-  |-- attempt 1 -----------------> 503
-  |      wait ${strategy === 'immediate' ? '0 ms' : `${baseMs} ms`}
-  |-- attempt 2 -----------------> 503
-  |      wait ${strategy === 'exponential' ? `${baseMs * 2} ms` : strategy === 'fixed' ? `${baseMs} ms` : '0 ms'}
-  |-- attempt 3 -----------------> 503
-  |      wait ${strategy === 'exponential' ? `${baseMs * 4} ms` : strategy === 'fixed' ? `${baseMs} ms` : '0 ms'}
-  |-- attempt 4 -----------------> 200 OK
-
-${jitter && strategy !== 'immediate' ? 'With full jitter each wait is a random value between 0 and the delay above,\nso clients that failed together do not retry together.' : 'Without jitter every client waits exactly the same amount and retries in lockstep.'}`}</pre>
+        <pre className="ascii">{policySketch(strategy, baseMs, maxAttempts, jitter)}</pre>
       </div>
     </LabShell>
   );
+}
+
+/**
+ * The fixed-width sketch above the metrics. It draws the policy for a request
+ * that succeeds on its fourth attempt, but never more attempts than the cap
+ * allows - with a cap below four the sketch ends in a give-up instead.
+ */
+function policySketch(strategy: Strategy, baseMs: number, maxAttempts: number, jitter: boolean) {
+  const shown = Math.min(maxAttempts, 4);
+  const lines = ['Client                          Failing service'];
+  for (let attempt = 1; attempt <= shown; attempt += 1) {
+    const result = attempt === 4 ? '200 OK' : attempt === shown ? '503  (cap reached, give up)' : '503';
+    lines.push(`  |-- attempt ${attempt} -----------------> ${result}`);
+    if (attempt < shown) {
+      const wait = strategy === 'immediate' ? 0 : strategy === 'fixed' ? baseMs : baseMs * 2 ** (attempt - 1);
+      lines.push(`  |      wait ${Math.min(wait, 30000)} ms`);
+    }
+  }
+  lines.push('');
+  if (strategy === 'immediate') {
+    lines.push('Immediate retries do not wait at all, so every client retries in lockstep.');
+  } else if (jitter) {
+    lines.push('With full jitter each wait is a random value between 0 and the delay above,');
+    lines.push('so clients that failed together do not retry together.');
+  } else {
+    lines.push('Without jitter every client waits exactly the same amount and retries in lockstep.');
+  }
+  return lines.join('\n');
 }
 
 export default RetryBackoffLab;

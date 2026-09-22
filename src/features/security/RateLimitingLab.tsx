@@ -93,11 +93,41 @@ export function RateLimitingLab() {
   const burst = useCallback(() => {
     const current = state.current;
     const now = performance.now();
+    const size = limit * 2;
     let allowed = 0;
-    for (let index = 0; index < limit * 2; index += 1) {
-      if (admit(current, algorithm, limit, windowSeconds, now)) allowed += 1;
+    for (let index = 0; index < size; index += 1) {
+      const ok = admit(current, algorithm, limit, windowSeconds, now);
+      if (ok) allowed += 1;
+      // Count the burst like any other traffic, so the metrics, the chart and
+      // the diagram agree with the log line. A leaky bucket only enqueues here;
+      // its drain loop counts and animates the requests that reach the API.
+      if (!ok) {
+        current.rejected += 1;
+        current.rejectedRate.add(1, now);
+      } else if (algorithm !== 'leaky-bucket') {
+        current.allowed += 1;
+        current.allowedRate.add(1, now);
+      }
+      if (index < 12) {
+        current.particles.push({
+          id: nextParticleId(),
+          route:
+            algorithm === 'leaky-bucket' && ok
+              ? ['client', 'limiter']
+              : ok
+                ? ['client', 'limiter', 'api']
+                : ['client', 'limiter', 'rejected'],
+          leg: 0,
+          t: -index * 0.08,
+          speed: 1.3,
+          outcome: ok ? 'success' : 'failure',
+        });
+      }
     }
-    log(`Burst of ${limit * 2} requests: ${allowed} allowed, ${limit * 2 - allowed} rejected with 429`, 'warn');
+    log(
+      `Burst of ${size} requests: ${allowed} ${algorithm === 'leaky-bucket' ? 'queued' : 'allowed'}, ${size - allowed} rejected with 429`,
+      'warn',
+    );
     rerender();
   }, [algorithm, limit, windowSeconds, log, rerender]);
 
@@ -147,9 +177,10 @@ export function RateLimitingLab() {
       const ok = admit(current, algorithm, limit, windowSeconds, now);
       if (algorithm === 'leaky-bucket') {
         // Admission only enqueues; the drain loop above emits the allowed particle.
+        // A rejection still happens at the limiter, so it travels the 429 edge.
         current.particles.push({
           id: nextParticleId(),
-          route: ok ? ['client', 'limiter'] : ['client', 'rejected'],
+          route: ok ? ['client', 'limiter'] : ['client', 'limiter', 'rejected'],
           leg: 0,
           t: 0,
           speed: 1.4,

@@ -9,6 +9,8 @@ export interface StageNode {
   placed: { x: number; y: number; w: number; h: number };
   /** Marks the component introduced at this stage. */
   isNew?: boolean;
+  /** A hot standby: wired in, but carries no traffic (in or out) until the active node fails. */
+  standby?: boolean;
 }
 
 export interface StageOption {
@@ -43,7 +45,7 @@ export const STAGES: Stage[] = [
   {
     id: 'stage-1',
     title: 'Stage 1 - Client, server, database',
-    problem: 'Nothing is wrong yet. One server handles every request and talks to one database.',
+    problem: 'One server handles every request and talks to one database. That was fine - until traffic grew and it hit 98% CPU.',
     question: 'Traffic grows 10x over a month and the server sits at 98% CPU. What would you do first?',
     options: [
       {
@@ -162,7 +164,7 @@ export const STAGES: Stage[] = [
     nodes: [
       { id: 'client', kind: 'client', title: 'Clients', placed: box(400, 16, 180, 64) },
       { id: 'lb', kind: 'load-balancer', title: 'Load Balancer', subtitle: 'active, holds the VIP', placed: box(245, 120, 190, 84), isNew: true },
-      { id: 'lb2', kind: 'load-balancer', title: 'Standby LB', subtitle: 'takes over on failure', placed: box(530, 120, 190, 84), isNew: true },
+      { id: 'lb2', kind: 'load-balancer', title: 'Standby LB', subtitle: 'takes over on failure', placed: box(530, 120, 190, 84), isNew: true, standby: true },
       { id: 'api1', kind: 'server', title: 'API 1', placed: box(170, 285, 160, 88), isNew: true },
       { id: 'api2', kind: 'server', title: 'API 2', placed: box(400, 285, 160, 88), isNew: true },
       { id: 'api3', kind: 'server', title: 'API 3', placed: box(630, 285, 160, 88), isNew: true },
@@ -174,6 +176,11 @@ export const STAGES: Stage[] = [
       { from: 'lb', to: 'api1', tone: 'ok' },
       { from: 'lb', to: 'api2', tone: 'ok' },
       { from: 'lb', to: 'api3', tone: 'ok' },
+      // What the standby would reach once it takes over: dashed and muted, and
+      // no particles (EvolutionPage skips every edge touching a standby node).
+      { from: 'lb2', to: 'api1', tone: 'muted', dashed: true },
+      { from: 'lb2', to: 'api2', tone: 'muted', dashed: true },
+      { from: 'lb2', to: 'api3', tone: 'muted', dashed: true },
       { from: 'api1', to: 'db', tone: 'info' },
       { from: 'api2', to: 'db', tone: 'info' },
       { from: 'api3', to: 'db', tone: 'info' },
@@ -383,7 +390,7 @@ export const STAGES: Stage[] = [
       { id: 'lb', kind: 'load-balancer', title: 'Load Balancer', subtitle: '2 nodes, multi-AZ', placed: box(395, 104, 180, 78) },
       { id: 'api', kind: 'server', title: 'API x3', placed: box(395, 220, 180, 76) },
       { id: 'cache', kind: 'cache', title: 'Redis', placed: box(120, 220, 160, 76) },
-      { id: 'queue', kind: 'queue', title: 'Message Queue', placed: box(680, 220, 195, 84), isNew: true },
+      { id: 'queue', kind: 'queue', title: 'Message Queue', placed: box(675, 220, 210, 84), isNew: true },
       { id: 'worker', kind: 'worker', title: 'Workers x4', placed: box(690, 365, 175, 80), isNew: true },
       { id: 'db', kind: 'sql', title: 'Primary + replicas', placed: box(370, 400, 200, 76) },
     ],
@@ -441,7 +448,7 @@ export const STAGES: Stage[] = [
       { id: 'notify', kind: 'service', title: 'Notifications', placed: box(640, 218, 190, 80), isNew: true },
       { id: 'cache', kind: 'cache', title: 'Redis', placed: box(45, 380, 150, 76) },
       { id: 'ordersdb', kind: 'sql', title: 'Orders DB', placed: box(225, 380, 160, 76) },
-      { id: 'paydb', kind: 'sql', title: 'Payments DB', placed: box(420, 380, 175, 76), isNew: true },
+      { id: 'paydb', kind: 'sql', title: 'Payments DB', placed: box(420, 380, 195, 76), isNew: true },
       { id: 'queue', kind: 'queue', title: 'Event bus', placed: box(650, 380, 160, 76) },
     ],
     edges: [

@@ -268,7 +268,13 @@ export function ShardingLab() {
                 tone: maxRate > SHARD_CAPACITY ? 'danger' : 'ok',
                 hint: 'The shard receiving the most traffic - it sets the cluster limit.',
               },
-              { key: 'latency', label: 'Worst latency', value: formatLatency(worstLatency), tone: worstLatency > 300 ? 'danger' : 'neutral' },
+              {
+                key: 'latency',
+                label: 'Worst latency',
+                value: formatLatency(worstLatency),
+                tone: worstLatency > 300 ? 'danger' : 'neutral',
+                hint: 'Latency on the slowest shard. Simulated by a simplified queueing model (capped at 4 s), not measured.',
+              },
               {
                 key: 'crossShard',
                 label: 'Cross-shard',

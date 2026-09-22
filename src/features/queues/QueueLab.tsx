@@ -40,10 +40,13 @@ export function QueueLab() {
   const { events, log, clear } = useEventLog();
   const { points, push, reset: resetSeries } = useSeries(60, 400);
   const warned = useRef(false);
+  /** Set while the depth is over a bound that shrank under it, so the event is logged once. */
+  const overBound = useRef(false);
 
   const reset = useCallback(() => {
     state.current = createState();
     warned.current = false;
+    overBound.current = false;
     clear();
     resetSeries();
   }, [clear, resetSeries]);
@@ -53,6 +56,21 @@ export function QueueLab() {
   useTicker(running, (dt) => {
     const current = state.current;
     const now = performance.now();
+
+    // A bound lowered under the current depth keeps the excess (a broker refuses
+    // new publishes, it does not delete accepted messages) and says so once.
+    if (bounded && current.depth > maxDepth) {
+      if (!overBound.current) {
+        overBound.current = true;
+        warned.current = true;
+        log(
+          `Queue is over its new bound (${formatNumber(current.depth)} > ${formatNumber(maxDepth)}) - refusing new messages until it drains`,
+          'warn',
+        );
+      }
+    } else {
+      overBound.current = false;
+    }
 
     // Produce
     const produced = sampleArrivals(producerRate, dt);
@@ -123,8 +141,11 @@ export function QueueLab() {
   const workerBusy =
     consumerRate > 0 ? (current.depth > 0 ? 1 : clamp(producerRate / consumerRate, 0, 1)) : 0;
 
-  const workerWidth = Math.max(106, Math.min(150, (900 - (workers - 1) * 12) / workers));
-  const xs = spread(workers, 480, workerWidth, 12);
+  // At 8 workers a 106px box clipped "Worker 8" to "Worke...": the title needs
+  // about 110px. A tighter 8px gap keeps a row of 8 x 110px inside the 960px canvas.
+  const workerGap = 8;
+  const workerWidth = Math.max(110, Math.min(150, (920 - (workers - 1) * workerGap) / workers));
+  const xs = spread(workers, 480, workerWidth, workerGap);
   const layout: Layout = {
     producer: { x: 380, y: 14, w: 200, h: 68 },
     queue: { x: 300, y: 150, w: 360, h: 120 },
@@ -198,7 +219,7 @@ export function QueueLab() {
               { key: 'producerRate', label: 'Produced', value: producerRate, unit: 'msg/s', tone: 'brand', hint: 'Messages entering the queue per second.' },
               {
                 key: 'consumerRate',
-                label: 'Consumed',
+                label: 'Capacity',
                 value: consumerRate,
                 unit: 'msg/s',
                 tone: consumerRate >= producerRate ? 'ok' : 'danger',
@@ -224,12 +245,12 @@ export function QueueLab() {
           <div className="card p-4">
             <p className="label mb-3">Queue depth over time</p>
             <LiveChart data={points} series={[{ key: 'depth', label: 'Depth', color: 'warn' }]} height={150} />
-            <p className="label mb-2 mt-4">Production vs consumption</p>
+            <p className="label mb-2 mt-4">Production vs worker capacity</p>
             <LiveChart
               data={points}
               series={[
                 { key: 'producerRate', label: 'Produced/sec', color: 'brand' },
-                { key: 'consumerRate', label: 'Consumed/sec', color: 'ok', dashed: true },
+                { key: 'consumerRate', label: 'Capacity/sec', color: 'ok', dashed: true },
               ]}
               variant="line"
               height={140}

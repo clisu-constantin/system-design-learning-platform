@@ -55,7 +55,10 @@ interface NfrSpec {
   id: string;
   label: string;
   values: string[];
-  /** Implications per index - later entries include the earlier ones. */
+  /**
+   * Implications per index. Levels 1+ accumulate; level 0 is the relaxed
+   * baseline and is dropped as soon as the target is raised.
+   */
   implications: string[][];
 }
 
@@ -136,7 +139,9 @@ export function RequirementsLab() {
     const set = new Set<string>();
     for (const spec of NFRS) {
       const level = nfr[spec.id] ?? 0;
-      for (let index = 0; index <= level; index += 1) {
+      // Index 0 is the relaxed baseline ("single instance is acceptable"). It only
+      // holds while the target stays at that level; stricter targets replace it.
+      for (let index = level === 0 ? 0 : 1; index <= level; index += 1) {
         for (const item of spec.implications[index] ?? []) set.add(item);
       }
     }
@@ -209,8 +214,9 @@ export function RequirementsLab() {
               {
                 key: 'complexity',
                 label: 'Complexity score',
-                value: complexity,
-                tone: complexity > 70 ? 'danger' : complexity > 40 ? 'warn' : 'ok',
+                // With no functional requirement there is nothing to design, so no score.
+                value: chosen.length === 0 ? '-' : complexity,
+                tone: chosen.length === 0 ? 'neutral' : complexity > 70 ? 'danger' : complexity > 40 ? 'warn' : 'ok',
                 hint: 'An educational heuristic, not an engineering measurement.',
               },
               {

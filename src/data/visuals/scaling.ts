@@ -74,7 +74,7 @@ export const scalingVisuals: Record<string, VisualSpec> = {
     steps: [
       { from: 'users', to: 'lb', label: 'One address for clients' },
       { from: 'lb', to: 's1', label: 'Pick a healthy backend' },
-      { from: 'lb', to: 's2', label: 'Server 2 fails checks', outcome: 'failure' },
+      { from: 'lb', to: 's2', label: 'Server 2 already failed checks', outcome: 'failure' },
       { from: 'lb', to: 's3', label: 'Traffic reroutes around it' },
     ],
   },

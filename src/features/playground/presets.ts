@@ -106,12 +106,12 @@ export const PRESETS: Preset[] = [
           edge(lb.id, a.id),
           edge(lb.id, b.id),
           edge(lb.id, c.id),
-          edge(a.id, cache.id),
-          edge(b.id, cache.id),
-          edge(c.id, queue.id),
+          // The three API instances are replicas, so they must be wired identically:
+          // each one checks the cache, falls through to the primary on a miss (cache-aside)
+          // and enqueues jobs. No cache -> primary edge: analyze() already sends the misses
+          // down the API -> primary edge, and a second path would count them twice.
+          ...[a, b, c].flatMap((api) => [edge(api.id, cache.id), edge(api.id, primary.id), edge(api.id, queue.id)]),
           edge(queue.id, worker.id),
-          edge(cache.id, primary.id),
-          edge(b.id, primary.id),
           edge(primary.id, replica.id),
         ],
       };
