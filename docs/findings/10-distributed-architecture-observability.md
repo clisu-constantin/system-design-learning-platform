@@ -105,8 +105,13 @@ no NaN, Infinity or negative times at either end of any control.
 - **Happened:** Avg latency showed **0.0 ms** next to a 100% error rate. The insight said "Average latency is
   0.0 ms", which reads as "very fast".
 - **Severity:** misleading
-- **Status:** fixed in `src/features/architecture/MonolithMicroservicesLab.tsx`. It now shows `n/a` when the window
-  holds no successful request, and a tooltip explains why.
+- **Status:** fixed in `src/features/architecture/MonolithMicroservicesLab.tsx`, and only fully fixed by #18. The sweep
+  fix showed `n/a` when the latency window held no successful request, but the window then kept the last N samples:
+  break a capability after the lab had been running and the old successes stayed in it, so the stale pre-break
+  average kept showing. Since #18 `MetricWindow` keeps only the last 2 s of samples and its snapshot is `null` when
+  that horizon is empty, so about 2 s after every request starts failing the metric and the insight text show a dash
+  (`formatLatency(null)`), the app-wide "no value" mark. The metric hint still says "n/a when every request is
+  failing" and should say "a dash"
 
 ### F10-009 - Utilization panel contradicts the node card for a broken capability
 

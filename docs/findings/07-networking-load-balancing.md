@@ -53,7 +53,13 @@ appeared in any lab, before or after the fixes. Dark theme and reduced motion re
 - **Expected:** the ticket asks that each algorithm visibly distribute differently
 - **Happened:** Weighted is visibly different. The other three give every server 38-40% CPU and 15-16 conns. That is the true behaviour for identical servers, but the Least Connections note promises "slow servers stop receiving new work" and the lab has no slow server, so a junior cannot see why it exists.
 - **Severity:** judgment-call
-- **Status:** decided in #16 (pick A) - fixed in `src/features/load-balancing/LoadBalancerLab.tsx`
+- **Status:** decided in #16 (pick A) - fixed in `src/features/load-balancing/LoadBalancerLab.tsx` with a "Server 1 is
+  slow" toggle (each request takes 2x as long there, so it absorbs half the traffic: 200 req/sec at the default
+  capacity of 400). At the defaults (500 req/sec, 3 servers) Round Robin still sends Server 1 a third of the traffic,
+  about 167 req/sec, so it runs at about 83% utilisation with roughly 5x the latency of the other two (about 530 ms
+  against 90 ms by the load model). That is a slow server, not an overloaded one: it only starts rejecting requests
+  once traffic passes 600 req/sec. Least Connections sees its in-flight count climb and sends it less, about 100
+  req/sec at the defaults (model estimate), so the pool's latency stays close to the healthy servers
 
 ### F07-006 - Load balancer: latency metrics lag, and stay populated when nothing is served
 

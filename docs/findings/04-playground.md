@@ -87,7 +87,17 @@ zero scores.
   Primary DB on top of the API -> DB edge, so cache misses were counted twice
 - **Severity:** misleading
 - **Status:** fixed in `src/features/playground/presets.ts` (each API -> cache, -> Primary DB, -> queue; dropped the
-  double-counting cache -> Primary DB edge). At 800 req/s: cache 800, Primary DB 160, Read Replica 160, queue 160
+  double-counting cache -> Primary DB edge). Code review of #21 then found a bug in the numbers this fix quoted: the
+  cache miss share (0.2) was applied to every sibling target of the cache, so the queue got it too. With Client ->
+  Server -> SQL + Queue at 800 req/s the queue carried 800 req/s, and adding a Redis cache next to them dropped it to
+  160 - as if a cache could answer "enqueue this job". Fixed in `src/features/playground/analysis.ts`: a cache only
+  reduces traffic to data stores beside it (SQL, NoSQL, object storage, search), and a CDN only to origins (load
+  balancer, gateway, server, service, object storage); a queue, another service or anything else keeps full traffic.
+  That sent the full queue share to the preset's single Worker (720 req/s against 300), so the preset's worker tier is
+  now "Workers x3" (one collapsed node, capacity 900). At 800 req/s the preset reads: CDN 800, load balancer 720,
+  each API 240, cache 720, Primary DB 144, Read Replica 144, queue 720 (was 144), Workers x3 720 of 900 (was 144 on
+  one worker); scores unchanged (Scalability 100, Availability 90, Performance 90). Client -> Server -> SQL + Queue:
+  queue 800 without a cache and still 800 with one (was 160); SQL drops from 800 to 160 as intended
 
 ### F04-007 - Score bars are red when the score is good and green when it is bad
 
