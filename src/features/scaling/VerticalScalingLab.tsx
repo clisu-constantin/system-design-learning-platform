@@ -179,19 +179,22 @@ export function VerticalScalingLab() {
                 label: 'CPU',
                 value: formatPercent(load.cpu),
                 tone: load.cpu > 0.9 ? 'danger' : load.cpu > 0.7 ? 'warn' : 'ok',
+                simulated: true,
               },
               {
                 key: 'latency',
                 label: 'Latency',
                 value: formatLatency(load.latencyMs),
                 tone: load.latencyMs > 500 ? 'danger' : 'neutral',
-                hint: 'Time to serve one request. Computed by a simplified queueing model, not measured.',
+                hint: 'Time to serve one request, from a queueing model.',
+                simulated: true,
               },
               {
                 key: 'errorRate',
                 label: 'Error rate',
                 value: formatPercent(load.errorRate, 1),
                 tone: load.errorRate > 0 ? 'danger' : 'ok',
+                simulated: true,
               },
               { key: 'cost', label: 'Relative cost', value: `$${formatNumber(tier.costPerMonth)}`, unit: '/mo' },
             ]}

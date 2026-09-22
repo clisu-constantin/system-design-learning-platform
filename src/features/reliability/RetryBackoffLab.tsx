@@ -147,7 +147,8 @@ export function RetryBackoffLab() {
                 value: formatNumber(peakLoad),
                 unit: 'req/s',
                 tone: peakLoad > capacity ? 'danger' : 'ok',
-                hint: `Highest retry rate the failing service sees, counted in ${BUCKET_MS} ms buckets. Simplified model, not a measurement.`,
+                hint: `Highest retry rate the failing service sees, counted in ${BUCKET_MS} ms buckets.`,
+                simulated: true,
               },
               {
                 key: 'amplification',
@@ -155,6 +156,7 @@ export function RetryBackoffLab() {
                 value: `${(peakLoad / Math.max(clients, 1)).toFixed(2)}x`,
                 tone: peakLoad / clients > 1 ? 'danger' : 'ok',
                 hint: `Peak retry rate divided by the normal load, taken as one request per client per second. A burst packed into one ${BUCKET_MS} ms bucket reads high on purpose - that is what the failing service feels.`,
+                simulated: true,
               },
             ]}
           />

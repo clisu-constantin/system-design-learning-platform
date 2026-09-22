@@ -359,12 +359,14 @@ export function MonolithMicroservicesLab() {
                 label: 'Avg latency',
                 value: latencyText,
                 hint: 'Average over successful requests. n/a when every request is failing.',
+                simulated: true,
               },
               {
                 key: 'errorRate',
                 label: 'Error rate',
                 value: formatPercent(errorRate, 1),
                 tone: errorRate > 0.05 ? 'danger' : 'ok',
+                simulated: true,
               },
               {
                 key: 'blast',

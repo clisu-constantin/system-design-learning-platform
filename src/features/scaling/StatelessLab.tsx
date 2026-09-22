@@ -330,7 +330,8 @@ export function StatelessLab() {
                 key: 'latency',
                 label: 'Extra latency',
                 value: mode === 'shared' ? formatLatency(2.5) : formatLatency(0),
-                hint: 'Additional per-request cost of the session strategy. An illustrative figure, not measured.',
+                hint: 'Additional per-request cost of the session strategy. An illustrative figure.',
+                simulated: true,
               },
               { key: 'instances', label: 'Healthy servers', value: `${healthyCount}/3` },
             ]}

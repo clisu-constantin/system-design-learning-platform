@@ -247,19 +247,22 @@ export function AutoScalingLab() {
                 label: 'Fleet CPU',
                 value: formatPercent(current.cpu),
                 tone: current.cpu * 100 > scaleOut ? 'warn' : 'ok',
+                simulated: true,
               },
               { key: 'instances', label: 'Instances', value: `${ready.length}/${count}` },
               {
                 key: 'latency',
                 label: 'Latency',
                 value: formatLatency(load.latencyMs),
-                hint: 'Time to serve one request. Computed by a simplified queueing model, not measured.',
+                hint: 'Time to serve one request, from a queueing model.',
+                simulated: true,
               },
               {
                 key: 'errorRate',
                 label: 'Errors',
                 value: formatPercent(load.errorRate, 1),
                 tone: load.errorRate > 0 ? 'danger' : 'ok',
+                simulated: true,
               },
             ]}
           />

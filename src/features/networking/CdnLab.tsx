@@ -41,7 +41,12 @@ const REGIONS: Region[] = [
   { id: 'ap-users', name: 'Asia Pacific', edgeId: 'ap-edge', edgeKm: 400, originKm: 11500, shareOfTraffic: 0.25 },
 ];
 
-/** One-way distance converted into a believable round-trip latency. */
+/**
+ * One-way distance converted into a believable round-trip latency. A simplified
+ * model, not a measurement: real RTT also depends on routing, congestion and the
+ * last mile. The Edge RTT node rows and every latency in this lab come from it,
+ * which the "Latency by region" card says in the UI.
+ */
 const rtt = (km: number) => 6 + km / 55;
 
 const LAYOUT: Layout = {
@@ -229,8 +234,8 @@ export function CdnLab() {
         <>
           <MetricsPanel
             items={[
-              { key: 'latency', label: 'Avg latency', value: formatLatency(snapshot.avg), tone: latencyTone(snapshot.avg, 120), hint: 'Round trip from distance to the edge or origin. Computed by a simplified model, not measured.' },
-              { key: 'p95', label: 'P95 latency', value: formatLatency(snapshot.p95), hint: '95% of requests finish faster than this. Computed by a simplified model, not measured.' },
+              { key: 'latency', label: 'Avg latency', value: formatLatency(snapshot.avg), tone: latencyTone(snapshot.avg, 120), hint: 'Round trip from distance to the edge or origin.', simulated: true },
+              { key: 'p95', label: 'P95 latency', value: formatLatency(snapshot.p95), hint: '95% of requests finish faster than this.', simulated: true },
               { key: 'hitRate', label: 'Edge hit rate', value: cdnEnabled ? formatPercent(hitRatio) : '0%', tone: cdnEnabled ? 'ok' : 'danger' },
               { key: 'rps', label: 'Total traffic', value: formatNumber(totalQps), unit: 'req/s' },
               {
@@ -268,7 +273,8 @@ export function CdnLab() {
             />
             <p className="mt-3 text-xs text-faint">
               Distance is a hard floor: about {Math.round(rtt(11500))} ms round trip between Asia Pacific and a US
-              origin, before your application does any work at all.
+              origin, before your application does any work at all. Every latency in this lab, Edge RTT included,
+              comes from a simplified distance model, not a measurement.
             </p>
           </div>
         </>

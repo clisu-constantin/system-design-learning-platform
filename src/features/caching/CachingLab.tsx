@@ -310,13 +310,15 @@ export function CachingLab() {
                 key: 'latency',
                 label: 'Avg latency',
                 value: formatLatency(snapshot.avg),
-                hint: 'Simulated, not measured: a simplified queueing model of the database, meant to show the shape of the curve.',
+                hint: 'Driven by a queueing model of the database, meant to show the shape of the curve.',
+                simulated: true,
               },
               {
                 key: 'p95',
                 label: 'P95 latency',
                 value: formatLatency(snapshot.p95),
-                hint: '95% of requests finished faster than this. Simulated by a simplified model, not measured.',
+                hint: '95% of requests finished faster than this.',
+                simulated: true,
               },
               { key: 'evictions', label: 'Evictions', value: formatNumber(current.evictions), tone: current.evictions > 0 ? 'warn' : 'neutral' },
             ]}

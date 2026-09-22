@@ -9,7 +9,7 @@ import type { Tone } from '@/components/ui/Badge';
 export const METRIC_HINTS: Record<string, string> = {
   rps: 'Requests the system is currently accepting per second.',
   throughput: 'Requests successfully completed per second.',
-  latency: 'Average time to complete one request, measured over the recent window.',
+  latency: 'Average time to complete one request over the recent window.',
   p50: 'Half of requests finished faster than this value.',
   p95: '95% of requests finished faster than this value. This is where most users notice slowness.',
   p99: '99% of requests finished faster than this value. The tail that generates support tickets.',
@@ -32,14 +32,33 @@ export const METRIC_HINTS: Record<string, string> = {
   rejected: 'Requests rejected with HTTP 429 by the rate limiter.',
 };
 
+/**
+ * The one sentence every model-driven metric carries. Labs set `simulated: true`
+ * instead of pasting their own wording, so the caveat reads the same everywhere.
+ */
+export const SIMULATED_HINT = 'Simplified model, not a measurement.';
+
 export interface MetricItem {
   key: string;
   label: string;
   value: ReactNode;
   unit?: string;
   tone?: Tone;
+  /** What the number means. Leave out the "simplified model" caveat - `simulated` adds it. */
   hint?: string;
+  /**
+   * The value comes from a simulation model (computeLoad, a distance formula,
+   * an illustrative table) and could be mistaken for a real measurement.
+   * Appends SIMULATED_HINT to the hint, and shows a hint even when there is none.
+   */
+  simulated?: boolean;
   sub?: ReactNode;
+}
+
+function hintFor(item: MetricItem): string | undefined {
+  const hint = item.hint ?? METRIC_HINTS[item.key];
+  if (!item.simulated) return hint;
+  return hint ? `${hint} ${SIMULATED_HINT}` : SIMULATED_HINT;
 }
 
 /** Live metrics strip shown under a lab diagram. */
@@ -56,7 +75,7 @@ export function MetricsPanel({ items, title = 'Live metrics' }: { items: MetricI
             unit={item.unit}
             tone={item.tone}
             sub={item.sub}
-            hint={item.hint ?? METRIC_HINTS[item.key]}
+            hint={hintFor(item)}
             size="sm"
           />
         ))}
