@@ -53,7 +53,6 @@ type Result = {
   rowsInspected: number;
   timeMs: number;
   found: Row | null;
-  writeCost: number;
 };
 
 /** Structure updates per second one machine sustains before writes queue. */
@@ -97,7 +96,7 @@ export function IndexingLab() {
 
       setResults((previous) => ({
         ...previous,
-        [mode]: { mode, rowsInspected, timeMs, found, writeCost: mode === 'index' ? 1.35 : 1 },
+        [mode]: { mode, rowsInspected, timeMs, found },
       }));
       setLastMode(mode);
       rerender();

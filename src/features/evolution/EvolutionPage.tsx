@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState, type RefObject } from 'react';
+import { useCallback, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { AlertTriangle, ArrowRight, Check, ChevronLeft, ChevronRight, Sparkles } from 'lucide-react';
 import { ArchNode, DiagramCanvas, ParticleLegend, type ParticleView } from '@/components/architecture';
@@ -30,7 +30,7 @@ export function EvolutionPage() {
   const layout = stageLayout(stage);
   // Same promise as every other animated diagram: starts paused under reduced
   // motion, has an explicit Pause/Play, and stops ticking while off screen.
-  const autoplay = useAutoplay();
+  const autoplay = useAutoplay<HTMLDivElement>();
 
   const go = useCallback((next: number) => {
     setIndex(next);
@@ -115,7 +115,7 @@ export function EvolutionPage() {
             and stacks underneath below that. */}
         <div className="mt-4 grid grid-cols-1 gap-4 min-[1700px]:grid-cols-[minmax(0,1fr)_360px]">
           <div className="space-y-4">
-            <div ref={autoplay.ref as RefObject<HTMLDivElement>} className="card overflow-hidden">
+            <div ref={autoplay.ref} className="card overflow-hidden">
               <div className="flex flex-wrap items-center justify-between gap-3 border-b border-line px-5 py-3">
                 <h2 className="text-sm font-semibold text-ink">{stage.title}</h2>
                 <div className="flex flex-wrap gap-2">

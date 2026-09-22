@@ -64,16 +64,26 @@ interface State {
    * but can no longer flip the state.
    */
   halfOpenEpoch: number;
+  /**
+   * Trial calls in flight, keyed by particle id. The result is applied when the
+   * particle reaches the dependency, so it is kept here rather than on the particle.
+   */
+  trialCalls: Map<number, TrialCall>;
 }
 
-/** Carried on a trial call's particle: the result is applied when it reaches the dependency. */
-interface TrialMeta {
-  trial: true;
+interface TrialCall {
   failed: boolean;
+  /** The `halfOpenEpoch` the trial was sent in. */
   epoch: number;
 }
 
-const isTrial = (particle: Particle) => (particle.meta as Partial<TrialMeta> | undefined)?.trial === true;
+/** Newest-first call history shown under the diagram. */
+const CALL_HISTORY = 40;
+
+const recordCall = (state: State, result: CallRecord['result']) => {
+  state.calls.unshift({ id: nextParticleId(), result });
+  if (state.calls.length > CALL_HISTORY) state.calls.length = CALL_HISTORY;
+};
 
 const createState = (): State => ({
   breaker: 'closed',
@@ -89,6 +99,7 @@ const createState = (): State => ({
   latency: new MetricWindow(300),
   transitions: 0,
   halfOpenEpoch: 0,
+  trialCalls: new Map(),
 });
 
 const LAYOUT: Layout = {
@@ -150,13 +161,12 @@ export function CircuitBreakerLab() {
       if (failed) {
         current.failed += 1;
         current.latency.push(timeout, now);
-        current.calls.unshift({ id: nextParticleId(), result: 'fail' });
+        recordCall(current, 'fail');
       } else {
         current.passed += 1;
         current.latency.push(60, now);
-        current.calls.unshift({ id: nextParticleId(), result: 'ok' });
+        recordCall(current, 'ok');
       }
-      current.calls = current.calls.slice(0, 40);
       current.window.push(!failed);
       if (current.window.length > WINDOW_SIZE) current.window.shift();
     };
@@ -172,8 +182,7 @@ export function CircuitBreakerLab() {
       if (shortCircuit) {
         current.shortCircuited += 1;
         current.latency.push(2, now);
-        current.calls.unshift({ id: nextParticleId(), result: 'short-circuit' });
-        current.calls.length = Math.min(current.calls.length, 40);
+        recordCall(current, 'short-circuit');
         current.particles.push({
           id: nextParticleId(),
           route: ['client', 'api', 'breaker', 'fallback'],
@@ -188,8 +197,7 @@ export function CircuitBreakerLab() {
       if (breakerEnabled && current.breaker === 'half-open' && current.trials >= TRIAL_CALLS) {
         current.shortCircuited += 1;
         current.latency.push(2, now);
-        current.calls.unshift({ id: nextParticleId(), result: 'short-circuit' });
-        current.calls.length = Math.min(current.calls.length, 40);
+        recordCall(current, 'short-circuit');
         current.particles.push({
           id: nextParticleId(),
           route: ['client', 'api', 'breaker', 'fallback'],
@@ -207,15 +215,15 @@ export function CircuitBreakerLab() {
         // A trial call. Its result is applied when its particle reaches the
         // Payment Service, so HALF-OPEN stays on screen while the probe travels.
         current.trials += 1;
-        const meta: TrialMeta = { trial: true, failed, epoch: current.halfOpenEpoch };
+        const id = nextParticleId();
+        current.trialCalls.set(id, { failed, epoch: current.halfOpenEpoch });
         current.particles.push({
-          id: nextParticleId(),
+          id,
           route: ['client', 'api', 'breaker', 'payment'],
           leg: 0,
           t: 0,
           speed: 1.2,
           outcome: failed ? 'failure' : 'success',
-          meta: { ...meta },
         });
         continue;
       }
@@ -244,8 +252,9 @@ export function CircuitBreakerLab() {
 
     const { alive, finished } = advanceParticles(current.particles, dt);
     for (const particle of finished) {
-      if (!isTrial(particle)) continue;
-      const trial = particle.meta as unknown as TrialMeta;
+      const trial = current.trialCalls.get(particle.id);
+      if (!trial) continue;
+      current.trialCalls.delete(particle.id);
       record(trial.failed);
       if (!breakerEnabled || current.breaker !== 'half-open' || trial.epoch !== current.halfOpenEpoch) continue;
       if (trial.failed) {
@@ -256,6 +265,7 @@ export function CircuitBreakerLab() {
       }
     }
     // Trial calls are never evicted by the particle cap: the state machine waits for them.
+    const isTrial = (particle: Particle) => current.trialCalls.has(particle.id);
     const trials = alive.filter(isTrial);
     const others = alive.filter((particle) => !isTrial(particle));
     current.particles = [...others.slice(-Math.max(0, 60 - trials.length)), ...trials];
