@@ -110,8 +110,8 @@ no NaN, Infinity or negative times at either end of any control.
   break a capability after the lab had been running and the old successes stayed in it, so the stale pre-break
   average kept showing. Since #18 `MetricWindow` keeps only the last 2 s of samples and its snapshot is `null` when
   that horizon is empty, so about 2 s after every request starts failing the metric and the insight text show a dash
-  (`formatLatency(null)`), the app-wide "no value" mark. The metric hint still says "n/a when every request is
-  failing" and should say "a dash"
+  (`formatLatency(null)`), the app-wide "no value" mark. The metric hint now says so too
+  ("Shows a dash when no request succeeded in the last few seconds").
 
 ### F10-009 - Utilization panel contradicts the node card for a broken capability
 
