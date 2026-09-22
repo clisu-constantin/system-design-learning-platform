@@ -72,7 +72,7 @@ export function HomePage() {
           </div>
 
           <div className="mt-10 max-w-3xl">
-            <FlowVisual spec={HERO_VISUAL} zoom={0.9} className="bg-surface/70" />
+            <FlowVisual spec={HERO_VISUAL} className="bg-surface/70" />
             <p className="mt-2 text-xs text-faint">
               Every component here is something you can add, overload, kill and restart yourself.
             </p>

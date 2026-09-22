@@ -230,8 +230,9 @@ export function FlowVisual({
 
   return (
     <figure ref={autoplay.ref} className={cn('overflow-hidden rounded-2xl border border-line bg-canvas', className)}>
-      <div ref={ref} className="w-full">
-        <div style={{ height: height * scale, overflow: 'hidden' }}>
+      {/* Below the 0.5x floor the diagram is wider than a phone: scroll sideways instead of clipping nodes. */}
+      <div ref={ref} className="w-full overflow-x-auto">
+        <div style={{ width: width * scale, height: height * scale, overflow: 'hidden' }}>
           <div style={{ transform: `scale(${scale})`, transformOrigin: 'top left', width, height }}>
             <DiagramCanvas
               layout={layout}
@@ -318,8 +319,8 @@ export function SequenceFlow({ spec, className }: { spec: VisualSpec; className?
           </span>
           {active.label}
         </span>
-        <div ref={ref} className="w-full">
-          <div style={{ height: height * scale, overflow: 'hidden' }}>
+        <div ref={ref} className="w-full overflow-x-auto">
+          <div style={{ width: width * scale, height: height * scale, overflow: 'hidden' }}>
             <div style={{ transform: `scale(${scale})`, transformOrigin: 'top left', width, height }}>
               <DiagramCanvas
                 layout={layout}

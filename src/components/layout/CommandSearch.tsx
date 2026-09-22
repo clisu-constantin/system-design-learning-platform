@@ -31,9 +31,15 @@ function SearchDialog({ onClose }: { onClose: () => void }) {
   const [query, setQuery] = useState('');
   const [active, setActive] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
+  const listRef = useRef<HTMLDivElement>(null);
   const navigate = useNavigate();
 
   const results = useMemo(() => search(query), [query]);
+
+  // The list scrolls, so arrowing past its bottom edge must bring the highlight along.
+  useEffect(() => {
+    listRef.current?.querySelector('[data-active="true"]')?.scrollIntoView({ block: 'nearest' });
+  }, [active, results]);
 
   // A new query means a new result list - the highlight goes back to the top.
   const changeQuery = (next: string) => {
@@ -57,11 +63,12 @@ function SearchDialog({ onClose }: { onClose: () => void }) {
       onClose();
     } else if (event.key === 'ArrowDown') {
       event.preventDefault();
-      setActive((index) => Math.min(index + 1, results.length - 1));
+      setActive((index) => Math.max(0, Math.min(index + 1, results.length - 1)));
     } else if (event.key === 'ArrowUp') {
       event.preventDefault();
       setActive((index) => Math.max(index - 1, 0));
-    } else if (event.key === 'Enter') {
+    } else if (event.key === 'Enter' && event.target === inputRef.current) {
+      // On a focused button, Enter keeps its native meaning (click that button).
       event.preventDefault();
       go(results[active]);
     }
@@ -78,6 +85,9 @@ function SearchDialog({ onClose }: { onClose: () => void }) {
       <div
         className="w-full max-w-2xl overflow-hidden rounded-2xl border border-line bg-surface shadow-card"
         onClick={(event) => event.stopPropagation()}
+        // On the panel rather than the input: Esc and the arrows must keep working
+        // after a click moved focus onto a suggestion or result button.
+        onKeyDown={onKeyDown}
       >
         <div className="flex items-center gap-3 border-b border-line px-4">
           <SearchIcon className="h-4 w-4 shrink-0 text-faint" />
@@ -85,7 +95,6 @@ function SearchDialog({ onClose }: { onClose: () => void }) {
             ref={inputRef}
             value={query}
             onChange={(event) => changeQuery(event.target.value)}
-            onKeyDown={onKeyDown}
             placeholder="Search concepts, labs, scenarios, glossary..."
             aria-label="Search query"
             className="h-14 flex-1 bg-transparent text-sm text-ink outline-none placeholder:text-faint"
@@ -95,7 +104,7 @@ function SearchDialog({ onClose }: { onClose: () => void }) {
           </button>
         </div>
 
-        <div className="max-h-[50vh] overflow-y-auto p-2">
+        <div ref={listRef} className="max-h-[50vh] overflow-y-auto p-2">
           {query && results.length === 0 ? (
             <p className="px-3 py-8 text-center text-sm text-muted">
               No matches for &ldquo;{query}&rdquo;. Try &ldquo;cache&rdquo;, &ldquo;shard&rdquo; or &ldquo;queue&rdquo;.
@@ -109,7 +118,11 @@ function SearchDialog({ onClose }: { onClose: () => void }) {
                 <button
                   key={suggestion}
                   type="button"
-                  onClick={() => changeQuery(suggestion)}
+                  onClick={() => {
+                    changeQuery(suggestion);
+                    // The chip unmounts once results show - hand focus back to the input.
+                    inputRef.current?.focus();
+                  }}
                   className="mx-1 rounded-md border border-line px-2 py-0.5 text-xs text-ink transition-colors hover:border-brand hover:text-brand"
                 >
                   {suggestion}
@@ -124,6 +137,7 @@ function SearchDialog({ onClose }: { onClose: () => void }) {
               <button
                 key={result.id}
                 type="button"
+                data-active={index === active}
                 onMouseEnter={() => setActive(index)}
                 onClick={() => go(result)}
                 className={cn(

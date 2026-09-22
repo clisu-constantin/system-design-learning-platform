@@ -221,7 +221,7 @@ export function ComparePage() {
                   </Link>
                 </div>
                 {visual ? (
-                  <FlowVisual spec={visual} zoom={0.62} className="rounded-none border-0" />
+                  <FlowVisual spec={visual} className="rounded-none border-0" />
                 ) : (
                   <AsciiBlock className="m-4">{side.diagram}</AsciiBlock>
                 )}

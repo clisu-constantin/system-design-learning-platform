@@ -67,7 +67,7 @@ export function TopBar({ onOpenSearch, onToggleSidebar, difficulty, onDifficulty
 
       <Link
         to="/progress"
-        className="hidden items-center gap-2 rounded-xl border border-line bg-elevated px-3 py-1.5 text-xs text-muted transition-colors hover:border-brand/50 hover:text-ink sm:flex"
+        className="flex items-center gap-2 rounded-xl border border-line bg-elevated px-3 py-1.5 text-xs text-muted transition-colors hover:border-brand/50 hover:text-ink"
         title="Learning progress"
       >
         <span className="relative h-1.5 w-16 overflow-hidden rounded-full bg-line">
