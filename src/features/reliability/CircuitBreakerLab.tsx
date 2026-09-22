@@ -140,6 +140,7 @@ export function CircuitBreakerLab() {
         current.shortCircuited += 1;
         current.latency.push(2);
         current.calls.unshift({ id: nextParticleId(), result: 'short-circuit' });
+        current.calls.length = Math.min(current.calls.length, 40);
         current.particles.push({
           id: nextParticleId(),
           route: ['client', 'api', 'breaker', 'fallback'],
@@ -153,7 +154,9 @@ export function CircuitBreakerLab() {
 
       if (breakerEnabled && current.breaker === 'half-open' && current.trials >= TRIAL_CALLS) {
         current.shortCircuited += 1;
+        current.latency.push(2);
         current.calls.unshift({ id: nextParticleId(), result: 'short-circuit' });
+        current.calls.length = Math.min(current.calls.length, 40);
         current.particles.push({
           id: nextParticleId(),
           route: ['client', 'api', 'breaker', 'fallback'],
@@ -315,7 +318,7 @@ export function CircuitBreakerLab() {
                 label: 'Avg latency',
                 value: formatLatency(avgLatency),
                 tone: avgLatency > 800 ? 'danger' : 'ok',
-                hint: 'Failing fast is what keeps this number low during an outage.',
+                hint: 'Simplified model, not a measurement: a success costs 60 ms, a failure the full call timeout, a short-circuit 2 ms. Failing fast is what keeps this number low during an outage.',
               },
               { key: 'transitions', label: 'State changes', value: formatNumber(current.transitions) },
             ]}
@@ -354,27 +357,18 @@ export function CircuitBreakerLab() {
               {current.calls.length === 0 ? (
                 <span className="text-xs text-faint">No calls yet.</span>
               ) : (
-                current.calls.map((call) => (
-                  <span
-                    key={call.id}
-                    title={call.result}
-                    className={cn(
-                      'h-5 w-3 rounded-sm',
-                      call.result === 'ok' ? 'bg-ok' : call.result === 'fail' ? 'bg-danger' : 'bg-warn/70',
-                    )}
-                  />
-                ))
+                current.calls.map((call) => <CallGlyph key={call.id} result={call.result} />)
               )}
             </div>
             <div className="mt-2 flex gap-4 text-[10px] text-faint">
               <span className="flex items-center gap-1">
-                <span className="h-2.5 w-2.5 rounded-sm bg-ok" /> success
+                <CallGlyph result="ok" /> success
               </span>
               <span className="flex items-center gap-1">
-                <span className="h-2.5 w-2.5 rounded-sm bg-danger" /> failure
+                <CallGlyph result="fail" /> failure
               </span>
               <span className="flex items-center gap-1">
-                <span className="h-2.5 w-2.5 rounded-sm bg-warn/70" /> short-circuited
+                <CallGlyph result="short-circuit" /> short-circuited
               </span>
             </div>
           </div>
@@ -385,7 +379,22 @@ export function CircuitBreakerLab() {
           <Toggle
             label="Circuit breaker"
             checked={breakerEnabled}
-            onChange={setBreakerEnabled}
+            onChange={(value) => {
+              setBreakerEnabled(value);
+              if (!value) {
+                // A disabled breaker has no state. Without this an OPEN breaker kept
+                // its cooldown running in the background and came back OPEN.
+                const current = state.current;
+                current.breaker = 'closed';
+                current.window = [];
+                current.trials = 0;
+                current.trialSuccesses = 0;
+              }
+              log(
+                value ? 'Circuit breaker enabled - starts CLOSED' : 'Circuit breaker disabled - every call goes to the dependency',
+                'info',
+              );
+            }}
             description="Off: every call waits for the timeout before failing"
           />
           <Slider
@@ -489,6 +498,35 @@ export function CircuitBreakerLab() {
         remove it.
       </p>
     </LabShell>
+  );
+}
+
+/**
+ * One call in the recent-calls strip. The shapes match the particle legend
+ * (circle, cross, triangle), so the result is never carried by colour alone.
+ */
+function CallGlyph({ result }: { result: CallRecord['result'] }) {
+  return (
+    <svg
+      width={12}
+      height={12}
+      viewBox="-6 -6 12 12"
+      role="img"
+      aria-label={result}
+      className={cn(result === 'ok' ? 'text-ok' : result === 'fail' ? 'text-danger' : 'text-warn')}
+    >
+      <title>{result}</title>
+      {result === 'ok' ? (
+        <circle r={4.5} fill="currentColor" />
+      ) : result === 'fail' ? (
+        <g stroke="currentColor" strokeWidth={2.2} strokeLinecap="round">
+          <line x1={-4} y1={-4} x2={4} y2={4} />
+          <line x1={-4} y1={4} x2={4} y2={-4} />
+        </g>
+      ) : (
+        <polygon points="0,-5 5,4 -5,4" fill="currentColor" />
+      )}
+    </svg>
   );
 }
 
