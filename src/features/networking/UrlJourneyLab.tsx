@@ -113,7 +113,9 @@ const STAGES: Stage[] = [
     detail:
       'With an index this is a handful of page reads. Without one it is a sequential scan, and the difference is the entire indexing lesson.',
     coldMs: 35,
-    warmMs: 0,
+    // A warm connection to the browser does not make a cache miss free: the
+    // query still runs. (0 here rendered as "cached" on a cache miss.)
+    warmMs: 35,
     concept: 'database-indexing',
   },
   {
@@ -184,7 +186,7 @@ export function UrlJourneyLab() {
   return (
     <LabShell
       title="What Happens When You Type a URL?"
-      description="Twelve stages between pressing Enter and seeing a page. Click any stage to read what it does and what it costs."
+      description="Up to twelve stages between pressing Enter and seeing a page. Click any stage to read what it does and what it costs."
       running={playing}
       onToggleRun={() => (playing ? setPlaying(false) : play())}
       onReset={() => {
@@ -220,7 +222,7 @@ export function UrlJourneyLab() {
                 stages.filter((stage) => ['dns', 'tcp', 'tls'].includes(stage.id)).reduce((sum, stage) => sum + latencyOf(stage), 0),
               ),
               tone: warm ? 'ok' : 'warn',
-              hint: 'DNS + TCP + TLS - paid before any application work happens.',
+              hint: 'DNS + TCP + TLS - paid before any application work happens. Typical values for illustration, not measured.',
             },
             {
               key: 'backend',
@@ -228,14 +230,14 @@ export function UrlJourneyLab() {
               value: formatLatency(
                 stages.filter((stage) => ['lb', 'app', 'cache', 'db'].includes(stage.id)).reduce((sum, stage) => sum + latencyOf(stage), 0),
               ),
-              hint: 'Everything your servers control.',
+              hint: 'Everything your servers control. Typical values for illustration, not measured.',
             },
             {
               key: 'render',
               label: 'Rendering',
               value: formatLatency(latencyOf(STAGES[STAGES.length - 1])),
               tone: 'violet',
-              hint: 'Often larger than the entire backend time.',
+              hint: 'Often larger than the entire backend time. Typical values for illustration, not measured.',
             },
           ]}
         />

@@ -227,8 +227,8 @@ export function CdnLab() {
         <>
           <MetricsPanel
             items={[
-              { key: 'latency', label: 'Avg latency', value: formatLatency(snapshot.avg), tone: snapshot.avg > 120 ? 'danger' : 'ok' },
-              { key: 'p95', label: 'P95 latency', value: formatLatency(snapshot.p95) },
+              { key: 'latency', label: 'Avg latency', value: formatLatency(snapshot.avg), tone: snapshot.avg > 120 ? 'danger' : 'ok', hint: 'Round trip from distance to the edge or origin. Computed by a simplified model, not measured.' },
+              { key: 'p95', label: 'P95 latency', value: formatLatency(snapshot.p95), hint: '95% of requests finish faster than this. Computed by a simplified model, not measured.' },
               { key: 'hitRate', label: 'Edge hit rate', value: cdnEnabled ? formatPercent(hitRatio) : '0%', tone: cdnEnabled ? 'ok' : 'danger' },
               { key: 'rps', label: 'Total traffic', value: formatNumber(totalQps), unit: 'req/s' },
               {
@@ -323,7 +323,11 @@ export function CdnLab() {
         {REGIONS.map((region) => {
           const stats = current.stats[region.id];
           const regionQps = stats.requests.rate(now);
-          const regionHitRate = regionQps ? stats.hits.rate(now) / regionQps : 0;
+          // Read both counters on every render so their windows start together;
+          // the two rolling windows can still drift by a bucket, so a ratio above
+          // 100% is clamped rather than shown as a hit rate no cache can have.
+          const regionHits = stats.hits.rate(now);
+          const regionHitRate = regionQps ? Math.min(1, regionHits / regionQps) : 0;
           return (
             <ArchNode
               key={region.edgeId}
