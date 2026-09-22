@@ -58,6 +58,12 @@ export function ArchNode({
       onClick={onClick}
       aria-pressed={interactive && selected ? true : undefined}
       layout={!reduceMotion}
+      // A placed node animates only when its placement changes. Without this,
+      // framer-motion re-measures on every render and would spring the card
+      // whenever DiagramCanvas rescales to its container (the measured box
+      // changes although the node did not move), and would squash the text
+      // when a live stat row makes the card taller.
+      layoutDependency={placed ? `${placed.x},${placed.y},${placed.w},${placed.h}` : undefined}
       initial={reduceMotion ? false : { opacity: 0, scale: 0.85 }}
       animate={{ opacity: 1, scale: 1 }}
       transition={{ type: 'spring', stiffness: 320, damping: 28 }}

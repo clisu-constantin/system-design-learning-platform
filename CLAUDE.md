@@ -61,8 +61,11 @@ src/
    `requestAnimationFrame` loop with a clamped `dt`; `computeLoad` turns load/capacity into CPU,
    latency and error rate.
 2. **Architecture components** (`components/architecture/`) — `DiagramCanvas` renders an SVG wiring
-   layer plus HTML node cards positioned on top, in a fixed 960px design space that scrolls
-   horizontally on small screens. Every lab uses it, so a Redis node looks identical everywhere.
+   layer plus HTML node cards positioned on top, in a 960px design space that is scaled as one
+   layer stack (`useFitScale`) to fit its container between 0.5x and 1x; below 0.5x it scrolls
+   sideways inside its own card, never the page. Every lab uses it, so a Redis node looks identical
+   everywhere. Author layouts in design-space pixels; anything that turns a pointer position into
+   diagram coordinates must divide by the scale (nothing does today - clicks are element handlers).
 3. **LabShell** (`components/learning/`) — the chrome around every lab: toolbar, stage, control
    column, metrics strip, event log. Labs supply only their diagram and their controls.
 
@@ -169,8 +172,9 @@ interchangeable, which contradicts the entire stateless/horizontal-scaling lesso
 
 - `SequenceFlow` shows the active step caption as a banner over the canvas, never as an edge label -
   on a short edge an edge label always lands on a node.
-- `FlowVisual` auto-fits its spec to the container width (0.5x-1.3x), so a spec authored at 760px
-  fills a wider card instead of stopping halfway across it. Pass `zoom` only to pin a scale.
+- `FlowVisual` auto-fits its spec to the container width (0.5x-1.3x, via `DiagramCanvas`'s `fit`
+  prop), so a spec authored at 760px fills a wider card instead of stopping halfway across it. Pass
+  `zoom` only to pin a scale.
 - `FlowVisual` and `SequenceFlow` have a Pause/Play control, start paused under
   `prefers-reduced-motion`, and stop ticking while scrolled off screen (`useAutoplay`). Their nodes
   and edges are memoized on `spec`, so only the particle layer re-renders per frame - keep it that

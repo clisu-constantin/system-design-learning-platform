@@ -233,7 +233,9 @@ Checks the ticket asked for:
   Shard D. Shard D is the hot shard for created_at, the one the lab is about. Screenshot: scratchpad
   `t08/shard-created.png`.
 - **Severity:** judgment-call
-- **Status:** decided in #16 (pick A) - split out as #19 (`DiagramCanvas` scales to fit); shared component and a CLAUDE.md rule change
+- **Status:** fixed in #19 - `DiagramCanvas` now scales its whole layer stack to the container
+  (0.5x-1x, shared `useFitScale` hook), so the ~750px stage at 1440px shows the full 960px diagram
+  at about 0.78x; below 0.5x it scrolls inside its card. CLAUDE.md updated to match.
 
 ### F08-019 - The sharding concept diagram shows hash(user_id) as the hot-shard key
 
