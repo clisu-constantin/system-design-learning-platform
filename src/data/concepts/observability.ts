@@ -207,6 +207,18 @@ burn rate 2x   -> budget gone in ~2 wk -> ticket`,
 
 availability SLI = non-5xx responses / all responses
 latency SLI      = requests under 300 ms / all requests`,
+    tradeoffs: [
+      {
+        approach: 'Measure SLIs at the server or load balancer',
+        gains: ['Cheap, complete and already in your logs and metrics', 'Easy to break down by endpoint, region or version'],
+        costs: ['Misses DNS, network and client-side failures users still feel', 'Requests that never arrive are invisible'],
+      },
+      {
+        approach: 'Measure SLIs from the client or with synthetic probes',
+        gains: ['Closest to what users actually experience', 'Catches outages upstream of your servers'],
+        costs: ['Noisy data from slow devices and bad networks', 'Extra instrumentation, sampling and privacy handling'],
+      },
+    ],
     mistakes: ['Measuring only server-side, missing the network and client experience.'],
     related: ['slo', 'sla', 'metrics', 'monitoring'],
   },
@@ -253,6 +265,18 @@ spent 40 min in week 1 -> freeze risky changes, fix reliability first`,
     diagram: `SLA 99.5%  (contract, credits if missed)
 SLO 99.9%  (internal target - alerts fire long before the SLA is at risk)
 SLI        the measurement both are based on`,
+    tradeoffs: [
+      {
+        approach: 'Offer a strict SLA (for example 99.95%)',
+        gains: ['Wins customers who need a contractual guarantee', 'Forces investment in redundancy and incident response'],
+        costs: ['Service credits or penalties are paid on every miss', 'Leaves a small error budget, which slows risky changes'],
+      },
+      {
+        approach: 'Offer a loose SLA set below the internal SLO',
+        gains: ['A buffer between an internal miss and a contractual breach', 'Fewer payouts during routine incidents'],
+        costs: ['Less attractive to enterprise buyers', 'Customers may treat the low number as the real quality bar'],
+      },
+    ],
     mistakes: ['Promising an SLA the architecture cannot support.'],
     related: ['slo', 'sli', 'availability'],
   },

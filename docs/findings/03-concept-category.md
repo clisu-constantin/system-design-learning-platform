@@ -29,7 +29,7 @@ Findings for ticket 03 - Sweep the concept and category pages. Format and severi
 - **Expected:** CLAUDE.md says every concept must answer its trade-offs, and quizzes are scenario-based
 - **Happened:** no crash - the tabs are simply absent - but e.g. `http-https`, `single-point-of-failure`, `sla`, `circuit-breaker-pattern` have no Trade-offs tab, and most concepts have no Quiz, so they can only be completed with "Mark as complete"
 - **Severity:** judgment-call
-- **Status:** decided in #16 (pick A) - split out as #20 (missing trade-offs); quizzes stay optional
+- **Status:** fixed in #20 - decided in #16 (pick A); the 11 concepts without trade-offs now have 2-3 each (the finding said 12, a recount found 11), and `npm run check:content` fails the build on a concept with no trade-offs or a trade-off with empty gains/costs; quizzes stay optional
 
 ### F03-004 - Load Balancing step-by-step shows Server 2 "Down" from step 1
 

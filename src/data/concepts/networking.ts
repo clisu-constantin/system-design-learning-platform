@@ -80,6 +80,23 @@ HTTP/1.1 200 OK
 Cache-Control: public, max-age=300
 ETag: "a91f"
 Content-Type: application/json`,
+    tradeoffs: [
+      {
+        approach: 'HTTPS everywhere',
+        gains: ['Confidentiality and integrity against anyone on the network path', 'Required by browsers for HTTP/2, service workers and many modern APIs'],
+        costs: ['Extra handshake round trips on new connections', 'Certificates to issue, rotate and monitor for expiry'],
+      },
+      {
+        approach: 'HTTP/2 or HTTP/3 instead of HTTP/1.1',
+        gains: ['Many requests multiplexed over one connection', 'HTTP/3 removes TCP head-of-line blocking on lossy networks'],
+        costs: ['Harder to debug with plain-text tools', 'HTTP/3 runs on UDP, which some firewalls and middleboxes block or throttle'],
+      },
+      {
+        approach: 'Leaning on HTTP caching headers',
+        gains: ['Browsers and CDNs answer repeat requests with no origin work', 'Standard behaviour every intermediary already understands'],
+        costs: ['Clients may see stale data until max-age runs out', 'Wrong headers can cache private or per-user responses publicly'],
+      },
+    ],
     mistakes: [
       'Using POST for everything, which makes retries unsafe and caching impossible.',
       'Returning 200 with an error body - clients, proxies and monitoring all misread it.',
@@ -175,6 +192,18 @@ TLS terminated once, at the proxy.`,
     when: ['Corporate networks, CI runners that need a fixed egress IP, outbound API allow-listing.'],
     diagram: `Forward proxy:  [clients] -> proxy -> internet   (protects/serves the client)
 Reverse proxy:  internet -> proxy -> [servers]  (protects/serves the server)`,
+    tradeoffs: [
+      {
+        approach: 'Route client traffic through a forward proxy',
+        gains: ['One place to enforce egress policy, filtering and audit logs', 'Shared cache for repeated downloads such as packages or updates'],
+        costs: ['A new single point of failure and bottleneck for all outbound traffic', 'TLS inspection requires installing a trusted root on every client'],
+      },
+      {
+        approach: 'Direct egress with no proxy',
+        gains: ['Lower latency and one less component to run', 'No certificate or configuration to push to clients'],
+        costs: ['No central control over what clients can reach', 'Every client exposes its own address to the outside'],
+      },
+    ],
     mistakes: ['Confusing it with a reverse proxy - the difference is which side it represents.'],
     related: ['reverse-proxy', 'api-gateway'],
   },

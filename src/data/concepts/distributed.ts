@@ -158,6 +158,18 @@ Redundant DB (two independent 99.9 nodes with failover) -> ~99.9999% for that ti
 5 nodes: {A,B,C} majority -> accepts writes
          {D,E}   minority -> read-only / errors
 Without quorum: both sides accept writes -> split brain -> divergent data`,
+    tradeoffs: [
+      {
+        approach: 'Choose consistency during a partition (CP)',
+        gains: ['Clients never read or write conflicting data', 'Simpler reasoning for money, inventory and locks'],
+        costs: ['The minority side refuses requests until the partition heals', 'Latency rises while nodes wait for a quorum'],
+      },
+      {
+        approach: 'Choose availability during a partition (AP)',
+        gains: ['Every reachable node keeps serving reads and writes', 'Users on both sides of the split keep working'],
+        costs: ['Divergent writes must be reconciled after the partition heals', 'Clients can read stale or conflicting values'],
+      },
+    ],
     mistakes: [
       'Two-node clusters, where a partition gives neither side a majority (or both sides one).',
       'Promoting a new primary without fencing the old one.',
