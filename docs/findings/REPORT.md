@@ -85,7 +85,7 @@ depends on the letter. The two cases it missed are fixed by hand (F05-001, F05-0
   retry spikes.
 - **B:** keep the model and say jitter spreads the same volume instead of lowering the peak.
 - **Pick: A**, as a new issue - it is a model redesign, and it is the lesson the concept page teaches.
-- **Outcome:** Split out as #17.
+- **Outcome:** Split out as #17, fixed there (jitter off 8,000 req/s, jitter on 2,504 req/s at the defaults).
 
 ## Judgment calls (28)
 
