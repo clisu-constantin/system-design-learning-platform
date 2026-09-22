@@ -134,6 +134,18 @@ recommendations hangs             recs:     40 threads (exhausted)
 OPEN --(cooldown 30 s)--> HALF-OPEN
 HALF-OPEN --(3 successes)--> CLOSED
 HALF-OPEN --(1 failure)--> OPEN`,
+    tradeoffs: [
+      {
+        approach: 'Wrap a dependency in a circuit breaker',
+        gains: ['A failing dependency is skipped fast instead of tying up threads on timeouts', 'Gives the dependency room to recover instead of a retry storm'],
+        costs: ['Thresholds and cooldowns must be tuned, or it trips too early or too late', 'While open, callers get a fallback or an error even if the dependency has recovered'],
+      },
+      {
+        approach: 'Separate breakers per endpoint or host instead of one per dependency',
+        gains: ['One bad route or host is cut off while healthy ones keep serving', 'Fallbacks can be tailored to what each endpoint returns'],
+        costs: ['More state, thresholds and dashboards to maintain', 'Each breaker sees less traffic, so it needs longer to gather enough calls to trip reliably'],
+      },
+    ],
     related: ['circuit-breaker', 'retry', 'bulkhead', 'fault-tolerance'],
   },
   {

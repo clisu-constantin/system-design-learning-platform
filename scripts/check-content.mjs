@@ -65,6 +65,20 @@ try {
       );
   }
 
+  // "Trade-off first" (CLAUDE.md): every concept states what its approach gains and what it
+  // costs. A concept without one renders no Trade-offs chips; a one-sided entry is advocacy.
+  for (const concept of CONCEPTS) {
+    const at = (message) => problems.push(`${concept.slug}: ${message}`);
+    const tradeoffs = concept.tradeoffs ?? [];
+    if (!tradeoffs.length) at('no trade-offs - every concept must say what it gains and what it costs');
+    for (const tradeoff of tradeoffs) {
+      const filled = (list) => (list ?? []).filter((line) => typeof line === 'string' && line.trim()).length;
+      if (!tradeoff.approach?.trim()) at('trade-off with an empty approach');
+      if (!filled(tradeoff.gains)) at(`trade-off "${tradeoff.approach}" has no gains`);
+      if (!filled(tradeoff.costs)) at(`trade-off "${tradeoff.approach}" has no costs`);
+    }
+  }
+
   for (const concept of CONCEPTS) {
     const at = (message) => problems.push(`${concept.slug}: ${message}`);
     const depth = await loadDepth(concept.category, concept.slug);
