@@ -13,12 +13,9 @@ const DESIGN_WIDTH = 960;
 const DESIGN_HEIGHT = 540;
 
 /**
- * Shrinks the 960px stage to the column it sits in. The question column only
- * sits beside the diagram from 1700px up, where the diagram gets its full
- * 960px; below that it stacks underneath, so this only kicks in when the
- * content area itself is narrower than the canvas. Without it the stage's new
- * components (the queue and workers in stage 7) sat off to the right behind an
- * overlay scrollbar the learner never sees. Same approach as FlowVisual.
+ * The stage never shrinks below 0.6x: the evolution stages carry more text per
+ * node than a concept diagram, and below that it stops being readable. Past the
+ * floor the canvas scrolls inside its card instead.
  */
 const EVOLUTION_FIT = { min: 0.6, max: 1 };
 

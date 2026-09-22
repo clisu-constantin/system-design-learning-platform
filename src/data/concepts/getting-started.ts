@@ -319,7 +319,7 @@ Round trip California -> Netherlands ~150 ms
       },
       {
         approach: 'Serve the first byte from a nearby CDN edge',
-        gains: ['Handshakes finish over a short round trip instead of a cross-continent one', 'Static assets never reach the origin'],
+        gains: ['Handshakes finish over a short round trip instead of a cross-continent one', 'Cached static assets are served without a trip to the origin'],
         costs: ['Another layer to configure, pay for and debug', 'Stale content until caches expire or are purged'],
       },
     ],

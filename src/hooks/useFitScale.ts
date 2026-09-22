@@ -1,4 +1,4 @@
-import { useLayoutEffect, useRef, useState } from 'react';
+import { useElementWidth } from './useElementWidth';
 import { clamp } from '@/utils/math';
 
 export interface FitRange {
@@ -20,26 +20,8 @@ export interface FitRange {
  * painted at the wrong size and then snapped. `override` pins the scale.
  */
 export function useFitScale(designWidth: number, { min = 0.5, max = 1 }: FitRange = {}, override?: number) {
-  const ref = useRef<HTMLDivElement>(null);
-  const [fitted, setFitted] = useState(1);
-
-  useLayoutEffect(() => {
-    if (override !== undefined) return;
-    const element = ref.current;
-    if (!element) return;
-
-    const fit = (width: number) => {
-      // Round to 1/1000: sub-pixel jitter in the measured width must not
-      // re-render every node card on every resize tick.
-      if (width > 0) setFitted(Math.round(clamp(width / designWidth, min, max) * 1000) / 1000);
-    };
-    fit(element.clientWidth);
-
-    if (typeof ResizeObserver === 'undefined') return;
-    const observer = new ResizeObserver((entries) => fit(entries[0]?.contentRect.width ?? 0));
-    observer.observe(element);
-    return () => observer.disconnect();
-  }, [designWidth, min, max, override]);
-
+  const { ref, width } = useElementWidth();
+  // Round to 1/1000 so a 1px width change does not re-render every node card.
+  const fitted = width > 0 ? Math.round(clamp(width / designWidth, min, max) * 1000) / 1000 : clamp(1, min, max);
   return { ref, scale: override ?? fitted };
 }

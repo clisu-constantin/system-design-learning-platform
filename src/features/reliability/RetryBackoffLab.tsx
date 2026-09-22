@@ -53,14 +53,14 @@ export function RetryBackoffLab() {
    * Retry load the failing service sees from the whole fleet after a correlated
    * failure, plus the same run with jitter flipped so the insight can compare.
    */
-  const fleet = useMemo(
-    () => simulateFleetLoad({ strategy, baseMs, maxAttempts, jitter, failureRate, clients, seed }),
-    [strategy, baseMs, maxAttempts, jitter, failureRate, clients, seed],
-  );
-  const otherPeak = useMemo(
-    () => simulateFleetLoad({ strategy, baseMs, maxAttempts, jitter: !jitter, failureRate, clients, seed }).peak,
-    [strategy, baseMs, maxAttempts, jitter, failureRate, clients, seed],
-  );
+  // The same scenario with jitter flipped, so the text can quote the other peak.
+  const { fleet, otherPeak } = useMemo(() => {
+    const input = { strategy, baseMs, maxAttempts, failureRate, clients, seed };
+    return {
+      fleet: simulateFleetLoad({ ...input, jitter }),
+      otherPeak: simulateFleetLoad({ ...input, jitter: !jitter }).peak,
+    };
+  }, [strategy, baseMs, maxAttempts, jitter, failureRate, clients, seed]);
   const loadSeries = fleet.series;
   const peakLoad = fleet.peak;
   const capacity = fleet.capacity;
@@ -155,7 +155,7 @@ export function RetryBackoffLab() {
                 label: 'Load amplification',
                 value: `${(peakLoad / Math.max(clients, 1)).toFixed(2)}x`,
                 tone: peakLoad / clients > 1 ? 'danger' : 'ok',
-                hint: 'Peak retry rate divided by the client count.',
+                hint: `Peak retry rate divided by the normal load, taken as one request per client per second. A burst packed into one ${BUCKET_MS} ms bucket reads high on purpose - that is what the failing service feels.`,
               },
             ]}
           />

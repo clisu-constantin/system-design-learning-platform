@@ -50,7 +50,8 @@ export class MetricWindow {
     this.times = new Array<number>(capacity).fill(0);
   }
 
-  push(value: number, now = performance.now()) {
+  /** `now` must come from the same clock the lab gives its RateCounters. */
+  push(value: number, now: number) {
     this.values[this.cursor] = value;
     this.times[this.cursor] = now;
     this.cursor = (this.cursor + 1) % this.capacity;
@@ -62,13 +63,7 @@ export class MetricWindow {
     this.cursor = 0;
   }
 
-  /** Samples inside the horizon at `now`. */
-  count(now = performance.now()) {
-    this.expire(now);
-    return this.filled;
-  }
-
-  snapshot(now = performance.now()): WindowSnapshot {
+  snapshot(now: number): WindowSnapshot {
     const sorted = this.sorted(now);
     if (sorted.length === 0) return { count: 0, avg: null, p50: null, p95: null, p99: null };
     let sum = 0;

@@ -1,6 +1,7 @@
-import { useLayoutEffect, useRef, useState, type ReactNode } from 'react';
+import type { ReactNode } from 'react';
 import { Pause, Play, RotateCcw } from 'lucide-react';
 import { cn } from '@/utils/cn';
+import { useElementWidth } from '@/hooks/useElementWidth';
 import { Button, ErrorBoundary } from '@/components/ui';
 import type { SimEvent } from '@/simulations/engine';
 
@@ -98,21 +99,8 @@ export function LabShell({
 const WIDE_LAYOUT_MIN = 900;
 
 function useWideLayout() {
-  const ref = useRef<HTMLElement>(null);
-  const [wide, setWide] = useState(false);
-
-  useLayoutEffect(() => {
-    const element = ref.current;
-    if (!element) return;
-    const update = (width: number) => setWide(width >= WIDE_LAYOUT_MIN);
-    update(element.clientWidth);
-    if (typeof ResizeObserver === 'undefined') return;
-    const observer = new ResizeObserver((entries) => update(entries[0]?.contentRect.width ?? 0));
-    observer.observe(element);
-    return () => observer.disconnect();
-  }, []);
-
-  return { ref, wide };
+  const { ref, width } = useElementWidth<HTMLElement>();
+  return { ref, wide: width >= WIDE_LAYOUT_MIN };
 }
 
 const TONE_CLASS = {
