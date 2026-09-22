@@ -90,7 +90,7 @@ const LAYOUT: Layout = {
   s0: { x: 160, y: 260, w: 180, h: 118 },
   s1: { x: 390, y: 260, w: 180, h: 118 },
   s2: { x: 620, y: 260, w: 180, h: 118 },
-  redis: { x: 390, y: 420, w: 180, h: 76 },
+  redis: { x: 390, y: 410, w: 180, h: 92 },
 };
 
 export function StatelessLab() {
@@ -155,13 +155,29 @@ export function StatelessLab() {
     const arrivals = sampleArrivals(traffic, dt);
 
     for (let index = 0; index < arrivals; index += 1) {
-      if (healthy.length === 0) continue;
       const user = USERS[Math.floor(Math.random() * USERS.length)];
+
+      if (healthy.length === 0) {
+        // Every server is down: the request still arrives and still fails.
+        current.lost += 1;
+        current.recent.unshift({
+          id: nextParticleId(),
+          user,
+          server: 'no server',
+          result: 'lost',
+          detail: 'NO HEALTHY SERVER - request failed',
+        });
+        current.recent = current.recent.slice(0, 8);
+        current.particles.push({ id: nextParticleId(), route: ['users', 'lb'], leg: 0, t: 0, speed: 1.1, outcome: 'failure' });
+        continue;
+      }
 
       let server: ServerModel;
       if (mode === 'sticky') {
-        const hash = user.charCodeAt(0);
-        server = healthy[hash % healthy.length];
+        // The load balancer keeps a user on the server that holds their session
+        // (a cookie, in real life). Only users whose server is gone get re-pinned.
+        server =
+          healthy.find((item) => item.sessions.has(user)) ?? healthy[user.charCodeAt(0) % healthy.length];
       } else {
         current.cursor = (current.cursor + 1) % healthy.length;
         server = healthy[current.cursor];
@@ -174,11 +190,17 @@ export function StatelessLab() {
       if (mode === 'local') {
         ok = server.sessions.has(user);
         detail = ok ? 'session found in local memory' : 'SESSION NOT FOUND - user logged out';
-        if (!ok) server.sessions.add(user); // user logs in again, on this server
+        if (!ok) {
+          // The user logs in again on this server. The new session cookie
+          // replaces the old one, so the session on any other server is dead.
+          for (const other of current.servers) other.sessions.delete(user);
+          server.sessions.add(user);
+        }
       } else if (mode === 'sticky') {
         if (!server.sessions.has(user)) {
+          ok = false;
           server.sessions.add(user);
-          detail = 'pinned to this server, session re-created';
+          detail = 'SESSION NOT FOUND - re-pinned here, user logs in again';
         } else {
           detail = 'sticky route found the session';
         }
@@ -293,10 +315,10 @@ export function StatelessLab() {
               },
               {
                 key: 'lost',
-                label: 'Session lost',
+                label: 'Lost / failed',
                 value: formatNumber(current.lost),
                 tone: current.lost > 0 ? 'danger' : 'ok',
-                hint: 'Requests that landed on a server without the session.',
+                hint: 'Requests that landed on a server without the session, found no session store, or found no server up at all.',
               },
               {
                 key: 'lookups',
@@ -308,7 +330,7 @@ export function StatelessLab() {
                 key: 'latency',
                 label: 'Extra latency',
                 value: mode === 'shared' ? formatLatency(2.5) : formatLatency(0),
-                hint: 'Additional per-request cost of the session strategy.',
+                hint: 'Additional per-request cost of the session strategy. An illustrative figure, not measured.',
               },
               { key: 'instances', label: 'Healthy servers', value: `${healthyCount}/3` },
             ]}
@@ -425,7 +447,7 @@ export function StatelessLab() {
         <ArchNode
           kind="load-balancer"
           title="Load Balancer"
-          subtitle={mode === 'sticky' ? 'sticky by user' : 'round robin'}
+          subtitle={mode === 'sticky' ? 'sticky by user, 2 nodes' : 'round robin, 2 nodes'}
           placed={layout.lb}
           compact
         />

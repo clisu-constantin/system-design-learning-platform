@@ -54,6 +54,22 @@ export function VerticalScalingLab() {
     log(`Downgraded to ${next.name} (~${next.capacity} req/sec)`, 'info');
   }, [tierIndex, log]);
 
+  /** Jumping straight to a tier on the ladder is still a resize, so it logs like one. */
+  const selectTier = useCallback(
+    (index: number) => {
+      if (index === tierIndex) return;
+      const next = MACHINE_TIERS[index];
+      setTierIndex(index);
+      if (index > tierIndex) {
+        log(`Upgraded to ${next.name}: ${next.cpu} vCPU, ${next.ramGb} GB, ~${next.capacity} req/sec`, 'ok');
+        log('Restart required - this is downtime unless you have a standby', 'warn');
+      } else {
+        log(`Downgraded to ${next.name} (~${next.capacity} req/sec)`, 'info');
+      }
+    },
+    [tierIndex, log],
+  );
+
   const reset = useCallback(() => {
     particles.current = [];
     setTierIndex(0);
@@ -136,9 +152,12 @@ export function VerticalScalingLab() {
             </>
           ) : (
             <>
-              At {formatPercent(load.cpu)} CPU there is headroom. Notice that latency barely moves until utilization
-              passes about 70% - then queueing takes over and it rises sharply. That knee is why capacity planning
-              targets 60-70%, not 95%.
+              At {formatPercent(load.cpu)} CPU{' '}
+              {load.cpu > 0.6
+                ? 'the machine is past the knee - requests have started to queue and latency is climbing.'
+                : 'there is headroom.'}{' '}
+              Latency barely moves until utilization passes about 60% - then queueing takes over and it rises
+              sharply. That knee is why capacity planning targets 60-70%, not 95%.
             </>
           )}
         </Insight>
@@ -148,14 +167,26 @@ export function VerticalScalingLab() {
           <MetricsPanel
             items={[
               { key: 'rps', label: 'Traffic', value: formatNumber(traffic), unit: 'req/s', tone: 'brand' },
-              { key: 'utilization', label: 'Capacity', value: formatNumber(tier.capacity), unit: 'req/s' },
+              {
+                key: 'utilization',
+                label: 'Capacity',
+                value: formatNumber(tier.capacity),
+                unit: 'req/s',
+                hint: 'Requests per second this machine tier can serve before it saturates.',
+              },
               {
                 key: 'cpu',
                 label: 'CPU',
                 value: formatPercent(load.cpu),
                 tone: load.cpu > 0.9 ? 'danger' : load.cpu > 0.7 ? 'warn' : 'ok',
               },
-              { key: 'latency', label: 'Latency', value: formatLatency(load.latencyMs), tone: load.latencyMs > 500 ? 'danger' : 'neutral' },
+              {
+                key: 'latency',
+                label: 'Latency',
+                value: formatLatency(load.latencyMs),
+                tone: load.latencyMs > 500 ? 'danger' : 'neutral',
+                hint: 'Time to serve one request. Computed by a simplified queueing model, not measured.',
+              },
               {
                 key: 'errorRate',
                 label: 'Error rate',
@@ -190,7 +221,7 @@ export function VerticalScalingLab() {
                 <button
                   key={item.id}
                   type="button"
-                  onClick={() => setTierIndex(index)}
+                  onClick={() => selectTier(index)}
                   className={`rounded-xl border p-3 text-left transition-colors ${
                     index === tierIndex ? 'border-brand bg-brand/5' : 'border-line hover:border-brand/50'
                   }`}
