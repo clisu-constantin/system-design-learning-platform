@@ -106,13 +106,17 @@ export function IndexingLab() {
   });
 
   const btreeLevels = Math.ceil(Math.log2(Math.max(2, tableSize)));
-  const writeOverhead = hasIndex ? 0.35 : 0;
+  // Derived from the same model as the write-path meter: each write touches
+  // the table plus one structure per index. A fixed +35% here contradicted the
+  // meter, which showed the index doubling the structures updated.
+  const structuresPerWrite = hasIndex ? 2 : 1;
+  const writeOverhead = structuresPerWrite - 1;
   const indexStorageMb = (tableSize * 40) / 1_000_000;
 
   // The write-rate slider has to cost something, or the trade-off this lab
   // teaches is only a sentence. Every write updates the table and each index,
   // so the index doubles the structures touched and halves the write headroom.
-  const structuresPerSecond = writeRate * (hasIndex ? 2 : 1);
+  const structuresPerSecond = writeRate * structuresPerWrite;
   const writeLoad = computeLoad(structuresPerSecond, WRITE_CAPACITY, { baseLatencyMs: 4, kneeAt: 0.65 });
 
   const visibleRows = useMemo(() => {
@@ -214,14 +218,14 @@ export function IndexingLab() {
                 label: 'Write overhead',
                 value: hasIndex ? `+${Math.round(writeOverhead * 100)}%` : '0%',
                 tone: hasIndex ? 'warn' : 'ok',
-                hint: 'Extra work per INSERT/UPDATE/DELETE to maintain the index.',
+                hint: 'Extra structures updated per INSERT/UPDATE/DELETE: the table, plus one per index. Simplified model.',
               },
               {
                 key: 'writeLatency',
                 label: 'Write latency',
                 value: formatLatency(writeLoad.latencyMs),
                 tone: writeLoad.saturated ? 'danger' : writeLoad.cpu > 0.7 ? 'warn' : 'ok',
-                hint: 'Time per INSERT at the current write rate. An index is paid for here.',
+                hint: 'Time per INSERT at the current write rate. An index is paid for here. Simulated by a simplified queueing model, not measured.',
               },
               {
                 key: 'storage',
@@ -299,6 +303,10 @@ export function IndexingLab() {
             step={1000}
             onChange={(value) => {
               setTableSize(value);
+              // The chosen email encodes a row number, so it may not exist in
+              // the resized table - the Select would show another option while
+              // the query silently searched for a row that is gone.
+              setTarget('');
               setResult(null);
               scan.current = null;
             }}
@@ -365,7 +373,9 @@ export function IndexingLab() {
           subtitle="Sequential scan"
           sql={`SELECT * FROM users\nWHERE email = '${email}';`}
           plan={`Seq Scan on users\n  Filter: (email = '...')\n  Rows Removed by Filter: ${formatNumber(
-            Math.max(0, (result?.mode === 'scan' ? result.rowsInspected : tableSize) - 1),
+            result?.mode === 'scan'
+              ? Math.max(0, result.rowsInspected - (result.found ? 1 : 0))
+              : Math.max(0, tableSize - 1),
           )}`}
           rows={result?.mode === 'scan' ? (scanning ? scanPosition : result.rowsInspected) : null}
           time={result?.mode === 'scan' ? result.timeMs : null}

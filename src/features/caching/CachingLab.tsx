@@ -47,8 +47,10 @@ const LAYOUT: Layout = {
 const EDGES: DiagramEdge[] = [
   { from: 'users', to: 'api', tone: 'brand', width: 2 },
   { from: 'api', to: 'cache', tone: 'ok' },
-  { from: 'api', to: 'db', tone: 'violet' },
-  { from: 'cache', to: 'db', tone: 'muted', dashed: true, label: 'miss -> load' },
+  // Cache-aside: on a miss the API itself queries the database and then stores
+  // the row. A cache -> db edge would describe read-through instead, which the
+  // Cache Strategies lab teaches as a different pattern.
+  { from: 'api', to: 'db', tone: 'violet', label: 'on miss' },
 ];
 
 interface CacheEntry {
@@ -131,6 +133,16 @@ export function CachingLab() {
     const arrivals = sampleArrivals(traffic, dt);
     const share = visualShare(traffic, ANIMATED_PER_SECOND);
 
+    // Shrinking the cache-size slider must shrink the cache now. Evicting one
+    // entry per miss (and then inserting one) never brought an over-full cache
+    // back under its limit, so a 10-item cache kept ~500 keys and a 99% hit rate.
+    while (current.entries.size > size) {
+      const lru = current.entries.keys().next().value;
+      if (lru === undefined) break;
+      current.entries.delete(lru);
+      current.evictions += 1;
+    }
+
     for (let index = 0; index < arrivals; index += 1) {
       const key = pickKey(keyspace, skew);
       const entry = current.entries.get(key);
@@ -153,7 +165,8 @@ export function CachingLab() {
       } else {
         current.misses.add(1, now);
         current.dbQueries.add(1, now);
-        latency = CACHE_LATENCY + dbLoad.latencyMs * (0.8 + Math.random() * 0.5);
+        // With the cache off there is no cache lookup to pay for first.
+        latency = (enabled ? CACHE_LATENCY : 0) + dbLoad.latencyMs * (0.8 + Math.random() * 0.5);
         note = enabled ? 'Cache MISS - loaded from database and stored' : 'Cache disabled - straight to database';
         if (enabled) {
           if (current.entries.size >= size && !current.entries.has(key)) {
@@ -178,7 +191,7 @@ export function CachingLab() {
         route: hit
           ? ['users', 'api', 'cache']
           : enabled
-            ? ['users', 'api', 'cache', 'db']
+            ? ['users', 'api', 'cache', 'api', 'db']
             : ['users', 'api', 'db'],
         leg: 0,
         t: 0,
@@ -197,7 +210,11 @@ export function CachingLab() {
         status: 'completed',
         outcome: hit ? 'cache-hit' : 'success',
         latency,
-        path: hit ? ['Client', 'API', 'Redis (HIT)'] : ['Client', 'API', 'Redis (MISS)', 'PostgreSQL', 'Redis (store)'],
+        path: hit
+          ? ['Client', 'API', 'Redis (HIT)']
+          : enabled
+            ? ['Client', 'API', 'Redis (MISS)', 'API', 'PostgreSQL', 'API', 'Redis (store)']
+            : ['Client', 'API', 'PostgreSQL'],
         method: 'GET',
         endpoint: `/api/${key.replace(':', '/')}`,
         notes: [note, `Key: ${key}`, `TTL: ${ttl}s`],
@@ -288,8 +305,18 @@ export function CachingLab() {
               { key: 'hitRate', label: 'Hit rate', value: formatPercent(hitRate), tone: hitRate > 0.8 ? 'ok' : hitRate > 0.5 ? 'warn' : 'danger' },
               { key: 'missRate', label: 'Miss rate', value: formatPercent(1 - hitRate) },
               { key: 'dbQueries', label: 'DB queries', value: formatNumber(dbQps), unit: '/s', tone: dbLoad.saturated ? 'danger' : 'neutral' },
-              { key: 'latency', label: 'Avg latency', value: formatLatency(snapshot.avg) },
-              { key: 'p95', label: 'P95 latency', value: formatLatency(snapshot.p95) },
+              {
+                key: 'latency',
+                label: 'Avg latency',
+                value: formatLatency(snapshot.avg),
+                hint: 'Simulated, not measured: a simplified queueing model of the database, meant to show the shape of the curve.',
+              },
+              {
+                key: 'p95',
+                label: 'P95 latency',
+                value: formatLatency(snapshot.p95),
+                hint: '95% of requests finished faster than this. Simulated by a simplified model, not measured.',
+              },
               { key: 'evictions', label: 'Evictions', value: formatNumber(current.evictions), tone: current.evictions > 0 ? 'warn' : 'neutral' },
             ]}
           />
