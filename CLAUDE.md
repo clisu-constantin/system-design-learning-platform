@@ -226,3 +226,17 @@ These are editorial rules, not style preferences. They are the reason the app is
   52 + 6.4 per title character.
 - Everything persists to `localStorage` only (`sdi:theme`, `sdi:progress:v1`). No backend, no auth,
   no network calls at runtime — keep it that way.
+
+## Agent skills
+
+### Issue tracker
+
+GitHub Issues on `clisu-constantin/system-design-learning-platform`, via the `gh` CLI. See `docs/agents/issue-tracker.md`.
+
+### Triage labels
+
+The five default labels, unchanged. See `docs/agents/triage-labels.md`.
+
+### Domain docs
+
+Single-context: `CONTEXT.md` + `docs/adr/` at the repo root. See `docs/agents/domain.md`.
