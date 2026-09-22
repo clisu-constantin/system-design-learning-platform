@@ -33,6 +33,27 @@ export function analyze(
   edges: Edge[],
   traffic: number,
 ): AnalysisResult {
+  if (nodes.length === 0) {
+    // Nothing to score. Returning the base heuristic scores here showed
+    // "Performance 40 / 100" and gateway advice for a canvas with no components.
+    return {
+      load: {},
+      bottlenecks: [],
+      risks: [
+        {
+          id: 'empty',
+          severity: 'low',
+          message: 'The canvas is empty, so there is nothing to analyze yet.',
+          fix: 'Add a Client and a Server from the palette and connect them, or load a preset.',
+        },
+      ],
+      scores: { scalability: 0, availability: 0, performance: 0 },
+      complexity: 'Low',
+      cost: 'Low',
+      dropped: 0,
+    };
+  }
+
   const byId = new Map(nodes.map((node) => [node.id, node]));
   const outgoing = new Map<string, string[]>();
   const incoming = new Map<string, string[]>();
@@ -44,15 +65,23 @@ export function analyze(
   const load: Record<string, number> = Object.fromEntries(nodes.map((node) => [node.id, 0]));
   let dropped = 0;
 
-  // Breadth-first propagation with a visit cap, so a cycle cannot loop forever.
+  /**
+   * Breadth-first propagation. Each item remembers the path it took, and traffic
+   * never re-enters a component already on its path: a request that reaches the
+   * database does not come back around to the server as a brand-new request. A
+   * depth cap alone let a two node cycle multiply the load six times over.
+   */
   const clients = nodes.filter((node) => node.data.kind === 'client');
-  const queue: { id: string; amount: number; depth: number }[] = clients.map((node) => ({
+  const queue: { id: string; amount: number; depth: number; path: string[] }[] = clients.map((node) => ({
     id: node.id,
     amount: traffic / Math.max(clients.length, 1),
     depth: 0,
+    path: [node.id],
   }));
 
-  while (queue.length) {
+  // Fan-out multiplies paths, so a densely wired canvas is capped by total work, not just depth.
+  let budget = 20000;
+  while (queue.length && budget-- > 0) {
     const item = queue.shift();
     if (!item || item.depth > 12) continue;
     const node = byId.get(item.id);
@@ -93,9 +122,15 @@ export function analyze(
     }, 1);
 
     for (const target of targets) {
+      if (item.path.includes(target)) continue;
       const kind = byId.get(target)?.data.kind;
       const fronted = kind === 'cache' || kind === 'cdn';
-      queue.push({ id: target, amount: fronted ? split : split * cacheShare, depth: item.depth + 1 });
+      queue.push({
+        id: target,
+        amount: fronted ? split : split * cacheShare,
+        depth: item.depth + 1,
+        path: [...item.path, target],
+      });
     }
   }
 
@@ -105,8 +140,17 @@ export function analyze(
 
   // ---- Risk detection -------------------------------------------------------
   const risks: AnalysisResult['risks'] = [];
-  const countByKind = (kind: NodeKind) => nodes.filter((node) => node.data.kind === kind).length;
+  /**
+   * Only wired components count. A component with no edges receives no
+   * traffic, so dropping fifteen unconnected boxes on the canvas must not score
+   * as a redundant, cached, load balanced system. Monitoring is the exception:
+   * it observes everything and is conventionally drawn without request edges.
+   */
+  const wired = new Set(edges.flatMap((edge) => [edge.source, edge.target]));
+  const counts = (node: Node<PlaygroundNodeData>) => node.data.kind === 'monitoring' || wired.has(node.id);
+  const countByKind = (kind: NodeKind) => nodes.filter((node) => node.data.kind === kind && counts(node)).length;
   const has = (kind: NodeKind) => countByKind(kind) > 0;
+  const unwired = nodes.filter((node) => !counts(node));
 
   const servers = countByKind('server') + countByKind('service');
   const databases = countByKind('sql') + countByKind('nosql');
@@ -133,6 +177,17 @@ export function analyze(
       severity: 'medium',
       message: 'Several application instances with nothing distributing traffic between them.',
       fix: 'Put a load balancer in front of the instances.',
+    });
+  }
+  // Whatever fronts the whole system is redundant in a real deployment (see CLAUDE.md).
+  const frontDoors = (['load-balancer', 'api-gateway'] as const).filter((kind) => countByKind(kind) === 1);
+  for (const kind of frontDoors) {
+    const name = kind === 'load-balancer' ? 'load balancer' : 'API gateway';
+    risks.push({
+      id: `single-${kind}`,
+      severity: 'medium',
+      message: `Only one ${name} - every request passes through it, so it is a single point of failure.`,
+      fix: `Run the ${name} as a redundant pair (for example two nodes in different availability zones).`,
     });
   }
   if (!has('cache') && databases > 0) {
@@ -175,7 +230,16 @@ export function analyze(
       fix: 'Add capacity, cache in front of them, or move the work to a queue.',
     });
   }
-  if (nodes.length > 0 && clients.length === 0) {
+  if (unwired.length > 0) {
+    const names = unwired.map((node) => node.data.label).join(', ');
+    risks.push({
+      id: 'unwired',
+      severity: 'medium',
+      message: `Not connected to anything: ${names}. Unconnected components receive no traffic and do not count in the scores.`,
+      fix: 'Drag from the bottom handle of one component to the top handle of another to connect them.',
+    });
+  }
+  if (clients.length === 0) {
     risks.push({
       id: 'no-client',
       severity: 'low',
@@ -203,6 +267,7 @@ export function analyze(
       (has('load-balancer') ? 15 : 0) +
       (has('monitoring') ? 10 : 0) +
       (has('queue') ? 5 : 0) -
+      frontDoors.length * 10 -
       risks.filter((risk) => risk.severity === 'high').length * 15,
   );
 
@@ -219,7 +284,10 @@ export function analyze(
   const cost =
     nodes.length + servers > 16 ? 'High' : nodes.length > 8 || databases > 2 ? 'Medium' : 'Low';
 
-  return { load, bottlenecks, risks, scores: { scalability, availability, performance }, complexity, cost, dropped };
+  // Nothing is connected yet, so there is no architecture to score - only loose boxes.
+  const scores = wired.size > 0 ? { scalability, availability, performance } : { scalability: 0, availability: 0, performance: 0 };
+
+  return { load, bottlenecks, risks, scores, complexity, cost, dropped };
 }
 
 const clampScore = (value: number) => Math.max(0, Math.min(100, Math.round(value)));

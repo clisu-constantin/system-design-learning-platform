@@ -8,6 +8,7 @@ import ReactFlow, {
   ReactFlowProvider,
   useEdgesState,
   useNodesState,
+  useStoreApi,
   type Connection,
   type Edge,
   type Node,
@@ -27,16 +28,22 @@ import { makeNode, PRESETS } from './presets';
 
 const SEVERITY_TONE = { high: 'danger', medium: 'warn', low: 'neutral' } as const;
 
+/** The preset shown on first load; the select, the canvas and Reset all read this. */
+const DEFAULT_PRESET = 'scaled';
+/** Never zoom in past 1:1, so a three node preset does not fill the screen with one card. */
+const FIT_VIEW = { padding: 0.2, maxZoom: 1 };
+
 function PlaygroundCanvas() {
-  const initial = useMemo(() => PRESETS[1].build(), []);
+  const initial = useMemo(() => (PRESETS.find((item) => item.id === DEFAULT_PRESET) ?? PRESETS[0]).build(), []);
   const [nodes, setNodes, onNodesChange] = useNodesState<PlaygroundNodeData>(initial.nodes);
   const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>(initial.edges);
   const [traffic, setTraffic] = useState(800);
   const [running, setRunning] = useState(false);
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [preset, setPreset] = useState('scaled');
+  const [preset, setPreset] = useState(DEFAULT_PRESET);
   const wrapper = useRef<HTMLDivElement>(null);
   const instance = useRef<ReactFlowInstance | null>(null);
+  const store = useStoreApi();
 
   const analysis = useMemo(() => analyze(nodes, edges, traffic), [nodes, edges, traffic]);
 
@@ -50,8 +57,11 @@ function PlaygroundCanvas() {
     },
   }));
 
+  const clientCount = nodes.filter((node) => node.data.kind === 'client').length;
   const viewEdges = edges.map((edge) => {
-    const sourceLoad = analysis.load[edge.source] ?? traffic;
+    // Clients are traffic sources and carry no load of their own; their share of the traffic is what leaves them.
+    const sourceIsClient = nodes.find((node) => node.id === edge.source)?.data.kind === 'client';
+    const sourceLoad = sourceIsClient ? traffic / Math.max(clientCount, 1) : (analysis.load[edge.source] ?? traffic);
     const targetDown = nodes.find((node) => node.id === edge.target)?.data.status === 'down';
     const targetBottleneck = analysis.bottlenecks.includes(edge.target);
     return {
@@ -121,8 +131,13 @@ function PlaygroundCanvas() {
       setEdges(built.edges);
       setPreset(id);
       setSelectedId(null);
+      // Re-frame the new diagram, otherwise the viewport keeps the previous preset's zoom and most
+      // of the new one sits off screen. fitView() cannot run yet - the new nodes are unmeasured -
+      // so re-arm React Flow's own fit-on-init, which fires once their dimensions arrive.
+      if (built.nodes.length === 0) instance.current?.setViewport({ x: 0, y: 0, zoom: 1 });
+      else store.setState({ fitViewOnInitDone: false });
     },
-    [setNodes, setEdges],
+    [setNodes, setEdges, store],
   );
 
   const totalCapacity = nodes
@@ -199,6 +214,7 @@ function PlaygroundCanvas() {
             onNodesChange={onNodesChange}
             onEdgesChange={onEdgesChange}
             onConnect={onConnect}
+            isValidConnection={(connection) => connection.source !== connection.target}
             onInit={(flow) => {
               instance.current = flow;
             }}
@@ -207,6 +223,7 @@ function PlaygroundCanvas() {
             nodeTypes={nodeTypes}
             edgeTypes={edgeTypes}
             fitView
+            fitViewOptions={FIT_VIEW}
             proOptions={{ hideAttribution: true }}
             className="bg-canvas"
           >
@@ -301,7 +318,10 @@ function PlaygroundCanvas() {
           <div className="rounded-xl border border-line p-3">
             <p className="label mb-2">Detected risks</p>
             {analysis.risks.length === 0 ? (
-              <p className="text-[11px] text-ok">No structural risks detected for this traffic level.</p>
+              <p className="text-[11px] text-muted">
+                None of the checks this heuristic runs found a risk at this traffic level. That is not a
+                production-readiness review: it does not look at security, backups, data growth or deployment.
+              </p>
             ) : (
               <ul className="space-y-2">
                 {analysis.risks.map((risk) => (
@@ -361,7 +381,14 @@ function ScoreRow({ label, value }: { label: string; value: number }) {
         <span className="text-muted">{label}</span>
         <span className="font-mono text-ink">{value} / 100</span>
       </div>
-      <Meter value={value / 100} showValue={false} size="xs" className="mt-1" />
+      {/* Higher is better here, the opposite of a utilization bar, so the colour is set explicitly. */}
+      <Meter
+        value={value / 100}
+        tone={value >= 70 ? 'ok' : value >= 40 ? 'warn' : 'danger'}
+        showValue={false}
+        size="xs"
+        className="mt-1"
+      />
     </div>
   );
 }
