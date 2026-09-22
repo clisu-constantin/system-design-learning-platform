@@ -14,6 +14,15 @@ export const formatLatency = (ms: number | null) =>
       ? `${(ms / 1000).toFixed(2)} s`
       : `${ms < 10 ? ms.toFixed(1) : Math.round(ms)} ms`;
 
+/**
+ * Tone for a latency reading: neutral with no data, danger above `limit`, ok
+ * otherwise. `LATENCY_TEXT` maps it to a text class for node stat rows.
+ */
+export const latencyTone = (ms: number | null, limit: number) =>
+  ms === null ? 'neutral' : ms > limit ? 'danger' : 'ok';
+
+export const LATENCY_TEXT = { neutral: 'text-muted', danger: 'text-danger', ok: 'text-ok' } as const;
+
 export const formatPercent = (ratio: number, digits = 0) => `${(ratio * 100).toFixed(digits)}%`;
 
 export function formatBytes(bytes: number) {

@@ -8,6 +8,7 @@ import { useInView } from '@/hooks/useInView';
 import { usePrefersReducedMotion } from '@/hooks/usePrefersReducedMotion';
 import { ArchNode, NodeStatRow } from './ArchNode';
 import { DiagramCanvas, type DiagramEdge, type ParticleView } from './DiagramCanvas';
+import type { FitRange } from '@/hooks/useFitScale';
 import type { Layout } from './geometry';
 
 export interface VisualNode {
@@ -70,7 +71,7 @@ export interface VisualSpec {
  * than labs, so they may grow up to 1.3x to fill a wide card instead of sitting
  * in its top-left corner. Below 0.5x they scroll sideways instead of clipping.
  */
-const FLOW_FIT = { min: 0.5, max: 1.3 };
+const FLOW_FIT: FitRange = { min: 0.5, max: 1.3 };
 
 const toLayout = (spec: VisualSpec): Layout =>
   Object.fromEntries(
@@ -307,7 +308,7 @@ export function SequenceFlow({ spec, className }: { spec: VisualSpec; className?
           width={width}
           height={height}
           fit={FLOW_FIT}
-          >
+        >
           {nodes}
         </DiagramCanvas>
       </figure>

@@ -23,7 +23,7 @@ import {
 } from '@/simulations/engine';
 import { useRerender } from '@/hooks/useRerender';
 import { sampleArrivals } from '@/utils/math';
-import { formatLatency, formatNumber, formatPercent } from '@/utils/format';
+import { LATENCY_TEXT, formatLatency, formatNumber, formatPercent, latencyTone } from '@/utils/format';
 
 interface Region {
   id: string;
@@ -176,7 +176,7 @@ export function CdnLab() {
   const current = state.current;
   const now = performance.now();
   const snapshot = current.latency.snapshot(now);
-  // Per-region averages over the same 2 s horizon; null when a region saw no request (lab paused).
+  // Per-region averages over the same MetricWindow horizon; null when a region saw no request (lab paused).
   const regionLatency = (id: string) => current.stats[id].latency.snapshot(now).avg;
   const originQps = current.originRate.rate(now);
   const totalQps = current.totalRate.rate(now);
@@ -229,7 +229,7 @@ export function CdnLab() {
         <>
           <MetricsPanel
             items={[
-              { key: 'latency', label: 'Avg latency', value: formatLatency(snapshot.avg), tone: snapshot.avg === null ? 'neutral' : snapshot.avg > 120 ? 'danger' : 'ok', hint: 'Round trip from distance to the edge or origin. Computed by a simplified model, not measured.' },
+              { key: 'latency', label: 'Avg latency', value: formatLatency(snapshot.avg), tone: latencyTone(snapshot.avg, 120), hint: 'Round trip from distance to the edge or origin. Computed by a simplified model, not measured.' },
               { key: 'p95', label: 'P95 latency', value: formatLatency(snapshot.p95), hint: '95% of requests finish faster than this. Computed by a simplified model, not measured.' },
               { key: 'hitRate', label: 'Edge hit rate', value: cdnEnabled ? formatPercent(hitRatio) : '0%', tone: cdnEnabled ? 'ok' : 'danger' },
               { key: 'rps', label: 'Total traffic', value: formatNumber(totalQps), unit: 'req/s' },
@@ -360,7 +360,7 @@ export function CdnLab() {
               <NodeStatRow
                 label="Latency"
                 value={formatLatency(latency)}
-                tone={latency === null ? 'text-muted' : latency > 150 ? 'text-danger' : 'text-ok'}
+                tone={LATENCY_TEXT[latencyTone(latency, 150)]}
               />
             </ArchNode>
           );

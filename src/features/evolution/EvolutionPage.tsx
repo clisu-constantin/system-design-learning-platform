@@ -2,6 +2,7 @@ import { useCallback, useRef, useState, type RefObject } from 'react';
 import { Link } from 'react-router-dom';
 import { AlertTriangle, ArrowRight, Check, ChevronLeft, ChevronRight, Sparkles } from 'lucide-react';
 import { ArchNode, DiagramCanvas, ParticleLegend, type ParticleView } from '@/components/architecture';
+import type { FitRange } from '@/hooks/useFitScale';
 import { PlayPauseButton, useAutoplay } from '@/components/architecture/FlowVisual';
 import { Badge, Button, Stat } from '@/components/ui';
 import { advanceParticles, nextParticleId, useTicker, type Particle } from '@/simulations/engine';
@@ -17,7 +18,7 @@ const DESIGN_HEIGHT = 540;
  * node than a concept diagram, and below that it stops being readable. Past the
  * floor the canvas scrolls inside its card instead.
  */
-const EVOLUTION_FIT = { min: 0.6, max: 1 };
+const EVOLUTION_FIT: FitRange = { min: 0.6, max: 1 };
 
 export function EvolutionPage() {
   const [index, setIndex] = useState(0);

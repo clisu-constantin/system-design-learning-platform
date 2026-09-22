@@ -71,7 +71,6 @@ interface DiagramCanvasProps {
   zoom?: number;
 }
 
-const DEFAULT_FIT: FitRange = { min: 0.5, max: 1 };
 
 /**
  * The shared stage for every lab: an SVG wiring layer with animated request
@@ -101,7 +100,7 @@ export function DiagramCanvas({
   className,
   underlay,
   grid = true,
-  fit = DEFAULT_FIT,
+  fit,
   zoom,
 }: DiagramCanvasProps) {
   const { ref, scale } = useFitScale(width, fit, zoom);

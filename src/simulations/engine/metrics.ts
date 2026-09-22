@@ -14,6 +14,9 @@ export interface WindowSnapshot {
   p99: number | null;
 }
 
+/** How long a latency sample counts, in ms. */
+export const METRIC_HORIZON_MS = 2000;
+
 /**
  * Sliding time window of samples - the last `horizonMs` of them, not the last
  * N. Used for latency distributions.
@@ -27,8 +30,9 @@ export interface WindowSnapshot {
  * holds the newest `capacity` samples, which are all recent anyway.
  *
  * Time is whatever clock the caller passes as `now`, in milliseconds - the
- * same convention as `RateCounter`, and labs pass both the same `now` so a
- * rate and a latency in one metrics strip always describe the same interval.
+ * same convention as `RateCounter`. Labs pass both the same `now`, so both
+ * read the same clock - but a `RateCounter` has its own window length, so a
+ * rate and a latency in one strip can cover different spans.
  * Timestamps must not go backwards between pushes.
  *
  * Writes are O(1): a lab at 5,000 req/sec pushes a sample per request, so
@@ -44,7 +48,7 @@ export class MetricWindow {
 
   constructor(
     private readonly capacity = 400,
-    private readonly horizonMs = 2000,
+    private readonly horizonMs = METRIC_HORIZON_MS,
   ) {
     this.values = new Array<number>(capacity).fill(0);
     this.times = new Array<number>(capacity).fill(0);

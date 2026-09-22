@@ -92,9 +92,9 @@ export function LabShell({
 /**
  * Side-by-side stage and controls need room for both: 320px of controls plus a
  * stage wide enough that DiagramCanvas stays above its 0.5x floor (about 0.6x
- * at this width). The choice follows the
- * width of the shell itself, not the viewport, because a lab embedded in a
- * concept page shares the screen with that page's own side column.
+ * at this width). The choice follows the width of the shell itself, not the
+ * viewport, because a lab embedded in a concept page shares the screen with
+ * that page's own side column.
  */
 const WIDE_LAYOUT_MIN = 900;
 

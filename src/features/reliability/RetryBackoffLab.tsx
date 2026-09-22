@@ -53,7 +53,6 @@ export function RetryBackoffLab() {
    * Retry load the failing service sees from the whole fleet after a correlated
    * failure, plus the same run with jitter flipped so the insight can compare.
    */
-  // The same scenario with jitter flipped, so the text can quote the other peak.
   const { fleet, otherPeak } = useMemo(() => {
     const input = { strategy, baseMs, maxAttempts, failureRate, clients, seed };
     return {

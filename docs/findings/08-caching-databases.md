@@ -235,7 +235,10 @@ Checks the ticket asked for:
 - **Severity:** judgment-call
 - **Status:** fixed in #19 - `DiagramCanvas` now scales its whole layer stack to the container
   (0.5x-1x, shared `useFitScale` hook), so the ~750px stage at 1440px shows the full 960px diagram
-  at about 0.78x; below 0.5x it scrolls inside its card. CLAUDE.md updated to match.
+  at about 0.78x; below 0.5x it scrolls inside its card. CLAUDE.md updated to match. Browser check:
+  no lab scrolls sideways at 1280px or 1440px (0.60x-0.95x), and at 375px the page stays put while the
+  diagram scrolls inside its card. `LabShell` now goes side by side only when it is 900px wide, so a lab
+  inside a concept page stacks instead of dropping below 0.5x.
 
 ### F08-019 - The sharding concept diagram shows hash(user_id) as the hot-shard key
 

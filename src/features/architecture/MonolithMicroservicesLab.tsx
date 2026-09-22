@@ -211,7 +211,7 @@ export function MonolithMicroservicesLab() {
   const failedQps = current.failed.rate(now);
   const servedQps = current.handled.rate(now) + failedQps;
   const errorRate = servedQps ? failedQps / servedQps : 0;
-  // With every request failing (or none sent in the last 2 s) there is no
+  // With every request failing (or none sent within the MetricWindow horizon) there is no
   // latency to average - the window reports null and it renders as a dash,
   // instead of a 0 ms that reads as "very fast" or a stale last value.
   const latencyText = formatLatency(current.latency.snapshot(now).avg);

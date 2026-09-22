@@ -350,7 +350,7 @@ export function LoadBalancerLab() {
     push(
       {
         rps: state.accepted.rate(now),
-        // No request served in the last 2 s (every server down): NaN breaks the
+        // No request served in the MetricWindow horizon (every server down): NaN breaks the
         // line instead of drawing a stale or zero latency.
         p95: snapshot.p95 ?? NaN,
         avg: snapshot.avg ?? NaN,

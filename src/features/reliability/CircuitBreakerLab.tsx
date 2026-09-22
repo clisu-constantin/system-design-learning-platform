@@ -13,7 +13,7 @@ import {
 } from '@/simulations/engine';
 import { useRerender } from '@/hooks/useRerender';
 import { sampleArrivals } from '@/utils/math';
-import { formatLatency, formatNumber, formatPercent } from '@/utils/format';
+import { LATENCY_TEXT, formatLatency, formatNumber, formatPercent, latencyTone } from '@/utils/format';
 import { cn } from '@/utils/cn';
 
 type BreakerState = 'closed' | 'open' | 'half-open';
@@ -264,7 +264,7 @@ export function CircuitBreakerLab() {
 
   const current = state.current;
   const total = current.passed + current.failed + current.shortCircuited;
-  // Null when no call landed in the last 2 s (lab paused, or traffic at 0): shown as a dash.
+  // Null when no call landed in the MetricWindow horizon (lab paused, or traffic at 0): shown as a dash.
   const avgLatency = current.latency.snapshot(performance.now()).avg;
   const windowFailures = current.window.filter((ok) => !ok).length;
   const windowRatio = current.window.length ? windowFailures / current.window.length : 0;
@@ -363,7 +363,7 @@ export function CircuitBreakerLab() {
                 key: 'latency',
                 label: 'Avg latency',
                 value: formatLatency(avgLatency),
-                tone: avgLatency === null ? 'neutral' : avgLatency > 800 ? 'danger' : 'ok',
+                tone: latencyTone(avgLatency, 800),
                 hint: 'Simplified model, not a measurement: a success costs 60 ms, a failure the full call timeout, a short-circuit 2 ms. Failing fast is what keeps this number low during an outage.',
               },
               { key: 'transitions', label: 'State changes', value: formatNumber(current.transitions) },
@@ -512,7 +512,7 @@ export function CircuitBreakerLab() {
       <DiagramCanvas layout={LAYOUT} edges={edges} particles={particleViews} height={480} className="bg-canvas">
         <ArchNode kind="client" title="Client" subtitle={`${requestRate} req/sec`} placed={LAYOUT.client} compact />
         <ArchNode kind="server" title="API Service" subtitle="the caller" placed={LAYOUT.api} compact>
-          <NodeStatRow label="Avg latency" value={formatLatency(avgLatency)} tone={avgLatency === null ? 'text-muted' : avgLatency > 800 ? 'text-danger' : 'text-ok'} />
+          <NodeStatRow label="Avg latency" value={formatLatency(avgLatency)} tone={LATENCY_TEXT[latencyTone(avgLatency, 800)]} />
         </ArchNode>
         <ArchNode
           kind="api-gateway"
