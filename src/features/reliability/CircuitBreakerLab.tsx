@@ -3,7 +3,14 @@ import { ShieldAlert, ShieldCheck } from 'lucide-react';
 import { ArchNode, DiagramCanvas, NodeStatRow, ParticleLegend, type DiagramEdge, type Layout, type ParticleView } from '@/components/architecture';
 import { Insight, LabShell, MetricsPanel } from '@/components/learning';
 import { Badge, Button, Meter, Slider, Toggle } from '@/components/ui';
-import { advanceParticles, nextParticleId, useEventLog, useTicker, type Particle } from '@/simulations/engine';
+import {
+  advanceParticles,
+  MetricWindow,
+  nextParticleId,
+  useEventLog,
+  useTicker,
+  type Particle,
+} from '@/simulations/engine';
 import { useRerender } from '@/hooks/useRerender';
 import { sampleArrivals } from '@/utils/math';
 import { formatLatency, formatNumber, formatPercent } from '@/utils/format';
@@ -45,8 +52,11 @@ interface State {
   passed: number;
   failed: number;
   shortCircuited: number;
-  latencyTotal: number;
-  latencyCount: number;
+  /**
+   * Rolling. The whole point is that opening the breaker replaces a `timeout`
+   * wait with a 2 ms fallback, and a lifetime average hides that for minutes.
+   */
+  latency: MetricWindow;
   transitions: number;
 }
 
@@ -61,8 +71,7 @@ const createState = (): State => ({
   passed: 0,
   failed: 0,
   shortCircuited: 0,
-  latencyTotal: 0,
-  latencyCount: 0,
+  latency: new MetricWindow(300),
   transitions: 0,
 });
 
@@ -129,8 +138,7 @@ export function CircuitBreakerLab() {
 
       if (shortCircuit) {
         current.shortCircuited += 1;
-        current.latencyTotal += 2;
-        current.latencyCount += 1;
+        current.latency.push(2);
         current.calls.unshift({ id: nextParticleId(), result: 'short-circuit' });
         current.particles.push({
           id: nextParticleId(),
@@ -162,13 +170,11 @@ export function CircuitBreakerLab() {
 
       if (failed) {
         current.failed += 1;
-        current.latencyTotal += timeout;
-        current.latencyCount += 1;
+        current.latency.push(timeout);
         current.calls.unshift({ id: nextParticleId(), result: 'fail' });
       } else {
         current.passed += 1;
-        current.latencyTotal += 60;
-        current.latencyCount += 1;
+        current.latency.push(60);
         current.calls.unshift({ id: nextParticleId(), result: 'ok' });
         if (breakerEnabled && current.breaker === 'half-open') current.trialSuccesses += 1;
       }
@@ -210,7 +216,7 @@ export function CircuitBreakerLab() {
 
   const current = state.current;
   const total = current.passed + current.failed + current.shortCircuited;
-  const avgLatency = current.latencyCount ? current.latencyTotal / current.latencyCount : 0;
+  const avgLatency = current.latency.avg;
   const windowFailures = current.window.filter((ok) => !ok).length;
   const windowRatio = current.window.length ? windowFailures / current.window.length : 0;
   const meta = STATE_META[breakerEnabled ? current.breaker : 'closed'];

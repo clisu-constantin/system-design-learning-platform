@@ -16,7 +16,6 @@ interface State {
   particles: Particle[];
   /** Fractional message carried between frames so slow rates still work. */
   carry: number;
-  oldestAge: number;
 }
 
 const createState = (): State => ({
@@ -26,7 +25,6 @@ const createState = (): State => ({
   rejected: 0,
   particles: [],
   carry: 0,
-  oldestAge: 0,
 });
 
 export function QueueLab() {
@@ -102,9 +100,6 @@ export function QueueLab() {
 
     if (current.depth < maxDepth * 0.8) warned.current = false;
 
-    // Waiting time for a message entering now = depth / consumption rate.
-    current.oldestAge = consumerRate > 0 ? (current.depth / consumerRate) * 1000 : Infinity;
-
     const { alive } = advanceParticles(current.particles, dt);
     current.particles = alive.slice(-70);
 
@@ -121,7 +116,12 @@ export function QueueLab() {
 
   const current = state.current;
   const deficit = producerRate - consumerRate;
+  // Waiting time for a message entering now = depth / consumption rate.
   const waitSeconds = consumerRate > 0 ? current.depth / consumerRate : Infinity;
+  // Workers are saturated whenever there is a backlog to pull from; only once
+  // the queue is empty does arrival rate decide how busy they are.
+  const workerBusy =
+    consumerRate > 0 ? (current.depth > 0 ? 1 : clamp(producerRate / consumerRate, 0, 1)) : 0;
 
   const workerWidth = Math.max(106, Math.min(150, (900 - (workers - 1) * 12) / workers));
   const xs = spread(workers, 480, workerWidth, 12);
@@ -320,12 +320,7 @@ export function QueueLab() {
         {Array.from({ length: workers }, (_, index) => (
           <ArchNode key={index} kind="worker" title={`Worker ${index + 1}`} placed={layout[`w${index}`]} compact>
             <NodeStatRow label="Rate" value={`${workerRate}/s`} />
-            <Meter
-              label="Busy"
-              value={consumerRate > 0 ? clamp(producerRate / consumerRate, 0, 1) : 0}
-              size="xs"
-              showValue={false}
-            />
+            <Meter label="Busy" value={workerBusy} size="xs" showValue={false} />
           </ArchNode>
         ))}
       </DiagramCanvas>

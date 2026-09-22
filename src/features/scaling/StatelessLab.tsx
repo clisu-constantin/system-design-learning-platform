@@ -101,6 +101,15 @@ export function StatelessLab() {
   const rerender = useRerender(30);
   const { events, log, clear } = useEventLog();
 
+  /** Clears the counters but keeps the servers and their sessions. */
+  const resetStats = useCallback(() => {
+    const current = state.current;
+    current.ok = 0;
+    current.lost = 0;
+    current.lookups = 0;
+    current.recent = [];
+  }, []);
+
   const reset = useCallback(() => {
     state.current = createState();
     clear();
@@ -335,6 +344,10 @@ export function StatelessLab() {
                   type="button"
                   onClick={() => {
                     setMode(item.value);
+                    // Each strategy is its own experiment. Without this the
+                    // success rate keeps averaging in the sessions the previous
+                    // strategy lost, so switching to JWT looked broken too.
+                    resetStats();
                     log(`Strategy: ${item.label}`, 'info');
                   }}
                   className={`rounded-lg border px-2.5 py-2 text-xs font-medium transition-colors ${

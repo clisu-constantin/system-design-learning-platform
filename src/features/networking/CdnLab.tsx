@@ -11,7 +11,16 @@ import {
 import { DistributionBar } from '@/components/charts';
 import { Insight, LabShell, MetricsPanel } from '@/components/learning';
 import { Meter, Slider, Toggle } from '@/components/ui';
-import { advanceParticles, MetricWindow, nextParticleId, RateCounter, useEventLog, useTicker, type Particle } from '@/simulations/engine';
+import {
+  advanceParticles,
+  MetricWindow,
+  nextParticleId,
+  RateCounter,
+  useEventLog,
+  useTicker,
+  visualShare,
+  type Particle,
+} from '@/simulations/engine';
 import { useRerender } from '@/hooks/useRerender';
 import { sampleArrivals } from '@/utils/math';
 import { formatLatency, formatNumber, formatPercent } from '@/utils/format';
@@ -45,10 +54,15 @@ const LAYOUT: Layout = {
   'ap-users': { x: 725, y: 390, w: 160, h: 86 },
 };
 
+/** Requests animated per second, independent of how much traffic is counted. */
+const ANIMATED_PER_SECOND = 45;
+const PARTICLE_BUDGET = 120;
+
 interface RegionStats {
   latency: MetricWindow;
-  requests: number;
-  hits: number;
+  /** Rolling, so dragging the edge hit ratio moves the per-region number. */
+  requests: RateCounter;
+  hits: RateCounter;
 }
 
 interface State {
@@ -62,7 +76,10 @@ interface State {
 const createState = (): State => ({
   particles: [],
   stats: Object.fromEntries(
-    REGIONS.map((region) => [region.id, { latency: new MetricWindow(200), requests: 0, hits: 0 }]),
+    REGIONS.map((region) => [
+      region.id,
+      { latency: new MetricWindow(200), requests: new RateCounter(3000), hits: new RateCounter(3000) },
+    ]),
   ),
   originRate: new RateCounter(2000),
   totalRate: new RateCounter(2000),
@@ -100,7 +117,9 @@ export function CdnLab() {
   useTicker(running, (dt) => {
     const current = state.current;
     const now = performance.now();
-    const arrivals = sampleArrivals(Math.min(traffic, 600), dt * 0.4);
+    // Every request is counted, so "Total traffic" matches the slider above it.
+    const arrivals = sampleArrivals(traffic, dt);
+    const share = visualShare(traffic, ANIMATED_PER_SECOND);
 
     for (let index = 0; index < arrivals; index += 1) {
       const roll = Math.random();
@@ -111,7 +130,7 @@ export function CdnLab() {
       }) ?? REGIONS[0];
 
       const stats = current.stats[region.id];
-      stats.requests += 1;
+      stats.requests.add(1, now);
       current.totalRate.add(1, now);
 
       let latency: number;
@@ -127,7 +146,7 @@ export function CdnLab() {
         latency = rtt(region.edgeKm);
         route = [region.id, region.edgeId];
         outcome = 'cache-hit';
-        stats.hits += 1;
+        stats.hits.add(1, now);
       } else {
         latency = rtt(region.edgeKm) + rtt(region.originKm) * 0.7 + 25;
         route = [region.id, region.edgeId, 'origin'];
@@ -137,6 +156,8 @@ export function CdnLab() {
 
       stats.latency.push(latency);
       current.latency.push(latency);
+
+      if (Math.random() >= share) continue;
       current.particles.push({
         id: nextParticleId(),
         route,
@@ -148,7 +169,7 @@ export function CdnLab() {
     }
 
     const { alive } = advanceParticles(current.particles, dt);
-    current.particles = alive.slice(-90);
+    current.particles = alive.length > PARTICLE_BUDGET ? alive.slice(-PARTICLE_BUDGET) : alive;
     rerender();
   });
 
@@ -301,7 +322,8 @@ export function CdnLab() {
 
         {REGIONS.map((region) => {
           const stats = current.stats[region.id];
-          const regionHitRate = stats.requests ? stats.hits / stats.requests : 0;
+          const regionQps = stats.requests.rate(now);
+          const regionHitRate = regionQps ? stats.hits.rate(now) / regionQps : 0;
           return (
             <ArchNode
               key={region.edgeId}

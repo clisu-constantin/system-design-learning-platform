@@ -11,7 +11,17 @@ import {
 import { LiveChart } from '@/components/charts';
 import { Insight, LabShell, MetricsPanel, RequestInspector } from '@/components/learning';
 import { Meter, Slider, Toggle } from '@/components/ui';
-import { advanceParticles, MetricWindow, nextParticleId, RateCounter, useEventLog, useSeries, useTicker, type Particle } from '@/simulations/engine';
+import {
+  advanceParticles,
+  MetricWindow,
+  nextParticleId,
+  RateCounter,
+  useEventLog,
+  useSeries,
+  useTicker,
+  visualShare,
+  type Particle,
+} from '@/simulations/engine';
 import { computeLoad } from '@/simulations/models/load';
 import { useRerender } from '@/hooks/useRerender';
 import { clamp, sampleArrivals } from '@/utils/math';
@@ -20,6 +30,12 @@ import type { SimulatedRequest } from '@/types';
 
 const CACHE_LATENCY = 4;
 const DB_CAPACITY = 900;
+
+/** Requests animated per second, independent of how much traffic is counted. */
+const ANIMATED_PER_SECOND = 45;
+const PARTICLE_BUDGET = 110;
+/** Sized above PARTICLE_BUDGET so no visible particle outlives its record. */
+const INSPECTABLE_REQUESTS = 140;
 
 const LAYOUT: Layout = {
   users: { x: 60, y: 210, w: 150, h: 70 },
@@ -45,8 +61,13 @@ interface State {
   entries: Map<string, CacheEntry>;
   particles: Particle[];
   requests: Map<number, SimulatedRequest>;
-  hits: number;
-  misses: number;
+  /**
+   * Rolling rather than cumulative. A lifetime hit rate barely moves once the
+   * simulation has been running for a minute, so raising the TTL or the cache
+   * size appeared to do nothing - which is the opposite of the lesson.
+   */
+  hits: RateCounter;
+  misses: RateCounter;
   evictions: number;
   dbQueries: RateCounter;
   latency: MetricWindow;
@@ -56,8 +77,8 @@ const createState = (): State => ({
   entries: new Map(),
   particles: [],
   requests: new Map(),
-  hits: 0,
-  misses: 0,
+  hits: new RateCounter(3000),
+  misses: new RateCounter(3000),
   evictions: 0,
   dbQueries: new RateCounter(2000),
   latency: new MetricWindow(400),
@@ -105,7 +126,11 @@ export function CachingLab() {
     const now = performance.now();
     const dbLoad = computeLoad(current.dbQueries.rate(now), DB_CAPACITY, { baseLatencyMs: 110, kneeAt: 0.6 });
 
-    const arrivals = sampleArrivals(Math.min(traffic, 700), dt * 0.35);
+    // Every request is counted, so the database sees the traffic the slider
+    // actually asks for. Only a sample of them is animated.
+    const arrivals = sampleArrivals(traffic, dt);
+    const share = visualShare(traffic, ANIMATED_PER_SECOND);
+
     for (let index = 0; index < arrivals; index += 1) {
       const key = pickKey(keyspace, skew);
       const entry = current.entries.get(key);
@@ -113,56 +138,58 @@ export function CachingLab() {
       const hit = enabled && Boolean(fresh);
 
       let latency: number;
-      let route: string[];
-      const notes: string[] = [];
+      let note: string;
 
       if (hit) {
-        current.hits += 1;
+        current.hits.add(1, now);
         entry!.lastUsed = now;
+        // A Map iterates in insertion order, so re-inserting the key moves it
+        // to the most-recently-used end. That turns eviction below into an O(1)
+        // lookup instead of a scan of every entry on every miss.
+        current.entries.delete(key);
+        current.entries.set(key, entry!);
         latency = CACHE_LATENCY * (0.8 + Math.random() * 0.5);
-        route = ['users', 'api', 'cache'];
-        notes.push('Cache HIT - no database query');
+        note = 'Cache HIT - no database query';
       } else {
-        current.misses += 1;
+        current.misses.add(1, now);
         current.dbQueries.add(1, now);
         latency = CACHE_LATENCY + dbLoad.latencyMs * (0.8 + Math.random() * 0.5);
-        route = ['users', 'api', 'cache', 'db'];
-        notes.push(enabled ? 'Cache MISS - loaded from database and stored' : 'Cache disabled - straight to database');
+        note = enabled ? 'Cache MISS - loaded from database and stored' : 'Cache disabled - straight to database';
         if (enabled) {
           if (current.entries.size >= size && !current.entries.has(key)) {
-            // LRU eviction
-            let oldestKey: string | null = null;
-            let oldest = Infinity;
-            for (const [candidateKey, candidate] of current.entries) {
-              if (candidate.lastUsed < oldest) {
-                oldest = candidate.lastUsed;
-                oldestKey = candidateKey;
-              }
-            }
-            if (oldestKey) {
-              current.entries.delete(oldestKey);
+            const lru = current.entries.keys().next().value;
+            if (lru !== undefined) {
+              current.entries.delete(lru);
               current.evictions += 1;
             }
           }
+          current.entries.delete(key);
           current.entries.set(key, { key, expiresAt: now + ttl * 1000, lastUsed: now });
         }
       }
 
       current.latency.push(latency);
+
+      if (Math.random() >= share) continue;
+
+      const particleId = nextParticleId();
       current.particles.push({
-        id: nextParticleId(),
-        route,
+        id: particleId,
+        route: hit
+          ? ['users', 'api', 'cache']
+          : enabled
+            ? ['users', 'api', 'cache', 'db']
+            : ['users', 'api', 'db'],
         leg: 0,
         t: 0,
         speed: 1.3 + Math.random() * 0.3,
         outcome: hit ? 'cache-hit' : dbLoad.saturated ? 'warning' : 'success',
       });
 
-      if (current.requests.size > 30) {
+      if (current.requests.size > INSPECTABLE_REQUESTS) {
         const oldest = current.requests.keys().next().value;
         if (oldest !== undefined) current.requests.delete(oldest);
       }
-      const particleId = current.particles[current.particles.length - 1].id;
       current.requests.set(particleId, {
         id: particleId,
         createdAt: now,
@@ -173,7 +200,7 @@ export function CachingLab() {
         path: hit ? ['Client', 'API', 'Redis (HIT)'] : ['Client', 'API', 'Redis (MISS)', 'PostgreSQL', 'Redis (store)'],
         method: 'GET',
         endpoint: `/api/${key.replace(':', '/')}`,
-        notes: [...notes, `Key: ${key}`, `TTL: ${ttl}s`],
+        notes: [note, `Key: ${key}`, `TTL: ${ttl}s`],
       });
     }
 
@@ -183,12 +210,12 @@ export function CachingLab() {
     }
 
     const { alive } = advanceParticles(current.particles, dt);
-    current.particles = alive.slice(-80);
+    current.particles = alive.length > PARTICLE_BUDGET ? alive.slice(-PARTICLE_BUDGET) : alive;
 
-    const total = current.hits + current.misses;
+    const served = current.hits.rate(now) + current.misses.rate(now);
     push(
       {
-        hitRate: total ? (current.hits / total) * 100 : 0,
+        hitRate: served ? (current.hits.rate(now) / served) * 100 : 0,
         dbQps: current.dbQueries.rate(now),
         latency: current.latency.avg,
       },
@@ -204,8 +231,8 @@ export function CachingLab() {
 
   const current = state.current;
   const now = performance.now();
-  const total = current.hits + current.misses;
-  const hitRate = total ? current.hits / total : 0;
+  const servedQps = current.hits.rate(now) + current.misses.rate(now);
+  const hitRate = servedQps ? current.hits.rate(now) / servedQps : 0;
   const dbQps = current.dbQueries.rate(now);
   const dbLoad = computeLoad(dbQps, DB_CAPACITY, { baseLatencyMs: 110, kneeAt: 0.6 });
   const snapshot = current.latency.snapshot();
@@ -239,7 +266,7 @@ export function CachingLab() {
               saturates at about {DB_CAPACITY} queries/sec, after which latency climbs sharply. Turn the cache on and
               watch database load fall by roughly the hit rate.
             </>
-          ) : hitRate < 0.5 && total > 200 ? (
+          ) : hitRate < 0.5 && servedQps > 50 ? (
             <>
               Hit rate is only {formatPercent(hitRate)}. With {keyspace} distinct keys and room for {size}, most
               requests find nothing cached. Either raise the cache size, raise the TTL, or accept that this access

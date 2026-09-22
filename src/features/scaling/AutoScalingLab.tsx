@@ -153,6 +153,10 @@ export function AutoScalingLab() {
         cpu: cpuPercent,
         instances: current.instances.length,
         latency: load.latencyMs,
+        // Carried into the series so the CPU chart can draw the two thresholds
+        // the scaling decisions are actually made against.
+        scaleOut,
+        scaleIn,
       },
       now,
     );
@@ -251,15 +255,30 @@ export function AutoScalingLab() {
               variant="line"
               height={160}
             />
-            <p className="label mb-2 mt-4">CPU and instance count</p>
+            <p className="label mb-2 mt-4">Fleet CPU vs thresholds</p>
             <LiveChart
               data={points}
               series={[
                 { key: 'cpu', label: 'CPU %', color: 'warn' },
-                { key: 'instances', label: 'Instances', color: 'violet' },
+                { key: 'scaleOut', label: 'Scale out', color: 'danger', dashed: true },
+                { key: 'scaleIn', label: 'Scale in', color: 'ok', dashed: true },
               ]}
               variant="line"
               height={150}
+              yDomain={[0, 100]}
+            />
+            {/*
+              Instances get their own axis. Sharing one with CPU pinned a 1-8
+              line to the bottom of a 0-100 chart, which made the one thing this
+              lab is about - the fleet chasing the curve - impossible to read.
+            */}
+            <p className="label mb-2 mt-4">Instance count</p>
+            <LiveChart
+              data={points}
+              series={[{ key: 'instances', label: 'Instances', color: 'violet' }]}
+              variant="line"
+              height={120}
+              formatValue={(value) => String(Math.round(value))}
             />
           </div>
         </>

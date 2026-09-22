@@ -115,17 +115,21 @@ export function RateLimitingLab() {
       current.leakCarry = drain - whole;
       const leaked = Math.min(whole, current.queue);
       current.queue -= leaked;
-      for (let index = 0; index < Math.min(leaked, 4); index += 1) {
-        current.allowed += 1;
-        current.allowedRate.add(1, now);
-        current.particles.push({
-          id: nextParticleId(),
-          route: ['limiter', 'api'],
-          leg: 0,
-          t: 0,
-          speed: 1.5,
-          outcome: 'success',
-        });
+      if (leaked > 0) {
+        // Count every drained message. Only the first few are animated, so a
+        // frame that drains more than the canvas shows is still counted in full.
+        current.allowed += leaked;
+        current.allowedRate.add(leaked, now);
+        for (let index = 0; index < Math.min(leaked, 4); index += 1) {
+          current.particles.push({
+            id: nextParticleId(),
+            route: ['limiter', 'api'],
+            leg: 0,
+            t: 0,
+            speed: 1.5,
+            outcome: 'success',
+          });
+        }
       }
     }
 
@@ -191,8 +195,11 @@ export function RateLimitingLab() {
 
   const current = state.current;
   const now = performance.now();
-  const total = current.allowed + current.rejected;
-  const rejectShare = total ? current.rejected / total : 0;
+  // Rolling, not cumulative: a lifetime ratio keeps the history of whichever
+  // algorithm and limit were selected before, so changing either looked inert.
+  const rejectedQps = current.rejectedRate.rate(now);
+  const servedQps = current.allowedRate.rate(now) + rejectedQps;
+  const rejectShare = servedQps ? rejectedQps / servedQps : 0;
   const windowElapsed = clamp((now - current.windowStart) / (windowSeconds * 1000), 0, 1);
 
   const particleViews: ParticleView[] = current.particles.map((particle) => ({

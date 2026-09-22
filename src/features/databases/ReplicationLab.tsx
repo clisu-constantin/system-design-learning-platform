@@ -12,7 +12,14 @@ import {
 } from '@/components/architecture';
 import { Insight, LabShell, MetricsPanel } from '@/components/learning';
 import { Button, SegmentedControl, Slider } from '@/components/ui';
-import { advanceParticles, nextParticleId, useEventLog, useTicker, type Particle } from '@/simulations/engine';
+import {
+  advanceParticles,
+  nextParticleId,
+  RateCounter,
+  useEventLog,
+  useTicker,
+  type Particle,
+} from '@/simulations/engine';
 import { useRerender } from '@/hooks/useRerender';
 import { sampleArrivals } from '@/utils/math';
 import { formatLatency, formatNumber, formatPercent } from '@/utils/format';
@@ -38,6 +45,13 @@ interface State {
   writes: number;
   reads: number;
   staleReads: number;
+  /**
+   * Rolling copies of the two counters above, used for the stale percentage.
+   * Switching sync/async or dragging the lag has to move that number now, not
+   * once the lifetime average has been diluted enough to notice.
+   */
+  recentReads: RateCounter;
+  recentStale: RateCounter;
   lostWrites: number;
   failoverAt: number | null;
   cursor: number;
@@ -57,6 +71,8 @@ const createState = (): State => ({
   writes: 0,
   reads: 0,
   staleReads: 0,
+  recentReads: new RateCounter(3000),
+  recentStale: new RateCounter(3000),
   lostWrites: 0,
   failoverAt: null,
   cursor: 0,
@@ -195,9 +211,11 @@ export function ReplicationLab() {
       const stale = target.applied < current.version;
       target.reads += 1;
       current.reads += 1;
+      current.recentReads.add(1, now);
       if (stale) {
         target.staleReads += 1;
         current.staleReads += 1;
+        current.recentStale.add(1, now);
       }
       current.particles.push({
         id: nextParticleId(),
@@ -217,7 +235,8 @@ export function ReplicationLab() {
   const current = state.current;
   const primary = current.nodes.find((node) => node.role === 'primary');
   const replicas = current.nodes.filter((node) => node.role === 'replica');
-  const staleRate = current.reads ? current.staleReads / current.reads : 0;
+  const recentReadQps = current.recentReads.rate(performance.now());
+  const staleRate = recentReadQps ? current.recentStale.rate(performance.now()) / recentReadQps : 0;
   const writeLatency = mode === 'sync' ? 8 + lagMs * 0.25 : 8;
 
   const xs = spread(replicas.length, 480, 170, 30);

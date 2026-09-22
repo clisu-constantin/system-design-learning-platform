@@ -13,7 +13,15 @@ import {
 import { DistributionBar } from '@/components/charts';
 import { Insight, LabShell, MetricsPanel } from '@/components/learning';
 import { Meter, Select, Slider, Toggle } from '@/components/ui';
-import { advanceParticles, nextParticleId, RateCounter, useEventLog, useTicker, type Particle } from '@/simulations/engine';
+import {
+  advanceParticles,
+  nextParticleId,
+  RateCounter,
+  useEventLog,
+  useTicker,
+  visualShare,
+  type Particle,
+} from '@/simulations/engine';
 import { computeLoad } from '@/simulations/models/load';
 import { useRerender } from '@/hooks/useRerender';
 import { clamp, sampleArrivals } from '@/utils/math';
@@ -48,6 +56,13 @@ const WEIGHTS: Record<ShardKey, number[]> = {
 };
 
 const SHARD_CAPACITY = 900;
+
+/**
+ * Queries animated per second. A scatter query emits one particle per shard,
+ * so the budget sits well above the steady-state population.
+ */
+const ANIMATED_PER_SECOND = 40;
+const PARTICLE_BUDGET = 130;
 const SHARD_LABELS: Record<ShardKey, string[]> = {
   'user-id': ['hash 0-63', 'hash 64-127', 'hash 128-191', 'hash 192-255'],
   country: ['US', 'DE + FR', 'BR + IN', 'rest of world'],
@@ -58,15 +73,16 @@ const SHARD_LABELS: Record<ShardKey, string[]> = {
 interface State {
   particles: Particle[];
   rates: RateCounter[];
-  crossShard: number;
-  total: number;
+  /** Rolling, so the cross-shard slider moves the metric within a window. */
+  crossShard: RateCounter;
+  total: RateCounter;
 }
 
 const createState = (): State => ({
   particles: [],
   rates: [0, 1, 2, 3].map(() => new RateCounter(2000)),
-  crossShard: 0,
-  total: 0,
+  crossShard: new RateCounter(3000),
+  total: new RateCounter(3000),
 });
 
 export function ShardingLab() {
@@ -91,29 +107,36 @@ export function ShardingLab() {
   useTicker(running, (dt) => {
     const current = state.current;
     const now = performance.now();
-    const arrivals = sampleArrivals(Math.min(traffic, 700), dt * 0.4);
+    // Every query is counted against shard capacity; only a sample is animated,
+    // so the canvas budget cannot cap what the shards are seen to receive.
+    const arrivals = sampleArrivals(traffic, dt);
+    const share = visualShare(traffic, ANIMATED_PER_SECOND);
 
     for (let index = 0; index < arrivals; index += 1) {
-      current.total += 1;
+      current.total.add(1, now);
+      const animate = Math.random() < share;
 
       if (!sharded) {
         current.rates[0].add(1, now);
-        current.particles.push({
-          id: nextParticleId(),
-          route: ['client', 'router', 'shard0'],
-          leg: 0,
-          t: 0,
-          speed: 1.3,
-          outcome: 'success',
-        });
+        if (animate) {
+          current.particles.push({
+            id: nextParticleId(),
+            route: ['client', 'router', 'shard0'],
+            leg: 0,
+            t: 0,
+            speed: 1.3,
+            outcome: 'success',
+          });
+        }
         continue;
       }
 
       const scatter = Math.random() < crossShardRatio;
       if (scatter) {
-        current.crossShard += 1;
+        current.crossShard.add(1, now);
         for (let shard = 0; shard < 4; shard += 1) {
           current.rates[shard].add(1, now);
+          if (!animate) continue;
           current.particles.push({
             id: nextParticleId(),
             route: ['client', 'router', `shard${shard}`],
@@ -137,6 +160,7 @@ export function ShardingLab() {
         }
       }
       current.rates[target].add(1, now);
+      if (!animate) continue;
       current.particles.push({
         id: nextParticleId(),
         route: ['client', 'router', `shard${target}`],
@@ -148,7 +172,7 @@ export function ShardingLab() {
     }
 
     const { alive } = advanceParticles(current.particles, dt);
-    current.particles = alive.slice(-100);
+    current.particles = alive.length > PARTICLE_BUDGET ? alive.slice(-PARTICLE_BUDGET) : alive;
 
     const hot = current.rates.findIndex((rate) => rate.rate(now) > SHARD_CAPACITY);
     if (hot >= 0 && Math.random() < dt * 0.6) {
@@ -167,7 +191,8 @@ export function ShardingLab() {
   const avgRate = effectiveRates.slice(0, shardCount).reduce((sum, rate) => sum + rate, 0) / shardCount;
   const skew = avgRate > 0 ? maxRate / avgRate : 1;
   const worstLatency = Math.max(...loads.slice(0, shardCount).map((load) => load.latencyMs));
-  const crossShardShare = current.total ? current.crossShard / current.total : 0;
+  const totalQps = current.total.rate(now);
+  const crossShardShare = totalQps ? current.crossShard.rate(now) / totalQps : 0;
 
   const xs = spread(shardCount, 480, sharded ? 190 : 260, 30);
   const layout: Layout = {

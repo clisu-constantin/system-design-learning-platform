@@ -3,7 +3,16 @@ import { Rocket, Zap } from 'lucide-react';
 import { ArchNode, DiagramCanvas, NodeStatRow, ParticleLegend, type DiagramEdge, type Layout, type ParticleView } from '@/components/architecture';
 import { Insight, LabShell, MetricsPanel } from '@/components/learning';
 import { Button, Meter, SegmentedControl, Slider } from '@/components/ui';
-import { advanceParticles, nextParticleId, useEventLog, useTicker, type Particle } from '@/simulations/engine';
+import {
+  advanceParticles,
+  MetricWindow,
+  nextParticleId,
+  RateCounter,
+  useEventLog,
+  useTicker,
+  visualShare,
+  type Particle,
+} from '@/simulations/engine';
 import { computeLoad } from '@/simulations/models/load';
 import { useRerender } from '@/hooks/useRerender';
 import { sampleArrivals } from '@/utils/math';
@@ -11,6 +20,10 @@ import { formatLatency, formatNumber, formatPercent } from '@/utils/format';
 import { cn } from '@/utils/cn';
 
 type Mode = 'monolith' | 'microservices';
+
+/** Requests animated per second, independent of how much traffic is counted. */
+const ANIMATED_PER_SECOND = 45;
+const PARTICLE_BUDGET = 110;
 
 const FEATURES = ['Users', 'Orders', 'Payments', 'Notifications'] as const;
 type Feature = (typeof FEATURES)[number];
@@ -25,13 +38,22 @@ const TRAFFIC_SHARE: Record<Feature, number> = {
 
 interface State {
   particles: Particle[];
-  handled: number;
-  failed: number;
-  latencyTotal: number;
-  latencyCount: number;
+  /**
+   * Rolling rather than cumulative. Breaking a capability has to show up in the
+   * error rate within a second or two; a lifetime average of a simulation that
+   * has been healthy for a minute barely moves when something starts failing.
+   */
+  handled: RateCounter;
+  failed: RateCounter;
+  latency: MetricWindow;
 }
 
-const createState = (): State => ({ particles: [], handled: 0, failed: 0, latencyTotal: 0, latencyCount: 0 });
+const createState = (): State => ({
+  particles: [],
+  handled: new RateCounter(3000),
+  failed: new RateCounter(3000),
+  latency: new MetricWindow(400),
+});
 
 const MONO_LAYOUT: Layout = {
   client: { x: 390, y: 20, w: 180, h: 60 },
@@ -84,7 +106,11 @@ export function MonolithMicroservicesLab() {
 
   useTicker(running, (dt) => {
     const current = state.current;
-    const arrivals = sampleArrivals(Math.min(traffic, 500), dt * 0.4);
+    const now = performance.now();
+    // Every request is counted; only a sample of them is animated.
+    const arrivals = sampleArrivals(traffic, dt);
+    const share = visualShare(traffic, ANIMATED_PER_SECOND);
+    const animate = () => Math.random() < share;
 
     for (let index = 0; index < arrivals; index += 1) {
       const roll = Math.random();
@@ -101,6 +127,12 @@ export function MonolithMicroservicesLab() {
       if (mode === 'monolith') {
         // A crash in any feature takes down the whole process.
         const failed = broken !== null || Math.random() < monolithLoad.errorRate;
+        if (failed) current.failed.add(1, now);
+        else {
+          current.handled.add(1, now);
+          current.latency.push(monolithLoad.latencyMs);
+        }
+        if (!animate()) continue;
         current.particles.push({
           id: nextParticleId(),
           route: failed ? ['client', 'lb', 'app'] : ['client', 'lb', 'app', 'db'],
@@ -109,17 +141,17 @@ export function MonolithMicroservicesLab() {
           speed: 1.4,
           outcome: failed ? 'failure' : monolithLoad.cpu > 0.85 ? 'warning' : 'success',
         });
-        if (failed) current.failed += 1;
-        else {
-          current.handled += 1;
-          current.latencyTotal += monolithLoad.latencyMs;
-          current.latencyCount += 1;
-        }
       } else {
         const load = serviceLoads[feature];
         const failed = broken === feature || Math.random() < load.errorRate;
         // Orders calls Payments synchronously - one extra network hop.
         const extraHop = feature === 'Orders' && !failed && Math.random() < 0.5;
+        if (failed) current.failed.add(1, now);
+        else {
+          current.handled.add(1, now);
+          current.latency.push(load.latencyMs + 12 + (extraHop ? 25 : 0));
+        }
+        if (!animate()) continue;
         current.particles.push({
           id: nextParticleId(),
           route: failed
@@ -132,24 +164,20 @@ export function MonolithMicroservicesLab() {
           speed: 1.3,
           outcome: failed ? 'failure' : load.cpu > 0.85 ? 'warning' : 'success',
         });
-        if (failed) current.failed += 1;
-        else {
-          current.handled += 1;
-          current.latencyTotal += load.latencyMs + 12 + (extraHop ? 25 : 0);
-          current.latencyCount += 1;
-        }
       }
     }
 
     const { alive } = advanceParticles(current.particles, dt);
-    current.particles = alive.slice(-80);
+    current.particles = alive.length > PARTICLE_BUDGET ? alive.slice(-PARTICLE_BUDGET) : alive;
     rerender();
   });
 
   const current = state.current;
-  const total = current.handled + current.failed;
-  const errorRate = total ? current.failed / total : 0;
-  const avgLatency = current.latencyCount ? current.latencyTotal / current.latencyCount : 0;
+  const now = performance.now();
+  const failedQps = current.failed.rate(now);
+  const servedQps = current.handled.rate(now) + failedQps;
+  const errorRate = servedQps ? failedQps / servedQps : 0;
+  const avgLatency = current.latency.avg;
 
   const layout = mode === 'monolith' ? MONO_LAYOUT : MICRO_LAYOUT;
 

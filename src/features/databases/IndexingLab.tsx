@@ -3,6 +3,7 @@ import { Database, Search, Trash2, Zap } from 'lucide-react';
 import { Insight, LabShell, MetricsPanel } from '@/components/learning';
 import { Button, Meter, Select, Slider } from '@/components/ui';
 import { useTicker } from '@/simulations/engine';
+import { computeLoad } from '@/simulations/models/load';
 import { useRerender } from '@/hooks/useRerender';
 import { mulberry32 } from '@/utils/math';
 import { formatLatency, formatNumber } from '@/utils/format';
@@ -49,6 +50,9 @@ type Result = {
   found: Row | null;
   writeCost: number;
 };
+
+/** Structure updates per second one machine sustains before writes queue. */
+const WRITE_CAPACITY = 3000;
 
 export function IndexingLab() {
   const [tableSize, setTableSize] = useState(8000);
@@ -104,6 +108,12 @@ export function IndexingLab() {
   const btreeLevels = Math.ceil(Math.log2(Math.max(2, tableSize)));
   const writeOverhead = hasIndex ? 0.35 : 0;
   const indexStorageMb = (tableSize * 40) / 1_000_000;
+
+  // The write-rate slider has to cost something, or the trade-off this lab
+  // teaches is only a sentence. Every write updates the table and each index,
+  // so the index doubles the structures touched and halves the write headroom.
+  const structuresPerSecond = writeRate * (hasIndex ? 2 : 1);
+  const writeLoad = computeLoad(structuresPerSecond, WRITE_CAPACITY, { baseLatencyMs: 4, kneeAt: 0.65 });
 
   const visibleRows = useMemo(() => {
     if (scanning) {
@@ -205,6 +215,13 @@ export function IndexingLab() {
                 value: hasIndex ? `+${Math.round(writeOverhead * 100)}%` : '0%',
                 tone: hasIndex ? 'warn' : 'ok',
                 hint: 'Extra work per INSERT/UPDATE/DELETE to maintain the index.',
+              },
+              {
+                key: 'writeLatency',
+                label: 'Write latency',
+                value: formatLatency(writeLoad.latencyMs),
+                tone: writeLoad.saturated ? 'danger' : writeLoad.cpu > 0.7 ? 'warn' : 'ok',
+                hint: 'Time per INSERT at the current write rate. An index is paid for here.',
               },
               {
                 key: 'storage',
@@ -317,15 +334,20 @@ export function IndexingLab() {
           <div className="rounded-xl border border-line bg-elevated p-3">
             <p className="label mb-2">Write path cost</p>
             <Meter
-              value={hasIndex ? 0.9 : 0.6}
-              tone={hasIndex ? 'warn' : 'ok'}
+              value={writeLoad.cpu}
+              tone={writeLoad.saturated ? 'danger' : hasIndex ? 'warn' : 'ok'}
               label={hasIndex ? 'table + 1 index' : 'table only'}
-              showValue={false}
             />
             <p className="mt-2 font-mono text-[11px] text-muted">
-              {formatNumber(writeRate)} writes/sec {'->'} {formatNumber(writeRate * (hasIndex ? 2 : 1))} structures
-              updated/sec
+              {formatNumber(writeRate)} writes/sec {'->'} {formatNumber(structuresPerSecond)} structures updated/sec of{' '}
+              {formatNumber(WRITE_CAPACITY)}
             </p>
+            {writeLoad.saturated ? (
+              <p className="mt-1 text-[11px] text-danger">
+                Over write capacity. Dropping the index would bring this back under the line - that is the trade the
+                query time above is buying.
+              </p>
+            ) : null}
           </div>
           <div className="flex items-start gap-2 rounded-xl border border-line bg-elevated p-3 text-[11px] text-muted">
             <Database className="mt-0.5 h-3.5 w-3.5 shrink-0 text-faint" />

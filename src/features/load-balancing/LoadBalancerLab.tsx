@@ -21,6 +21,7 @@ import {
   useEventLog,
   useSeries,
   useTicker,
+  visualShare,
   type Particle,
 } from '@/simulations/engine';
 import { computeLoad } from '@/simulations/models/load';
@@ -55,6 +56,8 @@ interface ServerModel {
   cpu: number;
   latency: number;
   active: number;
+  /** 0..1 share of this server's requests currently failing. */
+  errorRate: number;
   handled: number;
   failed: number;
   restartAt: number | null;
@@ -82,6 +85,7 @@ const makeServer = (index: number): ServerModel => ({
   cpu: 0,
   latency: 0,
   active: 0,
+  errorRate: 0,
   handled: 0,
   failed: 0,
   restartAt: null,
@@ -101,6 +105,20 @@ const createState = (count: number): SimState => ({
 });
 
 const ENDPOINTS = ['/api/products/42', '/api/orders', '/api/users/me', '/api/search?q=shoes', '/api/cart'];
+
+/**
+ * Hard ceiling on particles alive at once, so the canvas stays readable. It is
+ * a safety net, not the throttle: arrivals are Poisson, so the budget sits
+ * above the steady-state population to keep the net from clipping every frame.
+ */
+const PARTICLE_BUDGET = 110;
+/**
+ * Requests animated per second. A route here takes about 1.2s to walk, so this
+ * settles at roughly 85 particles on screen, peaking near 95.
+ */
+const ANIMATED_PER_SECOND = 70;
+/** Sized above PARTICLE_BUDGET so no visible particle outlives its record. */
+const INSPECTABLE_REQUESTS = 140;
 
 export function LoadBalancerLab() {
   const [running, setRunning] = useState(true);
@@ -151,6 +169,10 @@ export function LoadBalancerLab() {
       server.status = 'down';
       server.active = 0;
       server.cpu = 0;
+      server.errorRate = 0;
+      // A server out of the pool receives nothing, so its measured rate must
+      // not keep decaying for another window after it is ejected.
+      server.rate.clear();
       log(`${server.name}: health check failed (3 consecutive)`, 'danger');
       log(`Removing ${server.name} from the load balancer pool`, 'warn');
       rerender();
@@ -209,66 +231,55 @@ export function LoadBalancerLab() {
 
     const healthy = state.servers.filter((server) => server.status === 'healthy');
 
-    // Arrivals
-    const arrivals = sampleArrivals(traffic, dt);
-    for (let index = 0; index < arrivals; index += 1) {
-      const id = nextParticleId();
-      if (healthy.length === 0) {
-        state.failed += 1;
-        state.rejected.add(1, now);
-        state.particles.push({
-          id,
-          route: ['users', 'lb'],
-          leg: 0,
-          t: 0,
-          speed: 1.6,
-          outcome: 'failure',
-        });
-        continue;
-      }
-      const server = pickServer(state, healthy);
-      server.rate.add(1, now);
-      state.particles.push({
-        id,
-        route: ['users', 'lb', server.id],
-        leg: 0,
-        t: 0,
-        speed: 1.5 + Math.random() * 0.4,
-        meta: { serverId: server.id },
-      });
-    }
-
-    // Per-server load model
+    // Per-server load model, from the rate measured over the last window. It
+    // runs before the arrivals so each request can be settled against the load
+    // it actually meets on the way in.
     for (const server of state.servers) {
       if (server.status !== 'healthy') {
         server.cpu = 0;
         server.active = 0;
         server.latency = 0;
+        server.errorRate = 0;
         continue;
       }
       const incoming = server.rate.rate(now);
+      // A weighted pool sends more traffic to bigger servers, so Server 1 is
+      // modelled as a bigger machine. The same capacity has to be used when
+      // settling its requests below, or the node card and the metrics strip
+      // would disagree about whether it is coping.
       const effectiveCapacity =
         algorithm === 'weighted' && server.weight > 1 ? capacity * 1.6 : capacity;
       const load = computeLoad(incoming, effectiveCapacity, { baseLatencyMs: duration, kneeAt: 0.65 });
       server.cpu = load.cpu;
       server.latency = load.latencyMs;
+      server.errorRate = load.errorRate;
       // Little's law: in-flight requests = arrival rate x time in system.
       server.active = Math.round(incoming * (load.latencyMs / 1000));
     }
 
-    // Move particles and settle completed ones
-    const { alive, finished } = advanceParticles(state.particles, dt);
-    state.particles = alive;
+    // Arrivals. Every request is counted here; only a sample of them is
+    // animated, so the particle budget can never throttle the metrics.
+    const arrivals = sampleArrivals(traffic, dt);
+    const share = visualShare(traffic, ANIMATED_PER_SECOND);
 
-    for (const particle of finished) {
-      const serverId = particle.meta?.serverId as string | undefined;
-      const server = state.servers.find((item) => item.id === serverId);
-      if (!server) {
+    for (let index = 0; index < arrivals; index += 1) {
+      const id = nextParticleId();
+      const animate = Math.random() < share;
+
+      if (healthy.length === 0) {
+        state.failed += 1;
+        state.rejected.add(1, now);
+        if (animate) {
+          state.particles.push({ id, route: ['users', 'lb'], leg: 0, t: 0, speed: 1.6, outcome: 'failure' });
+        }
         continue;
       }
-      const load = computeLoad(server.rate.rate(now), capacity, { baseLatencyMs: duration, kneeAt: 0.65 });
-      const failedRequest = Math.random() < load.errorRate;
-      const latency = load.latencyMs * (0.75 + Math.random() * 0.7);
+
+      const server = pickServer(state, healthy);
+      server.rate.add(1, now);
+
+      const failedRequest = Math.random() < server.errorRate;
+      const latency = server.latency * (0.75 + Math.random() * 0.7);
 
       if (failedRequest) {
         server.failed += 1;
@@ -281,31 +292,47 @@ export function LoadBalancerLab() {
         state.latency.push(latency);
       }
 
-      // Keep a small rolling set of inspectable requests.
-      if (state.requests.size > 40) {
+      if (!animate) continue;
+
+      state.particles.push({
+        id,
+        route: ['users', 'lb', server.id],
+        leg: 0,
+        t: 0,
+        speed: 1.5 + Math.random() * 0.4,
+        outcome: failedRequest ? 'failure' : server.cpu > 0.85 ? 'warning' : 'success',
+        meta: { serverId: server.id },
+      });
+
+      // Keep a rolling set of inspectable requests - one per animated particle,
+      // and deeper than the particle budget so every dot on the canvas still
+      // has its record when it is clicked near the end of its route.
+      if (state.requests.size > INSPECTABLE_REQUESTS) {
         const oldest = state.requests.keys().next().value;
         if (oldest !== undefined) state.requests.delete(oldest);
       }
-      state.requests.set(particle.id, {
-        id: particle.id,
+      state.requests.set(id, {
+        id,
         createdAt: now,
         currentNode: server.id,
         status: failedRequest ? 'failed' : 'completed',
-        outcome: failedRequest ? 'failure' : load.cpu > 0.85 ? 'warning' : 'success',
+        outcome: failedRequest ? 'failure' : server.cpu > 0.85 ? 'warning' : 'success',
         latency,
         path: ['Client', 'Load Balancer', server.name],
         method: 'GET',
-        endpoint: ENDPOINTS[particle.id % ENDPOINTS.length],
+        endpoint: ENDPOINTS[id % ENDPOINTS.length],
         notes: [
           `Algorithm: ${ALGORITHMS.find((item) => item.value === algorithm)?.label}`,
-          `Server CPU at arrival: ${Math.round(load.cpu * 100)}%`,
+          `Server CPU at arrival: ${Math.round(server.cpu * 100)}%`,
           failedRequest ? 'Rejected: server over capacity' : 'Completed successfully',
         ],
       });
     }
 
-    // Cap particle count so the canvas stays readable at high traffic.
-    if (state.particles.length > 90) state.particles = state.particles.slice(-90);
+    // Particles are decoration from here on: they carry no accounting, so
+    // dropping one at the end of its route costs nothing.
+    const { alive } = advanceParticles(state.particles, dt);
+    state.particles = alive.length > PARTICLE_BUDGET ? alive.slice(-PARTICLE_BUDGET) : alive;
 
     const snapshot = state.latency.snapshot();
     push(

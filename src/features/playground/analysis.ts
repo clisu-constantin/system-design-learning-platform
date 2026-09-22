@@ -79,8 +79,23 @@ export function analyze(
         ? forwarded / targets.length
         : forwarded;
 
+    /**
+     * Cache-aside: a component wired to both a cache and the store behind it
+     * checks the cache on every read, but only the misses continue to the
+     * store. Without this the direct edge carried full traffic *and* the cache
+     * added its own share on top, so dragging in a cache made the database
+     * busier - the exact opposite of what the lab is meant to show.
+     */
+    const cacheShare = targets.reduce((lowest, id) => {
+      const kind = byId.get(id)?.data.kind;
+      if (kind !== 'cache' && kind !== 'cdn') return lowest;
+      return Math.min(lowest, PASS_THROUGH[kind] ?? 1);
+    }, 1);
+
     for (const target of targets) {
-      queue.push({ id: target, amount: split, depth: item.depth + 1 });
+      const kind = byId.get(target)?.data.kind;
+      const fronted = kind === 'cache' || kind === 'cdn';
+      queue.push({ id: target, amount: fronted ? split : split * cacheShare, depth: item.depth + 1 });
     }
   }
 
