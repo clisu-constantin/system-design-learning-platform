@@ -62,7 +62,7 @@ appeared in any lab, before or after the fixes. Dark theme and reduced motion re
 - **Expected:** latency falls with utilization; with every server down there is no latency to report
 - **Happened:** 4 s after recovery Avg latency still read 2.72 s next to 0% utilization, because `MetricWindow(500)` is sized in samples and 50 req/sec takes 10 s to refill it. With all servers down, Avg latency kept showing the last value (101 ms) beside 0 req/sec served.
 - **Severity:** misleading
-- **Status:** decided in #16 (pick A) - split out as #18 (time-based `MetricWindow`); shared engine change needs its own sweep of the labs
+- **Status:** decided in #16 (pick A) - fixed in #18: `src/simulations/engine/metrics.ts` (`MetricWindow` keeps the last 2 s of samples, capped by count, and its snapshot is `null` with nothing in the horizon), `src/utils/format.ts` (`formatLatency(null)` is a dash), and every lab that reads it (Load Balancer, CDN, Caching, Circuit Breaker, Monolith vs Microservices) renders a dash and breaks the chart line instead of a stale value. Script check: 50 req/sec recovering from 2.72 s reads 30 ms 2.1 s later; with nothing served the window is empty 2 s after the last request.
 
 ### F07-007 - API gateway: pipeline shows the previous request after a control changes
 

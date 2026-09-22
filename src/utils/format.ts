@@ -6,8 +6,13 @@ export const formatNumber = (value: number) => plain.format(Math.round(value));
 export const formatCompact = (value: number) =>
   Math.abs(value) < 1000 ? plain.format(Math.round(value)) : compact.format(value);
 
-export const formatLatency = (ms: number) =>
-  ms >= 1000 ? `${(ms / 1000).toFixed(2)} s` : `${ms < 10 ? ms.toFixed(1) : Math.round(ms)} ms`;
+/** `null` means no sample to report (an idle `MetricWindow`) and renders as a dash. */
+export const formatLatency = (ms: number | null) =>
+  ms === null
+    ? '-'
+    : ms >= 1000
+      ? `${(ms / 1000).toFixed(2)} s`
+      : `${ms < 10 ? ms.toFixed(1) : Math.round(ms)} ms`;
 
 export const formatPercent = (ratio: number, digits = 0) => `${(ratio * 100).toFixed(digits)}%`;
 

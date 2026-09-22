@@ -149,11 +149,11 @@ export function CircuitBreakerLab() {
     const record = (failed: boolean) => {
       if (failed) {
         current.failed += 1;
-        current.latency.push(timeout);
+        current.latency.push(timeout, now);
         current.calls.unshift({ id: nextParticleId(), result: 'fail' });
       } else {
         current.passed += 1;
-        current.latency.push(60);
+        current.latency.push(60, now);
         current.calls.unshift({ id: nextParticleId(), result: 'ok' });
       }
       current.calls = current.calls.slice(0, 40);
@@ -171,7 +171,7 @@ export function CircuitBreakerLab() {
 
       if (shortCircuit) {
         current.shortCircuited += 1;
-        current.latency.push(2);
+        current.latency.push(2, now);
         current.calls.unshift({ id: nextParticleId(), result: 'short-circuit' });
         current.calls.length = Math.min(current.calls.length, 40);
         current.particles.push({
@@ -187,7 +187,7 @@ export function CircuitBreakerLab() {
 
       if (breakerEnabled && current.breaker === 'half-open' && current.trials >= TRIAL_CALLS) {
         current.shortCircuited += 1;
-        current.latency.push(2);
+        current.latency.push(2, now);
         current.calls.unshift({ id: nextParticleId(), result: 'short-circuit' });
         current.calls.length = Math.min(current.calls.length, 40);
         current.particles.push({
@@ -264,7 +264,8 @@ export function CircuitBreakerLab() {
 
   const current = state.current;
   const total = current.passed + current.failed + current.shortCircuited;
-  const avgLatency = current.latency.avg;
+  // Null when no call landed in the last 2 s (lab paused, or traffic at 0): shown as a dash.
+  const avgLatency = current.latency.snapshot(performance.now()).avg;
   const windowFailures = current.window.filter((ok) => !ok).length;
   const windowRatio = current.window.length ? windowFailures / current.window.length : 0;
   const meta = STATE_META[breakerEnabled ? current.breaker : 'closed'];
@@ -362,7 +363,7 @@ export function CircuitBreakerLab() {
                 key: 'latency',
                 label: 'Avg latency',
                 value: formatLatency(avgLatency),
-                tone: avgLatency > 800 ? 'danger' : 'ok',
+                tone: avgLatency === null ? 'neutral' : avgLatency > 800 ? 'danger' : 'ok',
                 hint: 'Simplified model, not a measurement: a success costs 60 ms, a failure the full call timeout, a short-circuit 2 ms. Failing fast is what keeps this number low during an outage.',
               },
               { key: 'transitions', label: 'State changes', value: formatNumber(current.transitions) },
@@ -511,7 +512,7 @@ export function CircuitBreakerLab() {
       <DiagramCanvas layout={LAYOUT} edges={edges} particles={particleViews} height={480} className="bg-canvas">
         <ArchNode kind="client" title="Client" subtitle={`${requestRate} req/sec`} placed={LAYOUT.client} compact />
         <ArchNode kind="server" title="API Service" subtitle="the caller" placed={LAYOUT.api} compact>
-          <NodeStatRow label="Avg latency" value={formatLatency(avgLatency)} tone={avgLatency > 800 ? 'text-danger' : 'text-ok'} />
+          <NodeStatRow label="Avg latency" value={formatLatency(avgLatency)} tone={avgLatency === null ? 'text-muted' : avgLatency > 800 ? 'text-danger' : 'text-ok'} />
         </ArchNode>
         <ArchNode
           kind="api-gateway"

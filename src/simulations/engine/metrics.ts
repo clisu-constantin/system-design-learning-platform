@@ -1,25 +1,60 @@
 import { percentile } from '@/utils/math';
 
 /**
- * Fixed-size ring buffer of samples. Used for latency distributions, where we
- * only care about the recent window rather than the whole history.
+ * What a `MetricWindow` holds right now. Every statistic is `null` when no
+ * sample landed inside the horizon: "nothing was served" is not "0 ms", and it
+ * is not the last value seen either. Render it as a dash (`formatLatency(null)`)
+ * and push `?? NaN` into a chart series so the line breaks instead of lying.
+ */
+export interface WindowSnapshot {
+  count: number;
+  avg: number | null;
+  p50: number | null;
+  p95: number | null;
+  p99: number | null;
+}
+
+/**
+ * Sliding time window of samples - the last `horizonMs` of them, not the last
+ * N. Used for latency distributions.
+ *
+ * A count-based window lagged at low traffic (50 req/sec took 10 s to refill
+ * 500 slots) and kept showing the last value when nothing was served at all.
+ * Here a sample expires `horizonMs` after it was pushed, so the numbers follow
+ * the load within the horizon and an idle window reports no data.
+ *
+ * `capacity` still bounds memory and sort cost: at high traffic the window
+ * holds the newest `capacity` samples, which are all recent anyway.
+ *
+ * Time is whatever clock the caller passes as `now`, in milliseconds - the
+ * same convention as `RateCounter`, and labs pass both the same `now` so a
+ * rate and a latency in one metrics strip always describe the same interval.
+ * Timestamps must not go backwards between pushes.
  *
  * Writes are O(1): a lab at 5,000 req/sec pushes a sample per request, so
- * shifting a 400-element array on every one of them showed up in a profile.
+ * shifting an array on every one of them showed up in a profile.
  */
 export class MetricWindow {
   private readonly values: number[];
+  private readonly times: number[];
+  /** Live samples, the newest ending just before `cursor`. */
   private filled = 0;
+  /** Ring index the next sample is written to. */
   private cursor = 0;
 
-  constructor(private readonly size = 400) {
-    this.values = new Array<number>(size).fill(0);
+  constructor(
+    private readonly capacity = 400,
+    private readonly horizonMs = 2000,
+  ) {
+    this.values = new Array<number>(capacity).fill(0);
+    this.times = new Array<number>(capacity).fill(0);
   }
 
-  push(value: number) {
+  push(value: number, now = performance.now()) {
     this.values[this.cursor] = value;
-    this.cursor = (this.cursor + 1) % this.size;
-    if (this.filled < this.size) this.filled += 1;
+    this.times[this.cursor] = now;
+    this.cursor = (this.cursor + 1) % this.capacity;
+    if (this.filled < this.capacity) this.filled += 1;
   }
 
   clear() {
@@ -27,44 +62,49 @@ export class MetricWindow {
     this.cursor = 0;
   }
 
-  get count() {
+  /** Samples inside the horizon at `now`. */
+  count(now = performance.now()) {
+    this.expire(now);
     return this.filled;
   }
 
-  get avg() {
-    if (!this.filled) return 0;
+  snapshot(now = performance.now()): WindowSnapshot {
+    const sorted = this.sorted(now);
+    if (sorted.length === 0) return { count: 0, avg: null, p50: null, p95: null, p99: null };
     let sum = 0;
-    for (let index = 0; index < this.filled; index += 1) sum += this.values[index];
-    return sum / this.filled;
-  }
-
-  get max() {
-    if (!this.filled) return 0;
-    let max = this.values[0];
-    for (let index = 1; index < this.filled; index += 1) {
-      if (this.values[index] > max) max = this.values[index];
-    }
-    return max;
-  }
-
-  quantile(p: number) {
-    return percentile(this.sorted(), p);
-  }
-
-  snapshot() {
-    const sorted = this.sorted();
+    for (const value of sorted) sum += value;
     return {
       count: sorted.length,
-      avg: this.avg,
+      avg: sum / sorted.length,
       p50: percentile(sorted, 50),
       p95: percentile(sorted, 95),
       p99: percentile(sorted, 99),
     };
   }
 
-  /** Only the slots that have been written, ascending. Percentiles ignore order. */
-  private sorted() {
-    return this.values.slice(0, this.filled).sort((a, b) => a - b);
+  /**
+   * Drops samples older than the horizon. Pushes arrive in time order, so the
+   * expired ones are always the oldest: walk forward from the tail until one
+   * is still fresh. Amortized O(1) per sample.
+   */
+  private expire(now: number) {
+    const cutoff = now - this.horizonMs;
+    while (this.filled > 0) {
+      const oldest = (this.cursor - this.filled + this.capacity) % this.capacity;
+      if (this.times[oldest] >= cutoff) break;
+      this.filled -= 1;
+    }
+  }
+
+  /** The live samples, ascending. Percentiles ignore order. */
+  private sorted(now: number) {
+    this.expire(now);
+    const result = new Array<number>(this.filled);
+    const start = (this.cursor - this.filled + this.capacity) % this.capacity;
+    for (let index = 0; index < this.filled; index += 1) {
+      result[index] = this.values[(start + index) % this.capacity];
+    }
+    return result.sort((a, b) => a - b);
   }
 }
 
