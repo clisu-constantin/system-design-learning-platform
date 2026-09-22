@@ -186,7 +186,10 @@ ladder caption ("16x capacity, 65x cost") matches the data. No change needed.
 - **Expected:** unclear
 - **Happened:** "Requirements 0 ... Complexity score 100" while the scope summary says "Nothing selected - there is nothing to design". The score is mostly driven by the non-functional sliders.
 - **Severity:** judgment-call
-- **Status:** decided in #16 (pick A) - fixed in `src/features/fundamentals/RequirementsLab.tsx`
+- **Status:** decided in #16 (pick A: no score when nothing is selected) - fixed in
+  `src/features/fundamentals/RequirementsLab.tsx`. The decision said "show 0"; the lab shows a dash (`-`) in a
+  neutral tone instead. A dash is the app-wide mark for "no value" (`formatLatency(null)` and the idle lab metrics
+  use it too), while a 0 would read as a real score - "a trivially simple system" - for a scope that has nothing in it
 
 ### F06-020 - Stateless lab draws healthy Redis links in the danger colour
 
