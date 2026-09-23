@@ -458,7 +458,7 @@ export const LABS: LabDefinition[] = [
   {
     id: 'saga',
     title: 'Saga Lab',
-    blurb: 'An order across three services, a failed step, and the compensations.',
+    blurb: 'One order across four services: fail a step and watch the compensations undo the rest.',
     category: 'patterns',
     difficulty: 'Advanced',
     concept: 'saga-pattern',

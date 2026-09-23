@@ -297,11 +297,11 @@ rules
         paragraphs: [
           'A choreographed saga has each service react to events and emit the next one, with compensation triggered by failure events. It is loosely coupled and it has no central component - and the workflow exists nowhere, so understanding the process means reading every participant and inferring the order.',
           'An orchestrated saga has a coordinator that issues commands, tracks progress and drives compensation. The process is written in one place, testable, visible, and resumable after a crash if its state is persisted. The cost is a component that knows about every participant and must be highly available.',
-          'For anything with more than three steps or any compensation logic, orchestration is usually the right choice, and durable execution engines exist precisely for it. Choreography suits simple, independent reactions where nothing needs undoing.',
+          'Neither is free. Choreography suits short flows with few participants: there is nothing extra to run, and each service knows only the events it reacts to. As steps and compensations pile up, the orchestrator earns its cost - the sequence sits in one place and a stalled saga has an owner - and durable execution engines such as Temporal or AWS Step Functions exist to run exactly this kind of orchestrator.',
         ],
         bullets: [
-          'Fewer than 3 steps, no compensation -> choreography is fine.',
-          'Ordered steps, compensation, or a lifecycle to inspect -> orchestration.',
+          'Few services, a short chain, little to undo -> choreography keeps the moving parts down.',
+          'Many ordered steps with compensations, or a lifecycle to inspect -> orchestration.',
           'Persist the saga state so a crash resumes rather than restarts.',
           'Every step and every compensation must be idempotent.',
         ],
@@ -319,16 +319,17 @@ rules
       {
         title: 'An order saga, including the step that went wrong',
         setup:
-          'Placing an order spans four services: inventory, payment, shipping and notification. Payment succeeds; shipping rejects the address.',
+          'Placing an order spans five services: order, inventory, payment, shipping and notification, each with its own database. Payment succeeds; shipping rejects the address.',
         walkthrough: [
-          'Step 1: inventory reserves 2 units. Marked as reserved with the saga id, not simply decremented - that is the semantic lock.',
-          'Step 2: payment charges 89 euro, recording the saga id as the idempotency key.',
-          'Step 3: shipping rejects the address as undeliverable. The saga now begins compensating in reverse.',
-          'Compensate step 2: refund 89 euro, using the same saga id so a retry cannot refund twice. The customer sees a charge and a refund on their statement - an intermediate state the product must explain.',
-          'Compensate step 1: release the 2 reserved units back to available stock.',
-          'The order is marked failed with a reason, and the customer is shown an address error rather than a generic failure.',
-          'Step 4 (notification) was deliberately placed last and never ran, so no confirmation email had to be retracted.',
-          'Failure inside compensation: if the refund call times out, it is retried with backoff; after 5 attempts the saga is placed in a manual review queue with an alert, because money is involved.',
+          'Step 1: the Order service saves order 1042 as PENDING - a local transaction, visible at once.',
+          'Step 2: inventory reserves 2 units. Marked as reserved with the saga id, not simply decremented - that is the semantic lock.',
+          'Step 3: payment charges 89 euro, recording the saga id as the idempotency key.',
+          'Step 4: shipping rejects the address as undeliverable. The saga now begins compensating steps 3, 2 and 1, in reverse.',
+          'Compensate step 3: refund 89 euro, using the same saga id so a retry cannot refund twice. The customer sees a charge and a refund on their statement - an intermediate state the product must explain.',
+          'Compensate step 2: release the 2 reserved units back to available stock.',
+          'Compensate step 1: order 1042 goes from PENDING to REJECTED with the reason, and the customer is shown an address error rather than a generic failure.',
+          'Step 5 (notification) was deliberately placed last and never ran, so no confirmation email had to be retracted.',
+          'Failure inside compensation: if the refund call times out, it is retried with backoff; after 3 attempts the saga is placed in a manual review queue with an alert, because money is involved.',
         ],
         result:
           'The saga left the system consistent without any distributed transaction - at the cost of a visible charge and refund, a semantic lock on stock, and a human escalation path. Those costs are the honest price of splitting a transaction across services.',

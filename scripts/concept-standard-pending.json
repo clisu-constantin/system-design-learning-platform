@@ -88,7 +88,6 @@
     "fan-out",
     "backpressure",
     "bulkhead",
-    "saga-pattern",
     "outbox-pattern",
     "leader-follower",
     "producer-consumer",
