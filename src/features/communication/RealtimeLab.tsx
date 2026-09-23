@@ -4,7 +4,7 @@ import {
   ArchNode,
   DiagramCanvas,
   NodeStatRow,
-  OUTCOME_STYLE,
+  ParticleLegend,
   type DiagramEdge,
   type Layout,
   type ParticleView,
@@ -714,39 +714,18 @@ function insightFor(setup: Setup, model: RealtimeResult) {
 
 /** Shape and text for each particle, so the meaning never rests on colour alone. */
 function RealtimeLegend() {
-  const items: { outcome: RequestOutcome; label: string }[] = [
-    { outcome: 'success', label: 'Request or message' },
-    { outcome: 'cache-hit', label: 'New event' },
-    { outcome: 'warning', label: 'Nothing new (wasted)' },
-    { outcome: 'failure', label: 'Rejected, server over capacity' },
-  ];
   return (
-    <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5">
-      {items.map((item) => (
-        <span key={item.outcome} className="flex items-center gap-1.5 text-[11px] text-muted">
-          <svg width={14} height={14} viewBox="-7 -7 14 14" aria-hidden>
-            <LegendShape outcome={item.outcome} />
-          </svg>
-          {item.label}
-        </span>
-      ))}
+    <ParticleLegend
+      items={[
+        { outcome: 'success', label: 'Request or message' },
+        { outcome: 'cache-hit', label: 'New event' },
+        { outcome: 'warning', label: 'Nothing new (wasted)' },
+        { outcome: 'failure', label: 'Rejected, server over capacity' },
+      ]}
+    >
       <span className="text-[11px] text-faint">A lit, moving wire is a request, stream or socket held open.</span>
-    </div>
+    </ParticleLegend>
   );
-}
-
-function LegendShape({ outcome }: { outcome: RequestOutcome }) {
-  const { fill, shape } = OUTCOME_STYLE[outcome];
-  if (shape === 'diamond') return <rect x={-4} y={-4} width={8} height={8} rx={1} fill={fill} transform="rotate(45)" />;
-  if (shape === 'triangle') return <polygon points="0,-5 4.5,3.5 -4.5,3.5" fill={fill} />;
-  if (shape === 'cross')
-    return (
-      <g stroke={fill} strokeWidth={2.2} strokeLinecap="round">
-        <line x1={-3.5} y1={-3.5} x2={3.5} y2={3.5} />
-        <line x1={-3.5} y1={3.5} x2={3.5} y2={-3.5} />
-      </g>
-    );
-  return <circle r={4.2} fill={fill} />;
 }
 
 export default RealtimeLab;

@@ -4,7 +4,6 @@ import {
   ArchNode,
   DiagramCanvas,
   NodeStatRow,
-  OUTCOME_STYLE,
   ParticleLegend,
   type DiagramEdge,
   type Layout,
@@ -253,15 +252,9 @@ export function UrlJourneyLab({ focus }: LabProps<'url-journey'>) {
       }
       legend={
         <div className="space-y-1.5">
-          <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5">
-            <ParticleLegend outcomes={['success', 'cache-hit']} />
-            <span className="flex items-center gap-1.5 text-[11px] text-muted">
-              <svg width={14} height={14} viewBox="-7 -7 14 14" aria-hidden>
-                <polygon points="0,-5 4.5,3.5 -4.5,3.5" fill={OUTCOME_STYLE.warning.fill} />
-              </svg>
-              Plain HTTP: readable on the path
-            </span>
-          </div>
+          <ParticleLegend
+            items={[{ outcome: 'success' }, { outcome: 'cache-hit' }, { outcome: 'warning', label: 'Plain HTTP: readable on the path' }]}
+          />
           <p className="text-[11px] text-faint">
             One request at a time, slowed down to be followed by eye; a longer hop moves slower. Timings are simplified
             round trips for illustration, not measurements.

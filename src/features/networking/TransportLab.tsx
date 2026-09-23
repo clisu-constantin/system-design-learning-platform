@@ -1,6 +1,13 @@
 import { useRef, useState } from 'react';
 import { Scissors } from 'lucide-react';
-import { ArchNode, DiagramCanvas, NodeStatRow, type DiagramEdge, type Layout, type ParticleView } from '@/components/architecture';
+import {
+  ArchNode,
+  DiagramCanvas,
+  NodeStatRow,
+  OUTCOME_STYLE,
+  ParticleLegend,
+  ParticleShape,
+  type DiagramEdge, type Layout, type ParticleView } from '@/components/architecture';
 import { Insight, LabShell } from '@/components/learning';
 import { Button, Slider } from '@/components/ui';
 import { useTicker, useEventLog } from '@/simulations/engine';
@@ -417,13 +424,8 @@ function CellGlyph({ state, size = 14 }: { state: CellState; size?: number }) {
       {state === 'resend' ? <polygon points="0,-5 4.5,3.5 -4.5,3.5" fill="none" strokeWidth={1.5} className="stroke-warn" /> : null}
       {state === 'held' ? <rect x={-4} y={-4} width={8} height={8} fill="none" strokeWidth={1.5} className="stroke-info" /> : null}
       {state === 'ok' ? <circle r={4.5} className="fill-ok" /> : null}
-      {state === 'late' ? <polygon points="0,-5 4.5,3.5 -4.5,3.5" className="fill-warn" /> : null}
-      {state === 'lost' ? (
-        <g strokeWidth={2.2} strokeLinecap="round" className="stroke-danger">
-          <line x1={-3.5} y1={-3.5} x2={3.5} y2={3.5} />
-          <line x1={-3.5} y1={3.5} x2={3.5} y2={-3.5} />
-        </g>
-      ) : null}
+      {state === 'late' ? <ParticleShape shape="triangle" fill={OUTCOME_STYLE.warning.fill} /> : null}
+      {state === 'lost' ? <ParticleShape shape="cross" fill={OUTCOME_STYLE.failure.fill} /> : null}
     </svg>
   );
 }
@@ -565,32 +567,17 @@ function Comparison({ sim }: { sim: Sim }) {
 
 /** The particle shapes on the wires, with what each one means in this lab. */
 function WireLegend() {
-  const items: { label: string; shape: JSX.Element }[] = [
-    { label: 'Data packet (and the SYN)', shape: <circle r={4.2} className="fill-brand" /> },
-    { label: 'ACK going back (and the SYN-ACK)', shape: <rect x={-4} y={-4} width={8} height={8} rx={1} transform="rotate(45)" className="fill-ok" /> },
-    { label: 'Resent packet', shape: <polygon points="0,-5 4.5,3.5 -4.5,3.5" className="fill-warn" /> },
-    {
-      label: 'Dropped by the network',
-      shape: (
-        <g strokeWidth={2.2} strokeLinecap="round" className="stroke-danger">
-          <line x1={-3.5} y1={-3.5} x2={3.5} y2={3.5} />
-          <line x1={-3.5} y1={3.5} x2={3.5} y2={-3.5} />
-        </g>
-      ),
-    },
-  ];
   return (
-    <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5">
-      {items.map((item) => (
-        <span key={item.label} className="flex items-center gap-1.5 text-[11px] text-muted">
-          <svg width={14} height={14} viewBox="-7 -7 14 14" aria-hidden>
-            {item.shape}
-          </svg>
-          {item.label}
-        </span>
-      ))}
+    <ParticleLegend
+      items={[
+        { outcome: 'success', label: 'Data packet (and the SYN)' },
+        { outcome: 'cache-hit', label: 'ACK going back (and the SYN-ACK)' },
+        { outcome: 'warning', label: 'Resent packet' },
+        { outcome: 'failure', label: 'Dropped by the network' },
+      ]}
+    >
       <span className="text-[11px] text-faint">Blue wires: TCP. Violet wires: UDP.</span>
-    </div>
+    </ParticleLegend>
   );
 }
 

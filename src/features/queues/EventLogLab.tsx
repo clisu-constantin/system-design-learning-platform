@@ -1,6 +1,6 @@
 import { useCallback, useRef, useState, type ReactNode } from 'react';
 import { RefreshCcw, Rewind } from 'lucide-react';
-import { ArchNode, DiagramCanvas, NodeStatRow, type DiagramEdge, type Layout, type ParticleView } from '@/components/architecture';
+import { ArchNode, DiagramCanvas, NodeStatRow, ParticleLegend, type DiagramEdge, type Layout, type ParticleView } from '@/components/architecture';
 import { Insight, LabShell, MetricsPanel } from '@/components/learning';
 import { Button, SegmentedControl, Slider, Stepper, Toggle } from '@/components/ui';
 import { advanceParticles, nextParticleId, useEventLog, useTicker, visualShare, type Particle } from '@/simulations/engine';
@@ -829,26 +829,13 @@ function ControlGroup({ title, children }: { title: string; children: ReactNode 
 /** Particle legend in this Lab's words: shape and text, never colour alone. */
 function Legend() {
   return (
-    <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 text-[11px] text-muted">
-      <span className="flex items-center gap-1.5">
-        <svg width={14} height={14} viewBox="-7 -7 14 14" aria-hidden>
-          <circle r={4.2} className="fill-brand" />
-        </svg>
-        Event (one record)
-      </span>
-      <span className="flex items-center gap-1.5">
-        <svg width={14} height={14} viewBox="-7 -7 14 14" aria-hidden>
-          <rect x={-4} y={-4} width={8} height={8} rx={1} transform="rotate(45)" className="fill-ok" />
-        </svg>
-        Fresh read, or a snapshot saved
-      </span>
-      <span className="flex items-center gap-1.5">
-        <svg width={14} height={14} viewBox="-7 -7 14 14" aria-hidden>
-          <polygon points="0,-5 4.5,3.5 -4.5,3.5" className="fill-warn" />
-        </svg>
-        Stale read
-      </span>
-    </div>
+    <ParticleLegend
+      items={[
+        { outcome: 'success', label: 'Event (one record)' },
+        { outcome: 'cache-hit', label: 'Fresh read, or a snapshot saved' },
+        { outcome: 'warning', label: 'Stale read' },
+      ]}
+    />
   );
 }
 
