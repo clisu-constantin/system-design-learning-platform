@@ -18,8 +18,8 @@
 export type Transport = 'tcp' | 'udp';
 export type Payload = 'voice' | 'file';
 
+/** The network all four streams share. Each stream knows its own transport and payload. */
 export interface NetworkSetup {
-  payload: Payload;
   /** Share of data packets the network drops, 0..1. */
   lossRate: number;
   /** One-way delay in ms. The round trip is twice this. */
@@ -120,10 +120,9 @@ export interface Stream {
 export interface StreamEvent {
   transport: Transport;
   tone: 'info' | 'ok' | 'warn' | 'danger';
+  /** Written without the transport or payload; the lab prefixes both. */
   message: string;
-  /** Logged whichever transport the diagram shows. */
-  always?: boolean;
-  /** Events with the same key are rate-limited by the lab. */
+  /** Events with the same key (per stream) are rate-limited by the lab. */
   key?: string;
 }
 
@@ -255,15 +254,13 @@ function finishFile(s: Stream, now: number, finishedAt: number, emit: (event: St
   s.stats.missing += missing;
   if (missing === 0) s.stats.filesComplete += 1;
   s.lastFile = { ms, missing };
-  const name = s.transport.toUpperCase();
   emit({
     transport: s.transport,
     tone: missing ? 'danger' : 'ok',
-    always: true,
     message:
       missing === 0
-        ? `${name} file done in ${Math.round(ms)} ms, all ${FILE_PACKETS} packets in order.`
-        : `${name} file done in ${Math.round(ms)} ms, but ${missing} of ${FILE_PACKETS} packets never came. The file is corrupt unless the app asks for them again.`,
+        ? `done in ${Math.round(ms)} ms, all ${FILE_PACKETS} packets in order.`
+        : `done in ${Math.round(ms)} ms, but ${missing} of ${FILE_PACKETS} packets never came. The file is corrupt unless the app asks for them again.`,
   });
   s.transfer += 1;
   s.phase = 'waiting';
