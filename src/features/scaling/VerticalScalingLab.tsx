@@ -5,7 +5,7 @@ import { LiveChart } from '@/components/charts';
 import { Insight, LabShell, MetricsPanel } from '@/components/learning';
 import { Button, Meter, Slider } from '@/components/ui';
 import { advanceParticles, nextParticleId, useEventLog, useSeries, useTicker, type Particle } from '@/simulations/engine';
-import { computeLoad } from '@/simulations/models/load';
+import { computeLoad, type LoadResponse } from '@/simulations/models/load';
 import { MACHINE_TIERS } from '@/simulations/models/machine';
 import { useRerender } from '@/hooks/useRerender';
 import { sampleArrivals } from '@/utils/math';
@@ -23,6 +23,15 @@ const EDGES: DiagramEdge[] = [
 ];
 
 /**
+ * How long a resize keeps the one machine offline. Compressed so it fits a lab session: a real
+ * stop, resize and start of a cloud instance takes minutes, and the UI says so.
+ */
+const RESTART_SECONDS = 3;
+
+/** What the single machine looks like while it restarts: nothing is served. */
+const RESTARTING_LOAD: LoadResponse = { utilization: 0, cpu: 0, latencyMs: 0, errorRate: 1, saturated: false };
+
+/**
  * Vertical scaling: one machine, a traffic slider, and an upgrade button.
  * The teaching moment is that upgrading fixes capacity but never redundancy.
  */
@@ -35,9 +44,13 @@ export function VerticalScalingLab() {
   const { events, log, clear } = useEventLog();
   const { points, push, reset: resetSeries } = useSeries(50, 500);
   const saturatedSince = useRef<number | null>(null);
+  /** Seconds of restart left after a resize. Counted down by the ticker, so pausing freezes it too. */
+  const restartLeft = useRef(0);
 
   const tier = MACHINE_TIERS[tierIndex];
-  const load = computeLoad(traffic, tier.capacity, { baseLatencyMs: 30, kneeAt: 0.6 });
+  const restarting = restartLeft.current > 0;
+  const capacityLoad = computeLoad(traffic, tier.capacity, { baseLatencyMs: 30, kneeAt: 0.6 });
+  const load = restarting ? RESTARTING_LOAD : capacityLoad;
 
   /**
    * Every resize goes through here - the Upgrade/Downgrade buttons and a jump straight to a tier on
@@ -48,12 +61,13 @@ export function VerticalScalingLab() {
       if (index === tierIndex || index < 0 || index >= MACHINE_TIERS.length) return;
       const next = MACHINE_TIERS[index];
       setTierIndex(index);
+      restartLeft.current = RESTART_SECONDS;
       if (index > tierIndex) {
         log(`Upgraded to ${next.name}: ${next.cpu} vCPU, ${next.ramGb} GB, ~${next.capacity} req/sec`, 'ok');
-        log('Restart required - this is downtime unless you have a standby', 'warn');
       } else {
         log(`Downgraded to ${next.name} (~${next.capacity} req/sec)`, 'info');
       }
+      log('Resizing restarts the only server - every request fails until it is back', 'danger');
     },
     [tierIndex, log],
   );
@@ -63,6 +77,8 @@ export function VerticalScalingLab() {
 
   const reset = useCallback(() => {
     particles.current = [];
+    restartLeft.current = 0;
+    saturatedSince.current = null;
     setTierIndex(0);
     setTraffic(450);
     clear();
@@ -71,7 +87,16 @@ export function VerticalScalingLab() {
 
   useTicker(running, (dt) => {
     const now = performance.now();
-    const arrivals = sampleArrivals(Math.min(traffic, 900), dt * 0.35);
+    if (restartLeft.current > 0) {
+      restartLeft.current -= dt;
+      if (restartLeft.current <= 0) {
+        restartLeft.current = 0;
+        log(`Server back up on ${tier.name} - serving traffic again`, 'ok');
+      }
+    }
+    // Dots per second grow with traffic but are capped, and the cap on live dots is above what one
+    // trip needs - a tighter cap dropped dots before they ever reached the server.
+    const arrivals = sampleArrivals(Math.min(traffic / 12, 70), dt);
     for (let index = 0; index < arrivals; index += 1) {
       const failed = Math.random() < load.errorRate;
       particles.current.push({
@@ -85,12 +110,13 @@ export function VerticalScalingLab() {
     }
 
     const { alive } = advanceParticles(particles.current, dt);
-    particles.current = alive.slice(-70);
+    particles.current = alive.slice(-150);
 
-    if (load.saturated && saturatedSince.current === null) {
+    // Judged on the tier capacity, not the restart: a restart is not "back under capacity".
+    if (capacityLoad.saturated && saturatedSince.current === null) {
       saturatedSince.current = now;
       log(`Traffic ${formatNumber(traffic)} req/sec exceeds capacity ${formatNumber(tier.capacity)} - requests failing`, 'danger');
-    } else if (!load.saturated && saturatedSince.current !== null) {
+    } else if (!capacityLoad.saturated && saturatedSince.current !== null) {
       saturatedSince.current = null;
       log('Back under capacity - latency and errors recovering', 'ok');
     }
@@ -134,11 +160,17 @@ export function VerticalScalingLab() {
       }
       insight={
         <Insight>
-          {load.saturated ? (
+          {restarting ? (
+            <>
+              The server is restarting on the new machine size, and every request fails: there is no second machine to
+              take them. A bigger machine buys capacity, never availability - it is still a single point of failure. The
+              restart is shortened to {RESTART_SECONDS}s here; a real resize takes minutes.
+            </>
+          ) : load.saturated ? (
             <>
               The machine is over capacity: CPU is pinned, latency is climbing through queueing, and{' '}
               {formatPercent(load.errorRate, 1)} of requests are being rejected. Upgrading to {comparison.name} would
-              bring p95 to roughly {formatLatency(nextLoad.latencyMs)} - but the server is still a single point of
+              bring latency to roughly {formatLatency(nextLoad.latencyMs)} - but the server is still a single point of
               failure, and the cost goes from ${tier.costPerMonth} to ${comparison.costPerMonth} per month.
             </>
           ) : (
@@ -164,6 +196,7 @@ export function VerticalScalingLab() {
                 value: formatNumber(tier.capacity),
                 unit: 'req/s',
                 hint: 'Requests per second this machine tier can serve before it saturates.',
+                simulated: true,
               },
               {
                 key: 'cpu',
@@ -175,8 +208,8 @@ export function VerticalScalingLab() {
               {
                 key: 'latency',
                 label: 'Latency',
-                value: formatLatency(load.latencyMs),
-                tone: load.latencyMs > 500 ? 'danger' : 'neutral',
+                value: restarting ? 'offline' : formatLatency(load.latencyMs),
+                tone: restarting || load.latencyMs > 500 ? 'danger' : 'neutral',
                 hint: 'Time to serve one request, from a queueing model.',
                 simulated: true,
               },
@@ -187,7 +220,14 @@ export function VerticalScalingLab() {
                 tone: load.errorRate > 0 ? 'danger' : 'ok',
                 simulated: true,
               },
-              { key: 'cost', label: 'Relative cost', value: `$${formatNumber(tier.costPerMonth)}`, unit: '/mo' },
+              {
+                key: 'cost',
+                label: 'Relative cost',
+                value: `$${formatNumber(tier.costPerMonth)}`,
+                unit: '/mo',
+                hint: 'Only for comparing tiers with each other - not a price list.',
+                simulated: true,
+              },
             ]}
           />
           <div className="card p-4">
@@ -230,7 +270,7 @@ export function VerticalScalingLab() {
             </div>
             <p className="mt-3 text-xs text-faint">
               Capacity grows about 16x from Small to Bare metal, while cost grows about 65x. That gap is the economic
-              argument for scaling out instead of up.
+              argument for scaling out instead of up. Illustrative numbers, not a benchmark or a price list.
             </p>
           </div>
         </>
@@ -263,7 +303,7 @@ export function VerticalScalingLab() {
             <p className="label mb-2">Still true after upgrading</p>
             <ul className="space-y-1 text-[11px] text-muted">
               <li>One machine - a single point of failure</li>
-              <li>Resizing needs a restart</li>
+              <li>Resizing needs a restart (Upgrade and watch every request fail for {RESTART_SECONDS}s)</li>
               <li>There is a largest machine you can buy</li>
             </ul>
           </div>
@@ -277,7 +317,8 @@ export function VerticalScalingLab() {
           title={`Application Server (${tier.name})`}
           subtitle={`${tier.cpu} vCPU / ${tier.ramGb} GB`}
           placed={LAYOUT.server}
-          status={load.errorRate > 0.2 ? 'degraded' : 'healthy'}
+          status={restarting ? 'down' : load.errorRate > 0.2 ? 'degraded' : 'healthy'}
+          statusLabel={restarting ? 'Restarting' : undefined}
           alert={load.saturated}
         >
           <Meter label="CPU" value={load.cpu} />
@@ -285,8 +326,8 @@ export function VerticalScalingLab() {
           <NodeStatRow label="Capacity" value={`${formatNumber(tier.capacity)}/s`} />
           <NodeStatRow
             label="Latency"
-            value={formatLatency(load.latencyMs)}
-            tone={load.latencyMs > 400 ? 'text-danger' : 'text-ink'}
+            value={restarting ? 'offline' : formatLatency(load.latencyMs)}
+            tone={restarting || load.latencyMs > 400 ? 'text-danger' : 'text-ink'}
           />
           <NodeStatRow
             label="Errors"
