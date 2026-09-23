@@ -10,9 +10,6 @@
     "message-queues",
     "background-workers",
     "task-queues",
-    "circuit-breaker",
-    "retry",
-    "exponential-backoff",
     "monolith",
     "modular-monolith",
     "microservices",
@@ -25,7 +22,6 @@
   ],
   "labs": [
     "requirements",
-    "retry-backoff",
     "tracing"
   ]
 }
