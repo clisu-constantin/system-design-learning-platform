@@ -537,7 +537,7 @@ export const systemVisuals: Record<string, VisualSpec> = {
   failover: {
     width: 760,
     height: 300,
-    caption: 'Detect, promote, fence, repoint. Every step costs seconds you must budget for.',
+    caption: 'Detect, fence, promote, repoint. Every step costs seconds you must budget for.',
     nodes: [
       { id: 'app', kind: 'server', label: 'Application', x: 40, y: 110, w: 160, h: 78 },
       { id: 'old', kind: 'sql', label: 'Old primary', sub: 'fenced', x: 300, y: 20, w: 170, h: 80, status: 'down' },
@@ -578,7 +578,7 @@ export const systemVisuals: Record<string, VisualSpec> = {
     steps: [
       { from: 'traffic', to: 's3', label: 'Zone C goes down', outcome: 'failure' },
       { from: 'traffic', to: 's1', label: 'Zone A absorbs its share' },
-      { from: 'traffic', to: 's2', label: 'Zone B too, at 60% CPU' },
+      { from: 'traffic', to: 's2', label: 'Zone B too: 40% to 60%' },
       { from: 's1', to: 'ok', label: 'Peak still served: N+1 held' },
     ],
   },
@@ -638,7 +638,7 @@ export const systemVisuals: Record<string, VisualSpec> = {
     height: 316,
     caption: 'Two zones, automatic promotion, no manual step on the recovery path.',
     nodes: [
-      { id: 'lb', kind: 'load-balancer', label: 'Load Balancer', x: 300, y: 10, w: 170, h: 70 },
+      { id: 'lb', kind: 'load-balancer', label: 'Load Balancer', sub: 'managed, multi-zone', x: 290, y: 8, w: 190, h: 76 },
       { id: 'a', kind: 'server', label: 'Zone A - API x3', x: 60, y: 120, w: 190, h: 78 },
       { id: 'b', kind: 'server', label: 'Zone B - API x3', x: 510, y: 120, w: 190, h: 78 },
       { id: 'dba', kind: 'sql', label: 'Primary', x: 90, y: 230, w: 150, h: 72 },
