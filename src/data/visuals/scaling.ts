@@ -73,9 +73,9 @@ export const scalingVisuals: Record<string, VisualSpec> = {
     ],
     steps: [
       { from: 'users', to: 'lb', label: 'One address for clients' },
-      { from: 'lb', to: 's1', label: 'Pick a healthy backend' },
-      { from: 'lb', to: 's2', label: 'Server 2 already failed checks', outcome: 'failure' },
-      { from: 'lb', to: 's3', label: 'Traffic reroutes around it' },
+      { from: 'lb', to: 's2', label: 'Health check to Server 2 fails', outcome: 'failure' },
+      { from: 'lb', to: 's1', label: 'Round robin: request to Server 1' },
+      { from: 'lb', to: 's3', label: 'Next request skips to Server 3' },
     ],
   },
 
@@ -99,10 +99,12 @@ export const scalingVisuals: Record<string, VisualSpec> = {
       { from: 'lb', to: 'a4', tone: 'muted', dashed: true, label: 'warming up' },
     ],
     steps: [
-      { from: 'users', to: 'lb', label: 'Traffic triples in 30s' },
-      { from: 'lb', to: 'a1', label: 'CPU crosses 70%' },
-      { from: 'lb', to: 'a4', label: 'New instance launching' },
-      { from: 'lb', to: 'a3', label: 'Capacity arrives 90s later' },
+      { from: 'users', to: 'lb', label: 'Traffic jumps from 200 to 5,000' },
+      { from: 'lb', to: 'a1', label: 'api-1 climbs to 82% CPU', outcome: 'warning' },
+      { from: 'lb', to: 'a2', label: 'api-2 climbs to 78% CPU', outcome: 'warning' },
+      { from: 'lb', to: 'a3', label: 'Pool average 78%, over 70%', outcome: 'warning' },
+      { from: 'lb', to: 'a4', label: 'Launch api-4, still booting', outcome: 'warning' },
+      { from: 'lb', to: 'a4', label: 'Health check passes, api-4 joins' },
     ],
   },
 
@@ -147,6 +149,11 @@ export const scalingVisuals: Record<string, VisualSpec> = {
       { from: 'app', to: 'db', tone: 'info', rate: 1.6 },
       { from: 'app', to: 'cache', tone: 'danger', rate: 2.2, outcome: 'cache-hit' },
       { from: 'app', to: 'queue', tone: 'warn', rate: 1.2, outcome: 'warning' },
+    ],
+    steps: [
+      { from: 'app', to: 'db', label: 'Rows persist in replicated Postgres' },
+      { from: 'app', to: 'cache', label: 'Hot data served from Redis', outcome: 'cache-hit' },
+      { from: 'app', to: 'queue', label: 'Events appended to Kafka log' },
     ],
   },
 };

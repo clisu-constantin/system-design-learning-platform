@@ -99,6 +99,8 @@ try {
       edges: spec.edges,
       steps: spec.steps ?? [],
       asymmetric: spec.asymmetric,
+      // Only concept Diagrams show a Walkthrough; the home hero does not.
+      walkthrough: slug !== 'home hero',
     })),
     ...STAGES.map((stage) => ({
       name: `evolution ${stage.id}`,
@@ -143,6 +145,24 @@ try {
       }
       if (step.label.split(' ').length > 6) {
         problems.push(`${name}: step caption longer than six words - "${step.label}"`);
+      }
+      // The Walkthrough is read as the story of the drawn system, so a step may
+      // only travel a wire the Diagram draws (either way: a response goes back).
+      const drawn = spec.edges.some(
+        (edge) => (edge.from === step.from && edge.to === step.to) || (edge.from === step.to && edge.to === step.from),
+      );
+      if (!drawn) problems.push(`${name}: step ${step.from} -> ${step.to} follows no drawn edge`);
+    }
+
+    // Every concept Diagram carries a Walkthrough, and the Walkthrough visits every
+    // node: a box the story never reaches is a part the learner is never told about.
+    if (spec.walkthrough) {
+      if (spec.steps.length < 2) problems.push(`${name}: needs a Walkthrough of at least 2 steps`);
+      const visited = new Set(spec.steps.flatMap((step) => [step.from, step.to]));
+      for (const node of spec.nodes) {
+        if (spec.steps.length >= 2 && !visited.has(node.id)) {
+          problems.push(`${name}: ${node.id} ("${node.label}") is never visited by a step`);
+        }
       }
     }
 

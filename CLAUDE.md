@@ -139,7 +139,7 @@ The product complaint that shaped this app was "too much text". Concept pages th
 **running diagram**, not a paragraph:
 
 - `src/data/visuals/` maps every concept slug to a `VisualSpec` (nodes, edges with a particle
-  `rate`, optional `steps`). All 106 concepts have one - keep it that way.
+  `rate`, and `steps` - its Walkthrough). All 106 concepts have one - keep it that way.
 - `FlowVisual` renders a spec as a self-running Diagram. With `walkthrough` (the concept page only),
   a spec with `steps` also gets a chip row under the canvas: "Live" for the traffic, then one chip
   per step. Picking a step stops the traffic and walks one request along that hop, on the same
@@ -148,7 +148,9 @@ The product complaint that shaped this app was "too much text". Concept pages th
   and one "Full explanation" tab that holds all the prose. The right column is short cards only.
 - Run `npm run check:visuals` after editing a spec. It covers `src/data/visuals`, the home hero and
   the `src/features/evolution` stage layouts, and fails the build on overlapping boxes, nodes past
-  the canvas, labels too long for their box, step captions over six words, nodes with no edges, and
+  the canvas, labels too long for their box, step captions over six words, nodes with no edges, a
+  concept Diagram with fewer than 2 steps, a node no step visits, a step along a wire the Diagram
+  does not draw (either direction counts - a response goes back), and
   **edge labels that land behind a node card** (the SVG wiring layer is painted under the HTML
   nodes, so such a label is simply invisible). Move one with `labelT`, shorten it, or drop it.
 - A node carrying a badge (`isNew` in the evolution stages) needs about 47px more width - the badge
@@ -172,8 +174,8 @@ interchangeable, which contradicts the entire stateless/horizontal-scaling lesso
   introduced and label it afterwards (`2 nodes, multi-AZ`) rather than leaving a single box that
   quietly says "this is where everything goes down".
 
-- A Walkthrough step shows its caption as a banner over the canvas, never as an edge label - on a
-  short edge an edge label always lands on a node.
+- A Walkthrough step shows its caption in a strip above the canvas - never as an edge label (on a
+  short edge it lands on a node) and never floated over the canvas (it covers the top-left node).
 - `FlowVisual` auto-fits its spec to the container width (0.5x-1.3x, via `DiagramCanvas`'s `fit`
   prop), so a spec authored at 760px fills a wider card instead of stopping halfway across it. Pass
   `zoom` only to pin a scale.

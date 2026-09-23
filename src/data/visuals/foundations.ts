@@ -47,6 +47,13 @@ export const foundationVisuals: Record<string, VisualSpec> = {
       { from: 'store', to: 'sys', tone: 'brand', rate: 1.4 },
       { from: 'ws', to: 'sys', tone: 'brand', rate: 1.4 },
     ],
+    steps: [
+      { from: 'send', to: 'store', label: 'Sending needs a message store' },
+      { from: 'store', to: 'sys', label: 'Store joins the system' },
+      { from: 'live', to: 'ws', label: 'Live delivery needs WebSockets' },
+      { from: 'ws', to: 'sys', label: 'Gateway joins the system' },
+      { from: 'video', to: 'media', label: 'Video cut: nothing gets built', outcome: 'failure' },
+    ],
   },
 
   'non-functional-requirements': {
@@ -66,6 +73,13 @@ export const foundationVisuals: Record<string, VisualSpec> = {
       { from: 'target', to: 'failover', tone: 'ok', rate: 1.4 },
       { from: 'redundancy', to: 'cost', tone: 'warn', rate: 1, outcome: 'warning' },
       { from: 'zones', to: 'cost', tone: 'warn', rate: 1, outcome: 'warning' },
+    ],
+    steps: [
+      { from: 'target', to: 'redundancy', label: 'No single instance may matter' },
+      { from: 'target', to: 'zones', label: 'Survive losing a whole zone' },
+      { from: 'target', to: 'failover', label: 'Recover without waking a human' },
+      { from: 'redundancy', to: 'cost', label: 'Every extra copy is billed', outcome: 'warning' },
+      { from: 'zones', to: 'cost', label: 'Cross-zone traffic is billed too', outcome: 'warning' },
     ],
   },
 
@@ -109,6 +123,11 @@ export const foundationVisuals: Record<string, VisualSpec> = {
       { from: 'ssd', to: 'dc', tone: 'warn', rate: 2, outcome: 'warning' },
       { from: 'dc', to: 'ocean', tone: 'danger', rate: 1, outcome: 'failure' },
     ],
+    steps: [
+      { from: 'mem', to: 'ssd', label: 'SSD: 1,000x slower than memory' },
+      { from: 'ssd', to: 'dc', label: 'Network hop: 5x an SSD', outcome: 'warning' },
+      { from: 'dc', to: 'ocean', label: 'Ocean trip: 300x a datacenter', outcome: 'warning' },
+    ],
   },
 
   // ---- Quality attributes -------------------------------------------------
@@ -126,6 +145,11 @@ export const foundationVisuals: Record<string, VisualSpec> = {
       { from: 'lb', to: 'api', tone: 'ok', rate: 2.4 },
       { from: 'api', to: 'db', tone: 'ok', rate: 2.4 },
       { from: 'db', to: 'total', tone: 'warn', rate: 2, outcome: 'warning' },
+    ],
+    steps: [
+      { from: 'lb', to: 'api', label: 'LB hands the request on' },
+      { from: 'api', to: 'db', label: 'API cannot answer without DB' },
+      { from: 'db', to: 'total', label: 'Multiply: 99.79%, 18 h down', outcome: 'warning' },
     ],
   },
 
@@ -146,6 +170,14 @@ export const foundationVisuals: Record<string, VisualSpec> = {
       { from: 'write', to: 'eventual', tone: 'warn', rate: 1.6, outcome: 'warning' },
       { from: 'lin', to: 'reader', tone: 'ok', rate: 1.4 },
       { from: 'eventual', to: 'reader', tone: 'warn', rate: 1.4, outcome: 'warning' },
+    ],
+    steps: [
+      { from: 'write', to: 'lin', label: 'Write to a linearizable store' },
+      { from: 'lin', to: 'reader', label: 'Every reader now sees 2' },
+      { from: 'write', to: 'ryw', label: 'Same write, read-your-writes store' },
+      { from: 'ryw', to: 'write', label: 'Only the writer must see 2' },
+      { from: 'write', to: 'eventual', label: 'Same write, eventual store' },
+      { from: 'eventual', to: 'reader', label: 'Another reader still sees 1', outcome: 'warning' },
     ],
   },
 
@@ -168,6 +200,13 @@ export const foundationVisuals: Record<string, VisualSpec> = {
       { from: 'quorum', to: 'd', tone: 'danger', dashed: true, label: 'X partition X' },
       { from: 'quorum', to: 'e', tone: 'danger', dashed: true },
     ],
+    steps: [
+      { from: 'a', to: 'quorum', label: 'Node A: one of five' },
+      { from: 'b', to: 'quorum', label: 'Node B: two of five' },
+      { from: 'c', to: 'quorum', label: 'Node C: majority, writes allowed' },
+      { from: 'quorum', to: 'd', label: 'Partition cuts off Node D', outcome: 'failure' },
+      { from: 'quorum', to: 'e', label: 'D and E: minority, read-only', outcome: 'failure' },
+    ],
   },
 
   sli: {
@@ -184,6 +223,11 @@ export const foundationVisuals: Record<string, VisualSpec> = {
       { from: 'reqs', to: 'good', tone: 'ok', rate: 4 },
       { from: 'reqs', to: 'bad', tone: 'danger', rate: 0.4, outcome: 'failure' },
       { from: 'good', to: 'sli', tone: 'brand', rate: 2.4 },
+    ],
+    steps: [
+      { from: 'reqs', to: 'good', label: 'Fast and non-5xx: good event' },
+      { from: 'reqs', to: 'bad', label: 'Slow or 5xx: bad event', outcome: 'failure' },
+      { from: 'good', to: 'sli', label: 'Good over valid: 99.93%' },
     ],
   },
 
@@ -202,6 +246,11 @@ export const foundationVisuals: Record<string, VisualSpec> = {
       { from: 'slo', to: 'budget', tone: 'ok', rate: 2 },
       { from: 'budget', to: 'freeze', tone: 'danger', rate: 1, outcome: 'failure' },
     ],
+    steps: [
+      { from: 'sli', to: 'slo', label: 'Measure against 99.9% target' },
+      { from: 'slo', to: 'budget', label: '0.1% of 30 days: 43 min' },
+      { from: 'budget', to: 'freeze', label: 'Budget spent: freeze risky changes', outcome: 'failure' },
+    ],
   },
 
   sla: {
@@ -216,6 +265,10 @@ export const foundationVisuals: Record<string, VisualSpec> = {
     edges: [
       { from: 'sli', to: 'slo', tone: 'brand', rate: 2 },
       { from: 'slo', to: 'sla', tone: 'ok', rate: 2 },
+    ],
+    steps: [
+      { from: 'sli', to: 'slo', label: 'Alerts fire below 99.9%' },
+      { from: 'slo', to: 'sla', label: 'Credits owed only below 99.5%' },
     ],
   },
 
@@ -233,6 +286,11 @@ export const foundationVisuals: Record<string, VisualSpec> = {
       { from: 'signal', to: 'page', tone: 'danger', rate: 1.2, outcome: 'failure' },
       { from: 'signal', to: 'ticket', tone: 'warn', rate: 1.6, outcome: 'warning' },
       { from: 'page', to: 'runbook', tone: 'ok', rate: 1.2 },
+    ],
+    steps: [
+      { from: 'signal', to: 'page', label: 'Burn 14x: gone in 2 hours', outcome: 'failure' },
+      { from: 'page', to: 'runbook', label: 'On-call opens the runbook' },
+      { from: 'signal', to: 'ticket', label: 'Burn 2x: a ticket, no page', outcome: 'warning' },
     ],
   },
 
@@ -252,6 +310,14 @@ export const foundationVisuals: Record<string, VisualSpec> = {
       { from: 'event', to: 'b', tone: 'ok', rate: 1.6 },
       { from: 'orch', to: 'result', tone: 'brand', rate: 1.6 },
       { from: 'a', to: 'result', tone: 'muted', rate: 1.2, dashed: true },
+      { from: 'b', to: 'result', tone: 'muted', rate: 1.2, dashed: true },
+    ],
+    steps: [
+      { from: 'event', to: 'a', label: 'Payment reacts to OrderPlaced' },
+      { from: 'event', to: 'b', label: 'Shipping reacts on its own' },
+      { from: 'a', to: 'result', label: 'Payment finishes its part' },
+      { from: 'b', to: 'result', label: 'Done, but no one owns it', outcome: 'warning' },
+      { from: 'orch', to: 'result', label: 'Orchestration: one service runs it' },
     ],
   },
 };

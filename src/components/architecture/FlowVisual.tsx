@@ -270,19 +270,24 @@ export function FlowVisual({
   const height = spec.height ?? 320;
 
   return (
-    <figure
-      ref={autoplay.ref}
-      className={cn('relative overflow-hidden rounded-2xl border border-line bg-canvas', className)}
-    >
-      {active && stepIndex !== null ? (
-        // The caption is a banner, not an edge label: on a short edge it would
-        // land on top of a node and become unreadable.
-        <span className="absolute left-3 top-3 z-20 inline-flex items-center gap-2 rounded-lg border border-brand/40 bg-surface px-2.5 py-1.5 text-[11px] font-medium text-brand shadow-card">
-          <span className="font-mono text-faint">
-            {stepIndex + 1}/{steps.length}
-          </span>
-          {active.label}
-        </span>
+    <figure ref={autoplay.ref} className={cn('overflow-hidden rounded-2xl border border-line bg-canvas', className)}>
+      {steps.length > 0 ? (
+        // The step caption gets its own strip above the canvas. Not an edge label
+        // (on a short edge it lands on a node), and not floated over the canvas
+        // (it covered whichever node sat top-left). The strip is always there, so
+        // switching between Live and a step never shifts the Diagram.
+        <div className="flex items-center gap-2 border-b border-line px-4 py-2 text-[11px] font-medium">
+          {active && stepIndex !== null ? (
+            <>
+              <span className="font-mono text-faint">
+                {stepIndex + 1}/{steps.length}
+              </span>
+              <span className="text-brand">{active.label}</span>
+            </>
+          ) : (
+            <span className="text-muted">Live traffic - pick a step to follow one request</span>
+          )}
+        </div>
       ) : null}
       <DiagramCanvas
         layout={layout}

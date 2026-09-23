@@ -24,7 +24,8 @@ export const systemVisuals: Record<string, VisualSpec> = {
       { from: 'browser', to: 'resolver', label: 'Cache miss, ask resolver' },
       { from: 'resolver', to: 'tld', label: 'Walk to the .com TLD' },
       { from: 'tld', to: 'auth', label: 'Ask the authoritative server' },
-      { from: 'auth', to: 'ip', label: 'Answer cached for the TTL' },
+      { from: 'auth', to: 'ip', label: 'Returns the A record, TTL 60s' },
+      { from: 'resolver', to: 'browser', label: 'Repeat lookups hit the cache', outcome: 'cache-hit' },
     ],
   },
 
@@ -44,12 +45,16 @@ export const systemVisuals: Record<string, VisualSpec> = {
       { from: 'users', to: 'us', tone: 'ok', rate: 2.2 },
       { from: 'users', to: 'ap', tone: 'ok', rate: 1.8 },
       { from: 'eu', to: 'origin', tone: 'muted', dashed: true, rate: 0.3, label: 'on miss' },
+      { from: 'us', to: 'origin', tone: 'muted', dashed: true, rate: 0.3 },
       { from: 'ap', to: 'origin', tone: 'muted', dashed: true, rate: 0.3 },
     ],
     steps: [
-      { from: 'users', to: 'ap', label: 'User routed to nearest edge', outcome: 'cache-hit' },
-      { from: 'ap', to: 'origin', label: 'Only a miss goes to origin', outcome: 'warning' },
-      { from: 'users', to: 'eu', label: '13 ms instead of 220 ms', outcome: 'cache-hit' },
+      { from: 'users', to: 'eu', label: 'Paris user routed to nearest edge' },
+      { from: 'eu', to: 'origin', label: 'Miss: edge fetches from origin', outcome: 'warning' },
+      { from: 'origin', to: 'eu', label: 'Copy stored at the edge' },
+      { from: 'users', to: 'eu', label: 'Next Paris user: 11 ms hit', outcome: 'cache-hit' },
+      { from: 'users', to: 'us', label: 'US users hit the US edge', outcome: 'cache-hit' },
+      { from: 'users', to: 'ap', label: 'Asia: 13 ms, not 220 ms', outcome: 'cache-hit' },
     ],
   },
 
@@ -65,6 +70,13 @@ export const systemVisuals: Record<string, VisualSpec> = {
     edges: [
       { from: 'user', to: 'edge', tone: 'brand', rate: 4 },
       { from: 'edge', to: 'origin', tone: 'muted', dashed: true, rate: 0.2, label: 'rarely' },
+    ],
+    steps: [
+      { from: 'user', to: 'edge', label: 'Cache key: host plus path' },
+      { from: 'edge', to: 'origin', label: 'First request misses, fetch once', outcome: 'warning' },
+      { from: 'origin', to: 'edge', label: 'Stored for a year, immutable' },
+      { from: 'user', to: 'edge', label: 'Every later request hits', outcome: 'cache-hit' },
+      { from: 'user', to: 'edge', label: 'New build, new URL, no purge' },
     ],
   },
 
@@ -87,8 +99,11 @@ export const systemVisuals: Record<string, VisualSpec> = {
     ],
     steps: [
       { from: 'client', to: 'gw', label: 'GET /api/orders/123' },
-      { from: 'gw', to: 'orders', label: 'Token valid, quota free' },
-      { from: 'gw', to: 'pay', label: 'Invalid token: 401 here', outcome: 'failure' },
+      { from: 'gw', to: 'orders', label: 'Token valid, routed to Orders' },
+      { from: 'gw', to: 'users', label: '/api/users/* goes to Users' },
+      { from: 'gw', to: 'pay', label: '/api/payments/* goes to Payments' },
+      { from: 'client', to: 'gw', label: 'Bad token: 401 at the gateway', outcome: 'failure' },
+      { from: 'client', to: 'gw', label: 'Over quota: 429, no service called', outcome: 'warning' },
     ],
   },
 
@@ -109,6 +124,13 @@ export const systemVisuals: Record<string, VisualSpec> = {
       { from: 'proxy', to: 'static', tone: 'ok', rate: 1.6 },
       { from: 'proxy', to: 'ws', tone: 'ok', rate: 0.8 },
     ],
+    steps: [
+      { from: 'client', to: 'proxy', label: 'TLS ends at the proxy' },
+      { from: 'proxy', to: 'api', label: '/api/* routed to app servers' },
+      { from: 'proxy', to: 'static', label: '/static/* served from storage' },
+      { from: 'proxy', to: 'ws', label: '/ws upgraded to WebSocket service' },
+      { from: 'proxy', to: 'client', label: 'Client never sees backend addresses' },
+    ],
   },
 
   'forward-proxy': {
@@ -126,6 +148,12 @@ export const systemVisuals: Record<string, VisualSpec> = {
       { from: 'c2', to: 'proxy', tone: 'brand', rate: 1.6 },
       { from: 'proxy', to: 'net', tone: 'ok', rate: 2.6 },
     ],
+    steps: [
+      { from: 'c1', to: 'proxy', label: 'Laptop sends via the proxy' },
+      { from: 'proxy', to: 'net', label: 'Allowed, sent from the proxy IP' },
+      { from: 'net', to: 'proxy', label: 'Response logged for the audit' },
+      { from: 'c2', to: 'proxy', label: 'Blocked domain denied at proxy', outcome: 'failure' },
+    ],
   },
 
   'http-https': {
@@ -140,6 +168,14 @@ export const systemVisuals: Record<string, VisualSpec> = {
     edges: [
       { from: 'client', to: 'cache', tone: 'brand', rate: 3.4 },
       { from: 'cache', to: 'server', tone: 'violet', rate: 0.8, label: 'revalidate' },
+    ],
+    steps: [
+      { from: 'client', to: 'cache', label: 'GET is safe to cache' },
+      { from: 'cache', to: 'server', label: 'Miss: forwarded to the server' },
+      { from: 'server', to: 'cache', label: '200 OK, ETag, max-age 300' },
+      { from: 'client', to: 'cache', label: 'Within 300 s: served from cache', outcome: 'cache-hit' },
+      { from: 'cache', to: 'server', label: 'Expired: revalidate with If-None-Match' },
+      { from: 'server', to: 'cache', label: '304 Not Modified, no body', outcome: 'cache-hit' },
     ],
   },
 
@@ -159,6 +195,13 @@ export const systemVisuals: Record<string, VisualSpec> = {
       { from: 'send', to: 'udp', tone: 'warn', rate: 3.4 },
       { from: 'udp', to: 'recv', tone: 'warn', rate: 2.8, outcome: 'warning' },
     ],
+    steps: [
+      { from: 'send', to: 'tcp', label: 'TCP: handshake, then numbered bytes' },
+      { from: 'tcp', to: 'recv', label: 'Every byte acknowledged, in order' },
+      { from: 'tcp', to: 'recv', label: 'Lost packet resent: late, not missing', outcome: 'warning' },
+      { from: 'send', to: 'udp', label: 'UDP: no handshake, just send' },
+      { from: 'udp', to: 'recv', label: 'Lost datagram stays lost', outcome: 'failure' },
+    ],
   },
 
   'what-happens-when-you-type-a-url': {
@@ -172,7 +215,7 @@ export const systemVisuals: Record<string, VisualSpec> = {
       { id: 'cdn', kind: 'cdn', label: 'CDN edge', x: 600, y: 30, w: 130, h: 70 },
       { id: 'lb', kind: 'load-balancer', label: 'Load Balancer', x: 590, y: 160, w: 150, h: 70 },
       { id: 'api', kind: 'server', label: 'Backend', x: 390, y: 160, w: 150, h: 70 },
-      { id: 'cache', kind: 'cache', label: 'Cache', x: 210, y: 160, w: 140, h: 70 },
+      { id: 'cache', kind: 'cache', label: 'Cache', x: 400, y: 270, w: 140, h: 68 },
       { id: 'db', kind: 'sql', label: 'Database', x: 210, y: 270, w: 140, h: 68 },
       { id: 'render', kind: 'client', label: 'Render', sub: '120 ms', x: 30, y: 160, w: 140, h: 80 },
     ],
@@ -182,18 +225,22 @@ export const systemVisuals: Record<string, VisualSpec> = {
       { from: 'tls', to: 'cdn', tone: 'violet', rate: 1.4 },
       { from: 'cdn', to: 'lb', tone: 'violet', rate: 1, dashed: true },
       { from: 'lb', to: 'api', tone: 'ok', rate: 1.2 },
+      // The backend asks the cache, and only on a miss the database; the response
+      // goes back from the backend, not from the cache.
       { from: 'api', to: 'cache', tone: 'danger', rate: 1.2, outcome: 'cache-hit' },
-      { from: 'cache', to: 'db', tone: 'muted', rate: 0.4, dashed: true },
-      { from: 'cache', to: 'render', tone: 'ok', rate: 1.2 },
+      { from: 'api', to: 'db', tone: 'muted', rate: 0.4, dashed: true },
+      { from: 'api', to: 'render', tone: 'ok', rate: 1.2 },
     ],
     steps: [
       { from: 'browser', to: 'dns', label: 'Resolve the hostname' },
       { from: 'dns', to: 'tls', label: 'Connect and encrypt' },
-      { from: 'tls', to: 'cdn', label: 'Nearest edge answers' },
-      { from: 'cdn', to: 'lb', label: 'Miss reaches your stack' },
+      { from: 'tls', to: 'cdn', label: 'Edge serves cached static files', outcome: 'cache-hit' },
+      { from: 'cdn', to: 'lb', label: 'Page request reaches your stack' },
       { from: 'lb', to: 'api', label: 'A healthy server handles it' },
-      { from: 'api', to: 'cache', label: 'Cache hit, no query', outcome: 'cache-hit' },
-      { from: 'cache', to: 'render', label: 'Browser paints the page' },
+      { from: 'api', to: 'cache', label: 'Cache miss for this page', outcome: 'warning' },
+      { from: 'api', to: 'db', label: 'Query the database, fill cache' },
+      { from: 'api', to: 'cache', label: 'Next request hits the cache', outcome: 'cache-hit' },
+      { from: 'api', to: 'render', label: 'Response returns, browser paints' },
     ],
   },
 
@@ -216,15 +263,15 @@ export const systemVisuals: Record<string, VisualSpec> = {
       { from: 'queue', to: 'w3', tone: 'ok', rate: 1 },
     ],
     steps: [
-      { from: 'producer', to: 'queue', label: 'Producer never waits' },
-      { from: 'queue', to: 'w1', label: 'Workers pull at their pace' },
-      { from: 'queue', to: 'w2', label: 'Consumption below arrivals', outcome: 'warning' },
-      { from: 'queue', to: 'w3', label: 'Depth grows 40 per second', outcome: 'warning' },
+      { from: 'producer', to: 'queue', label: 'Enqueue, return at once' },
+      { from: 'queue', to: 'w1', label: 'Worker pulls, processes, acks' },
+      { from: 'queue', to: 'w2', label: 'Next message, next free worker' },
+      { from: 'queue', to: 'w3', label: 'Three workers drain 60 per second' },
+      { from: 'producer', to: 'queue', label: '100 in: depth grows 40/s', outcome: 'warning' },
     ],
   },
 
   kafka: {
-    asymmetric: 'Each partition is assigned to one consumer per group - that is how groups divide work.',
     width: 760,
     height: 310,
     caption: 'Ordered per partition, replayable, and read independently by each consumer group.',
@@ -240,9 +287,19 @@ export const systemVisuals: Record<string, VisualSpec> = {
       { from: 'prod', to: 'p0', tone: 'brand', rate: 1.4 },
       { from: 'prod', to: 'p1', tone: 'brand', rate: 1.4 },
       { from: 'prod', to: 'p2', tone: 'brand', rate: 1.4 },
-      { from: 'p0', to: 'ga', tone: 'ok', rate: 1.4 },
+      { from: 'p0', to: 'ga', tone: 'ok', rate: 1.2 },
       { from: 'p1', to: 'ga', tone: 'ok', rate: 1.2 },
-      { from: 'p2', to: 'gb', tone: 'violet', rate: 1.2 },
+      { from: 'p2', to: 'ga', tone: 'ok', rate: 1.2 },
+      { from: 'p0', to: 'gb', tone: 'violet', rate: 0.8 },
+      { from: 'p1', to: 'gb', tone: 'violet', rate: 0.8 },
+      { from: 'p2', to: 'gb', tone: 'violet', rate: 0.8 },
+    ],
+    steps: [
+      { from: 'prod', to: 'p0', label: 'Key hash picks the partition' },
+      { from: 'prod', to: 'p1', label: 'Different key, different partition' },
+      { from: 'p0', to: 'ga', label: 'Group A reads at its offset' },
+      { from: 'p0', to: 'gb', label: 'Group B reads the same record' },
+      { from: 'p2', to: 'gb', label: 'Rewind the offset to replay' },
     ],
   },
 
@@ -263,6 +320,12 @@ export const systemVisuals: Record<string, VisualSpec> = {
       { from: 'topic', to: 's2', tone: 'ok', rate: 2 },
       { from: 'topic', to: 's3', tone: 'ok', rate: 2 },
     ],
+    steps: [
+      { from: 'pub', to: 'topic', label: 'Publish user.signed_up once' },
+      { from: 'topic', to: 's1', label: 'Welcome email gets a copy' },
+      { from: 'topic', to: 's2', label: 'CRM sync gets its own copy' },
+      { from: 'topic', to: 's3', label: 'Analytics too, at its pace' },
+    ],
   },
 
   'event-driven-architecture': {
@@ -281,6 +344,12 @@ export const systemVisuals: Record<string, VisualSpec> = {
       { from: 'bus', to: 'pay', tone: 'ok', rate: 2 },
       { from: 'bus', to: 'inv', tone: 'ok', rate: 2 },
       { from: 'bus', to: 'notif', tone: 'ok', rate: 2 },
+    ],
+    steps: [
+      { from: 'order', to: 'bus', label: 'OrderPlaced: no idea who listens' },
+      { from: 'bus', to: 'pay', label: 'Payments captures the charge' },
+      { from: 'bus', to: 'inv', label: 'Inventory reserves the stock' },
+      { from: 'bus', to: 'notif', label: 'Notifications emails the customer' },
     ],
   },
 
@@ -301,6 +370,13 @@ export const systemVisuals: Record<string, VisualSpec> = {
       { from: 'queue', to: 'worker', tone: 'ok', rate: 1.8 },
       { from: 'worker', to: 'store', tone: 'info', rate: 1.2 },
     ],
+    steps: [
+      { from: 'user', to: 'api', label: 'User asks for an export' },
+      { from: 'api', to: 'queue', label: 'Enqueue the job id' },
+      { from: 'api', to: 'user', label: '202 Accepted in milliseconds' },
+      { from: 'queue', to: 'worker', label: 'A free worker pulls it' },
+      { from: 'worker', to: 'store', label: 'Slow render, file saved' },
+    ],
   },
 
   'task-queues': {
@@ -320,6 +396,12 @@ export const systemVisuals: Record<string, VisualSpec> = {
       { from: 'high', to: 'w1', tone: 'ok', rate: 1.6 },
       { from: 'bulk', to: 'w2', tone: 'warn', rate: 1.4 },
     ],
+    steps: [
+      { from: 'app', to: 'bulk', label: 'Import enqueues 50,000 jobs' },
+      { from: 'bulk', to: 'w2', label: 'Bulk workers chew the backlog', outcome: 'warning' },
+      { from: 'app', to: 'high', label: 'Password reset: its own queue' },
+      { from: 'high', to: 'w1', label: 'Sent in seconds, not after import' },
+    ],
   },
 
   'rabbitmq-concepts': {
@@ -336,6 +418,12 @@ export const systemVisuals: Record<string, VisualSpec> = {
       { from: 'pub', to: 'ex', tone: 'brand', rate: 2.4 },
       { from: 'ex', to: 'q1', tone: 'ok', rate: 2.4, label: 'order.*' },
       { from: 'ex', to: 'q2', tone: 'ok', rate: 2.4, label: '*.created' },
+    ],
+    steps: [
+      { from: 'pub', to: 'ex', label: 'Publish with key order.created' },
+      { from: 'ex', to: 'q1', label: 'Matches order.*, copy queued' },
+      { from: 'ex', to: 'q2', label: 'Also matches *.created, copy queued' },
+      { from: 'pub', to: 'ex', label: 'user.updated matches nothing: dropped', outcome: 'failure' },
     ],
   },
 
@@ -381,6 +469,12 @@ export const systemVisuals: Record<string, VisualSpec> = {
       { from: 'client', to: 'a3', tone: 'ok', rate: 1.2 },
       { from: 'a3', to: 'ok', tone: 'ok', rate: 1.2 },
     ],
+    steps: [
+      { from: 'client', to: 'a1', label: 'Attempt 1: 503, retryable', outcome: 'failure' },
+      { from: 'client', to: 'a2', label: 'Backoff, then attempt 2 times out', outcome: 'warning' },
+      { from: 'client', to: 'a3', label: 'Same idempotency key: 200 OK' },
+      { from: 'a3', to: 'ok', label: 'User never saw the errors' },
+    ],
   },
 
   'exponential-backoff': {
@@ -401,6 +495,14 @@ export const systemVisuals: Record<string, VisualSpec> = {
       { from: 'w1', to: 'svc', tone: 'ok', rate: 0.8 },
       { from: 'w2', to: 'svc', tone: 'ok', rate: 0.6 },
       { from: 'w4', to: 'svc', tone: 'ok', rate: 0.4 },
+    ],
+    steps: [
+      { from: 'c', to: 'w1', label: 'All fail, wait ~1 s, jittered', outcome: 'warning' },
+      { from: 'w1', to: 'svc', label: 'Retries arrive spread, not together' },
+      { from: 'c', to: 'w2', label: 'Still failing? Wait ~2 s', outcome: 'warning' },
+      { from: 'w2', to: 'svc', label: 'Fewer retries per second' },
+      { from: 'c', to: 'w4', label: 'Then ~4 s, then capped', outcome: 'warning' },
+      { from: 'w4', to: 'svc', label: 'Flat load lets it recover' },
     ],
   },
 
@@ -423,6 +525,13 @@ export const systemVisuals: Record<string, VisualSpec> = {
       { from: 'h1', to: 'pool', tone: 'ok', rate: 1.2 },
       { from: 'h3', to: 'pool', tone: 'ok', rate: 1.2 },
     ],
+    steps: [
+      { from: 'lb', to: 'h1', label: 'Probe every 5 s: 200 OK' },
+      { from: 'lb', to: 'h2', label: 'Three failures in a row: ejected', outcome: 'failure' },
+      { from: 'lb', to: 'h3', label: 'api-3 passes, stays in' },
+      { from: 'h1', to: 'pool', label: 'Traffic served by 2 of 3' },
+      { from: 'lb', to: 'h2', label: 'Consecutive passes readmit it later' },
+    ],
   },
 
   failover: {
@@ -439,6 +548,12 @@ export const systemVisuals: Record<string, VisualSpec> = {
       { from: 'app', to: 'old', tone: 'muted', dashed: true, label: 'unreachable' },
       { from: 'app', to: 'new', tone: 'ok', rate: 2.4 },
       { from: 'new', to: 'replica', tone: 'violet', rate: 1.2, outcome: 'warning' },
+    ],
+    steps: [
+      { from: 'app', to: 'old', label: 'Health checks fail: primary down', outcome: 'failure' },
+      { from: 'app', to: 'old', label: 'Old primary fenced, writes refused', outcome: 'failure' },
+      { from: 'app', to: 'new', label: 'Replica promoted, app repointed' },
+      { from: 'new', to: 'replica', label: 'Last replica follows new primary' },
     ],
   },
 
@@ -459,6 +574,12 @@ export const systemVisuals: Record<string, VisualSpec> = {
       { from: 'traffic', to: 's3', tone: 'muted', dashed: true },
       { from: 's1', to: 'ok', tone: 'ok', rate: 1.6 },
       { from: 's2', to: 'ok', tone: 'ok', rate: 1.6 },
+    ],
+    steps: [
+      { from: 'traffic', to: 's3', label: 'Zone C goes down', outcome: 'failure' },
+      { from: 'traffic', to: 's1', label: 'Zone A absorbs its share' },
+      { from: 'traffic', to: 's2', label: 'Zone B too, at 60% CPU' },
+      { from: 's1', to: 'ok', label: 'Peak still served: N+1 held' },
     ],
   },
 
@@ -481,6 +602,12 @@ export const systemVisuals: Record<string, VisualSpec> = {
       { from: 's2', to: 'db', tone: 'danger', rate: 1.4, outcome: 'warning' },
       { from: 's3', to: 'db', tone: 'danger', rate: 1.4, outcome: 'warning' },
     ],
+    steps: [
+      { from: 'lb', to: 's1', label: 'Request lands on any API' },
+      { from: 's1', to: 'db', label: 'Every read needs one database', outcome: 'warning' },
+      { from: 's2', to: 'db', label: 'Database down: every API fails', outcome: 'failure' },
+      { from: 's3', to: 'db', label: 'Redundant tier, same single outage', outcome: 'failure' },
+    ],
   },
 
   'fault-tolerance': {
@@ -497,6 +624,12 @@ export const systemVisuals: Record<string, VisualSpec> = {
       { from: 'user', to: 'api', tone: 'brand', rate: 3 },
       { from: 'api', to: 'recs', tone: 'muted', dashed: true, label: 'fails fast' },
       { from: 'api', to: 'popular', tone: 'ok', rate: 2.6, outcome: 'cache-hit' },
+    ],
+    steps: [
+      { from: 'user', to: 'api', label: 'User opens the home page' },
+      { from: 'api', to: 'recs', label: 'Recommendations down: 200 ms timeout', outcome: 'failure' },
+      { from: 'api', to: 'popular', label: 'Fall back to popular items', outcome: 'cache-hit' },
+      { from: 'api', to: 'user', label: 'Page renders, minus personalisation' },
     ],
   },
 
@@ -515,7 +648,16 @@ export const systemVisuals: Record<string, VisualSpec> = {
       { from: 'lb', to: 'a', tone: 'ok', rate: 2.4 },
       { from: 'lb', to: 'b', tone: 'ok', rate: 2.4 },
       { from: 'a', to: 'dba', tone: 'info', rate: 1.6 },
+      { from: 'b', to: 'dba', tone: 'info', rate: 1.6 },
       { from: 'dba', to: 'dbb', tone: 'violet', rate: 1.2, label: 'sync', outcome: 'warning' },
+    ],
+    steps: [
+      { from: 'lb', to: 'a', label: 'Traffic spread over two zones' },
+      { from: 'lb', to: 'b', label: 'Both zones serve at once' },
+      { from: 'b', to: 'dba', label: 'Both zones write the primary' },
+      { from: 'dba', to: 'dbb', label: 'Each write synced to standby', outcome: 'warning' },
+      { from: 'dba', to: 'dbb', label: 'Zone A lost: standby promoted', outcome: 'warning' },
+      { from: 'lb', to: 'b', label: 'Zone B serves everything, no human' },
     ],
   },
 
@@ -531,6 +673,11 @@ export const systemVisuals: Record<string, VisualSpec> = {
     edges: [
       { from: 'prod', to: 'backup', tone: 'violet', rate: 1.4, label: 'continuous' },
       { from: 'backup', to: 'restore', tone: 'ok', rate: 1, label: 'monthly' },
+    ],
+    steps: [
+      { from: 'prod', to: 'backup', label: 'Continuous copy to region B' },
+      { from: 'backup', to: 'restore', label: 'Monthly drill: restore for real' },
+      { from: 'backup', to: 'restore', label: 'Drill proves RTO and RPO' },
     ],
   },
 
@@ -574,6 +721,13 @@ export const systemVisuals: Record<string, VisualSpec> = {
       { from: 'leader', to: 'f2', tone: 'ok', rate: 2 },
       { from: 'leader', to: 'f3', tone: 'muted', dashed: true },
     ],
+    steps: [
+      { from: 'client', to: 'leader', label: 'Write reaches the leader' },
+      { from: 'leader', to: 'f1', label: 'Stored on Follower 1' },
+      { from: 'leader', to: 'f2', label: 'Stored on Follower 2: quorum' },
+      { from: 'leader', to: 'f3', label: 'Slow follower is not awaited', outcome: 'warning' },
+      { from: 'leader', to: 'client', label: 'Acknowledged only after quorum' },
+    ],
   },
 
   'eventual-consistency': {
@@ -590,6 +744,12 @@ export const systemVisuals: Record<string, VisualSpec> = {
       { from: 'client', to: 'a', tone: 'brand', rate: 2.4 },
       { from: 'a', to: 'b', tone: 'ok', rate: 1.4, outcome: 'warning' },
       { from: 'a', to: 'c', tone: 'warn', rate: 0.6, outcome: 'warning', dashed: true, label: '2 s behind' },
+    ],
+    steps: [
+      { from: 'client', to: 'a', label: 'Replica A accepts the write' },
+      { from: 'a', to: 'client', label: 'Acked before replication finishes' },
+      { from: 'a', to: 'b', label: 'Async copy reaches B: v5' },
+      { from: 'a', to: 'c', label: 'C lags 2 s, reads v4', outcome: 'warning' },
     ],
   },
 
@@ -612,6 +772,12 @@ export const systemVisuals: Record<string, VisualSpec> = {
       { from: 'n1', to: 'commit', tone: 'ok', rate: 1.4 },
       { from: 'n2', to: 'commit', tone: 'ok', rate: 1.4 },
     ],
+    steps: [
+      { from: 'leader', to: 'n1', label: 'Node 1 stores the entry' },
+      { from: 'leader', to: 'n2', label: 'Node 2 stores it too' },
+      { from: 'leader', to: 'n3', label: 'Node 3 lags, no ack', outcome: 'warning' },
+      { from: 'n2', to: 'commit', label: 'Three of five: entry commits' },
+    ],
   },
 
   'leader-election': {
@@ -628,6 +794,13 @@ export const systemVisuals: Record<string, VisualSpec> = {
       { from: 'old', to: 'c1', tone: 'muted', dashed: true, label: 'no heartbeat' },
       { from: 'c1', to: 'v1', tone: 'brand', rate: 1.6 },
       { from: 'c1', to: 'v2', tone: 'brand', rate: 1.6 },
+    ],
+    steps: [
+      { from: 'old', to: 'c1', label: 'Heartbeats stop arriving', outcome: 'failure' },
+      { from: 'c1', to: 'v1', label: 'Request votes for term 8' },
+      { from: 'c1', to: 'v2', label: 'Same request to every voter' },
+      { from: 'v1', to: 'c1', label: 'Vote granted' },
+      { from: 'v2', to: 'c1', label: 'Majority of votes: new leader' },
     ],
   },
 
@@ -647,6 +820,12 @@ export const systemVisuals: Record<string, VisualSpec> = {
       { from: 'w1', to: 'store', tone: 'danger', rate: 0.8, outcome: 'failure', label: 'stale token', labelT: 0.3 },
       { from: 'w2', to: 'store', tone: 'ok', rate: 1.4 },
     ],
+    steps: [
+      { from: 'w1', to: 'lock', label: 'Worker 1 takes lease, token 41' },
+      { from: 'w2', to: 'lock', label: 'Lease expired: Worker 2, token 42' },
+      { from: 'w2', to: 'store', label: 'Write with token 42 accepted' },
+      { from: 'w1', to: 'store', label: 'Worker 1 wakes, token 41 rejected', outcome: 'failure' },
+    ],
   },
 
   idempotency: {
@@ -665,10 +844,12 @@ export const systemVisuals: Record<string, VisualSpec> = {
       { from: 'api', to: 'charge', tone: 'violet', rate: 0.5 },
     ],
     steps: [
-      { from: 'client', to: 'api', label: 'First request with a key' },
-      { from: 'api', to: 'charge', label: 'Charge created once' },
-      { from: 'client', to: 'api', label: 'Timeout, client retries' },
-      { from: 'api', to: 'store', label: 'Same key, stored result', outcome: 'cache-hit' },
+      { from: 'client', to: 'api', label: 'Pay, Idempotency-Key 8f2c' },
+      { from: 'api', to: 'charge', label: 'Card charged once: ch_77' },
+      { from: 'api', to: 'store', label: 'Save the key with result' },
+      { from: 'client', to: 'api', label: 'Response lost, client retries', outcome: 'warning' },
+      { from: 'api', to: 'store', label: 'Same key found', outcome: 'cache-hit' },
+      { from: 'api', to: 'client', label: 'Stored result, no second charge' },
     ],
   },
 
@@ -686,6 +867,11 @@ export const systemVisuals: Record<string, VisualSpec> = {
       { from: 'client', to: 'app', tone: 'brand', rate: 4 },
       { from: 'app', to: 'db', tone: 'info', rate: 3 },
     ],
+    steps: [
+      { from: 'client', to: 'app', label: 'Request enters the one process' },
+      { from: 'app', to: 'db', label: 'One transaction across all features' },
+      { from: 'app', to: 'client', label: 'Response, no network hops inside' },
+    ],
   },
 
   'modular-monolith': {
@@ -693,15 +879,23 @@ export const systemVisuals: Record<string, VisualSpec> = {
     height: 280,
     caption: 'Service-shaped boundaries with no network between them - extraction stays cheap.',
     nodes: [
-      { id: 'orders', kind: 'service', label: 'orders', sub: 'own tables', x: 40, y: 100, w: 160, h: 80 },
-      { id: 'payments', kind: 'service', label: 'payments', sub: 'own tables', x: 230, y: 100, w: 160, h: 80 },
-      { id: 'catalog', kind: 'service', label: 'catalog', sub: 'own tables', x: 420, y: 100, w: 160, h: 80 },
-      { id: 'users', kind: 'service', label: 'users', sub: 'own tables', x: 600, y: 100, w: 130, h: 80 },
+      { id: 'orders', kind: 'service', label: 'orders', sub: 'own tables', x: 60, y: 100, w: 170, h: 80 },
+      { id: 'users', kind: 'service', label: 'users', sub: 'own tables', x: 500, y: 10, w: 170, h: 80 },
+      { id: 'catalog', kind: 'service', label: 'catalog', sub: 'own tables', x: 500, y: 100, w: 170, h: 80 },
+      { id: 'payments', kind: 'service', label: 'payments', sub: 'own tables', x: 500, y: 190, w: 170, h: 80 },
     ],
+    // Placing an order is what calls the other modules. A chain (payments
+    // calling catalog calling users) would claim dependencies that do not exist.
     edges: [
+      { from: 'orders', to: 'users', tone: 'ok', rate: 1.4 },
+      { from: 'orders', to: 'catalog', tone: 'ok', rate: 1.4 },
       { from: 'orders', to: 'payments', tone: 'ok', rate: 2 },
-      { from: 'payments', to: 'catalog', tone: 'ok', rate: 1.4 },
-      { from: 'catalog', to: 'users', tone: 'ok', rate: 1.4 },
+    ],
+    steps: [
+      { from: 'orders', to: 'users', label: 'Check buyer via users interface' },
+      { from: 'orders', to: 'catalog', label: 'Prices via catalog interface' },
+      { from: 'orders', to: 'payments', label: 'Charge: function call, no network' },
+      { from: 'payments', to: 'orders', label: 'Result returned in-process' },
     ],
   },
 
@@ -727,6 +921,14 @@ export const systemVisuals: Record<string, VisualSpec> = {
       { from: 'pay', to: 'pdb', tone: 'info', rate: 1.2 },
       { from: 'orders', to: 'pay', tone: 'warn', dashed: true, label: 'sync call', rate: 1, outcome: 'warning' },
     ],
+    steps: [
+      { from: 'gw', to: 'orders', label: 'Checkout routed to Orders' },
+      { from: 'orders', to: 'odb', label: 'Order saved in Orders DB' },
+      { from: 'orders', to: 'pay', label: 'Network call to Payments', outcome: 'warning' },
+      { from: 'pay', to: 'pdb', label: 'Payment stored in its DB' },
+      { from: 'gw', to: 'users', label: 'Profile request to Users' },
+      { from: 'users', to: 'udb', label: 'Only Users reads Users DB' },
+    ],
   },
 
   cqrs: {
@@ -746,6 +948,13 @@ export const systemVisuals: Record<string, VisualSpec> = {
       { from: 'proj', to: 'read', tone: 'violet', rate: 1.4, outcome: 'warning' },
       { from: 'query', to: 'read', tone: 'ok', rate: 4 },
     ],
+    steps: [
+      { from: 'cmd', to: 'write', label: 'Command validated, then written' },
+      { from: 'write', to: 'proj', label: 'Change published asynchronously', outcome: 'warning' },
+      { from: 'proj', to: 'read', label: 'Read model updated, a bit later', outcome: 'warning' },
+      { from: 'query', to: 'read', label: 'Query reads only the read model' },
+      { from: 'read', to: 'query', label: 'Screen-shaped answer, no joins' },
+    ],
   },
 
   'event-sourcing': {
@@ -762,6 +971,11 @@ export const systemVisuals: Record<string, VisualSpec> = {
       { from: 'cmd', to: 'stream', tone: 'brand', rate: 2 },
       { from: 'stream', to: 'snap', tone: 'muted', rate: 0.5, dashed: true },
       { from: 'stream', to: 'state', tone: 'ok', rate: 2 },
+    ],
+    steps: [
+      { from: 'cmd', to: 'stream', label: 'Deposit appended, nothing overwritten' },
+      { from: 'stream', to: 'snap', label: 'Snapshot saved at event 1000' },
+      { from: 'stream', to: 'state', label: 'Replay events after the snapshot' },
     ],
   },
 
@@ -784,6 +998,13 @@ export const systemVisuals: Record<string, VisualSpec> = {
       { from: 'f2', to: 'pool', tone: 'info', rate: 1.6 },
       { from: 'f3', to: 'pool', tone: 'info', rate: 1.6 },
     ],
+    steps: [
+      { from: 'events', to: 'f2', label: 'Warm instance takes a request' },
+      { from: 'f2', to: 'pool', label: 'Connects through the pooler' },
+      { from: 'events', to: 'f3', label: 'Concurrent request, another instance' },
+      { from: 'f3', to: 'pool', label: 'Pooler caps database connections' },
+      { from: 'events', to: 'f1', label: 'Burst needs a cold start', outcome: 'warning' },
+    ],
   },
 
   'service-oriented-architecture': {
@@ -800,6 +1021,11 @@ export const systemVisuals: Record<string, VisualSpec> = {
       { from: 'client', to: 'bus', tone: 'brand', rate: 3 },
       { from: 'bus', to: 'billing', tone: 'warn', rate: 1.6 },
       { from: 'bus', to: 'crm', tone: 'warn', rate: 1.6 },
+    ],
+    steps: [
+      { from: 'client', to: 'bus', label: 'Request enters the enterprise bus' },
+      { from: 'bus', to: 'billing', label: 'Bus transforms, routes to Billing' },
+      { from: 'bus', to: 'crm', label: 'Workflow logic now in bus', outcome: 'warning' },
     ],
   },
 
@@ -839,6 +1065,11 @@ export const systemVisuals: Record<string, VisualSpec> = {
       { from: 'user', to: 'auth', tone: 'brand', rate: 2 },
       { from: 'auth', to: 'token', tone: 'ok', rate: 2 },
     ],
+    steps: [
+      { from: 'user', to: 'auth', label: 'Password sent once' },
+      { from: 'auth', to: 'token', label: 'Salted hash matches: token issued' },
+      { from: 'auth', to: 'user', label: 'Client carries the token onward' },
+    ],
   },
 
   authorization: {
@@ -855,6 +1086,11 @@ export const systemVisuals: Record<string, VisualSpec> = {
       { from: 'req', to: 'check', tone: 'brand', rate: 3 },
       { from: 'check', to: 'deny', tone: 'danger', rate: 2, outcome: 'failure' },
       { from: 'check', to: 'allow', tone: 'ok', rate: 1 },
+    ],
+    steps: [
+      { from: 'req', to: 'check', label: 'Logged in, but is it theirs?' },
+      { from: 'check', to: 'deny', label: 'Tenant 7 is not 3: 403', outcome: 'failure' },
+      { from: 'check', to: 'allow', label: 'Only a tenant 3 invoice passes' },
     ],
   },
 
@@ -879,6 +1115,12 @@ export const systemVisuals: Record<string, VisualSpec> = {
       { from: 's2', to: 'keys', tone: 'muted', dashed: true },
       { from: 's3', to: 'keys', tone: 'muted', dashed: true },
     ],
+    steps: [
+      { from: 'client', to: 's1', label: 'Token sent to Service A' },
+      { from: 's1', to: 'keys', label: 'Signature checked with public key' },
+      { from: 'client', to: 's2', label: 'Service B verifies, no auth call' },
+      { from: 'client', to: 's3', label: 'Revoked token passes until expiry', outcome: 'warning' },
+    ],
   },
 
   oauth: {
@@ -886,15 +1128,26 @@ export const systemVisuals: Record<string, VisualSpec> = {
     height: 280,
     caption: 'The app never sees the password - only a scoped, revocable token.',
     nodes: [
-      { id: 'user', kind: 'client', label: 'User', x: 40, y: 95, w: 130, h: 74 },
+      { id: 'user', kind: 'client', label: 'User', x: 40, y: 15, w: 130, h: 74 },
       { id: 'app', kind: 'server', label: 'Client app', x: 230, y: 95, w: 150, h: 78 },
       { id: 'auth', kind: 'api-gateway', label: 'Authorization server', sub: 'login + consent', x: 480, y: 15, w: 200, h: 82 },
       { id: 'res', kind: 'service', label: 'Resource server', sub: 'checks scopes', x: 480, y: 180, w: 200, h: 82 },
     ],
     edges: [
       { from: 'user', to: 'app', tone: 'brand', rate: 1.6 },
+      // The user signs in at the authorization server itself - that direct hop
+      // is why the client app never sees the password.
+      { from: 'user', to: 'auth', tone: 'violet', rate: 1 },
       { from: 'app', to: 'auth', tone: 'violet', rate: 1.4 },
       { from: 'app', to: 'res', tone: 'ok', rate: 2, label: 'access token' },
+    ],
+    steps: [
+      { from: 'user', to: 'app', label: 'User clicks Sign in' },
+      { from: 'app', to: 'auth', label: 'Redirect to authorization server' },
+      { from: 'user', to: 'auth', label: 'Password and consent go here' },
+      { from: 'auth', to: 'app', label: 'Code swapped for scoped token' },
+      { from: 'app', to: 'res', label: 'API call with access token' },
+      { from: 'res', to: 'app', label: 'Scopes checked, data returned' },
     ],
   },
 
@@ -910,6 +1163,13 @@ export const systemVisuals: Record<string, VisualSpec> = {
     edges: [
       { from: 'client', to: 'tls', tone: 'brand', rate: 2.4 },
       { from: 'tls', to: 'server', tone: 'ok', rate: 2.4 },
+    ],
+    steps: [
+      { from: 'client', to: 'tls', label: 'ClientHello with key share' },
+      { from: 'server', to: 'tls', label: 'Certificate plus server key share' },
+      { from: 'tls', to: 'client', label: 'Chain verified, session keys agreed' },
+      { from: 'client', to: 'tls', label: 'HTTP request, now encrypted' },
+      { from: 'tls', to: 'server', label: 'Only ciphertext crosses the wire' },
     ],
   },
 
@@ -928,6 +1188,11 @@ export const systemVisuals: Record<string, VisualSpec> = {
       { from: 'waf', to: 'blocked', tone: 'danger', rate: 1.6, outcome: 'failure' },
       { from: 'waf', to: 'app', tone: 'ok', rate: 2.4 },
     ],
+    steps: [
+      { from: 'net', to: 'waf', label: 'Every request inspected at edge' },
+      { from: 'waf', to: 'blocked', label: 'SQL injection matches a rule', outcome: 'failure' },
+      { from: 'waf', to: 'app', label: 'Clean request reaches the app' },
+    ],
   },
 
   'api-keys': {
@@ -945,6 +1210,11 @@ export const systemVisuals: Record<string, VisualSpec> = {
       { from: 'i2', to: 'gw', tone: 'danger', rate: 3.4, outcome: 'failure', label: 'over quota' },
       { from: 'gw', to: 'api', tone: 'ok', rate: 2 },
     ],
+    steps: [
+      { from: 'i1', to: 'gw', label: 'Integration A sends its key' },
+      { from: 'gw', to: 'api', label: 'Within quota: forwarded' },
+      { from: 'i2', to: 'gw', label: 'B over its quota: 429', outcome: 'failure' },
+    ],
   },
 
   'secrets-management': {
@@ -959,6 +1229,12 @@ export const systemVisuals: Record<string, VisualSpec> = {
     edges: [
       { from: 'wl', to: 'vault', tone: 'brand', rate: 1.4 },
       { from: 'vault', to: 'db', tone: 'ok', rate: 1.4 },
+    ],
+    steps: [
+      { from: 'wl', to: 'vault', label: 'Workload proves its IAM identity' },
+      { from: 'vault', to: 'db', label: 'Secret manager mints 15-minute login' },
+      { from: 'vault', to: 'wl', label: 'Credential delivered at runtime' },
+      { from: 'vault', to: 'db', label: 'Expired login revoked automatically' },
     ],
   },
 
@@ -975,6 +1251,13 @@ export const systemVisuals: Record<string, VisualSpec> = {
     edges: [
       { from: 'client', to: 'cache', tone: 'brand', rate: 3.4 },
       { from: 'cache', to: 'api', tone: 'ok', rate: 1.2, label: 'on miss' },
+    ],
+    steps: [
+      { from: 'client', to: 'cache', label: 'GET /orders/123' },
+      { from: 'cache', to: 'api', label: 'Miss: forwarded to the origin' },
+      { from: 'api', to: 'cache', label: 'Cacheable response stored' },
+      { from: 'cache', to: 'client', label: 'Repeat GET answered by cache', outcome: 'cache-hit' },
+      { from: 'cache', to: 'api', label: 'POST always passes through' },
     ],
   },
 
@@ -995,6 +1278,13 @@ export const systemVisuals: Record<string, VisualSpec> = {
       { from: 'gql', to: 'customers', tone: 'info', rate: 1.6 },
       { from: 'gql', to: 'items', tone: 'info', rate: 1.6 },
     ],
+    steps: [
+      { from: 'client', to: 'gql', label: 'One query, only needed fields' },
+      { from: 'gql', to: 'orders', label: 'Resolver fetches the orders' },
+      { from: 'gql', to: 'customers', label: 'Customers batched into one query' },
+      { from: 'gql', to: 'items', label: 'Items batched too, no N+1' },
+      { from: 'gql', to: 'client', label: 'Exactly the requested shape' },
+    ],
   },
 
   grpc: {
@@ -1009,6 +1299,12 @@ export const systemVisuals: Record<string, VisualSpec> = {
     edges: [
       { from: 'a', to: 'conn', tone: 'brand', rate: 5 },
       { from: 'conn', to: 'b', tone: 'ok', rate: 5 },
+    ],
+    steps: [
+      { from: 'a', to: 'conn', label: 'Stub serializes a protobuf call' },
+      { from: 'conn', to: 'b', label: 'Calls multiplexed on one connection' },
+      { from: 'b', to: 'conn', label: 'Binary reply on the same stream' },
+      { from: 'conn', to: 'a', label: 'Stub returns a typed result' },
     ],
   },
 
@@ -1029,6 +1325,12 @@ export const systemVisuals: Record<string, VisualSpec> = {
       { from: 'other', to: 'bus', tone: 'warn', rate: 1.4 },
       { from: 'bus', to: 'gw', tone: 'warn', rate: 1.4 },
     ],
+    steps: [
+      { from: 'client', to: 'gw', label: 'HTTP upgrade, socket stays open' },
+      { from: 'other', to: 'bus', label: 'Node 7 publishes for the user' },
+      { from: 'bus', to: 'gw', label: 'Pub/Sub reaches the socket holder' },
+      { from: 'gw', to: 'client', label: 'Pushed down the open socket' },
+    ],
   },
 
   'server-sent-events': {
@@ -1043,6 +1345,12 @@ export const systemVisuals: Record<string, VisualSpec> = {
     edges: [
       { from: 'src', to: 'server', tone: 'warn', rate: 1.6 },
       { from: 'server', to: 'client', tone: 'ok', rate: 2.4 },
+    ],
+    steps: [
+      { from: 'client', to: 'server', label: 'EventSource opens one request' },
+      { from: 'src', to: 'server', label: 'An update arrives' },
+      { from: 'server', to: 'client', label: 'Streamed as an event, id 42' },
+      { from: 'client', to: 'server', label: 'Dropped? Reconnect with Last-Event-ID', outcome: 'warning' },
     ],
   },
 
@@ -1059,6 +1367,11 @@ export const systemVisuals: Record<string, VisualSpec> = {
       { from: 'clients', to: 'api', tone: 'brand', rate: 6 },
       { from: 'api', to: 'resp', tone: 'muted', rate: 5, outcome: 'warning' },
     ],
+    steps: [
+      { from: 'clients', to: 'api', label: 'Poll with If-None-Match' },
+      { from: 'api', to: 'resp', label: 'Unchanged: a cheap 304', outcome: 'warning' },
+      { from: 'clients', to: 'api', label: 'Five seconds later, ask again', outcome: 'warning' },
+    ],
   },
 
   'long-polling': {
@@ -1074,6 +1387,12 @@ export const systemVisuals: Record<string, VisualSpec> = {
       { from: 'client', to: 'server', tone: 'brand', rate: 1 },
       { from: 'event', to: 'server', tone: 'warn', rate: 1 },
       { from: 'server', to: 'client', tone: 'ok', rate: 1, curvature: 0.9 },
+    ],
+    steps: [
+      { from: 'client', to: 'server', label: 'Request parked, up to 30 s' },
+      { from: 'event', to: 'server', label: 'An event arrives' },
+      { from: 'server', to: 'client', label: 'Held request completes at once' },
+      { from: 'client', to: 'server', label: 'Next request sent immediately' },
     ],
   },
 
@@ -1116,6 +1435,12 @@ export const systemVisuals: Record<string, VisualSpec> = {
       { from: 'gw', to: 'svc', tone: 'brand', rate: 2 },
       { from: 'svc', to: 'db', tone: 'info', rate: 2 },
     ],
+    steps: [
+      { from: 'gw', to: 'svc', label: 'Root span passes the trace id' },
+      { from: 'svc', to: 'db', label: 'Child span links to parent' },
+      { from: 'db', to: 'svc', label: 'DB span ends, duration recorded' },
+      { from: 'svc', to: 'gw', label: 'Spans close into one tree' },
+    ],
   },
 
   monitoring: {
@@ -1135,6 +1460,12 @@ export const systemVisuals: Record<string, VisualSpec> = {
       { from: 'api', to: 'traces', tone: 'ok', rate: 1.4 },
       { from: 'metrics', to: 'alert', tone: 'danger', rate: 1.2, outcome: 'failure' },
     ],
+    steps: [
+      { from: 'api', to: 'logs', label: 'Events logged with trace_id' },
+      { from: 'api', to: 'traces', label: 'Request traces sampled' },
+      { from: 'api', to: 'metrics', label: 'Latency and errors as metrics' },
+      { from: 'metrics', to: 'alert', label: 'Burn rate 14x: page on-call', outcome: 'failure' },
+    ],
   },
 
   logging: {
@@ -1152,6 +1483,11 @@ export const systemVisuals: Record<string, VisualSpec> = {
       { from: 's2', to: 'pipe', tone: 'ok', rate: 2.4 },
       { from: 'pipe', to: 'search', tone: 'brand', rate: 2.4 },
     ],
+    steps: [
+      { from: 's1', to: 'pipe', label: 'Service A logs JSON, trace_id' },
+      { from: 's2', to: 'pipe', label: 'Service B logs the same trace_id' },
+      { from: 'pipe', to: 'search', label: 'One search rebuilds the request' },
+    ],
   },
 
   metrics: {
@@ -1166,6 +1502,11 @@ export const systemVisuals: Record<string, VisualSpec> = {
     edges: [
       { from: 'app', to: 'tsdb', tone: 'ok', rate: 4 },
       { from: 'tsdb', to: 'dash', tone: 'brand', rate: 2 },
+    ],
+    steps: [
+      { from: 'app', to: 'tsdb', label: 'Latency recorded as a histogram' },
+      { from: 'dash', to: 'tsdb', label: 'Dashboard asks for p99' },
+      { from: 'tsdb', to: 'dash', label: 'p99 shows the slow tail' },
     ],
   },
 
@@ -1187,6 +1528,12 @@ export const systemVisuals: Record<string, VisualSpec> = {
       { from: 'fan', to: 't2', tone: 'ok', rate: 2.4 },
       { from: 'fan', to: 't3', tone: 'warn', rate: 2.4, outcome: 'warning' },
     ],
+    steps: [
+      { from: 'post', to: 'fan', label: 'New post queued for fan-out' },
+      { from: 'fan', to: 't1', label: 'Written into each follower timeline' },
+      { from: 'fan', to: 't2', label: 'One write per follower' },
+      { from: 'fan', to: 't3', label: '5,000 followers: 5,000 writes', outcome: 'warning' },
+    ],
   },
 
   backpressure: {
@@ -1203,6 +1550,11 @@ export const systemVisuals: Record<string, VisualSpec> = {
       { from: 'prod', to: 'queue', tone: 'brand', rate: 5 },
       { from: 'queue', to: 'reject', tone: 'danger', rate: 3, outcome: 'failure' },
       { from: 'queue', to: 'cons', tone: 'ok', rate: 2 },
+    ],
+    steps: [
+      { from: 'prod', to: 'queue', label: 'Producer pushes 1,000/s' },
+      { from: 'queue', to: 'cons', label: 'Consumers drain only 400/s' },
+      { from: 'queue', to: 'reject', label: 'At 10,000: reject with 429', outcome: 'failure' },
     ],
   },
 
@@ -1222,6 +1574,12 @@ export const systemVisuals: Record<string, VisualSpec> = {
       { from: 'api', to: 'p2', tone: 'ok', rate: 2.4 },
       { from: 'api', to: 'p3', tone: 'ok', rate: 1.6 },
       { from: 'p2', to: 'ok', tone: 'ok', rate: 2.4 },
+    ],
+    steps: [
+      { from: 'api', to: 'p1', label: 'Recs hangs: its 40 threads stuck', outcome: 'failure' },
+      { from: 'api', to: 'p2', label: 'Checkout uses its own pool' },
+      { from: 'p2', to: 'ok', label: 'Checkout still completes' },
+      { from: 'api', to: 'p3', label: 'Search pool unaffected too' },
     ],
   },
 
@@ -1265,6 +1623,12 @@ export const systemVisuals: Record<string, VisualSpec> = {
       { from: 'db', to: 'relay', tone: 'ok', rate: 1.6 },
       { from: 'relay', to: 'broker', tone: 'warn', rate: 1.6 },
     ],
+    steps: [
+      { from: 'app', to: 'db', label: 'Order row plus outbox row' },
+      { from: 'db', to: 'relay', label: 'Relay reads unpublished rows' },
+      { from: 'relay', to: 'broker', label: 'Published to Kafka, at least once' },
+      { from: 'relay', to: 'db', label: 'Row marked as published' },
+    ],
   },
 
   'leader-follower': {
@@ -1282,6 +1646,11 @@ export const systemVisuals: Record<string, VisualSpec> = {
       { from: 'leader', to: 'f1', tone: 'violet', rate: 1.6, outcome: 'warning' },
       { from: 'leader', to: 'f2', tone: 'violet', rate: 1.6, outcome: 'warning' },
     ],
+    steps: [
+      { from: 'w', to: 'leader', label: 'Every write goes to leader' },
+      { from: 'leader', to: 'f1', label: 'Leader orders it, streams it' },
+      { from: 'leader', to: 'f2', label: 'Every follower copies that order' },
+    ],
   },
 
   'producer-consumer': {
@@ -1296,6 +1665,12 @@ export const systemVisuals: Record<string, VisualSpec> = {
     edges: [
       { from: 'p', to: 'buf', tone: 'brand', rate: 3 },
       { from: 'buf', to: 'c', tone: 'ok', rate: 3 },
+    ],
+    steps: [
+      { from: 'p', to: 'buf', label: 'Producer puts an item' },
+      { from: 'buf', to: 'c', label: 'Exactly one consumer takes it' },
+      { from: 'p', to: 'buf', label: 'Burst waits in the buffer', outcome: 'warning' },
+      { from: 'buf', to: 'c', label: 'Consumers drain at own pace' },
     ],
   },
 
@@ -1313,6 +1688,13 @@ export const systemVisuals: Record<string, VisualSpec> = {
       { from: 'a', to: 'b', tone: 'brand', rate: 2.4 },
       { from: 'b', to: 'c', tone: 'brand', rate: 2.4 },
       { from: 'c', to: 'd', tone: 'warn', rate: 2.4, outcome: 'warning' },
+    ],
+    steps: [
+      { from: 'a', to: 'b', label: 'A calls B, then waits' },
+      { from: 'b', to: 'c', label: 'B calls C, also waiting' },
+      { from: 'c', to: 'd', label: 'C calls D: waits stack up', outcome: 'warning' },
+      { from: 'd', to: 'c', label: 'Responses unwind hop by hop' },
+      { from: 'b', to: 'a', label: 'A answers only if all succeed' },
     ],
   },
 
@@ -1333,6 +1715,12 @@ export const systemVisuals: Record<string, VisualSpec> = {
       { from: 'topic', to: 's2', tone: 'ok', rate: 2 },
       { from: 'topic', to: 's3', tone: 'ok', rate: 2 },
     ],
+    steps: [
+      { from: 'pub', to: 'topic', label: 'Event published once' },
+      { from: 'topic', to: 's1', label: 'Accounting gets its copy' },
+      { from: 'topic', to: 's2', label: 'Email gets the same event' },
+      { from: 'topic', to: 's3', label: 'Analytics too, publisher unaware' },
+    ],
   },
 
   'circuit-breaker-pattern': {
@@ -1348,6 +1736,13 @@ export const systemVisuals: Record<string, VisualSpec> = {
       { from: 'closed', to: 'open', tone: 'danger', rate: 1.2, outcome: 'failure', label: 'threshold' },
       { from: 'open', to: 'half', tone: 'warn', rate: 1.2, outcome: 'warning', label: 'cooldown' },
       { from: 'half', to: 'closed', tone: 'ok', rate: 1.2, curvature: 1.1, label: 'success' },
+    ],
+    steps: [
+      { from: 'closed', to: 'open', label: 'Failure ratio over threshold: trip', outcome: 'failure' },
+      { from: 'open', to: 'half', label: 'Cooldown over: allow trial calls', outcome: 'warning' },
+      { from: 'half', to: 'open', label: 'Trial fails: open again', outcome: 'failure' },
+      { from: 'open', to: 'half', label: 'Next cooldown, trial again', outcome: 'warning' },
+      { from: 'half', to: 'closed', label: 'Trials succeed: close' },
     ],
   },
 };

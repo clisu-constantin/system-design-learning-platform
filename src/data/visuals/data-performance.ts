@@ -15,13 +15,15 @@ export const dataVisuals: Record<string, VisualSpec> = {
       { from: 'user', to: 'api', tone: 'brand', rate: 4 },
       { from: 'api', to: 'cache', tone: 'ok', rate: 3.6, outcome: 'cache-hit' },
       { from: 'api', to: 'db', tone: 'violet', rate: 0.5, label: 'on miss' },
-      { from: 'db', to: 'cache', tone: 'muted', dashed: true, label: 'store' },
     ],
     steps: [
       { from: 'user', to: 'api', label: 'Read request arrives' },
-      { from: 'api', to: 'cache', label: 'Check the cache first', outcome: 'cache-hit' },
-      { from: 'api', to: 'db', label: 'Miss: query the database' },
-      { from: 'db', to: 'cache', label: 'Store it for next time', outcome: 'cache-hit' },
+      { from: 'api', to: 'cache', label: 'Check the cache: miss', outcome: 'warning' },
+      { from: 'api', to: 'db', label: 'Query the database, 120 ms' },
+      { from: 'db', to: 'api', label: 'Row comes back' },
+      { from: 'api', to: 'cache', label: 'Store it with a TTL' },
+      { from: 'api', to: 'user', label: 'Return the answer' },
+      { from: 'api', to: 'cache', label: 'Next read: hit in 4 ms', outcome: 'cache-hit' },
     ],
   },
 
@@ -42,9 +44,10 @@ export const dataVisuals: Record<string, VisualSpec> = {
       { from: 'app', to: 'client', tone: 'brand', rate: 2.4 },
     ],
     steps: [
-      { from: 'app', to: 'cache', label: 'Write to cache' },
-      { from: 'cache', to: 'db', label: 'Flush to database', outcome: 'warning' },
-      { from: 'app', to: 'client', label: 'Acknowledge the caller' },
+      { from: 'client', to: 'app', label: 'Caller sends a write' },
+      { from: 'app', to: 'cache', label: 'Write lands in the cache' },
+      { from: 'app', to: 'client', label: 'Acknowledged before the database' },
+      { from: 'cache', to: 'db', label: 'Flushed to the database later', outcome: 'warning' },
     ],
   },
 
@@ -54,14 +57,21 @@ export const dataVisuals: Record<string, VisualSpec> = {
     caption: 'One in-memory store doing four jobs: cache, sessions, counters, leaderboards.',
     nodes: [
       { id: 'api', kind: 'server', label: 'API servers', x: 60, y: 110, w: 160, h: 80 },
-      { id: 'redis', kind: 'cache', label: 'Redis', sub: 'sub-millisecond', x: 300, y: 105, w: 170, h: 96, stat: ['Latency', '0.4 ms'] },
-      { id: 'db', kind: 'sql', label: 'Database', sub: 'source of truth', x: 560, y: 30, w: 160, h: 80 },
-      { id: 'session', kind: 'client', label: 'Sessions', sub: 'TTL 30 min', x: 560, y: 185, w: 160, h: 80 },
+      { id: 'redis', kind: 'cache', label: 'Redis', sub: 'sub-millisecond', x: 300, y: 20, w: 170, h: 96, stat: ['Latency', '0.4 ms'] },
+      { id: 'db', kind: 'sql', label: 'Database', sub: 'source of truth', x: 300, y: 195, w: 170, h: 80 },
+      { id: 'session', kind: 'client', label: 'Sessions', sub: 'TTL 30 min', x: 560, y: 28, w: 160, h: 80 },
     ],
     edges: [
       { from: 'api', to: 'redis', tone: 'danger', rate: 4, outcome: 'cache-hit' },
-      { from: 'redis', to: 'db', tone: 'muted', dashed: true, label: 'on miss' },
+      { from: 'api', to: 'db', tone: 'muted', dashed: true, label: 'on miss' },
       { from: 'redis', to: 'session', tone: 'ok', rate: 1.6, outcome: 'cache-hit' },
+    ],
+    steps: [
+      { from: 'api', to: 'redis', label: 'Command runs in RAM' },
+      { from: 'redis', to: 'api', label: 'Hit: answered in 0.4 ms', outcome: 'cache-hit' },
+      { from: 'redis', to: 'session', label: 'Sessions expire after 30 min', outcome: 'cache-hit' },
+      { from: 'api', to: 'db', label: 'Miss: app reads the database' },
+      { from: 'api', to: 'redis', label: 'App caches it with TTL' },
     ],
   },
 
@@ -83,7 +93,7 @@ export const dataVisuals: Record<string, VisualSpec> = {
     ],
     steps: [
       { from: 'query', to: 'scan', label: 'No index: read every row', outcome: 'warning' },
-      { from: 'scan', to: 'row', label: 'Found after 8,247 rows' },
+      { from: 'scan', to: 'row', label: 'Found after 8,247 rows', outcome: 'warning' },
       { from: 'query', to: 'index', label: 'With index: walk the tree' },
       { from: 'index', to: 'row', label: 'Found after 13 reads' },
     ],
@@ -108,9 +118,10 @@ export const dataVisuals: Record<string, VisualSpec> = {
     ],
     steps: [
       { from: 'app', to: 'primary', label: 'Write hits the primary' },
-      { from: 'primary', to: 'r1', label: 'Change streams to replicas', outcome: 'warning' },
-      { from: 'primary', to: 'r2', label: 'Replica lags 120 ms', outcome: 'warning' },
-      { from: 'primary', to: 'r3', label: 'Reads may be stale' },
+      { from: 'primary', to: 'app', label: 'Acknowledged before replicas apply' },
+      { from: 'primary', to: 'r1', label: 'Replica 1 applies after 40 ms', outcome: 'warning' },
+      { from: 'primary', to: 'r2', label: 'Replica 2: stale for 120 ms', outcome: 'warning' },
+      { from: 'primary', to: 'r3', label: 'Replica 3 applies after 90 ms', outcome: 'warning' },
     ],
   },
 
@@ -129,6 +140,13 @@ export const dataVisuals: Record<string, VisualSpec> = {
       { from: 'app', to: 'replica', tone: 'ok', rate: 4, label: 'reads' },
       { from: 'primary', to: 'replica', tone: 'violet', dashed: true, rate: 1, outcome: 'warning' },
       { from: 'replica', to: 'bi', tone: 'muted', rate: 0.6 },
+    ],
+    steps: [
+      { from: 'app', to: 'primary', label: 'Write goes to the primary' },
+      { from: 'primary', to: 'replica', label: 'Change copies over, slightly behind', outcome: 'warning' },
+      { from: 'app', to: 'replica', label: 'Reads go to the replica' },
+      { from: 'replica', to: 'app', label: 'Rows back, primary untouched' },
+      { from: 'bi', to: 'replica', label: 'Heavy analytics query runs here' },
     ],
   },
 
@@ -150,10 +168,10 @@ export const dataVisuals: Record<string, VisualSpec> = {
       { from: 'router', to: 'c', tone: 'ok', rate: 0.8 },
     ],
     steps: [
-      { from: 'app', to: 'router', label: 'Query carries the shard key' },
-      { from: 'router', to: 'a', label: 'Bad key: hot shard', outcome: 'warning' },
-      { from: 'router', to: 'b', label: 'Other shards sit idle' },
-      { from: 'router', to: 'c', label: 'Cluster limited by one node' },
+      { from: 'app', to: 'router', label: 'Query carries user_id, the key' },
+      { from: 'router', to: 'b', label: 'user_id 4M: Shard B owns it' },
+      { from: 'router', to: 'a', label: 'Busiest users crowd Shard A', outcome: 'warning' },
+      { from: 'router', to: 'c', label: 'Shard C idles at 18%' },
     ],
   },
 
@@ -175,6 +193,12 @@ export const dataVisuals: Record<string, VisualSpec> = {
       { from: 'query', to: 'p2', tone: 'muted', dashed: true },
       { from: 'p3', to: 'rows', tone: 'ok', rate: 2.4 },
     ],
+    steps: [
+      { from: 'query', to: 'p1', label: 'July cannot match: pruned', outcome: 'failure' },
+      { from: 'query', to: 'p2', label: 'August cannot match: pruned', outcome: 'failure' },
+      { from: 'query', to: 'p3', label: 'Only September is scanned' },
+      { from: 'p3', to: 'rows', label: 'Result read from one partition' },
+    ],
   },
 
   'connection-pooling': {
@@ -194,6 +218,14 @@ export const dataVisuals: Record<string, VisualSpec> = {
       { from: 'a3', to: 'pool', tone: 'brand', rate: 2 },
       { from: 'pool', to: 'db', tone: 'ok', rate: 2.2, label: 'multiplexed' },
     ],
+    steps: [
+      { from: 'a1', to: 'pool', label: 'API 1 asks for a connection' },
+      { from: 'pool', to: 'db', label: 'Query uses one of 40' },
+      { from: 'db', to: 'pool', label: 'Done: connection back in pool' },
+      { from: 'a2', to: 'pool', label: 'API 2 reuses the same 40' },
+      { from: 'a3', to: 'pool', label: 'API 3 shares them too' },
+      { from: 'pool', to: 'db', label: 'Database sees only 40 connections' },
+    ],
   },
 
   denormalization: {
@@ -212,6 +244,13 @@ export const dataVisuals: Record<string, VisualSpec> = {
       { from: 'read', to: 'app', tone: 'brand', rate: 4 },
       { from: 'counter', to: 'app', tone: 'ok', rate: 3.6, outcome: 'cache-hit' },
     ],
+    steps: [
+      { from: 'write', to: 'app', label: 'A like arrives' },
+      { from: 'app', to: 'counter', label: 'Increment like_count on write' },
+      { from: 'read', to: 'app', label: 'Page view needs the count' },
+      { from: 'counter', to: 'app', label: 'One column read, no aggregate', outcome: 'cache-hit' },
+      { from: 'app', to: 'read', label: 'Page renders without a COUNT' },
+    ],
   },
 
   'database-normalization': {
@@ -226,6 +265,11 @@ export const dataVisuals: Record<string, VisualSpec> = {
     edges: [
       { from: 'orders', to: 'customers', tone: 'info', rate: 1.4, label: 'customer_id' },
       { from: 'orders', to: 'items', tone: 'info', rate: 1.4, label: 'order_id' },
+    ],
+    steps: [
+      { from: 'orders', to: 'customers', label: 'Order points to customer by id' },
+      { from: 'customers', to: 'orders', label: 'Rename once, every order sees it' },
+      { from: 'orders', to: 'items', label: 'Line items join on order_id' },
     ],
   },
 
@@ -243,6 +287,12 @@ export const dataVisuals: Record<string, VisualSpec> = {
       { from: 'app', to: 'db', tone: 'brand', rate: 3 },
       { from: 'db', to: 'users', tone: 'info', rate: 1.6 },
       { from: 'db', to: 'orders', tone: 'info', rate: 1.6 },
+    ],
+    steps: [
+      { from: 'app', to: 'db', label: 'BEGIN a transaction' },
+      { from: 'db', to: 'users', label: 'Update the users row' },
+      { from: 'db', to: 'orders', label: 'Insert the orders row' },
+      { from: 'db', to: 'app', label: 'COMMIT: both or neither' },
     ],
   },
 
@@ -264,6 +314,12 @@ export const dataVisuals: Record<string, VisualSpec> = {
       { from: 'app', to: 'p3', tone: 'muted', dashed: true },
       { from: 'p2', to: 'doc', tone: 'ok', rate: 2.6 },
     ],
+    steps: [
+      { from: 'app', to: 'p2', label: 'Key hashes to Partition 2' },
+      { from: 'p2', to: 'doc', label: 'Whole document in one read' },
+      { from: 'app', to: 'p1', label: 'Partition 1 is never touched', outcome: 'failure' },
+      { from: 'app', to: 'p3', label: 'Neither is Partition 3', outcome: 'failure' },
+    ],
   },
 
   'relational-vs-non-relational': {
@@ -278,6 +334,12 @@ export const dataVisuals: Record<string, VisualSpec> = {
     edges: [
       { from: 'app', to: 'sql', tone: 'info', rate: 2.4 },
       { from: 'app', to: 'nosql', tone: 'warn', rate: 2.4 },
+    ],
+    steps: [
+      { from: 'app', to: 'sql', label: 'Join and transact across tables' },
+      { from: 'sql', to: 'app', label: 'Any query, harder to shard' },
+      { from: 'app', to: 'nosql', label: 'Get by partition key' },
+      { from: 'nosql', to: 'app', label: 'One pattern, scales out easily' },
     ],
   },
 
@@ -296,6 +358,12 @@ export const dataVisuals: Record<string, VisualSpec> = {
       { from: 'plan', to: 'buffer', tone: 'ok', rate: 2.8, outcome: 'cache-hit' },
       { from: 'buffer', to: 'disk', tone: 'muted', dashed: true, rate: 0.3, label: 'on miss' },
     ],
+    steps: [
+      { from: 'q', to: 'plan', label: 'Cached plan skips re-planning', outcome: 'cache-hit' },
+      { from: 'plan', to: 'buffer', label: 'Hot page already in RAM', outcome: 'cache-hit' },
+      { from: 'buffer', to: 'plan', label: 'Rows back, no disk read', outcome: 'cache-hit' },
+      { from: 'buffer', to: 'disk', label: 'Cold page: read from disk', outcome: 'warning' },
+    ],
   },
 
   'application-caching': {
@@ -312,6 +380,12 @@ export const dataVisuals: Record<string, VisualSpec> = {
       { from: 'i1', to: 'redis', tone: 'ok', rate: 1.6, outcome: 'cache-hit' },
       { from: 'i2', to: 'redis', tone: 'ok', rate: 1.6, outcome: 'cache-hit' },
       { from: 'redis', to: 'db', tone: 'muted', dashed: true, rate: 0.4 },
+    ],
+    steps: [
+      { from: 'i1', to: 'redis', label: 'A local copy expired' },
+      { from: 'redis', to: 'db', label: 'Shared miss falls to database', outcome: 'warning' },
+      { from: 'redis', to: 'i1', label: 'A now caches flags v7', outcome: 'cache-hit' },
+      { from: 'i2', to: 'redis', label: 'B refetches only after TTL', outcome: 'warning' },
     ],
   },
 };
