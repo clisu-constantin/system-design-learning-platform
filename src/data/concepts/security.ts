@@ -291,28 +291,256 @@ Client --TLS--> CDN --TLS--> Load Balancer --?--> services
     tagline: 'Credentials that are injected, rotated and audited - never committed.',
     category: 'security',
     difficulty: 'Intermediate',
-    keywords: ['vault', 'kms', 'rotation', 'least privilege', 'env vars'],
+    lab: 'secrets',
+    keywords: ['vault', 'kms', 'rotation', 'least privilege', 'env vars', 'dynamic secrets', 'lease'],
     what: 'Secrets management is how database passwords, API keys and signing keys are stored, delivered to workloads, rotated and audited.',
-    why: 'Leaked credentials are one of the most common breach causes, and a secret in git history is leaked permanently.',
+    why: 'Stolen and leaked credentials are among the most common ways attackers get in, and a secret committed to git stays in every clone and fork even after it is deleted.',
     how: [
-      'Store secrets in a dedicated system (Vault, cloud secret manager) encrypted with a KMS key.',
-      'Inject at runtime via environment or a mounted file; never bake them into images.',
-      'Prefer short-lived, automatically rotated credentials over static ones.',
-      'Scope each secret to the smallest workload that needs it, and log every access.',
+      'Store secrets in one dedicated system (Vault, a cloud secret manager), encrypted at rest, with access control per identity and an audit log of every read.',
+      'Deliver them at runtime - fetched by the service or mounted as a file; never write them into code, images or front-end bundles.',
+      'Give each service its own credential, so a leak speaks for one service and a rotation touches only one.',
+      'Prefer short-lived dynamic credentials, which expire by themselves, over static passwords.',
+      'Rotate with a dual-key window: create the new credential, move every holder over, then revoke the old one.',
     ],
-    diagram: `workload -> identity (IAM role / service account)
-         -> secret manager issues a short-lived database credential (15 min)
-         -> automatic rotation, full audit trail
-No static password anywhere in the repo or image.`,
+    when: [
+      'Every system with a database password, API key, signing key or certificate.',
+      'Most urgent where many services or people share one credential, or where a leak could go unnoticed for weeks.',
+    ],
+    advantages: [
+      'A leak can be contained in minutes: one credential is rotated without an outage.',
+      'Every read is logged, so a leaked credential can be traced to the one service that held it.',
+      'Short-lived credentials limit how long a leak is useful, even when nobody notices it.',
+    ],
+    diagram: `Orders API --proves identity--> Vault --CREATE USER, 1 h lease--> Database
+Orders API <----- v-orders-7f3a ----- Vault
+Orders API --login as v-orders-7f3a-----------------------------> Database
+lease ends: Vault drops the user. No static password in repo or image.`,
     tradeoffs: [
       {
+        approach: 'Secret in the code',
+        gains: ['No setup at all', 'Works wherever the code runs'],
+        costs: [
+          'In every clone, fork and image, forever',
+          'Rotation needs a commit, a rebuild and a redeploy of every service',
+          'Usually one password shared by every service and developer',
+        ],
+      },
+      {
+        approach: '.env file or environment variables',
+        gains: ['Out of the repository', 'A different value per environment without a rebuild'],
+        costs: [
+          'Still static and usually shared',
+          'Copied to every host and into backups',
+          'Environment variables can end up in logs, crash dumps and child processes',
+          'Rotation means editing every host and restarting',
+        ],
+      },
+      {
+        approach: 'Secrets manager with static secrets',
+        gains: [
+          'One encrypted copy with access control per identity',
+          'Every read is audited',
+          'Rotation is an API call, and versions allow a rollback',
+        ],
+        costs: [
+          'A new critical service to run and secure',
+          'Services must fetch or reload the secret',
+          'Services need an identity to log in with (workload identity)',
+        ],
+      },
+      {
         approach: 'Dynamic short-lived credentials',
-        gains: ['Leaks expire quickly', 'Rotation is automatic', 'Per-workload audit'],
-        costs: ['More infrastructure', 'Applications must handle credential refresh'],
+        gains: ['A leak expires by itself', 'Rotation is automatic', 'One database user per service, so every login is traceable'],
+        costs: [
+          'The manager is on the critical path: if it is down when a lease ends, logins fail',
+          'Applications must handle credential refresh',
+          'Many short-lived database users to create and drop',
+        ],
       },
     ],
-    mistakes: ['Committing .env files.', 'Rotating a secret without a dual-key window, causing an outage.'],
+    mistakes: [
+      'Committing .env files.',
+      'Deleting a committed secret without rotating it - the old commit is still in every clone and fork.',
+      'Rotating without a dual-key window, so the rotation is an outage and gets postponed forever.',
+      'One shared credential for every service, so a leak cannot be traced and a rotation touches everything.',
+      'Baking secrets into container images or front-end bundles.',
+      'Printing the configuration, secrets included, into logs at startup.',
+    ],
+    realWorld: [
+      'The HashiCorp Vault database secrets engine creates a database user per request with a lease (1 hour in its example) and revokes it when the lease ends; the SQL username names the service.',
+      'AWS Secrets Manager rotates database secrets with a single-user strategy (a short window where logins can be denied) or an alternating-users strategy (two valid users, for high availability).',
+      'GitHub tells you to revoke or rotate a leaked secret first, before rewriting history, because clones and forks keep the old commits.',
+    ],
     related: ['api-keys', 'tls-https', 'authentication'],
+    quiz: [
+      {
+        id: 'sec-1',
+        prompt:
+          'A developer pushes a cloud access key to a public repository, notices 4 minutes later and pushes a commit that deletes it. What should happen first?',
+        options: [
+          'Rewrite history to remove the key and force push',
+          'Revoke the key and issue a new one, then clean history if still wanted',
+          'Make the repository private',
+          'Nothing - the delete commit removed it',
+        ],
+        answer: 1,
+        explanation:
+          'The old commit is still in history, in every clone and in any fork, and scanners find public keys within minutes. Only revoking the key makes those copies useless. Rewriting history is tempting, but it cannot reach clones and forks, so a history rewrite without rotation leaves a working key in the wild. Making the repository private has the same gap.',
+      },
+      {
+        id: 'sec-2',
+        prompt:
+          'In the Secrets Lab the password is In code, Dual-key window is off, and you press Rotate. What do you see?',
+        options: [
+          'Only the Orders API breaks, because its key leaked',
+          'Nothing breaks, because the new password is committed with the rotation',
+          'All three services break, and each one recovers only when its redeploy lands - the last after about 18 s',
+          'The services keep working, but the attacker keeps access until the last redeploy',
+        ],
+        answer: 2,
+        explanation:
+          'All three share one password. Setting the new one ends the old one at once, but each service still runs the image built with the old value until it is rebuilt and redeployed, one after another. The last option describes the dual-key window: that is what you get with the toggle on, not off.',
+      },
+      {
+        id: 'sec-3',
+        prompt: 'You repeat the same rotation in the Lab with Dual-key window on. What changes?',
+        options: [
+          'No service goes down, but the leaked password keeps working until the last service is redeployed',
+          'The rotation finishes much sooner',
+          'The services still go down, but the attacker is locked out sooner',
+          'Only the Orders API has to be redeployed',
+        ],
+        answer: 0,
+        explanation:
+          'While both passwords are valid, every service can log in with whichever one it has, so there is no outage. The price is that the old password - the leaked one - is revoked only after the last holder has moved. The redeploys take just as long, and all three still need one, because all three hold the shared password.',
+      },
+      {
+        id: 'sec-4',
+        prompt:
+          'In the Lab you switch to Vault, leak the Orders API key and rotate it. What happens to the Billing worker and the Reports job?',
+        options: [
+          'They break too, because the vault rotates every credential at once',
+          'They must be restarted to fetch the new credential',
+          'They keep working with the leaked credential',
+          'Nothing - they have their own credentials and never notice',
+        ],
+        answer: 3,
+        explanation:
+          'With a vault, each service gets its own database user, so the leaked credential only speaks for Orders, and only Orders has to move to a new one - which it fetches in seconds. The tempting answer is a restart, but that is the .env world, where the value is read once at start and shared by everyone.',
+      },
+      {
+        id: 'sec-5',
+        prompt:
+          'A service gets a dynamic database credential at 09:40 with a lease whose maximum is 1 hour. An attacker copies it from a log line at 10:00 and nobody notices. When does it stop working?',
+        options: [
+          'Never, until someone rotates it',
+          'At 10:40 at the latest, when the lease reaches its 1-hour maximum',
+          'At 11:00, one hour after it was stolen',
+          'Right away, because the vault sees a new address',
+        ],
+        answer: 1,
+        explanation:
+          'The lease is counted from when the credential was issued, not from when it was stolen, and when it ends the vault drops the database user. That is the point of dynamic credentials: a leak nobody noticed still expires. A vault does not watch client addresses, so it does not cut the attacker off by itself.',
+      },
+      {
+        id: 'sec-6',
+        prompt:
+          'A team moves the database password out of the code into a gitignored .env file that a script copies to all 40 hosts. What is still weak?',
+        options: [
+          'Nothing - once it is out of git the problem is solved',
+          'The .env file is encrypted by the operating system, so only rotation remains',
+          'The password is static and shared, lives in 40 files and their backups, and rotating it means editing and restarting 40 hosts',
+          'Environment variables cannot be read by anything but the service',
+        ],
+        answer: 2,
+        explanation:
+          'Moving it out of git removes the worst exposure, but the secret is still a long-lived value with 40 copies at rest, and it cannot be traced to one host or rotated without touching all of them. A .env file is plain text, and environment variables can end up in logs, crash dumps and child processes.',
+      },
+      {
+        id: 'sec-7',
+        prompt:
+          'Your services will read their secrets from a vault. How does a service log in to the vault without putting a vault token in its image?',
+        options: [
+          'Workload identity: the platform (a Kubernetes service account, a cloud instance role) vouches for the service',
+          'A vault token in a .env file on each host',
+          'A token hardcoded in the code, but obfuscated',
+          'The vault answers anonymous reads from inside the network',
+        ],
+        answer: 0,
+        explanation:
+          'The platform already knows which workload is running and can sign a statement about it, which the vault checks. No secret is provisioned by hand. A token in a .env file or in the code just moves the original problem one step back, and anonymous reads throw away access control and auditing.',
+      },
+      {
+        id: 'sec-8',
+        prompt:
+          'Services use dynamic database credentials with 15-minute leases. The vault is down for 30 minutes. What happens?',
+        options: [
+          'Nothing - services keep their credentials until the vault is back',
+          'Every service fails at the moment the vault goes down',
+          'The database refuses all logins until the vault is back',
+          'Services keep working until their current lease ends, then fail to log in until the vault is back',
+        ],
+        answer: 3,
+        explanation:
+          'A running service still holds a valid credential, so it works - until the lease ends and it cannot get a new one. Short leases put the vault on the critical path, which is why it is run highly available. Try Vault reachable off in the Lab. With static secrets from a vault, the cached value would keep working through the outage.',
+      },
+      {
+        id: 'sec-9',
+        prompt:
+          'The database log shows a login from an unknown address. What does one database user per service give you in this investigation?',
+        options: [
+          'Faster queries for the attacker to be spotted by',
+          'Nothing, until the attacker is blocked at the network',
+          'The username names the one service whose credential leaked, so you rotate only that one',
+          'The leaked credential cannot be used from another address',
+        ],
+        answer: 2,
+        explanation:
+          'With a shared app_user the log says only that one of many holders leaked, so everything must be rotated and nobody knows where to look. With a user per service the login names its source, and the vault audit log shows who read it. It does not stop the login itself - a credential works from any address.',
+      },
+      {
+        id: 'sec-10',
+        prompt:
+          'Database passwords are meant to rotate every 90 days, but in two years it never happened, because each attempt caused an outage. What change makes rotation happen?',
+        options: [
+          'Rotate once a year instead',
+          'Allow two valid credentials at once: create the new one, move every holder, check traffic, revoke the old one',
+          'Keep the old password valid forever as a fallback',
+          'Rotate only during a night maintenance window with downtime',
+        ],
+        answer: 1,
+        explanation:
+          'Rotation without overlap is a coordinated outage, so it is postponed. With two valid credentials, each holder can move at its own pace and the old one is revoked when nobody uses it. Rotating less often only makes the next outage rarer, and a fallback that is never revoked means the rotation achieved nothing.',
+      },
+      {
+        id: 'sec-11',
+        prompt:
+          'A single-page app calls a payment API with a secret key read from the build variable VITE_PAYMENT_KEY. What is wrong?',
+        options: [
+          'The value is compiled into the JavaScript every browser downloads, so it is public; the call must go through a backend',
+          'Nothing - build variables are never shipped',
+          'It only leaks if the repository is public',
+          'It is fine as long as the key is rotated every 90 days',
+        ],
+        answer: 0,
+        explanation:
+          'Front-end build variables are replaced by their values in the bundle, so anyone can read the key in the browser. A front end cannot keep a secret at all; a backend holds the key and calls the payment API. Rotating a public key only hands a new public key to everyone.',
+      },
+      {
+        id: 'sec-12',
+        prompt:
+          'A Dockerfile contains ENV DB_PASSWORD=... and the image is pushed to a registry that 5 teams pull from. What is the exposure?',
+        options: [
+          'None - only the running container can see its environment',
+          'Removing the ENV line in the next build fixes it',
+          'Only people with shell access to the hosts can read it',
+          'Anyone who can pull the image can read the password from its configuration; rotate it and inject it at runtime instead',
+        ],
+        answer: 3,
+        explanation:
+          'Values set with ENV are stored in the image configuration and visible to anyone who inspects the image, in every copy already pulled. A new build without the line does not change the images that already exist, so the password must be rotated, and the new one delivered at runtime.',
+      },
+    ],
   },
   {
     slug: 'waf',
