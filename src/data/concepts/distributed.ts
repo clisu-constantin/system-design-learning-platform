@@ -353,36 +353,80 @@ partition {A,B,C} | {D,E}
     tagline: 'Doing it twice must be the same as doing it once.',
     category: 'distributed',
     difficulty: 'Intermediate',
+    lab: 'idempotency',
     keywords: ['retry', 'deduplication', 'exactly once', 'idempotency key', 'at least once'],
     what: 'An operation is idempotent if applying it multiple times has the same effect as applying it once.',
     why: 'Networks make duplicates unavoidable. A timeout does not tell you whether the request succeeded, so clients retry - and every retry risks a second charge, a second email, a second order.',
     how: [
-      'Client generates a unique idempotency key per logical operation and sends it with every retry.',
-      'The server stores the key with the result; a repeat key returns the stored result instead of re-executing.',
+      'Client generates a unique idempotency key per logical operation (the intent, not the attempt) and sends it with every retry.',
+      'The server inserts the key as in progress, does the work, and stores the result with the key - the key row and the effect commit in one transaction.',
+      'A repeat that finds a completed key gets the stored result instead of a second execution; one that finds the key still in progress gets 409 and retries shortly.',
       'Prefer naturally idempotent designs: set a state ("status = paid") rather than apply a delta ("balance -= 10").',
-      'Keys need a retention window long enough to cover realistic retry behaviour.',
+      'Keys need a retention window long enough to cover realistic retry behaviour - 24 hours to a few days is common.',
     ],
-    when: ['Payments, order creation, message consumers, webhooks - anything retried automatically.'],
+    when: [
+      'Payments, order creation, message consumers, webhooks - anything that is retried automatically and has a side effect.',
+      'Any POST or PATCH that a client, proxy or queue may repeat after a timeout.',
+    ],
+    advantages: [
+      'Retries become safe, so clients, proxies and queues can retry freely.',
+      'At-least-once delivery plus idempotent processing gives an exactly-once effect.',
+      'A repeat gets the same answer as the first attempt, so the client sees one consistent result.',
+    ],
     diagram: `POST /payments  Idempotency-Key: 8f2c-...
   -> 201 Created  charge_id=ch_77   (key stored with the result)
-timeout, client retries the same key
-  -> 200 OK       charge_id=ch_77   (no second charge)
+response lost, client times out, retries the same key
+  -> 201 Created  charge_id=ch_77   (stored response replayed)
+                                     (no second charge)
 
 "exactly once delivery" does not exist.
 at-least-once delivery + idempotent processing = exactly-once effect`,
     tradeoffs: [
       {
-        approach: 'Idempotency keys',
-        gains: ['Safe retries', 'No distributed locks needed', 'Simple client contract'],
-        costs: ['Storage for keys and results', 'Careful handling of concurrent duplicates', 'Key lifetime must be chosen'],
+        approach: 'Idempotency key with stored response',
+        gains: [
+          'Safe retries for any operation, including charging a card',
+          'A repeat gets the identical stored answer',
+          'Simple client contract: one key per intent',
+        ],
+        costs: [
+          'A keys table to store and prune',
+          'Key and effect must commit in one transaction',
+          'Concurrent repeats need an in-progress state (409)',
+          'A retry after the retention window is a new operation',
+        ],
+      },
+      {
+        approach: 'Natural unique key (unique constraint)',
+        gains: ['The database enforces it for every writer, including retries nobody planned for', 'No extra table or client contract'],
+        costs: [
+          'Only works where the data already has a uniqueness rule',
+          'The repeat gets a constraint error to turn into success, not the original response',
+        ],
+      },
+      {
+        approach: 'Absolute state instead of deltas',
+        gains: ['Repeats are harmless by construction', 'Nothing to store'],
+        costs: ['Some effects cannot be a target state (charge a card, send an email)', 'Needs control of the API shape'],
+      },
+      {
+        approach: 'No retries (at most once)',
+        gains: ['Never a duplicate', 'Nothing to store'],
+        costs: ['A lost response turns a success into an error the user sees', 'A lost request is simply lost'],
       },
     ],
     mistakes: [
       'Believing a queue gives exactly-once delivery and skipping deduplication.',
-      'Making the key depend on a timestamp, so retries generate a new key.',
+      'Generating a new key for every attempt (or deriving it from a timestamp), so each retry is a new operation.',
+      'Recording the key and the effect in separate transactions, so a crash between them leaves them disagreeing.',
+      'Replaying a stored result for a request whose body differs from the original, instead of rejecting it.',
       'Treating PUT as idempotent while its handler appends to a list.',
     ],
-    realWorld: ['Stripe, PayPal and most payment APIs require an idempotency key on create operations.'],
+    realWorld: [
+      'Stripe accepts an Idempotency-Key header on every POST, saves the status code and body of the first request, and may prune keys once they are at least 24 hours old.',
+      'The IETF Idempotency-Key header draft answers 409 for a repeat that arrives while the first request is still running, and 422 for a key reused with a different body.',
+      'Webhook and queue consumers dedupe by event or message id, because delivery is at-least-once.',
+    ],
     related: ['retry', 'message-queues', 'exponential-backoff', 'outbox-pattern'],
     quiz: [
       {
@@ -396,7 +440,160 @@ at-least-once delivery + idempotent processing = exactly-once effect`,
         ],
         answer: 1,
         explanation:
-          'The server cannot distinguish a retry from a new order without a key supplied by the client. Longer timeouts only shrink the window.',
+          'The server cannot tell a retry from a new order unless the client sends a key that names the order. A longer timeout only shrinks the window - a slow enough response still times out. A lock does not help either: the two requests run one after the other, so each takes the lock in turn and each creates an order.',
+      },
+      {
+        id: 'idem-2',
+        prompt:
+          'In the Idempotency Lab with No key, a response is lost on the network wire and the client retries. What had the server already done for the first attempt?',
+        options: [
+          'Written the charge - only the answer was lost',
+          'Nothing - a lost response means the request failed',
+          'Rolled the charge back when the response was lost',
+          'Marked the payment so the retry is skipped',
+        ],
+        answer: 0,
+        explanation:
+          'The response is lost after the work is done: the charge row is already in the charges table. That is exactly why the retry charges again. Nothing rolls back - the server does not know the answer never arrived, and with no key it has nothing to recognise the retry by.',
+      },
+      {
+        id: 'idem-3',
+        prompt:
+          'Your mobile app puts a fresh UUID in the Idempotency-Key header right before every HTTP call, retries included. Customers are still charged twice now and then. Why?',
+        options: [
+          'UUIDs collide too often for payments',
+          'The keys table is too slow to answer in time',
+          'Each retry carries a key the server has never seen, so it is a new payment',
+          'The server must also compare the amount',
+        ],
+        answer: 2,
+        explanation:
+          'The key must name the intent (one tap of Pay), not the attempt. A new key per attempt is the same as no key: in the Lab, New per try inserts a new key row and charges again on every retry. Random UUIDs practically never collide, so collisions are not the cause.',
+      },
+      {
+        id: 'idem-4',
+        prompt:
+          'A user double-taps Pay. Both requests carry the same key and arrive 100 ms apart, while the first is still charging the card. What should the second request get?',
+        options: [
+          'A second charge, because the first has not finished',
+          'The stored result of the first request',
+          'Nothing at all - the server drops it silently',
+          '409 Conflict - the key is in progress, retry shortly',
+        ],
+        answer: 3,
+        explanation:
+          'There is no stored result yet, so there is nothing to replay. The key row says in progress, and the IETF Idempotency-Key draft answers that case with 409; the client retries a moment later and gets the stored result. Charging again is the bug the key exists to prevent, and a silent drop leaves the client waiting for a timeout. This is what Double-tap Pay shows in the Lab.',
+      },
+      {
+        id: 'idem-5',
+        prompt:
+          'A handler inserts the key as in progress, writes the charge row and commits, then marks the key completed in a second transaction. The process crashes between the two commits. What happens when the client retries?',
+        options: [
+          'The key is found completed and the stored result is replayed',
+          'The key is stuck in progress with no stored result, so the retry can never be answered from it',
+          'The database rolls back the charge',
+          'Nothing, because the client already has the response',
+        ],
+        answer: 1,
+        explanation:
+          'The charge committed but the key never reached completed, so the two disagree: every retry finds in progress and nothing to replay, and clearing the key by hand would charge again. The charge already committed, so nothing rolls it back, and the client never got a response - that is why it retries. Commit the charge and the completed key in one transaction.',
+      },
+      {
+        id: 'idem-6',
+        prompt:
+          'PUT /carts/42/items appends the item in the body to the cart. A proxy retries the PUT after a timeout. What happens?',
+        options: [
+          'The item is added once, because HTTP makes PUT idempotent',
+          'The proxy never retries a PUT',
+          'The item is added twice: the handler breaks the idempotent meaning of PUT that the proxy relied on',
+          'The server returns 409',
+        ],
+        answer: 2,
+        explanation:
+          'RFC 9110 defines PUT as idempotent, which is exactly why clients and proxies feel free to retry it. But the method name promises nothing about your code: a handler that appends runs twice and adds the item twice. Make the handler replace the stored state, as PUT intends.',
+      },
+      {
+        id: 'idem-7',
+        prompt: 'You design the endpoint that marks an order as shipped. Which shape stays correct if the call is repeated?',
+        options: [
+          'PATCH /orders/9 with { status: "shipped" }',
+          'POST /orders/9/advance-status',
+          'POST /orders/9/status-steps with { add: 1 }',
+          'Any of them, if the client never retries',
+        ],
+        answer: 0,
+        explanation:
+          'Setting a target state is idempotent: shipped twice is still shipped. Advancing or adding a step is a delta - run twice it skips to the next status. Relying on no retries does not hold: timeouts, proxies and queues repeat calls anyway.',
+      },
+      {
+        id: 'idem-8',
+        prompt:
+          'A consumer reads "add 10 loyalty points" messages from a queue with at-least-once delivery. After a crash and redelivery, some customers got 20 points. What fixes it?',
+        options: [
+          'Acknowledge each message before processing it',
+          'Store each message id in a processed table in the same transaction as the points, and skip ids already seen',
+          'Add more consumers so crashes matter less',
+          'Retry the points update until it succeeds',
+        ],
+        answer: 1,
+        explanation:
+          'At-least-once delivery means duplicates will arrive; idempotent processing turns them into an exactly-once effect. Acknowledging first swaps duplicates for lost messages (at most once): a crash after the ack loses the points. More consumers or more retries only make redelivery more likely.',
+      },
+      {
+        id: 'idem-9',
+        prompt:
+          'Your server keeps idempotency keys for 24 hours. A phone that was offline for 3 days comes back and retries a payment with its original key. What happens?',
+        options: [
+          'The stored result is replayed, since keys identify the intent',
+          'The request is rejected with 409',
+          'The phone generates a new key automatically',
+          'The key has been pruned, so the server treats it as a new payment and may charge again',
+        ],
+        answer: 3,
+        explanation:
+          'A key only protects retries inside its retention window. Stripe documents the same: a key reused after it was pruned starts a new request. Either keep keys longer than realistic retries, or make the client stop retrying past the window and check the payment status instead.',
+      },
+      {
+        id: 'idem-10',
+        prompt:
+          'A client bug reuses the key of a 20 dollar payment from yesterday for a new 50 dollar payment today, inside the retention window. What should the server do?',
+        options: [
+          'Replay the stored 20 dollar result',
+          'Charge 50 dollars under the same key',
+          'Reject the request, because its body differs from the original request for that key',
+          'Delete the old key and start again',
+        ],
+        answer: 2,
+        explanation:
+          'A key names one intent, so a different body under the same key is a client bug. Replaying the 20 dollar result is the tempting wrong answer: the client would believe the 50 dollar payment succeeded. Stripe compares the parameters and returns an error; the IETF draft uses 422.',
+      },
+      {
+        id: 'idem-11',
+        prompt:
+          'To stop double charges, a teammate proposes never retrying payments: one attempt only (Max attempts 1 in the Lab). What does that cost?',
+        options: [
+          'Nothing - one attempt means one charge, and a lost response just means the payment failed',
+          'When a response is lost, the user sees an error for a payment that went through',
+          'Payments become slower',
+          'The keys table fills up faster',
+        ],
+        answer: 1,
+        explanation:
+          'At most once swaps duplicates for uncertainty: the charge happened, only the answer was lost, so the user sees an error and may pay again by hand. A lost response does not mean a failed payment - that confusion is the whole problem. Keys let you keep retries and still charge once.',
+      },
+      {
+        id: 'idem-12',
+        prompt:
+          'After a failover, the monthly invoice job sometimes runs twice for the same month. What is the simplest guard that stays correct?',
+        options: [
+          'A distributed lock around the job',
+          'A cron schedule that never overlaps',
+          'A unique constraint on (customer_id, month), treating the duplicate insert as already done',
+          'Logging a warning when the job runs twice',
+        ],
+        answer: 2,
+        explanation:
+          'A natural unique key lets the database reject the second invoice for every writer, even one nobody planned for. A lock with a lease can expire while the first run is still going, so two runners can overlap; a schedule cannot stop a failover from starting a second run.',
       },
     ],
   },

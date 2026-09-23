@@ -834,12 +834,12 @@ export const systemVisuals: Record<string, VisualSpec> = {
   idempotency: {
     width: 760,
     height: 290,
-    caption: 'The same key returns the stored result instead of charging the card twice.',
+    caption: 'The same key finds the stored result, so a retry never charges the card twice.',
     nodes: [
       { id: 'client', kind: 'client', label: 'Client', sub: 'retries on timeout', x: 40, y: 100, w: 170, h: 82 },
       { id: 'api', kind: 'server', label: 'Payments API', sub: 'Idempotency-Key 8f2c', x: 290, y: 95, w: 200, h: 92 },
-      { id: 'store', kind: 'cache', label: 'Key store', sub: 'key -> result', x: 570, y: 15, w: 160, h: 80 },
-      { id: 'charge', kind: 'sql', label: 'ch_77', sub: 'charged once', x: 570, y: 175, w: 160, h: 80 },
+      { id: 'store', kind: 'sql', label: 'Keys table', sub: 'key -> stored result', x: 570, y: 15, w: 170, h: 80 },
+      { id: 'charge', kind: 'sql', label: 'Charges table', sub: 'ch_77, charged once', x: 570, y: 175, w: 170, h: 80 },
     ],
     edges: [
       { from: 'client', to: 'api', tone: 'brand', rate: 3 },
@@ -848,10 +848,12 @@ export const systemVisuals: Record<string, VisualSpec> = {
     ],
     steps: [
       { from: 'client', to: 'api', label: 'Pay, Idempotency-Key 8f2c' },
+      { from: 'api', to: 'store', label: 'New key: saved as in progress' },
       { from: 'api', to: 'charge', label: 'Card charged once: ch_77' },
-      { from: 'api', to: 'store', label: 'Save the key with result' },
-      { from: 'client', to: 'api', label: 'Response lost, client retries', outcome: 'warning' },
-      { from: 'api', to: 'store', label: 'Same key found', outcome: 'cache-hit' },
+      { from: 'api', to: 'store', label: 'Same transaction: key completed' },
+      { from: 'api', to: 'client', label: 'Response lost on the way', outcome: 'failure' },
+      { from: 'client', to: 'api', label: 'Timeout, retry with same key', outcome: 'warning' },
+      { from: 'api', to: 'store', label: 'Same key found: completed', outcome: 'cache-hit' },
       { from: 'api', to: 'client', label: 'Stored result, no second charge' },
     ],
   },
