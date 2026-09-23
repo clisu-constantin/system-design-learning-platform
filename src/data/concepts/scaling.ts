@@ -71,10 +71,10 @@ Still one machine: resizing it is a restart, and losing it is an outage.`,
         id: 'vs-1',
         prompt: 'Your single server runs at 95% CPU and you upgrade from 4 to 16 cores. Latency improves but availability does not. Why?',
         options: [
-          'Larger machines fail more often',
-          'There is still exactly one machine - if it dies, the service is down',
+          'Larger machines fail more often, because 16 cores run hotter than 4',
+          'It is still one machine - if it dies, the service is down',
           'CPU has no effect on availability',
-          'The load balancer was removed',
+          'The load balancer in front was removed during the upgrade',
         ],
         answer: 1,
         explanation:
@@ -85,10 +85,10 @@ Still one machine: resizing it is a restart, and losing it is an outage.`,
         prompt:
           'In the Lab, 550 req/sec hits the Small tier (capacity about 500): about 9% of requests fail and latency is about 1 s. You jump to Medium (about 1,000 req/sec). What happens to latency?',
         options: [
-          'It halves to about 500 ms, because capacity doubled',
-          'It stays near 1 s - only the error rate changes',
-          'It falls to tens of milliseconds, because utilization drops from over 100% to about 55%, below the point where requests queue',
-          'It rises for good, because a bigger machine has more cores to coordinate',
+          'It halves to about 500 ms, because capacity doubled and each request gets twice the CPU',
+          'It stays near 1 s - only the error rate changes, since each request does the same work',
+          'It falls to tens of ms: utilization drops from over 100% to about 55%, so the queue empties',
+          'It rises for good, because a bigger machine has more cores to coordinate on every request',
         ],
         answer: 2,
         explanation:
@@ -99,10 +99,10 @@ Still one machine: resizing it is a restart, and losing it is an outage.`,
         prompt:
           'An API sits at 25% CPU, yet p95 latency is 900 ms. Profiling shows each request waits 800 ms on a lock in the database. The team proposes moving the API from 8 to 32 vCPU. What do you expect?',
         options: [
-          'Almost no change - the time is spent waiting on the database, not computing on this machine',
-          'Latency drops to about 225 ms, because there are 4 times the cores',
+          'Almost no change - the request is waiting on the database, not computing here',
+          'Latency drops to about 225 ms, because 4 times the cores do the same work 4 times faster',
           'Latency drops a little and the CPU rises to 100%',
-          'The lock disappears, because more cores can hold more locks',
+          'The lock disappears, because 32 cores can hold more locks at the same time',
         ],
         answer: 0,
         explanation:
@@ -113,10 +113,10 @@ Still one machine: resizing it is a restart, and losing it is an outage.`,
         prompt:
           'A server with 16 cores shows one core pinned at 100% and the other 15 almost idle. Throughput has stopped growing. What is the right move?',
         options: [
-          'Move to a 64-core machine',
-          'Move to a machine with more RAM',
+          'Move to a 64-core machine, so there are 4 times the cores for the traffic to grow into',
+          'Move to a machine with more RAM, since the busy core may be waiting on memory',
           'Add a second identical server with the same code',
-          'Find and fix the single-threaded path - a global lock, one busy event loop, or one serial query',
+          'Find and fix the single-threaded path, such as a global lock or one busy event loop',
         ],
         answer: 3,
         explanation:
@@ -141,9 +141,9 @@ Still one machine: resizing it is a restart, and losing it is an outage.`,
         prompt:
           'In the Lab you press Upgrade server while traffic is flowing, and for a few seconds every request fails. What is the Lab showing, and how do teams avoid it in production?',
         options: [
-          'A bug in the new machine - teams test the instance type before using it',
-          'The new machine is warming its cache - teams pre-load the cache',
-          'The resize restarts the only server - teams resize a standby first and fail over to it, or resize in a maintenance window',
+          'A bug in the new machine type - teams test the instance type in staging before using it',
+          'The new machine is warming its cache - teams pre-load the cache before sending traffic',
+          'The resize restarts the only server - teams resize a standby and fail over to it',
           'The load balancer is reconfiguring - teams add a second load balancer',
         ],
         answer: 2,
@@ -155,10 +155,10 @@ Still one machine: resizing it is a restart, and losing it is an outage.`,
         prompt:
           'The Lab tier ladder goes from Small to Bare metal: about 16x the capacity for about 65x the cost. You serve 4,000 req/sec today and traffic grows 50% a year. What should the ladder tell you?',
         options: [
-          'Stay vertical forever - Bare metal serves 8,000 req/sec',
-          'Scale out today, because vertical scaling is always the wrong choice',
-          'Pick Bare metal now so you never need to resize again',
-          'Each step up costs more per request served and there is a top rung - scale up now if it buys time, but plan the horizontal path',
+          'Stay vertical for good - Bare metal serves 8,000 req/sec, twice the traffic of today',
+          'Scale out today, because vertical scaling is always the wrong choice past 1,000 req/sec',
+          'Pick Bare metal now so you never need to resize again, and the restart happens only once',
+          'Each rung costs more per request and the ladder ends - scale up for time, but plan to scale out',
         ],
         answer: 3,
         explanation:
@@ -169,9 +169,9 @@ Still one machine: resizing it is a restart, and losing it is an outage.`,
         prompt:
           'A young product peaks at 300 req/sec. Its one Postgres database runs at 70% CPU on 4 vCPU. The team starts designing a sharding scheme. What is the trade-off-aware first move?',
         options: [
-          'Scale the database up to 8 or 16 vCPU and measure again - it costs little and changes no code, while sharding adds complexity you keep forever',
-          'Shard now, because the database will be the bottleneck sooner or later',
-          'Move to a NoSQL database that shards automatically',
+          'Scale the database up to 8 or 16 vCPU and measure again before designing shards',
+          'Shard now, because the database will be the bottleneck sooner or later and resharding later is harder',
+          'Move to a NoSQL database that shards automatically, so no partition key design is needed',
           'Add a second app server in front of the database',
         ],
         answer: 0,
@@ -183,10 +183,10 @@ Still one machine: resizing it is a restart, and losing it is an outage.`,
         prompt:
           'Product asks for 99.95% availability. The service runs on one very large VM, and the cloud provider promises 99.5% for a single instance (the AWS EC2 instance-level SLA). What do you tell them?',
         options: [
-          'Move to an even larger VM with a better SLA',
-          'A single machine of any size cannot promise that; run at least two instances, for example in two zones, behind a load balancer',
-          'Add more RAM so the VM crashes less often',
-          'Turn on automatic restarts so downtime does not count',
+          'Move to an even larger VM - bigger instance types come with a better SLA from the provider',
+          'No single VM can promise that; run two or more instances in two zones behind a balancer',
+          'Add more RAM, since most VM crashes come from memory pressure, so fewer crashes means higher uptime',
+          'Turn on automatic restarts, so a crash lasts only seconds and does not count as downtime at all',
         ],
         answer: 1,
         explanation:
@@ -197,10 +197,10 @@ Still one machine: resizing it is a restart, and losing it is an outage.`,
         prompt:
           'Your server runs at 85% CPU and latency is already three times its idle value. A colleague says: "We still have 15% left, no need to scale yet." What is wrong with that?',
         options: [
-          'Nothing - scale only at 100%',
-          'CPU above 80% damages the hardware',
-          'Past about 60-70% utilisation requests start to queue and latency climbs steeply, so the last 15% is not usable headroom for a spike',
-          'The monitoring must be wrong, since latency cannot rise before 100%',
+          'Nothing - CPU below 100% means spare capacity, so scale only when it hits 100%',
+          'CPU above 80% wears out the hardware and shortens its life, so it is time to scale for that reason',
+          'Past about 60-70% requests queue and latency climbs steeply - 15% is not real headroom',
+          'The monitoring must be wrong, since latency cannot rise before CPU reaches 100%',
         ],
         answer: 2,
         explanation:
@@ -211,10 +211,10 @@ Still one machine: resizing it is a restart, and losing it is an outage.`,
         prompt:
           'After moving an API from 4 to 16 vCPU, CPU falls from 98% to 30%, but p95 latency only goes from 800 ms to 620 ms. Profiling shows 550 ms of every request is one database query. What is the best next step?',
         options: [
-          'Move to 64 vCPU',
-          'Add a second API server',
-          'Move to a faster disk on the API server',
-          'Fix the query, for example with an index - the 550 ms is database time no API server size can shrink',
+          'Move to 64 vCPU - CPU fell with every step, so latency should keep falling with it',
+          'Add a second API server, so each server handles half the requests and half the queries',
+          'Move to a faster disk on the API server to cut the time spent waiting on IO per request',
+          'Fix the query, for example with an index - no API size can shrink database time',
         ],
         answer: 3,
         explanation:
@@ -295,9 +295,9 @@ lose it: 100% down      lose one: 1/3 of capacity`,
         id: 'hs-1',
         prompt: 'You scale from 1 to 6 API servers and latency barely improves. All six report 25% CPU. What is the most likely cause?',
         options: [
-          'The load balancer algorithm is wrong',
+          'The load balancer algorithm is wrong and sends most requests to one server',
           'The bottleneck moved to a shared dependency such as the database',
-          'Six servers is too many',
+          'Six servers is too many, so they spend their time coordinating with each other',
           'Health checks are failing',
         ],
         answer: 1,
@@ -309,10 +309,10 @@ lose it: 100% down      lose one: 1/3 of capacity`,
         prompt:
           'In the Lab, 900 req/sec hits one server that can serve about 500: CPU is 100% and about 44% of requests fail. You add a second server. What do you expect?',
         options: [
-          'Errors and latency both return to normal',
-          'Nothing changes until the load balancer is restarted',
-          'Errors drop to zero, but each server takes 450 req/sec at about 85% CPU, past the knee, so latency stays high - a third server brings it to about 56%',
-          'Errors halve to about 22%',
+          'Errors and latency both return to normal, because 1,000 req/sec of capacity now covers 900',
+          'Nothing changes until the load balancer is restarted to pick up the new server',
+          'Errors stop, but each server takes 450 req/sec at about 85% CPU, so latency stays high',
+          'Errors halve to about 22%, because each server now takes half of the overload',
         ],
         answer: 2,
         explanation:
@@ -323,10 +323,10 @@ lose it: 100% down      lose one: 1/3 of capacity`,
         prompt:
           'A team goes from 1 to 3 app servers behind a round-robin load balancer. Right away, users are logged out on about two requests out of three. What is the cause and the lasting fix?',
         options: [
-          'Sessions live in the memory of the server that created them; move them to a shared store such as Redis, or into a signed token',
-          'Round robin is broken; switch to least connections',
-          'Turn on sticky sessions so each user always reaches the same server',
-          'The servers have different clocks; sync them with NTP',
+          'Sessions live in the memory of one server; move them to a shared store or a signed token',
+          'Round robin is broken and skips servers; switch to least connections to even it out',
+          'Turn on sticky sessions so each user always goes back to the server that holds their session',
+          'The servers have different clocks, so tokens look expired; sync them with NTP',
         ],
         answer: 0,
         explanation:
@@ -337,10 +337,10 @@ lose it: 100% down      lose one: 1/3 of capacity`,
         prompt:
           'In the Lab, 4 servers share 1,200 req/sec (300 each, about 56% CPU). You turn on Fail Server 1. What happens?',
         options: [
-          'Every request fails until Server 1 is back',
-          'A quarter of all requests fail, the ones that were meant for Server 1',
-          'Nothing at all - the load balancer creates a replacement at once',
-          'The health check takes Server 1 out of the pool; the other 3 take 400 each at about 75% CPU, so no errors, but latency rises',
+          'Every request fails until Server 1 is back, since the pool is now incomplete',
+          'A quarter of all requests fail - the ones round robin still sends to Server 1',
+          'Nothing at all - the load balancer launches a replacement server within seconds and shifts the load',
+          'Server 1 leaves the pool; the other 3 take 400 each, about 75% CPU - no errors, higher latency',
         ],
         answer: 3,
         explanation:
@@ -351,8 +351,8 @@ lose it: 100% down      lose one: 1/3 of capacity`,
         prompt:
           'You run 4 app servers, each at 90% of capacity at peak. One of them crashes at peak time. What happens?',
         options: [
-          'The other 3 must carry 120% of their capacity: queues fill and requests fail until capacity returns',
-          'The other 3 go to about 100% and everything keeps working',
+          'The other 3 each need 120% of capacity, so queues fill and requests fail',
+          'The other 3 go to about 100% and everything keeps working, just more slowly',
           'The load balancer rejects exactly one quarter of the traffic and the rest is fine',
           'Nothing, because the crashed server was redundant',
         ],
@@ -365,9 +365,9 @@ lose it: 100% down      lose one: 1/3 of capacity`,
         prompt:
           'You scale from 4 to 20 app instances, each with a connection pool of 50. The Postgres database starts refusing new connections. Why, and what fixes it?',
         options: [
-          'The database is out of disk; add storage',
-          'Connections multiply with instances - 20 x 50 is 1,000, far above the default max_connections of 100; shrink each pool or put a pooler such as PgBouncer in front',
-          'Too many instances make the load balancer drop connections; add a second load balancer',
+          'The database ran out of disk from the extra write load of 20 instances; add storage',
+          'Pools multiply: 20 x 50 is 1,000, far above a max_connections of 100; shrink pools or add PgBouncer',
+          'Too many instances overload the load balancer; add a second load balancer',
           'Postgres cannot talk to more than 4 clients; switch to MySQL',
         ],
         answer: 1,
@@ -379,10 +379,10 @@ lose it: 100% down      lose one: 1/3 of capacity`,
         prompt:
           'After scaling to 3 instances, the nightly invoice email goes out three times to every customer. What happened?',
         options: [
-          'The email provider retried the send',
-          'The load balancer duplicated the request',
-          'The scheduled job runs inside every app instance; move it to one scheduler or guard it with a distributed lock',
-          'Three servers make the clock run three times as fast',
+          'The email provider retried the send three times after a slow response timed out',
+          'The load balancer duplicated the request to every backend in the pool, once each',
+          'The job runs in every app instance; use one scheduler or a distributed lock',
+          'Three servers make the clock run three times as fast, so the job fires three times',
         ],
         answer: 2,
         explanation:
@@ -393,10 +393,10 @@ lose it: 100% down      lose one: 1/3 of capacity`,
         prompt:
           'After scaling to 2 servers, users upload a profile photo, see "saved", and then the photo shows as broken about half the time. What is the fix?',
         options: [
-          'Turn on sticky sessions',
-          'Increase the upload size limit',
-          'Add a CDN in front of the servers',
-          'Store uploads in shared object storage (S3-compatible) instead of the local disk of the server that received them',
+          'Turn on sticky sessions, so each user keeps hitting the server that has their photo',
+          'Increase the upload size limit, since large photos are cut off halfway through the upload',
+          'Add a CDN in front of the servers so the photo is cached after the first successful load',
+          'Store uploads in shared object storage instead of on the local disk of one server',
         ],
         answer: 3,
         explanation:
@@ -407,10 +407,10 @@ lose it: 100% down      lose one: 1/3 of capacity`,
         prompt:
           'You must ship a new version during the day with zero downtime. What does running 4 servers behind a load balancer allow that 1 server does not?',
         options: [
-          'A rolling deploy: take one server out of the pool, update it, put it back, repeat - the other 3 serve traffic meanwhile, if they have the headroom',
-          'Deploying to all 4 at the same moment so they switch in sync',
-          'Skipping the restart, because the load balancer hot-swaps the code',
-          'Nothing - every deploy needs downtime',
+          'A rolling deploy: take one server out, update it, put it back, while the other 3 serve',
+          'Deploying to all 4 at the same instant, so users never see two versions side by side',
+          'Skipping the restart, because the load balancer hot-swaps the new code into each server',
+          'Nothing - every deploy needs downtime, whatever the number of servers',
         ],
         answer: 0,
         explanation:
@@ -421,9 +421,9 @@ lose it: 100% down      lose one: 1/3 of capacity`,
         prompt:
           'In the Lab you push traffic to 3,500 req/sec with all 8 servers: app CPU is about 82%, the shared database is at 100% and about 14% of requests fail. What is the next step?',
         options: [
-          'Add more app servers',
+          'Add more app servers - app CPU at 82% is above the 60-70% target for headroom',
           'Take load off the database: cache hot reads, add read replicas, or shard',
-          'Switch the load balancer to least connections',
+          'Switch the load balancer to least connections so the slow requests spread out',
           'Lower the traffic slider in production',
         ],
         answer: 1,
@@ -435,10 +435,10 @@ lose it: 100% down      lose one: 1/3 of capacity`,
         prompt:
           'Each instance enforces a limit of 100 requests a minute per user with an in-memory counter. After scaling to 5 instances, one user makes about 500 requests a minute without being blocked. Why?',
         options: [
-          'Rate limits only work with one server',
-          'The load balancer adds its own allowance',
-          'Each instance only counts the requests it sees, so the real limit became 5 x 100; use a shared counter (for example in Redis)',
-          'The user found a bug in the limiter',
+          'Rate limits only work on a single server, so scaling out to 5 instances always disables them',
+          'The load balancer adds its own allowance on top, 100 more for each instance behind it',
+          'Each instance counts only its own requests, so the limit became 5 x 100; share the counter',
+          'The user found a bug in the limiter that resets the counter every few seconds',
         ],
         answer: 2,
         explanation:
@@ -503,8 +503,8 @@ lose it: 100% down      lose one: 1/3 of capacity`,
         id: 'sl-1',
         prompt: 'Three API servers sit behind a round-robin load balancer and store sessions in local memory. What happens?',
         options: [
-          'Nothing - the load balancer syncs memory between servers',
-          'Users are logged out intermittently when their request lands on a different server',
+          'Nothing - the load balancer copies each new session to the other two servers',
+          'Users get logged out whenever a request lands on another server',
           'The database becomes the bottleneck',
           'DNS resolution fails',
         ],
@@ -517,9 +517,9 @@ lose it: 100% down      lose one: 1/3 of capacity`,
         prompt:
           'In the Lab on Shared store, you kill Server 2 while traffic runs. What happens to the users whose last request Server 2 served?',
         options: [
-          'They are logged out and must log in again on another server',
+          'They are logged out, because their session was last written by Server 2',
           'Their requests wait in the load balancer until Server 2 restarts',
-          'Nothing they notice: the next request goes to Server 1 or 3, which loads the same session from Redis',
+          'Nothing they notice: Server 1 or 3 loads the same session from Redis',
           'The load balancer copies their sessions from Server 2 to the surviving servers',
         ],
         answer: 2,
@@ -531,8 +531,8 @@ lose it: 100% down      lose one: 1/3 of capacity`,
         prompt:
           'Still on Shared store, you click Kill Redis. What does the Lab show, and what does it teach?',
         options: [
-          'Every request fails, because every server needs Redis to find the session - so the store needs its own replicas and failover',
-          'Only a third of requests fail, the ones whose session was on the dead Redis node',
+          'Every request fails, since all servers need Redis - so Redis needs replicas and failover',
+          'Only about a third of requests fail - the ones whose session was stored on the dead Redis node',
           'The servers fall back to their local memory and keep working',
           'Nothing changes, because the sessions are also in the cookie',
         ],
@@ -545,10 +545,10 @@ lose it: 100% down      lose one: 1/3 of capacity`,
         prompt:
           'An API keeps sessions in Redis but loads each user permissions into a module-level map at login and never refreshes it. An admin removes a permission from a user. What happens?',
         options: [
-          'The change applies everywhere on the next request, because sessions are in Redis',
+          'The change applies everywhere on the next request, because sessions are in Redis and every server reads them',
           'The user is logged out on every server',
           'The permission disappears after the Redis TTL expires',
-          'Servers that loaded the old map keep granting the permission until they restart, so the answer depends on which server the request lands on',
+          'Servers holding the old map keep granting it until they restart, so it depends on routing',
         ],
         answer: 3,
         explanation:
@@ -559,9 +559,9 @@ lose it: 100% down      lose one: 1/3 of capacity`,
         prompt:
           'Profile photos are written to /var/app/uploads on the instance that received the upload. After a rolling deploy replaces all 4 instances, what do users see?',
         options: [
-          'Every photo uploaded before the deploy is gone, because it lived on disks that were thrown away',
-          'Photos load slowly for a while as the new instances copy them',
-          'Nothing - a rolling deploy keeps the old disks',
+          'Every photo uploaded before the deploy is gone with the old disks',
+          'Photos load slowly for a while as the new instances copy them from the old ones',
+          'Nothing - a rolling deploy keeps the old disks and mounts them on the new instances',
           'Only one photo in four is missing',
         ],
         answer: 0,
@@ -587,10 +587,10 @@ lose it: 100% down      lose one: 1/3 of capacity`,
         prompt:
           'Sessions are in memory and the release is today, so the team turns on sticky sessions instead of moving sessions to Redis. What still goes wrong?',
         options: [
-          'Nothing - sticky sessions make the service stateless',
-          'Every request now pays a network hop to find its session',
+          'Nothing - sticky sessions make the service stateless, since each user sees one server',
+          'Every request now pays a network hop to look up its session',
           'Users are pinned to whichever server they first reached, so the lab shows 33% success',
-          'A crash or deploy of one server logs out every user pinned to it, and load stays uneven because users cannot be moved',
+          'A crash or deploy logs out everyone pinned to that server, and load stays uneven',
         ],
         answer: 3,
         explanation:
@@ -601,10 +601,10 @@ lose it: 100% down      lose one: 1/3 of capacity`,
         prompt:
           'Each instance keeps an in-memory cache of rendered product pages for 60 seconds, and different instances may hold different copies. Is the service still stateless?',
         options: [
-          'Yes, as long as the cache is a pure optimisation: losing it only costs a rebuild, and 60 seconds of possible staleness is acceptable',
-          'No - any data in process memory makes a service stateful',
-          'Only if every instance holds the same copy',
-          'Only if the cache is written to local disk as well',
+          'Yes, if losing the cache only costs a rebuild and 60 s of staleness is acceptable',
+          'No - any data in process memory makes a service stateful, cache or not',
+          'Only if every instance holds the same copy, so two users never see two different pages',
+          'Only if the cache is also written to local disk, so it survives a restart',
         ],
         answer: 0,
         explanation:
@@ -615,10 +615,10 @@ lose it: 100% down      lose one: 1/3 of capacity`,
         prompt:
           'After a fraud alert, a bank must log a user out on all 20 servers within seconds. Which place for the session does this with the least extra machinery?',
         options: [
-          'Signed JWTs with a 24-hour lifetime',
-          'Sticky sessions on the load balancer',
-          'A shared session store: delete one key and every server rejects the session on the next request',
-          'Sessions in each server memory, cleared by a broadcast',
+          'Signed JWTs with a 24-hour lifetime, since no server has to be contacted',
+          'Sticky sessions on the load balancer, so only one server holds each session',
+          'A shared session store: delete one key and every server rejects it',
+          'Sessions in each server memory, cleared by a broadcast message to all 20 servers',
         ],
         answer: 2,
         explanation:
@@ -629,9 +629,9 @@ lose it: 100% down      lose one: 1/3 of capacity`,
         prompt:
           'A chat app runs 3 instances. User X holds a WebSocket on instance 1, and a message for X arrives on instance 2. What must the design include?',
         options: [
-          'Nothing - instance 2 can push down any open WebSocket',
-          'A pub/sub channel (for example Redis pub/sub) so instance 2 can hand the message to the instance holding the connection of X',
-          'Sticky sessions, so every sender lands on instance 1',
+          'Nothing - instance 2 can push down any open WebSocket in the cluster',
+          'A pub/sub channel so instance 2 can hand the message to the instance holding X',
+          'Sticky sessions, so every sender lands on instance 1 where X is connected',
           'A shared session store, which also shares the sockets',
         ],
         answer: 1,
@@ -643,9 +643,9 @@ lose it: 100% down      lose one: 1/3 of capacity`,
         prompt:
           'You review a service with one question: if this instance died right now, would anything be lost or done twice? Which item fails that test?',
         options: [
-          'A temp file created and deleted inside one request',
-          'Config read from environment variables at start-up',
-          'An in-memory LRU cache of database rows, refilled on a miss',
+          'A temp file created and deleted inside one request, on the local disk of the instance',
+          'Config read from environment variables at start-up and kept in memory for the whole run',
+          'An in-memory LRU cache of database rows, refilled from the database on a miss',
           'An in-memory counter of how many free exports each user has used this month',
         ],
         answer: 3,
@@ -724,10 +724,10 @@ Stateful tier     ->    scale by partitioning + replication
         prompt:
           'In the Lab on Sticky sessions, Server 1 holds the sessions of users A and D. You kill Server 1. What happens?',
         options: [
-          'Every user is logged out, because the load balancer resets all sticky routes',
-          'A and D are re-pinned to another server, find no session there and must log in again; the other users notice nothing',
-          'Nothing - the load balancer moves A and D sessions to Server 2',
-          'A and D requests fail until Server 1 restarts',
+          'Every user is logged out, because the load balancer resets all sticky routes when a server dies',
+          'A and D land on another server with no session and must log in; others notice nothing',
+          'Nothing - the load balancer moves the sessions of A and D to Server 2',
+          'Requests from A and D fail until Server 1 restarts, since they stay pinned to it',
         ],
         answer: 1,
         explanation:
@@ -741,7 +741,7 @@ Stateful tier     ->    scale by partitioning + replication
           'Nothing - a rolling deploy keeps capacity up, so no one is affected',
           'Only the shoppers on the last instance lose their cart',
           'Every active shopper loses their cart once during the deploy, a third at each restart',
-          'Carts are saved to disk automatically before each restart',
+          'Carts are saved to disk automatically before each restart and reloaded after',
         ],
         answer: 2,
         explanation:
@@ -753,8 +753,8 @@ Stateful tier     ->    scale by partitioning + replication
           'With sticky sessions, one server runs at 90% CPU while two others sit at 30%. You add a fourth server. Why does the hot server stay hot?',
         options: [
           'The users already pinned to it stay pinned; only new sessions reach the new server',
-          'The load balancer needs a restart to see the new server',
-          'The new server must first copy the sessions of the hot one',
+          'The load balancer needs a restart before it sends traffic to the new server',
+          'The new server must first copy the sessions of the hot one before it can take users',
           'CPU does not depend on the number of users',
         ],
         answer: 0,
@@ -766,10 +766,10 @@ Stateful tier     ->    scale by partitioning + replication
         prompt:
           'A PostgreSQL primary dies. A replica exists and failover is automated. What do writing clients see?',
         options: [
-          'Nothing - the replica takes over with zero impact',
-          'All data since the last nightly backup is lost',
-          'Reads fail but writes continue',
-          'Writes are rejected for the failover window - detect, promote, redirect, often tens of seconds - then resume on the new primary',
+          'Nothing - the replica takes over with zero impact, since failover is automated',
+          'All data written since the last nightly backup is lost with the old primary',
+          'Reads fail but writes continue, because the replica only served reads',
+          'Writes fail for tens of seconds during promotion, then resume',
         ],
         answer: 3,
         explanation:
@@ -780,9 +780,9 @@ Stateful tier     ->    scale by partitioning + replication
         prompt:
           'A migration drops the wrong column on a primary with 2 streaming replicas. Can the replicas restore the data?',
         options: [
-          'Yes - promote a replica, it still has the column',
-          'No - replication copied the drop to both replicas within seconds; you need a backup or point-in-time recovery',
-          'Yes, if you stop replication within an hour',
+          'Yes - promote a replica; a replica exists precisely to hold a second copy of the data',
+          'No - the drop replicated within seconds; you need a backup or point-in-time recovery',
+          'Yes, if you stop replication within an hour, before the replicas apply the change',
           'Only the second replica, because it lags',
         ],
         answer: 1,
@@ -794,9 +794,9 @@ Stateful tier     ->    scale by partitioning + replication
         prompt:
           'The app reads the database primary IP address once at start-up. A failover promotes a replica on a different IP. What happens?',
         options: [
-          'The app keeps sending writes to the old, dead primary until it is restarted or reconfigured',
-          'The app finds the new primary automatically',
-          'The replica takes over the old IP address in every case',
+          'Writes keep going to the old, dead primary until the app is restarted',
+          'The app finds the new primary automatically, since failover updates every client',
+          'The replica takes over the old IP address in every case, so nothing breaks',
           'Only reads fail',
         ],
         answer: 0,
@@ -808,9 +808,9 @@ Stateful tier     ->    scale by partitioning + replication
         prompt:
           'A single PostgreSQL primary is at 90% of its write capacity. A teammate proposes adding three read replicas. What happens to write capacity?',
         options: [
-          'It roughly quadruples',
-          'It grows by the capacity of one replica',
-          'It does not grow: every write still goes to the one primary, and the replicas must apply every write too',
+          'It roughly quadruples, since four nodes can now accept writes',
+          'It grows by the capacity of one replica, as writes spill over to it',
+          'It does not grow: every write still goes to the one primary',
           'It drops to zero during replica creation',
         ],
         answer: 2,
@@ -822,10 +822,10 @@ Stateful tier     ->    scale by partitioning + replication
         prompt:
           'A 3-node database cluster runs on Kubernetes as a plain Deployment with the data on the pod filesystem. One pod restarts. What happens?',
         options: [
-          'Nothing - Kubernetes keeps pod data across restarts',
-          'The pod comes back with the same name and the same data',
-          'The data moves to another pod',
-          'The new pod gets a new name and an empty disk, so that node has lost its data and identity',
+          'Nothing - Kubernetes keeps pod data across restarts on the node',
+          'The pod comes back with the same name and the same data, as a Deployment keeps both',
+          'The data moves to another pod in the Deployment',
+          'The pod comes back with a new name and an empty disk - data and identity lost',
         ],
         answer: 3,
         explanation:
@@ -836,10 +836,10 @@ Stateful tier     ->    scale by partitioning + replication
         prompt:
           'A 2 TB database replica dies. A new replica copies data at about 200 MB/s. A stateless app instance also dies. Which comes back first, and why?',
         options: [
-          'The replica, because databases get priority',
-          'The app instance in about half a minute; the replica needs about 3 hours to copy 2 TB before it can serve, and the cluster has less redundancy all that time',
-          'Both in about 30 seconds',
-          'Neither comes back without a manual rebuild',
+          'The replica, because the scheduler restores databases before stateless services',
+          'The app, in about 30 s; the replica needs 3 hours to copy 2 TB',
+          'Both in about 30 seconds, since both are just new machines to boot',
+          'Neither comes back without a manual rebuild by an operator on call',
         ],
         answer: 1,
         explanation:
@@ -850,10 +850,10 @@ Stateful tier     ->    scale by partitioning + replication
         prompt:
           'Each of 12 microservices keeps a little SQLite file on its local disk. What is the main cost?',
         options: [
-          'SQLite is too slow for production',
+          'SQLite is too slow for production traffic and locks the whole file on writes',
           'Nothing - small state is harmless',
-          'Twelve places to back up, replicate and fail over, and data that vanishes when an instance disk is replaced',
-          'The services can no longer be deployed',
+          'Twelve places to back up and fail over, and data lost when a disk is replaced',
+          'The services can no longer be deployed with rolling restarts',
         ],
         answer: 2,
         explanation:
@@ -864,10 +864,10 @@ Stateful tier     ->    scale by partitioning + replication
         prompt:
           'A WebSocket gateway node holds 50,000 open connections. You deploy a new version to it. What should the design plan for?',
         options: [
-          'Nothing - WebSockets survive a server restart',
-          'All 50,000 clients disconnect, so drain the node gradually and have clients reconnect with jittered backoff to other nodes',
-          'The load balancer moves the open connections to another node',
-          'Only idle connections are lost',
+          'Nothing - WebSockets reconnect inside the protocol, so a restart is invisible',
+          'All 50,000 clients drop, so drain the node and have them reconnect with jittered backoff',
+          'The load balancer hands the open connections over to another healthy node during the deploy',
+          'Only idle connections are lost; active ones finish on the old process first',
         ],
         answer: 1,
         explanation:
@@ -953,9 +953,9 @@ Stateful tier     ->    scale by partitioning + replication
         prompt: 'Three servers sit behind a round robin balancer with no health checks of any kind, active or passive. Server 2 crashes and refuses every connection. What do users see?',
         options: [
           'Nothing - the balancer notices the refused connections and stops using Server 2 on its own',
-          'About one request in three fails, and keeps failing until someone takes Server 2 out of the pool',
-          'Every request fails, because the pool is broken',
-          'All traffic moves to Server 2, because it answers fastest',
+          'About one request in three fails, until someone removes Server 2 by hand',
+          'Every request fails, because one dead member marks the whole pool as broken',
+          'All traffic moves to Server 2, because refused connections make it answer fastest',
         ],
         answer: 1,
         explanation:
@@ -965,8 +965,8 @@ Stateful tier     ->    scale by partitioning + replication
         id: 'lb-2',
         prompt: 'Most requests take 20 ms, but about 2 percent are 3-second report queries. With round robin, one server is stuck with several reports and its p95 climbs to 2 s while the others have room. What change on the balancer helps first, without new hardware?',
         options: [
-          'Switch to Random, so the reports spread out by chance',
-          'Give the stuck server a lower weight in Weighted Round Robin',
+          'Switch to Random, so the reports spread out by chance instead of in a fixed rotation',
+          'Give the stuck server a lower weight in Weighted Round Robin so it receives fewer requests',
           'Switch to Least Connections, so a server busy with long requests receives fewer new ones',
           'Switch to IP hash, so each user always reaches the same server',
         ],
@@ -978,9 +978,9 @@ Stateful tier     ->    scale by partitioning + replication
         id: 'lb-3',
         prompt: 'In the Lab, Server 1 is slow (2x per request), traffic is 750 req/sec and pool capacity reads 1,000 req/sec. With Round Robin, Server 1 fails requests although the pool is at 75 percent. Why?',
         options: [
-          'Round Robin gives each server 250 req/sec, but the slow Server 1 can absorb only 200, so it saturates while the others still have room',
-          'Pool capacity is wrong: the Lab counts Server 1 twice',
-          'Round Robin sends most of the traffic to Server 1 because it is listed first',
+          'Each server gets 250 req/sec, but slow Server 1 can take only 200, so it saturates alone',
+          'Pool capacity is wrong: the Lab counts Server 1 twice, so the real pool is smaller',
+          'Round Robin sends most of the traffic to Server 1, because it is listed first in the pool',
           'Any pool above 70 percent drops requests, whatever the algorithm',
         ],
         answer: 0,
@@ -991,10 +991,10 @@ Stateful tier     ->    scale by partitioning + replication
         id: 'lb-4',
         prompt: 'In the Lab you pick Least Connections, turn Health checks off and kill Server 2. Failed requests jump far above one in three. What is going on?',
         options: [
-          'Least Connections retries each failed request three times',
-          'The two live servers overload because they now carry all the traffic',
-          'Killing a server disables the load balancer for a few seconds',
-          'A dead server that refuses connections holds zero open connections, so Least Connections picks it for almost every request',
+          'Least Connections retries every failed request three times, which triples the failure count',
+          'The two live servers overload because they now carry all of the traffic between the two of them',
+          'Killing a server disables the load balancer for a few seconds while it rebuilds the pool',
+          'The dead server holds zero connections, so Least Connections picks it almost every time',
         ],
         answer: 3,
         explanation:
@@ -1004,9 +1004,9 @@ Stateful tier     ->    scale by partitioning + replication
         id: 'lb-5',
         prompt: 'Your pool has one 16-core server and two 4-core servers behind round robin. The two small ones sit at 95 percent CPU and fail requests while the big one idles at 30 percent. What do you change?',
         options: [
-          'Switch to Random',
-          'Add health checks',
-          'Use Weighted Round Robin with weights of about 4, 1 and 1, so each server receives a share that matches its size',
+          'Switch to Random, so the requests spread across the servers by chance',
+          'Add health checks, so the overloaded small servers are taken out',
+          'Use Weighted Round Robin with weights of about 4, 1 and 1',
           'Turn on sticky sessions',
         ],
         answer: 2,
@@ -1018,8 +1018,8 @@ Stateful tier     ->    scale by partitioning + replication
         prompt: 'You run six application servers behind a single load balancer VM. The host under that VM fails. What happens?',
         options: [
           'Clients connect to the application servers directly until the balancer is back',
-          'The whole service is down: the balancer was the single point of failure. Run it as a redundant pair or a managed multi-zone balancer',
-          'Only one sixth of requests fail',
+          'The whole service is down - the balancer was the single point of failure',
+          'Only one sixth of requests fail, since the servers themselves are healthy',
           'DNS moves traffic to another balancer automatically',
         ],
         answer: 1,
@@ -1030,10 +1030,10 @@ Stateful tier     ->    scale by partitioning + replication
         id: 'lb-7',
         prompt: 'You must send /api/reports to a separate pool of servers and everything else to the main pool, and the traffic is HTTPS. Which balancer can do this?',
         options: [
-          'A layer 4 balancer, because it is faster',
+          'A layer 4 balancer, because it is faster and forwards each connection by port',
           'Either one - every balancer can read the URL',
-          'DNS round robin with two names',
-          'A layer 7 balancer that terminates TLS, because only it decrypts the request and reads the HTTP path',
+          'DNS round robin with two names, one for reports and one for the rest',
+          'A layer 7 balancer that terminates TLS and reads the HTTP path',
         ],
         answer: 3,
         explanation:
@@ -1043,9 +1043,9 @@ Stateful tier     ->    scale by partitioning + replication
         id: 'lb-8',
         prompt: 'An app keeps login sessions in the memory of each server. Behind a round robin balancer, users get logged out at random. Why?',
         options: [
-          'Sessions expire faster behind a balancer',
-          'Round robin encrypts the session cookie',
-          'The next request can land on a server that never saw the login, so the session is not there',
+          'Sessions expire faster behind a balancer, which shortens every cookie',
+          'Round robin encrypts the session cookie, so other servers cannot read it',
+          'The next request may land on a server that never saw the login',
           'The balancer deletes cookies',
         ],
         answer: 2,
@@ -1056,8 +1056,8 @@ Stateful tier     ->    scale by partitioning + replication
         id: 'lb-9',
         prompt: 'A cache tier is balanced by hash(key) mod N across 4 nodes. You add a fifth node and the cache hit rate collapses for an hour. What happened, and what avoids it next time?',
         options: [
-          'Changing N from 4 to 5 moved about 80 percent of keys to a different node, so they all missed. Consistent hashing moves only about one fifth',
-          'The new node was slow to boot',
+          'Going from mod 4 to mod 5 moved about 80 percent of keys; consistent hashing moves 1/5',
+          'The new node was slow to boot, so its share of keys missed',
           'Hashing always gives a low hit rate',
           'The balancer flushed every cache when the pool changed',
         ],
@@ -1069,10 +1069,10 @@ Stateful tier     ->    scale by partitioning + replication
         id: 'lb-10',
         prompt: 'During a rolling deploy, each server is stopped the moment it is taken out of the balancer. Every step shows a burst of 502 errors. What is missing?',
         options: [
-          'A faster health check interval',
-          'Connection draining: stop sending new requests, let the in-flight ones finish, then stop the server',
-          'More servers in the pool',
-          'Switching from round robin to least connections',
+          'A faster health check interval, so the balancer notices the stopped server sooner',
+          'Connection draining: let in-flight requests finish before stopping the server',
+          'More servers in the pool, so each stopped server has fewer requests to cut off',
+          'Switching from round robin to least connections, so busy servers get fewer requests',
         ],
         answer: 1,
         explanation:
@@ -1082,10 +1082,10 @@ Stateful tier     ->    scale by partitioning + replication
         id: 'lb-11',
         prompt: 'A pool under heavy load uses Least Connections. You add a freshly started server with an empty cache, and it is swamped within a second and turns slow. Why?',
         options: [
-          'New servers always get a double weight',
-          'Least Connections ignores new servers for the first minute',
-          'The health check sends it extra traffic',
-          'It has zero open connections, so it wins almost every pick until it catches up - a slow start ramp avoids that',
+          'New servers always get a double weight so they fill up quickly and warm their cache',
+          'Least Connections ignores new servers for the first minute, then floods them at once',
+          'The health check sends it a burst of extra traffic to test it under load before it joins',
+          'It has zero open connections, so it wins almost every pick until it catches up',
         ],
         answer: 3,
         explanation:
@@ -1095,10 +1095,10 @@ Stateful tier     ->    scale by partitioning + replication
         id: 'lb-12',
         prompt: 'In the Lab, 3 servers each take 400 req/sec and traffic is 1,500 req/sec. Latency climbs and requests fail. What brings it back?',
         options: [
-          'Switch from Round Robin to Least Connections',
-          'Switch to Random',
-          'Add a fourth server (or raise per-server capacity), so pool capacity passes 1,500 req/sec',
-          'Turn off the health checks',
+          'Switch from Round Robin to Least Connections, so the busiest server gets fewer requests',
+          'Switch to Random, which avoids the lockstep of a fixed rotation',
+          'Add a fourth server (or raise per-server capacity) so pool capacity passes 1,500 req/sec',
+          'Turn off the health checks, which add load to every server',
         ],
         answer: 2,
         explanation:
@@ -1173,10 +1173,10 @@ Stateful tier     ->    scale by partitioning + replication
         id: 'as-1',
         prompt: 'Instances take 90 seconds to become healthy, and traffic triples in 30 seconds. What actually protects users?',
         options: [
-          'A lower scale-out threshold alone',
+          'A lower scale-out threshold alone, so the launch starts before traffic peaks',
           'Headroom plus a queue or graceful degradation while new capacity warms up',
-          'Scaling in faster',
-          'A bigger cooldown window',
+          'Scaling in faster between surges',
+          'A bigger cooldown window, so the scaler does not overreact to the spike',
         ],
         answer: 1,
         explanation:
@@ -1187,10 +1187,10 @@ Stateful tier     ->    scale by partitioning + replication
         prompt:
           'In the Lab you set Scale out above 70%, Scale in below 60% and Cooldown 2 s. The fleet keeps adding and removing an instance every few seconds. Why, and what fixes it?',
         options: [
-          'The traffic curve is random; nothing can be done',
-          'Max instances is too low; raise it',
-          'Warm-up is too short; make instances boot more slowly',
-          'Adding one instance drops CPU under 60%, which removes it, which pushes CPU over 70% again - widen the gap between the thresholds and lengthen the cooldown',
+          'The traffic curve is random, so no policy can keep up; nothing can be done',
+          'Max instances is too low, so the scaler keeps hitting the cap; raise it',
+          'Warm-up is too short, so new instances join the pool before they are ready; make them boot more slowly',
+          'Adding one drops CPU under 60%, which removes it again - widen the gap and lengthen the cooldown',
         ],
         answer: 3,
         explanation:
@@ -1202,8 +1202,8 @@ Stateful tier     ->    scale by partitioning + replication
           'Each instance serves at most 200 requests at once from a fixed worker pool. During a slowdown of a downstream API, every worker is busy, requests queue, and CPU sits at 25%. The CPU-based policy never fires. What should the policy watch instead?',
         options: [
           'In-flight requests per instance (or p95 latency) - the thing users feel',
-          'Memory usage',
-          'CPU, but with the threshold lowered to 20%',
+          'Memory usage, since every queued request holds its buffers in memory while it waits',
+          'CPU, but with the threshold lowered to 20% so it fires sooner',
           'The number of instances',
         ],
         answer: 0,
@@ -1215,9 +1215,9 @@ Stateful tier     ->    scale by partitioning + replication
         prompt:
           'Every weekday at 09:00 traffic triples in ten minutes, and every morning the reactive policy produces a few minutes of errors. What is the lowest-risk change?',
         options: [
-          'Lower the scale-out threshold to 30%',
-          'Remove the cooldown',
-          'Schedule a scale-out at 08:45 by the clock and keep the reactive rules as the safety net',
+          'Lower the scale-out threshold to 30% so the policy fires as soon as traffic starts rising',
+          'Remove the cooldown so the policy can add instances back to back',
+          'Schedule a scale-out at 08:45 and keep the reactive rules as a safety net',
           'Raise the maximum instance count',
         ],
         answer: 2,
@@ -1229,10 +1229,10 @@ Stateful tier     ->    scale by partitioning + replication
         prompt:
           'A pool of workers consumes a message queue. Which signal lets the auto scaler add the right number of workers?',
         options: [
-          'Average CPU of the workers',
-          'Total number of messages in the queue',
-          'Number of messages published per minute',
-          'Backlog per worker: messages in the queue divided by the number of workers, compared with what one worker can clear in your target time',
+          'Average CPU of the workers, since busy workers mean the queue is growing faster than they clear it',
+          'Total number of messages in the queue, since that is exactly the work still waiting to be done',
+          'Number of messages published per minute, which shows the demand before it piles up in the queue',
+          'Backlog per worker: queued messages divided by workers, against a target per worker',
         ],
         answer: 3,
         explanation:
@@ -1243,10 +1243,10 @@ Stateful tier     ->    scale by partitioning + replication
         prompt:
           'A client bug retries every failed request 10 times with no backoff. The service scales out on request rate and has no maximum instance count. What happens overnight?',
         options: [
-          'The fleet scales out to serve the retries, the bill grows with it, and the shared database may still fall over - a maximum caps the damage, and backoff on the client is the real fix',
+          'The fleet scales out to serve the retries and the bill grows - cap it, and fix client backoff',
           'Nothing - auto scaling ignores retries',
-          'The fleet scales in, because each request fails faster',
-          'The load balancer blocks the client automatically',
+          'The fleet scales in, because each failed request finishes faster and uses less CPU',
+          'The load balancer blocks the client automatically once it spots the repeated requests',
         ],
         answer: 0,
         explanation:
@@ -1257,10 +1257,10 @@ Stateful tier     ->    scale by partitioning + replication
         prompt:
           'Every scale-in event causes a short burst of 502 errors. Traffic is low at the time. What is the likely cause?',
         options: [
-          'Scale-in thresholds are too high',
-          'Instances are terminated with requests still in flight; deregister them and drain connections before terminating',
+          'Scale-in thresholds are too high, so too many instances are removed at once',
+          'Instances are terminated mid-request; drain them before terminating',
           'The remaining instances cannot handle the load',
-          'The health check interval is too long',
+          'The health check interval is too long to notice the removed instance',
         ],
         answer: 1,
         explanation:
@@ -1271,9 +1271,9 @@ Stateful tier     ->    scale by partitioning + replication
         prompt:
           'In the Lab, traffic ramps up over about 12 seconds and each new instance needs 4 seconds to warm up. You set Cooldown to 30 s. What do you see during the plateau?',
         options: [
-          'The fleet grows smoothly and keeps up with traffic',
-          'The fleet scales out several times during the ramp, then flaps',
-          'One instance is added, then the cooldown blocks the next one for 30 s, so capacity lags far behind traffic and requests fail through the plateau',
+          'The fleet grows smoothly and keeps up, since 4 s of warm-up is short',
+          'The fleet scales out several times during the ramp, then flaps on the plateau as the cooldown resets',
+          'One instance is added, then the 30 s cooldown blocks the rest, so requests fail through the plateau',
           'No instances are ever added',
         ],
         answer: 2,
@@ -1285,10 +1285,10 @@ Stateful tier     ->    scale by partitioning + replication
         prompt:
           'A service needs to go from 4 to 8 instances every morning. The policy adds 1 instance per action with a 5-minute cooldown, so reaching 8 takes about 20 minutes and the rush is over by then. Which change removes the most lag?',
         options: [
-          'Raise the threshold from 80% to 90%',
+          'Raise the threshold from 80% to 90%, so each action waits for real demand',
           'Lengthen the cooldown to 10 minutes',
-          'Scale on memory instead of CPU',
-          'Add capacity in larger steps, for example 50% of the fleet per action, so 4 becomes 6 becomes 9',
+          'Scale on memory instead of CPU, which rises earlier in the morning',
+          'Add capacity in larger steps, such as 50% of the fleet per action',
         ],
         answer: 3,
         explanation:
@@ -1299,10 +1299,10 @@ Stateful tier     ->    scale by partitioning + replication
         prompt:
           'To save money, a team sets its target-tracking policy to keep average CPU at 90% instead of 60%. Why do traffic spikes now hurt users?',
         options: [
-          'At 90% there is no headroom: latency is already past the queueing knee and new instances take minutes to arrive, so nothing absorbs the first minutes of a surge',
-          'The cloud provider throttles instances above 80%',
-          'Target tracking does not work above 70%',
-          'A higher target makes instances boot more slowly',
+          'At 90% there is no headroom to absorb a surge while new instances take minutes to boot',
+          'The cloud provider throttles instances that stay above 80% CPU for long periods',
+          'Target tracking does not work above 70%, so the policy stops adding instances',
+          'A higher target makes each new instance boot more slowly, as it starts under heavier load',
         ],
         answer: 0,
         explanation:
@@ -1313,9 +1313,9 @@ Stateful tier     ->    scale by partitioning + replication
         prompt:
           'Nights have almost no traffic, so the minimum instance count is set to 0. The first user each morning waits about 3 minutes, and some requests time out. What is the fix?',
         options: [
-          'Lower the scale-out threshold',
-          'Keep a minimum of warm instances - for example 2, in two zones - so the first requests always find capacity',
-          'Shorten the health check interval',
+          'Lower the scale-out threshold so the first request triggers a launch sooner',
+          'Keep a minimum of warm instances, such as 2 in two zones',
+          'Shorten the health check interval so new instances join the pool faster',
           'Raise the maximum instance count',
         ],
         answer: 1,
