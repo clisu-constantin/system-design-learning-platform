@@ -512,19 +512,19 @@ consistent hashing    adding a shard moves only ~1/N of keys
       {
         heading: 'Partitioning is inside one database; sharding is across machines',
         paragraphs: [
-          'The words get used interchangeably and should not be. Partitioning splits one logical table into physical pieces managed by the same database instance. The application sees one table, writes the same SQL, and the database routes to the right partition. Sharding splits data across independent database servers and the application has to know.',
-          'Because it is local, partitioning keeps everything you like: transactions across partitions still work, joins still work, unique constraints within the partitioning scheme still work. It costs no distributed systems complexity at all, which makes it a very cheap win compared with sharding.',
+          'The two words are often used for the same thing - Designing Data-Intensive Applications calls splitting data across machines partitioning, and Kafka and Cassandra use the word that way too. This app uses the narrower meaning the database manuals use for table partitioning: one logical table split into physical pieces managed by the same database instance. The application sees one table, writes the same SQL, and the database routes each row to the right partition. Sharding, in this app, splits data across independent database servers, and something outside the database has to know where each row lives.',
+          'Because it is local, partitioning keeps everything you like: transactions across partitions still work, joins still work, and unique constraints still work as long as they include the partition key. It costs no distributed systems complexity at all, which makes it a very cheap win compared with sharding.',
           'The limitation is equally clear. Partitioning does not add write capacity or storage beyond the one machine - it only makes that machine work less per query and makes maintenance operations cheaper. When the machine itself is the limit, you shard.',
         ],
         code: {
-          caption: 'One table, four drawers',
+          caption: 'One table, three drawers',
           body: `CREATE TABLE events (id bigint, tenant_id int, created_at timestamptz, ...)
   PARTITION BY RANGE (created_at);
 
-events_2026_01   Jan
-events_2026_02   Feb
-events_2026_03   Mar   <- WHERE created_at >= '2026-03-01' reads only this
-events_default
+events_2026_01   Jan   pruned
+events_2026_02   Feb   pruned
+events_2026_03   Mar   read     <- WHERE created_at >= '2026-03-01'
+                                     AND created_at <  '2026-04-01'
 
 DROP TABLE events_2025_09;   -- deleting a month is instant,
                              -- versus DELETE of 200M rows`,
@@ -533,8 +533,8 @@ DROP TABLE events_2025_09;   -- deleting a month is instant,
       {
         heading: 'Partition pruning is the payoff',
         paragraphs: [
-          'When a query filters on the partition key, the planner skips every partition that cannot contain matching rows. A query for last week against a table with 36 monthly partitions reads one of them, so the effective table size is 1/36 of the total for both the scan and the index.',
-          'That pruning only happens if the partition key is in the WHERE clause. Queries that filter on something else must touch all partitions, and are then slower than they would have been on a single table, because there is per-partition overhead. So the partition key must match the dominant query filter - usually time for events and logs, or tenant for multi-tenant data.',
+          'When a query filters on the partition key, the planner skips every partition that cannot contain matching rows. A query for last week against a table with 36 monthly partitions reads one of them (two when the week crosses a month boundary), so the effective table size is 1/36 of the total for both the scan and the index.',
+          'That pruning only happens if the partition key is in the WHERE clause. Queries that filter on something else must touch all partitions, and are then a little slower than they would have been on a single table, because every partition adds planning and opening overhead. So the partition key must match the dominant query filter - usually time for events and logs, or tenant for multi-tenant data.',
           'Indexes get better too. Each partition has its own smaller index, so index maintenance is cheaper and the hot partition index is far more likely to stay in memory. On large time-series tables this is often a bigger win than the pruning itself.',
         ],
         bullets: [
@@ -549,7 +549,7 @@ DROP TABLE events_2025_09;   -- deleting a month is instant,
         paragraphs: [
           'Retention is the first and most common. Deleting 200 million rows with a DELETE statement produces enormous write amplification, bloats the table and can run for hours. Dropping a partition is a metadata operation that takes milliseconds. Any table with "keep 90 days" in its requirements wants range partitioning by time.',
           'Maintenance is the second. VACUUM, index rebuilds, statistics gathering and bulk loads all operate on a partition-sized chunk rather than the whole table, which turns a maintenance window into a background job.',
-          'The costs are real but modest: you must create future partitions ahead of time (automated, or you discover it at midnight on the 1st), queries without the partition key get slower, and some databases limit what unique constraints can span. Compared with sharding, these are small problems.',
+          'The costs are real but modest: you must create future partitions ahead of time (a row that matches no partition is rejected, so you discover it at midnight on the 1st), queries without the partition key get slower, and PostgreSQL and MySQL both require every unique key to include the partition key. Too many partitions cost planning time and memory too - the PostgreSQL docs say a few thousand work only when queries prune to a handful. Compared with sharding, these are small problems.',
         ],
       },
     ],
@@ -574,7 +574,7 @@ DROP TABLE events_2025_09;   -- deleting a month is instant,
       { term: 'Partition', plain: 'One physical piece of a logical table, held by the same database instance.' },
       { term: 'Partition key', plain: 'The column that decides which partition a row lands in.' },
       { term: 'Pruning', plain: 'The planner skipping partitions that cannot match. The reason queries get faster.' },
-      { term: 'Local vs global index', plain: 'An index per partition, or one across all of them. Local indexes are usually what you get.' },
+      { term: 'Local vs global index', plain: 'An index per partition, or one across all of them. PostgreSQL only has local ones; Oracle also offers global indexes.' },
       { term: 'Retention policy', plain: 'How long data is kept. Partitioning makes enforcing it nearly free.' },
       { term: 'Write amplification', plain: 'Doing far more disk writes than the logical change, as with a huge DELETE.' },
     ],

@@ -25,7 +25,6 @@
     "database-indexing",
     "replication",
     "sharding",
-    "partitioning",
     "read-replicas",
     "caching",
     "cache-strategies",

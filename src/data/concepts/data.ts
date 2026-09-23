@@ -419,15 +419,27 @@ Shard C  #####             18%`,
     tagline: 'Splitting one table into manageable pieces inside a single database.',
     category: 'data',
     difficulty: 'Intermediate',
-    keywords: ['range partition', 'list partition', 'pruning', 'retention'],
+    lab: 'partitioning',
+    keywords: ['range partition', 'list partition', 'hash partition', 'pruning', 'retention', 'drop partition'],
     what: 'Partitioning divides a large table into smaller physical pieces - by range (usually time), by list, or by hash - while keeping one logical table inside one database.',
     why: 'It keeps indexes small, lets the planner skip irrelevant partitions, and makes deleting old data an instant DROP instead of a multi-hour DELETE.',
     how: [
-      'Choose a partition column that appears in most queries - created_at for event data.',
-      'The planner prunes partitions that cannot match the predicate.',
-      'Retention becomes DROP PARTITION rather than a bulk delete and vacuum.',
+      'Choose a partition key that appears in most queries - created_at for event data, tenant_id for multi-tenant data.',
+      'The application still reads and writes one table; the database routes each row to its partition.',
+      'The planner prunes partitions that cannot match the WHERE clause, and reads only the rest.',
+      'Retention becomes DROP TABLE on the oldest partition rather than a bulk DELETE and vacuum.',
     ],
-    when: ['Time-series and event tables.', 'Tables large enough that index maintenance hurts.'],
+    when: [
+      'Time-series and event tables with a retention rule such as "keep 90 days".',
+      'Tables larger than the memory of the database server, where index maintenance and scans start to hurt.',
+      'Most queries filter on one column that can serve as the partition key.',
+    ],
+    advantages: [
+      'Queries that filter on the partition key read only the partitions that can match.',
+      'Each partition has its own smaller index, which is far more likely to stay in memory.',
+      'Dropping an old partition takes milliseconds and returns its disk space at once.',
+      'Still one database: transactions, joins and SQL work as before.',
+    ],
     diagram: `events (logical table)
   |- events_2026_07   <- pruned
   |- events_2026_08   <- pruned
@@ -435,13 +447,194 @@ Shard C  #####             18%`,
 WHERE created_at >= '2026-09-01'`,
     tradeoffs: [
       {
-        approach: 'Partitioning',
-        gains: ['Smaller indexes', 'Partition pruning', 'Cheap retention'],
-        costs: ['Queries without the partition key touch every partition', 'More objects to manage', 'Unique constraints must include the partition key'],
+        approach: 'Range partitioning (by time)',
+        gains: ['Recent-data queries prune to one partition', 'Retention is a DROP of the oldest partition', 'Old partitions can move to cheaper storage'],
+        costs: ['Every new row lands in the newest partition, so writes are not spread', 'Future partitions must be created ahead of time, or inserts fail'],
+      },
+      {
+        approach: 'List partitioning (by a fixed set of values)',
+        gains: ['One partition per region or status, easy to reason about', 'Queries for one value prune to one partition'],
+        costs: ['Sizes follow the data, so one big value makes one big partition', 'A new value needs a new partition or a DEFAULT partition'],
+      },
+      {
+        approach: 'Hash partitioning (by tenant or user id)',
+        gains: ['Rows spread evenly when there is no natural range', 'Queries for one key prune to one partition'],
+        costs: ['Range queries and retention by time touch every partition', 'Changing the number of partitions means moving rows'],
+      },
+      {
+        approach: 'One plain table (no partitioning)',
+        gains: ['No partitions to create, name or monitor', 'No rule that unique keys must include the partition key'],
+        costs: ['Every scan and index covers the whole table', 'Retention is a slow bulk DELETE that leaves dead space behind'],
       },
     ],
-    mistakes: ['Confusing partitioning with sharding - partitioning stays inside one database and does not add write capacity.'],
+    mistakes: [
+      'Confusing partitioning with sharding - partitioning stays inside one database and does not add write capacity.',
+      'Choosing a partition key the main queries do not filter on, so every query opens every partition.',
+      'Forgetting to create next month partition in advance - inserts for the new month fail.',
+      'Creating thousands of tiny partitions - planning time and memory grow with the partitions a query keeps.',
+      'Enforcing retention with DELETE on a range-partitioned table instead of dropping the old partition.',
+    ],
+    realWorld: [
+      'PostgreSQL, MySQL and Oracle all support range, list and hash partitioning of a single table.',
+      'Log, audit and event tables are commonly partitioned by day or month and expire by dropping partitions.',
+    ],
     related: ['sharding', 'database-indexing', 'sql-databases'],
+    quiz: [
+      {
+        id: 'pt-1',
+        prompt:
+          'An events table holds 170M rows over six months and is range-partitioned by month on created_at. On 20 September a dashboard asks for WHERE created_at >= now() - 7 days. What does the planner read?',
+        options: [
+          'All six partitions, because the table is still one logical table',
+          'Only the current month partition - the other five cannot match and are pruned',
+          'Only the index of the whole table, never a partition',
+          'The oldest partition first, then newer ones until it finds 7 days of rows',
+        ],
+        answer: 1,
+        explanation:
+          'The WHERE clause filters on the partition key, so the planner rules out every partition whose range cannot overlap the last 7 days - in the Lab, five wires go dashed. Being one logical table does not force a full read: pruning is the whole point of partitioning.',
+      },
+      {
+        id: 'pt-2',
+        prompt:
+          'The same table, range-partitioned by created_at, gets a report of all failed events, filtering only on the status column. How does it compare with running it on one unpartitioned table of the same size?',
+        options: [
+          'About six times faster, because the table is split into six',
+          'It fails, because status is not the partition key',
+          'It reads every partition, and is a little slower than one plain table because each partition adds overhead',
+          'It reads only the newest partition, because failures are recent',
+        ],
+        answer: 2,
+        explanation:
+          'Pruning only happens when the query filters on the partition key. status is not the key, so all partitions are opened, each with its own planning cost. Splitting the table does not make an unrelated filter faster - in the Lab, pick "failed events" and every wire lights up.',
+      },
+      {
+        id: 'pt-3',
+        prompt:
+          'Retention is 90 days. Every night DELETE FROM events WHERE created_at < now() - 90 days removes about 20M rows, runs for hours and makes replicas lag. The table is range-partitioned by month. What do you change?',
+        options: [
+          'Run the DELETE in smaller batches every hour instead',
+          'Keep the DELETE and add a replica to absorb the lag',
+          'Switch to hash partitioning so the DELETE is spread evenly',
+          'Drop (or detach) the oldest monthly partition instead of deleting its rows',
+        ],
+        answer: 3,
+        explanation:
+          'A month that is its own partition can be removed with DROP TABLE, a metadata change that takes milliseconds, writes almost no WAL and returns the space at once. Batching the DELETE spreads the pain but still writes every row to the WAL and leaves dead space; hash partitioning scatters each month over every partition, so it could never be dropped whole.',
+      },
+      {
+        id: 'pt-4',
+        prompt:
+          'A nightly DELETE removed 30M old rows from an unpartitioned table. The next morning the table still uses the same disk space. Why?',
+        options: [
+          'The DELETE was rolled back',
+          'Deleted rows leave dead space that VACUUM makes reusable inside the table but does not hand back to the disk; only a table rewrite such as VACUUM FULL does',
+          'The rows were copied into the write-ahead log and still count as table data',
+          'Deleted rows are hidden but stay readable until the next backup',
+        ],
+        answer: 1,
+        explanation:
+          'In PostgreSQL a DELETE marks rows dead; regular VACUUM lets the table reuse that space but normally keeps the file size, and VACUUM FULL needs an exclusive lock to rewrite it. The Lab shows this as "GB dead" after a DELETE. Nothing was rolled back - the rows are gone, only their space remains.',
+      },
+      {
+        id: 'pt-5',
+        prompt:
+          'Your team says: "Our single PostgreSQL primary is at 95% CPU from writes. Let us partition the orders table to add write capacity." What do you tell them?',
+        options: [
+          'Good plan - each partition gets its own CPU',
+          'Partitioning keeps every partition on the same machine, so it does not add write capacity; that needs a bigger machine or sharding',
+          'Partition by hash, because hash partitions run on separate cores',
+          'Partition by range, because only the newest partition takes writes',
+        ],
+        answer: 1,
+        explanation:
+          'Partitions are tables inside one database instance, sharing its CPU, memory and disk. Partitioning reduces work per query and per maintenance job, not the ceiling of the machine. Spreading writes over machines is sharding. Hash partitions do not get their own cores.',
+      },
+      {
+        id: 'pt-6',
+        prompt:
+          'A SaaS app runs almost every query with WHERE tenant_id = ? and has no time-based retention. Tenants are roughly the same size. Which partitioning fits?',
+        options: [
+          'Hash partitioning on tenant_id, so rows spread evenly and each query prunes to one partition',
+          'Range partitioning on created_at, because every table should be partitioned by time',
+          'List partitioning with one partition per tenant for 40,000 tenants',
+          'No key at all - let the database pick partitions at random',
+        ],
+        answer: 0,
+        explanation:
+          'The dominant filter is tenant_id, so it should be the key, and hash spreads it evenly when there is no natural range. Range on created_at would force every tenant query to open all partitions. One list partition per tenant means 40,000 partitions, far past the few thousand the PostgreSQL planner handles well.',
+      },
+      {
+        id: 'pt-7',
+        prompt:
+          'The events table is range-partitioned by month and has partitions up to September. On 1 October at 00:00 inserts start failing. What most likely happened?',
+        options: [
+          'The September partition is full',
+          'The partition key index is corrupted',
+          'Nobody created the October partition, and there is no default partition, so new rows have nowhere to go',
+          'The planner pruned the insert',
+        ],
+        answer: 2,
+        explanation:
+          'A row whose key matches no partition is rejected with an error. Partitions have no size limit, so September is not "full". This is the classic partitioning outage: create future partitions with a scheduled job and alert when it fails.',
+      },
+      {
+        id: 'pt-8',
+        prompt:
+          'You want a PRIMARY KEY (id) on an events table partitioned by range on created_at. PostgreSQL refuses. What is the fix, and why?',
+        options: [
+          'Use PRIMARY KEY (id, created_at): each partition can only check uniqueness inside itself, so the key must include the partition key',
+          'Add a global index across all partitions',
+          'Switch to hash partitioning on created_at',
+          'Drop the primary key - partitioned tables cannot have one',
+        ],
+        answer: 0,
+        explanation:
+          'Indexes on a partitioned table are really one index per partition, so uniqueness is only checked inside a partition. Including the partition key guarantees two equal keys land in the same partition. PostgreSQL has no global index, and partitioned tables can have a primary key as long as it contains the partition columns.',
+      },
+      {
+        id: 'pt-9',
+        prompt:
+          'Someone proposes daily partitions for 20 years of data, about 7,300 partitions, "for maximum pruning". Most queries are monthly reports. What is the risk?',
+        options: [
+          'None - more partitions always means faster queries',
+          'The table will not fit on one disk',
+          'Queries will return duplicate rows',
+          'Monthly reports still open about 30 partitions each, and planning time and memory grow with the partition count - monthly partitions match the queries',
+        ],
+        answer: 3,
+        explanation:
+          'Too many partitions cost planning time and per-session memory, and the PostgreSQL docs say the planner copes with a few thousand only when queries prune to a few. Partition size should follow the typical query range. More partitions is not free, and it changes nothing about disk size or correctness.',
+      },
+      {
+        id: 'pt-10',
+        prompt:
+          'An orders table of 2 GB fits easily in the memory of the database server. Queries are fast and there is no retention rule. A developer wants to partition it "to be ready". What do you say?',
+        options: [
+          'Yes - partition every table from day one',
+          'Hold off: the benefit usually appears when a table outgrows memory; today it adds partitions to manage and key rules for no gain',
+          'Shard it instead, since partitioning is not enough',
+          'Partition it by hash so it uses all CPU cores',
+        ],
+        answer: 1,
+        explanation:
+          'The PostgreSQL docs give a rule of thumb: partitioning is worthwhile when a table would otherwise exceed the memory of the server. A small, fast table gains nothing and still pays the costs - future partitions, key rules, per-partition overhead. Sharding a 2 GB table adds far more cost.',
+      },
+      {
+        id: 'pt-11',
+        prompt:
+          'In the Lab you switch to list partitioning by region and try to remove April. Why is the DROP button disabled, and what happens with DELETE?',
+        options: [
+          'DROP is disabled because list partitions cannot be dropped; DELETE is instant',
+          'DROP is disabled only while queries run; pause and it works',
+          'April rows are spread over every region partition, so no single partition holds April; the DELETE has to walk all of them for hours',
+          'DELETE is pruned to the DE partition, because DE is the biggest',
+        ],
+        answer: 2,
+        explanation:
+          'Only a time-based range key puts one month in one piece. With list partitioning by region, April lives in every partition, so removing it means deleting rows everywhere - slow, WAL-heavy and leaving dead space. List partitions themselves can be dropped; dropping one would remove a whole region, not a month.',
+      },
+    ],
   },
   {
     slug: 'database-normalization',
