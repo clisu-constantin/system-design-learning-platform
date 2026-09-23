@@ -814,7 +814,7 @@ export const systemVisuals: Record<string, VisualSpec> = {
     nodes: [
       { id: 'w1', kind: 'worker', label: 'Worker 1', sub: 'token 41, paused', x: 40, y: 20, w: 170, h: 80, status: 'degraded' },
       { id: 'w2', kind: 'worker', label: 'Worker 2', sub: 'token 42', x: 40, y: 165, w: 170, h: 80 },
-      { id: 'lock', kind: 'cache', label: 'Lease', sub: 'TTL 30 s', x: 300, y: 95, w: 160, h: 84 },
+      { id: 'lock', kind: 'cache', label: 'Lock service', sub: 'lease TTL 30 s', x: 300, y: 95, w: 160, h: 84 },
       { id: 'store', kind: 'storage', label: 'Storage', sub: 'rejects token < 42', x: 550, y: 95, w: 180, h: 84 },
     ],
     edges: [

@@ -42,7 +42,6 @@
     "partition-tolerance",
     "strong-consistency",
     "eventual-consistency",
-    "distributed-locks",
     "leader-election",
     "consensus",
     "idempotency",
