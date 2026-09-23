@@ -201,16 +201,17 @@ USE
 across a queue
   producer:  inject(current_context, message.headers)
   consumer:  ctx = extract(message.headers)
-             span = tracer.start("order.process", links=[ctx])
-forget either line and the consumer starts a brand-new trace`,
+             span = tracer.start("order.process", parent=ctx)
+             (or a new span with links=[ctx])
+forget either line and nothing leads from the request to the consumer`,
         },
       },
       {
         heading: 'Context propagation is the whole mechanism',
         paragraphs: [
-          'Tracing works across services because every outbound call carries the trace context. For HTTP that is the W3C traceparent header, containing the trace id, the current span id and a sampled flag. The receiving service reads it, creates a child span, and passes its own context onward.',
+          'Tracing works across services because every outbound call carries the trace context. For HTTP that is the W3C traceparent header: a version, the trace id (32 hex characters), the span id of the calling span (16 hex characters, called parent-id) and flags whose lowest bit says whether the trace is sampled. The receiving service reads it, creates a child span, and sends its own span id onward - so the trace id stays the same on every hop and only the parent-id changes.',
           'It breaks wherever something in the chain does not forward that header. A hand-rolled HTTP client, a third-party SDK, a queue publisher that does not copy the context into message metadata - each becomes a point where the trace ends and everything downstream appears unrelated.',
-          'Asynchronous hops need explicit work. The producer injects the context into message headers, the consumer extracts it and creates a span linked to the original trace. Without that, the two halves of a workflow are two disconnected traces, and the async half - where problems usually hide - becomes invisible. This is the single most common gap in real deployments.',
+          'Asynchronous hops need explicit work. The producer injects the context into message headers, the consumer extracts it and creates a span that continues the trace - as a child of the producer span, or as a new span with a span link to it. Without that, the two halves of a workflow are two disconnected traces, and the async half - where problems usually hide - becomes invisible. This is the single most common gap in real deployments.',
         ],
         bullets: [
           'Propagate across HTTP, gRPC, queues and scheduled work.',
@@ -222,15 +223,15 @@ forget either line and the consumer starts a brand-new trace`,
         heading: 'Instrumentation, attributes and sampling',
         paragraphs: [
           'Most of the value comes free: OpenTelemetry auto-instrumentation covers HTTP servers and clients, database drivers and popular frameworks, giving you a full request tree without writing code. Because it is vendor-neutral, that expensive instrumentation work survives a change of backend. Manual spans are worth adding only around meaningful internal operations - a business step, an expensive computation, a cache lookup.',
-          'Attributes are what make traces searchable: tenant, route template, cache hit or miss, queue name, result status, retry count. Keep span names and attribute values low cardinality, never put secrets or personal data in them, and mark failed spans with their exception so error traces are easy to query as a population.',
-          'A busy service generates far more trace data than logs, so you keep a fraction. Head-based sampling decides at the start of the request - simple and cheap, and it discards most errors precisely because errors are rare. Tail-based sampling buffers the complete trace in a collector and decides after seeing the outcome, so you keep every error, every slow request and 1 percent of the rest. The collector is also where you redact attributes and change policy without redeploying thirty services.',
+          'Attributes are what make traces searchable: tenant, route template, cache hit or miss, queue name, result status, retry count. Keep span names low cardinality - the route template, not the path with its ids - and put ids such as order.id or user.id in attributes, where one trace costs one field rather than a new time series. Never put secrets or card data in them, and mark failed spans with their exception so error traces are easy to query as a population.',
+          'Tracing every request of a busy service means several spans per request, each with attributes, so you keep a fraction. Head-based sampling decides at the start of the request, before the outcome is known - simple and cheap, and the decision travels in the sampled flag so every service keeps the same traces. But it keeps errors at the same rate as everything else: at 1 percent, 99 of every 100 failed requests are gone. Tail-based sampling buffers the complete trace in a collector and decides after seeing the outcome, so you keep every error, every slow request and 1 percent of the rest. The collector is also where you redact attributes and change policy without redeploying thirty services.',
           'Finally, emit the trace id in logs and attach exemplars to metrics. Then a latency spike on a graph links to a trace of a slow request, which links to the logs of the service that caused it - and the traces themselves give you a dependency map of the calls that really happen, including the ones nobody remembered.',
         ],
         bullets: [
           'Auto-instrument first; add manual spans only where they explain something.',
           'Keep span names low cardinality - /orders/{id}, never /orders/4711.',
           'Centralise sampling and redaction in the collector.',
-          'Emit trace ids in logs so the two link in both directions.',
+          'Write the trace_id in every log line so logs and traces link in both directions.',
         ],
       },
     ],
@@ -279,7 +280,7 @@ forget either line and the consumer starts a brand-new trace`,
       'Everything depends on propagating context to the next hop.',
       'Queues are where traces break - inject and extract explicitly.',
       'Instrument with OpenTelemetry, and keep every error and slow trace with tail-based sampling.',
-      'Keep span names and attributes low cardinality, and emit trace ids in logs.',
+      'Keep span names low cardinality, put ids in attributes, and write the trace_id in every log line.',
     ],
   },
 

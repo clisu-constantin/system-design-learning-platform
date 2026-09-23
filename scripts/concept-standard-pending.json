@@ -50,7 +50,6 @@
     "serverless",
     "cqrs",
     "event-sourcing",
-    "distributed-tracing",
     "backpressure",
     "leader-follower",
     "producer-consumer",
@@ -61,7 +60,6 @@
     "capacity",
     "url-journey",
     "indexing",
-    "retry-backoff",
-    "tracing"
+    "retry-backoff"
   ]
 }
