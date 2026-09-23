@@ -73,8 +73,8 @@ const NODE_H = 138;
 const CANVAS_H = 580;
 
 /**
- * Node positions, checked so that no wire of the full mesh (or from the client)
- * runs behind a node card it does not connect to.
+ * Node positions, checked so that no wire of the full mesh, and no wire from the
+ * client to any node, runs behind a node card it does not connect to.
  */
 const POSITIONS: Record<Setup['size'], [number, number][]> = {
   3: [
@@ -270,15 +270,21 @@ export function ConsensusLab({ focus }: LabProps<'consensus'>) {
       });
     });
   });
-  if (target) {
+  // The client can reach every node (see the model header), and it does use more
+  // than one: a write still in flight to the old target, a "not the leader" reply,
+  // an acknowledgement from a node that has since lost its leadership. So every
+  // client wire is drawn, and each message moves only along a wire on screen. The
+  // wire to the node the client currently sends to is the highlighted one.
+  cluster.nodes.forEach((node) => {
+    const current = node === target;
     edges.push({
       from: CLIENT,
-      to: target.id,
-      tone: !active(cluster, target) ? 'danger' : target === leader ? 'ok' : 'warn',
-      dashed: !active(cluster, target),
-      width: 2,
+      to: node.id,
+      tone: !current ? 'muted' : !active(cluster, node) ? 'danger' : node === leader ? 'ok' : 'warn',
+      dashed: !node.up || (current && !active(cluster, node)),
+      width: current ? 2 : undefined,
     });
-  }
+  });
 
   const particles: ParticleView[] = cluster.messages
     .filter((message) => layout[message.from] && layout[message.to])

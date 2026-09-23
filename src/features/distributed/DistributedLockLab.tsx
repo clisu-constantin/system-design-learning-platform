@@ -10,7 +10,7 @@ import {
   type ParticleView,
 } from '@/components/architecture';
 import { Insight, LabShell, MetricsPanel } from '@/components/learning';
-import { Button, Slider, Toggle } from '@/components/ui';
+import { Button, SegmentedControl, Slider, Toggle } from '@/components/ui';
 import { nextParticleId, useEventLog, useTicker } from '@/simulations/engine';
 import { useRerender } from '@/hooks/useRerender';
 import type { NodeStatus, RequestOutcome } from '@/types';
@@ -29,10 +29,14 @@ const WORK_S = 4;
 const RETRY_S = 1;
 const COOLDOWN_S = 2;
 
-type WorkerId = 'w1' | 'w2';
+type WorkerId = 'w1' | 'w2' | 'w3';
 type NodeId = WorkerId | 'lock' | 'store';
-const WORKERS: WorkerId[] = ['w1', 'w2'];
-const NAME: Record<WorkerId, string> = { w1: 'Worker 1', w2: 'Worker 2' };
+type WorkerCount = 2 | 3;
+const ALL_WORKERS: WorkerId[] = ['w1', 'w2', 'w3'];
+const NAME: Record<WorkerId, string> = { w1: 'Worker 1', w2: 'Worker 2', w3: 'Worker 3' };
+const NUMBER: Record<WorkerId, string> = { w1: '1', w2: '2', w3: '3' };
+/** The first attempt of each worker, staggered so the run does not open on a tie. */
+const FIRST_WAIT: Record<WorkerId, number> = { w1: 0.2, w2: 0.9, w3: 1.6 };
 
 type Phase = 'idle' | 'acquiring' | 'working' | 'writing' | 'crashed';
 
@@ -83,6 +87,8 @@ interface Message {
 }
 
 interface Sim {
+  /** The workers in this run, in order. Every one is wired the same way. */
+  ids: WorkerId[];
   time: number;
   nextToken: number;
   workers: Record<WorkerId, WorkerState>;
@@ -104,10 +110,12 @@ const newWorker = (wait: number): WorkerState => ({
 });
 
 /** Tokens start at 41 so the Lab reads like the Diagram: 41 is the paused holder, 42 the next one. */
-const createSim = (): Sim => ({
+const createSim = (count: WorkerCount): Sim => ({
+  ids: ALL_WORKERS.slice(0, count),
   time: 0,
   nextToken: 41,
-  workers: { w1: newWorker(0.2), w2: newWorker(0.9) },
+  // A record of all three keeps the types simple; only the workers in `ids` ever run.
+  workers: { w1: newWorker(FIRST_WAIT.w1), w2: newWorker(FIRST_WAIT.w2), w3: newWorker(FIRST_WAIT.w3) },
   lock: { holder: null, token: 0, expiresAt: null },
   store: { highest: 0, lastWriter: null, lastToken: 0, accepted: 0, rejected: 0, overwrites: 0 },
   messages: [],
@@ -116,6 +124,8 @@ const createSim = (): Sim => ({
 });
 
 interface Setup {
+  /** How many workers compete for the lock. Changing it starts a new run. */
+  workerCount: WorkerCount;
   fencing: boolean;
   ttlOn: boolean;
   ttlS: number;
@@ -124,7 +134,7 @@ interface Setup {
 }
 
 /** One lab, one host Concept, so there is no Lab focus: it always opens on the unsafe lock. */
-const DEFAULT_SETUP: Setup = { fencing: false, ttlOn: true, ttlS: 8, pauseS: 15, checkRelease: true };
+const DEFAULT_SETUP: Setup = { workerCount: 2, fencing: false, ttlOn: true, ttlS: 8, pauseS: 15, checkRelease: true };
 
 /** A worker that believes it holds the lock: it got a token and has not finished or been refused. */
 const believesItHolds = (worker: WorkerState) =>
@@ -140,18 +150,35 @@ const OUTCOME: Record<MessageKind, RequestOutcome> = {
   release: 'success',
 };
 
-const LAYOUT: Layout = {
-  lock: { x: 370, y: 20, w: 220, h: 130 },
-  w1: { x: 40, y: 195, w: 230, h: 150 },
-  w2: { x: 690, y: 195, w: 230, h: 150 },
-  store: { x: 370, y: 390, w: 220, h: 130 },
+/**
+ * Lock service on the left, the workers in one column, storage on the right: every
+ * worker has the same two wires (lease, write + token), so no worker looks special.
+ * Checked so no wire runs behind a card it does not connect to and every edge
+ * label sits in the gap between the cards.
+ */
+const CANVAS_H = 540;
+const WORKER_W = 230;
+const WORKER_H = 150;
+const WORKER_Y: Record<WorkerCount, number[]> = { 2: [80, 310], 3: [20, 195, 370] };
+
+const buildLayout = (count: WorkerCount): Layout => {
+  const layout: Layout = {
+    lock: { x: 20, y: 205, w: 220, h: 130 },
+    store: { x: 720, y: 205, w: 220, h: 130 },
+  };
+  WORKER_Y[count].forEach((y, index) => {
+    layout[ALL_WORKERS[index]] = { x: 365, y, w: WORKER_W, h: WORKER_H };
+  });
+  return layout;
 };
+
+const LAYOUTS: Record<WorkerCount, Layout> = { 2: buildLayout(2), 3: buildLayout(3) };
 
 export function DistributedLockLab() {
   const [running, setRunning] = useState(true);
   const [setup, setSetup] = useState(DEFAULT_SETUP);
-  const { fencing, ttlOn, ttlS, pauseS, checkRelease } = setup;
-  const sim = useRef<Sim>(createSim());
+  const { workerCount, fencing, ttlOn, ttlS, pauseS, checkRelease } = setup;
+  const sim = useRef<Sim>(createSim(DEFAULT_SETUP.workerCount));
   const rerender = useRerender(30);
   const { events, log, clear } = useEventLog(40);
 
@@ -285,7 +312,7 @@ export function DistributedLockLab() {
     }
 
     // Workers.
-    for (const id of WORKERS) {
+    for (const id of s.ids) {
       const worker = s.workers[id];
       if (worker.phase === 'crashed') continue;
       if (worker.pauseLeft > 0) {
@@ -321,11 +348,11 @@ export function DistributedLockLab() {
       }
     }
 
-    const owners = WORKERS.filter((id) => believesItHolds(s.workers[id]));
+    const owners = s.ids.filter((id) => believesItHolds(s.workers[id]));
     if (owners.length >= 2 && !s.twoOwnersNow) {
       s.twoOwnerEpisodes += 1;
       const tokens = owners.map((id) => `${NAME[id]} (token ${s.workers[id].token})`).join(' and ');
-      log(`Two owners at once: ${tokens} both believe they hold the lock`, 'danger');
+      log(`${owners.length === 2 ? 'Two' : 'Three'} owners at once: ${tokens} all believe they hold the lock`, 'danger');
     }
     s.twoOwnersNow = owners.length >= 2;
 
@@ -371,15 +398,25 @@ export function DistributedLockLab() {
   );
 
   const reset = useCallback(() => {
-    sim.current = createSim();
+    sim.current = createSim(DEFAULT_SETUP.workerCount);
     setSetup(DEFAULT_SETUP);
     clear();
   }, [clear]);
 
+  const changeWorkerCount = (next: WorkerCount) => {
+    if (next === workerCount) return;
+    change('workerCount')(next);
+    sim.current = createSim(next);
+    clear();
+    log(`New run with ${next} workers, each wired to the lock service and the storage the same way`, 'info');
+  };
+
   // ---- Derived view (recomputed each render; the ticker re-renders at 30fps) ----
   const s = sim.current;
   const { lock, store } = s;
-  const owners = WORKERS.filter((id) => believesItHolds(s.workers[id]));
+  const layout = LAYOUTS[workerCount];
+  const count = s.ids.length;
+  const owners = s.ids.filter((id) => believesItHolds(s.workers[id]));
   const leaseLeft = lock.holder !== null && lock.expiresAt !== null ? Math.max(0, lock.expiresAt - s.time) : null;
   const holderWorker = lock.holder ? s.workers[lock.holder] : null;
   // With no TTL, a key whose owner crashed (or restarted and forgot it) is never deleted.
@@ -397,7 +434,7 @@ export function DistributedLockLab() {
     outcome: OUTCOME[message.kind],
   }));
 
-  const edges: DiagramEdge[] = WORKERS.flatMap((id): DiagramEdge[] => {
+  const edges: DiagramEdge[] = s.ids.flatMap((id): DiagramEdge[] => {
     const worker = s.workers[id];
     const inactive = worker.phase === 'crashed' || worker.pauseLeft > 0;
     return [
@@ -441,7 +478,7 @@ export function DistributedLockLab() {
         kind="worker"
         title={NAME[id]}
         subtitle={subtitle}
-        placed={LAYOUT[id]}
+        placed={layout[id]}
         status={status}
         statusLabel={statusLabel}
         alert={believes && owners.length >= 2}
@@ -463,18 +500,22 @@ export function DistributedLockLab() {
 
   const insight = (() => {
     if (owners.length >= 2) {
-      // The owner whose token is no longer the one the lock service holds.
-      const paused = owners.find((id) => !(lock.holder === id && lock.token === s.workers[id].token));
-      const stale = paused ? s.workers[paused] : null;
+      // The owners whose token is no longer the one the lock service holds.
+      const stale = owners.filter((id) => !(lock.holder === id && lock.token === s.workers[id].token));
+      const one = stale.length <= 1;
+      const who = stale.length
+        ? stale.map((id) => `${NAME[id]} (token ${s.workers[id].token})`).join(' and ')
+        : 'One worker';
       return (
         <>
-          Two owners right now. {paused ? NAME[paused] : 'One worker'} still believes it holds token {stale?.token}: it
-          was frozen and never saw its lease expire, and the lock service has since handed a newer token to the other
-          worker. No lock code can prevent this - a paused process cannot notice anything until it runs again. What
-          decides the damage is the storage.{' '}
+          {owners.length === 2 ? 'Two' : 'Three'} owners right now. {who} still{' '}
+          {one ? 'believes it holds' : 'believe they hold'} the lock: {one ? 'it was' : 'each was'} frozen and never saw
+          the lease expire, and the lock service has since handed a newer token to another worker. No lock code can
+          prevent this - a paused process cannot notice anything until it runs again. What decides the damage is the
+          storage.{' '}
           {fencing
-            ? 'Fencing tokens are on, so its write with the older token will be refused.'
-            : 'Fencing tokens are off, so its write will land on top of newer data. Turn fencing on and pause again.'}
+            ? 'Fencing tokens are on, so a write with an older token will be refused.'
+            : 'Fencing tokens are off, so a write with an older token will land on top of newer data. Turn fencing on and pause again.'}
         </>
       );
     }
@@ -509,13 +550,14 @@ export function DistributedLockLab() {
       return (
         <>
           With no TTL a lease can never expire, so a paused holder is safe - and so is a dead one, forever. Pause a
-          worker: the other waits the whole pause. Crash one while it holds the lock: nothing ever frees it.
+          worker: {count === 2 ? 'the other waits' : 'the others wait'} the whole pause. Crash one while it holds the
+          lock: nothing ever frees it.
         </>
       );
     }
     return (
       <>
-        The two workers take turns: each takes the lock, works for {WORK_S} s, writes, and releases. Now press Pause
+        The {count === 2 ? 'two' : 'three'} workers take turns: each takes the lock, works for {WORK_S} s, writes, and releases. Now press Pause
         Worker 1 with a pause ({pauseS} s) longer than the TTL ({ttlS} s) and watch the lease expire under it.
         {pauseS <= ttlS
           ? ` At these settings the pause is shorter than the TTL - but the lease also has to cover the ${WORK_S} s of work, so it can still run out just before the write.`
@@ -527,7 +569,7 @@ export function DistributedLockLab() {
   return (
     <LabShell
       title="Distributed Lock Lab"
-      description="Two workers share one resource through a lock service with a TTL. Freeze the holder past its lease, see two owners at once, then turn on fencing tokens."
+      description="Two or three workers share one resource through a lock service with a TTL. Freeze the holder past its lease, see two owners at once, then turn on fencing tokens."
       running={running}
       onToggleRun={() => setRunning((value) => !value)}
       onReset={reset}
@@ -567,7 +609,7 @@ export function DistributedLockLab() {
               label: 'Two-owner moments',
               value: s.twoOwnerEpisodes,
               tone: s.twoOwnerEpisodes > 0 ? 'warn' : 'neutral',
-              hint: 'Times both workers believed they held the lock at once. Fencing does not lower this - it makes it harmless.',
+              hint: 'Times two or more workers believed they held the lock at once. Fencing does not lower this - it makes it harmless.',
             },
             { key: 'accepted', label: 'Writes accepted', value: store.accepted },
             {
@@ -589,6 +631,19 @@ export function DistributedLockLab() {
       }
       controls={
         <>
+          <div className="space-y-2">
+            <p className="text-xs font-medium text-muted">Workers (starts a new run)</p>
+            <SegmentedControl
+              size="sm"
+              className="w-full"
+              value={String(workerCount) as '2' | '3'}
+              options={[
+                { value: '2', label: '2 workers' },
+                { value: '3', label: '3 workers' },
+              ]}
+              onChange={(value) => changeWorkerCount(value === '3' ? 3 : 2)}
+            />
+          </div>
           <Toggle
             label="Fencing tokens"
             checked={fencing}
@@ -632,18 +687,18 @@ export function DistributedLockLab() {
           />
           <div className="space-y-2">
             <p className="text-xs font-medium text-muted">Break a worker</p>
-            {WORKERS.map((id) => {
+            {s.ids.map((id) => {
               const worker = s.workers[id];
               const crashed = worker.phase === 'crashed';
               return (
                 <div key={id} className="grid grid-cols-2 gap-2">
                   <Button size="sm" onClick={() => pauseWorker(id)} disabled={crashed || worker.pauseLeft > 0 || worker.pauseArmed}>
                     <Pause className="h-3.5 w-3.5" />
-                    Pause {id === 'w1' ? '1' : '2'}
+                    Pause {NUMBER[id]}
                   </Button>
                   <Button size="sm" variant={crashed ? 'success' : 'outline'} onClick={() => toggleCrash(id)}>
                     {crashed ? <RotateCw className="h-3.5 w-3.5" /> : <Power className="h-3.5 w-3.5" />}
-                    {crashed ? `Restart ${id === 'w1' ? '1' : '2'}` : `Crash ${id === 'w1' ? '1' : '2'}`}
+                    {crashed ? `Restart ${NUMBER[id]}` : `Crash ${NUMBER[id]}`}
                   </Button>
                 </div>
               );
@@ -655,12 +710,12 @@ export function DistributedLockLab() {
         </>
       }
     >
-      <DiagramCanvas layout={LAYOUT} edges={edges} particles={particles} height={540} className="bg-canvas">
+      <DiagramCanvas layout={layout} edges={edges} particles={particles} height={CANVAS_H} className="bg-canvas">
         <ArchNode
           kind="cache"
           title="Lock service"
           subtitle={ttlOn ? `lease with TTL ${ttlS} s, token` : 'lease with no expiry, token'}
-          placed={LAYOUT.lock}
+          placed={layout.lock}
           alert={stuck}
         >
           <NodeStatRow label="Key held for" value={lock.holder ? NAME[lock.holder] : 'nobody'} tone={lock.holder ? 'text-ink' : 'text-muted'} />
@@ -671,13 +726,12 @@ export function DistributedLockLab() {
             tone={leaseLeft !== null && leaseLeft < 2 ? 'text-warn' : 'text-ink'}
           />
         </ArchNode>
-        {workerNode('w1')}
-        {workerNode('w2')}
+        {s.ids.map(workerNode)}
         <ArchNode
           kind="storage"
           title="Storage"
           subtitle={fencing ? 'refuses a token older than seen' : 'accepts every write'}
-          placed={LAYOUT.store}
+          placed={layout.store}
           alert={store.overwrites > 0}
         >
           <NodeStatRow label="Highest token seen" value={store.highest || '-'} tone="text-brand" />
