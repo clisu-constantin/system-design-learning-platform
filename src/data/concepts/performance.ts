@@ -69,7 +69,12 @@ export const performanceConcepts: Concept[] = [
       {
         id: 'cache-1',
         prompt: 'Your cache has a 90% hit rate. Hits take 5 ms and misses take 100 ms. A teammate says the average request takes about 5 ms now. What is the average really?',
-        options: ['5 ms', '14.5 ms', '52 ms', '100 ms'],
+        options: [
+          '5 ms',
+          '14.5 ms',
+          '52.5 ms',
+          '100 ms',
+        ],
         answer: 1,
         explanation:
           '0.9 x 5 + 0.1 x 100 = 14.5 ms. The 10% of misses add 10 ms and dominate the average, which is why the last few points of hit rate matter so much. 5 ms is the tempting answer, but it is the hit latency, not the average.',
@@ -78,10 +83,10 @@ export const performanceConcepts: Concept[] = [
         id: 'cache-2',
         prompt: 'A popular key expires and 5,000 concurrent requests miss at once. All 5,000 run the same query and the database falls over. What is this, and what fixes it?',
         options: [
-          'Replication lag - add read replicas',
-          'Cache penetration - cache a negative result for missing keys',
-          'A cache stampede - let one request reload the key while the rest wait, or serve the stale copy during a background refresh',
-          'Too small a cache - double the memory limit',
+          'Replication lag - add read replicas so the 5,000 queries are spread across more copies',
+          'Cache penetration - cache a negative result so missing keys stop reaching the database',
+          'A cache stampede - let one request reload the key while the others wait',
+          'Too small a cache - the key was pushed out early, so double the memory limit',
         ],
         answer: 2,
         explanation:
@@ -92,8 +97,8 @@ export const performanceConcepts: Concept[] = [
         prompt: 'In the Caching Lab, traffic is 1,000 req/sec, the hit rate is about 60% and the database runs about 400 queries/sec against a capacity of 900. You switch "Cache enabled" off. What do you see?',
         options: [
           'Database queries jump to about 1,000/sec, past its capacity, and latency climbs steeply',
-          'Nothing much: 1,000 is close to 900, so the database copes',
-          'Latency falls, because requests no longer pay for the cache lookup first',
+          'Nothing much: 1,000 is only about 10% above the 900 capacity, so the database absorbs it',
+          'Latency falls, because every request skips the 1 ms cache lookup and goes straight to the database',
           'Only the hit rate changes; database load is set by the Traffic slider alone',
         ],
         answer: 0,
@@ -104,10 +109,10 @@ export const performanceConcepts: Concept[] = [
         id: 'cache-4',
         prompt: 'Hits take 1 ms and misses 50 ms. Your hit rate goes from 95% to 99%. What changes the most?',
         options: [
-          'Average latency drops by about 40 ms',
-          'Nothing measurable - 95% was already good enough',
-          'The cache needs five times more memory',
-          'The load reaching the database falls five times, from 5% of requests to 1%, while average latency drops only about 2 ms',
+          'Average latency drops by about 40 ms, because four in every hundred requests stop paying the 50 ms miss',
+          'Nothing measurable - at 95% the hits already dominate, so four more points is noise',
+          'The cache needs five times more memory to hold enough keys for the extra hits',
+          'Database load falls five times, from 5% to 1% of requests; average latency drops only about 2 ms',
         ],
         answer: 3,
         explanation:
@@ -117,10 +122,10 @@ export const performanceConcepts: Concept[] = [
         id: 'cache-5',
         prompt: 'In the Caching Lab the memory limit is 100 keys and Distinct keys is 500. You drag Distinct keys to 5,000 and leave everything else alone. What happens to the hit rate, and why?',
         options: [
-          'It rises, because more keys means more data to cache',
-          'It falls, because the same 100 slots now cover a much smaller share of the keys being asked for, so evictions climb',
-          'It stays the same, because the TTL has not changed',
-          'It drops to 0%, because the cache cannot hold 5,000 keys',
+          'It rises, because more distinct keys means more data worth caching and more chances to hit',
+          'It falls: the same 100 slots now cover a much smaller share of the keys asked for',
+          'It stays the same, because the TTL has not changed and the TTL decides how long keys stay',
+          'It drops to 0%, because the cache cannot hold 5,000 keys and evicts each one before reuse',
         ],
         answer: 1,
         explanation:
@@ -130,10 +135,10 @@ export const performanceConcepts: Concept[] = [
         id: 'cache-6',
         prompt: 'An API serves 10,000 different report IDs, and each ID is requested about equally often. The team adds a cache with room for 1,000 entries and a 60 s TTL. What hit rate should they expect?',
         options: [
-          'Around 90%, like most caches',
-          'Close to 100% once it warms up',
+          'Around 90%, the typical hit rate for a cache on a busy read path',
+          'Close to 100% once it warms up, since the 60 s TTL keeps entries around',
           'At most about 10%, because only a tenth of equally popular keys fit',
-          'It depends only on the TTL',
+          'It depends only on the TTL: a longer TTL keeps more of the 10,000 IDs',
         ],
         answer: 2,
         explanation:
@@ -143,10 +148,10 @@ export const performanceConcepts: Concept[] = [
         id: 'cache-7',
         prompt: 'A deploy restarts the cache tier and empties it. Normally 85% of 2,000 req/sec hit, so the database sees 300 queries/sec. What happens in the first minute after the restart, and what should the team have planned?',
         options: [
-          'Nothing: the cache refills instantly',
-          'The database briefly sees all 2,000 queries/sec; size it for a cold cache or warm the hot keys before taking traffic',
-          'Requests fail until the cache is full again',
-          'The database sees 300 queries/sec as before, because the hit rate is remembered',
+          'Nothing: the first few requests refill the cache almost instantly',
+          'The database briefly sees all 2,000 queries/sec; warm the hot keys first',
+          'Requests fail with errors until the cache is full again, since every lookup misses',
+          'The database still sees 300 queries/sec, because the 85% hit rate is a property of the traffic',
         ],
         answer: 1,
         explanation:
@@ -156,10 +161,10 @@ export const performanceConcepts: Concept[] = [
         id: 'cache-8',
         prompt: 'An admin changes a price in the database. Product pages are cached with a 10-minute TTL, and customers keep seeing the old price for several minutes. What is the cleanest fix?',
         options: [
-          'Delete the cached key when the price is written, so the next read loads the new price',
+          'Delete the cached key when the price is written',
           'Flush the whole cache on every write',
           'Turn off the cache for product pages',
-          'Raise the TTL so entries are reloaded less often',
+          'Raise the TTL on product pages',
         ],
         answer: 0,
         explanation:
@@ -169,9 +174,9 @@ export const performanceConcepts: Concept[] = [
         id: 'cache-9',
         prompt: 'After every cold start the database gets a sharp load spike exactly every 60 seconds, then it goes quiet. Every key uses a 60 s TTL. What is going on?',
         options: [
-          'The database runs a scheduled job every minute',
-          'The cache is too small and evicts everything each minute',
-          'Every key was loaded in the same few seconds, so they all expire together; add random jitter to each TTL',
+          'The database runs a scheduled job every minute that competes with the cache refills',
+          'The cache is too small, so it evicts nearly everything once a minute and refills',
+          'The keys were loaded together, so they expire together; add TTL jitter',
           'The hit rate is 100%, so the database should see no load at all',
         ],
         answer: 2,
@@ -182,10 +187,10 @@ export const performanceConcepts: Concept[] = [
         id: 'cache-10',
         prompt: 'The Redis cluster in front of the database goes down, and every API request starts returning HTTP 500. The database itself is healthy. What was designed wrong?',
         options: [
-          'Nothing - without a cache the API cannot work',
-          'The cache was a hard dependency; a cache error should fall through to the database with a short timeout, so the API gets slower instead of failing',
-          'The database should have been the one to fail first',
-          'Redis needed a longer TTL',
+          'Nothing - an API built on cache-aside cannot answer without its cache',
+          'The cache was a hard dependency; a cache error should fall through to the database',
+          'The database should have failed first, so the API could keep serving from the cache',
+          'Redis needed a longer TTL, so keys would outlive a short cluster outage',
         ],
         answer: 1,
         explanation:
@@ -195,10 +200,10 @@ export const performanceConcepts: Concept[] = [
         id: 'cache-11',
         prompt: 'Bots request product IDs that do not exist. Each request misses the cache, queries the database, finds nothing, and caches nothing - so the next identical request does the same. How do you stop these reaching the database?',
         options: [
-          'Raise the TTL on real products',
-          'Add more memory to the cache',
-          'Use LFU instead of LRU',
-          'Cache the "not found" result for a short time, or check a Bloom filter of known IDs first',
+          'Raise the TTL on real products so more of the catalog stays cached',
+          'Add more memory to the cache so the bot keys fit alongside real products',
+          'Use LFU instead of LRU, so the rare bot keys are evicted before hot ones',
+          'Cache the "not found" result briefly, or check a Bloom filter first',
         ],
         answer: 3,
         explanation:
@@ -208,10 +213,10 @@ export const performanceConcepts: Concept[] = [
         id: 'cache-12',
         prompt: 'A public product image is served by your API from Redis on every page view. Where does caching it give the biggest win?',
         options: [
-          'In Redis, with a longer TTL',
-          'At the CDN edge and in the browser, with Cache-Control headers, so most requests never reach your servers',
-          'In the database buffer pool',
-          'In an in-process cache on each API instance',
+          'In Redis, with a longer TTL so the image is never reloaded from storage',
+          'At the CDN edge and in the browser, via Cache-Control headers',
+          'In the database buffer pool, so the image bytes are always read from RAM',
+          'In an in-process cache on each API instance, to skip the Redis network hop',
         ],
         answer: 1,
         explanation:
@@ -290,10 +295,10 @@ app -> store in cache   (both updated)       -> database          on next read)`
         id: 'cs-1',
         prompt: 'Writes are acknowledged as soon as they reach the cache and are flushed to the database every 30 seconds. The cache node crashes. What happens to the writes of the last 20 seconds?',
         options: [
-          'They are safe, because the database has them',
-          'They are replayed from the cache on restart',
-          'They are lost - the caller was told they succeeded, but they never reached the database',
-          'They are retried automatically by the database',
+          'They are safe, because an acknowledged write has already reached the database',
+          'They are replayed from the cache on restart, since the cache kept the pending queue',
+          'They are lost - they were acknowledged but never reached the database',
+          'They are retried automatically by the database once the cache node comes back',
         ],
         answer: 2,
         explanation:
@@ -304,9 +309,9 @@ app -> store in cache   (both updated)       -> database          on next read)`
         prompt: 'A video site counts views: 50,000 increments per second, read a few times a minute, and losing a few seconds of counts in a crash is acceptable. Which write strategy fits?',
         options: [
           'Write-behind: count in the cache and flush totals to the database in batches',
-          'Write-through: every increment to the cache and the database',
-          'Write-around: every increment straight to the database',
-          'No cache: the database must see each increment',
+          'Write-through: every increment to the cache and the database, so counts are never lost',
+          'Write-around: every increment straight to the database, and cache only the totals read',
+          'No cache: the database must see each increment to keep the count correct',
         ],
         answer: 0,
         explanation:
@@ -316,10 +321,10 @@ app -> store in cache   (both updated)       -> database          on next read)`
         id: 'cs-3',
         prompt: 'In the Cache Strategies Lab you watch the cache-aside write: UPDATE to the database, then DEL key, then 200 OK. A developer removes the DEL step to save a round trip. What do readers see?',
         options: [
-          'Nothing changes - the database has the new value',
+          'Nothing changes - the database has the new value, and reads trust the database',
           'The old value, served from the cache until its TTL runs out',
-          'An error on the next read',
-          'The new value, because the cache watches the database',
+          'An error on the next read, because cache and database now disagree',
+          'The new value, because the cache watches the database for changes',
         ],
         answer: 1,
         explanation:
@@ -329,10 +334,10 @@ app -> store in cache   (both updated)       -> database          on next read)`
         id: 'cs-4',
         prompt: 'Two requests update the same product at almost the same time. Each writes the database, then SETs its own new value into the cache. Sometimes the cache ends up with the older value for good. What is the safer write path?',
         options: [
-          'Add a longer TTL so the cache changes less often',
-          'Write the cache first, then the database',
-          'Use write-behind so the cache is the only writer',
-          'Delete the cached key after the database write instead of setting it, so the next read loads the current row',
+          'Add a longer TTL so the cache changes less often and the race window shrinks',
+          'Write the cache first, then the database, so both writers follow the same order',
+          'Use write-behind so the cache is the only writer and the database follows it',
+          'Delete the cached key after the database write instead of setting it',
         ],
         answer: 3,
         explanation:
@@ -342,10 +347,10 @@ app -> store in cache   (both updated)       -> database          on next read)`
         id: 'cs-5',
         prompt: 'A nightly job imports 10 million order rows that nobody will read for weeks. The service uses write-through for all writes. What goes wrong, and what should the import use instead?',
         options: [
-          'Nothing - write-through keeps everything fresh',
-          'The import fills the cache with rows nobody reads and evicts the hot keys; the import should write around the cache',
-          'The import is lost if the cache crashes',
-          'The database rejects the import',
+          'Nothing - write-through keeps everything fresh, so the import is harmless',
+          'It evicts the hot keys with rows nobody reads; write around the cache',
+          'The import is lost if the cache crashes mid-run; write to the database first',
+          'The database rejects the import, because write-through allows one write at a time',
         ],
         answer: 1,
         explanation:
@@ -355,7 +360,7 @@ app -> store in cache   (both updated)       -> database          on next read)`
         id: 'cs-6',
         prompt: 'Your service uses a read-through cache library. The cache cluster goes down, and every read now returns an error, although the database is healthy. What is missing?',
         options: [
-          'A fallback: on a cache error the loader should read the database directly, so reads get slower instead of failing',
+          'A fallback that reads the database directly on a cache error',
           'A longer TTL',
           'Write-behind for the reads',
           'A bigger cache cluster',
@@ -369,9 +374,9 @@ app -> store in cache   (both updated)       -> database          on next read)`
         prompt: 'Stock levels change every few seconds, and selling an item you do not have is expensive. Product pages show stock from a cache. What must the checkout do?',
         options: [
           'Trust the cached stock level, because it is at most a few seconds old',
-          'Use write-behind so stock updates are fast',
-          'Re-check and reserve the stock atomically in the database at checkout, whatever the page showed',
-          'Raise the TTL so the cache is hit more often',
+          'Use write-behind so stock updates reach the cache before buyers do',
+          'Re-check and reserve the stock atomically in the database at checkout',
+          'Raise the TTL so the cache is hit more often during the checkout rush',
         ],
         answer: 2,
         explanation:
@@ -381,10 +386,10 @@ app -> store in cache   (both updated)       -> database          on next read)`
         id: 'cs-8',
         prompt: 'In the Cache Strategies Lab you pick Write around, then Read, right after a write of a new row. What does the read do first, and why?',
         options: [
-          'Hits the cache, because the write stored the row there',
-          'Misses the cache, then loads the row from the database and stores it - write-around never put it in the cache',
-          'Reads from the cache, which fetches it from the database by itself',
-          'Fails, because the row is only in the database',
+          'Hits the cache, because the write stored the row there on the way in',
+          'Misses, then loads the row from the database and caches it',
+          'Reads from the cache, which fetches the row from the database by itself',
+          'Fails, because the row is only in the database and not yet cached',
         ],
         answer: 1,
         explanation:
@@ -394,10 +399,10 @@ app -> store in cache   (both updated)       -> database          on next read)`
         id: 'cs-9',
         prompt: 'Thirty call sites repeat the same cache-aside code, and a hot key missing sends hundreds of identical queries to the database. What change fixes both problems in one place?',
         options: [
-          'Switch every write to write-through',
-          'Shorten the TTL',
-          'Remove the cache from the hot key',
-          'Move to read-through with one loader that lets a single request reload a missing key while the others wait',
+          'Switch every write to write-through, so hot keys are always in the cache',
+          'Shorten the TTL so each miss reloads a smaller, fresher batch',
+          'Remove the cache from the hot key and let the database serve it',
+          'Read-through with one loader that lets a single request reload a key',
         ],
         answer: 3,
         explanation:
@@ -407,10 +412,10 @@ app -> store in cache   (both updated)       -> database          on next read)`
         id: 'cs-10',
         prompt: 'A user changes their display name. It appears inside cached feed pages, comment threads and profile cards, each under its own key. Keeping track of every key to delete keeps missing some. What scales better?',
         options: [
-          'Flush the whole cache whenever any user changes their name',
-          'Cache small canonical objects (the user) and assemble pages from them, or put a version in the key and bump it on change',
-          'Use write-behind for names',
-          'Never cache anything that contains a name',
+          'Flush the whole cache whenever any user changes their display name',
+          'Cache the user once and build pages from it, or version the key',
+          'Use write-behind for names, so the rename reaches every cached page later',
+          'Never cache anything that contains a name, so no page can show an old one',
         ],
         answer: 1,
         explanation:
@@ -487,10 +492,10 @@ CONFIG SET maxmemory-policy allkeys-lru -> evict when full`,
         id: 'redis-1',
         prompt: 'In the Caching Lab on the Redis focus, Redis holds 150 keys - its memory limit - with allkeys-lru, and a request misses on a key that is not cached. What happens when the API stores it?',
         options: [
-          'The SET fails, because memory is full',
-          'Redis evicts the least recently used key to make room, stores the new one, and the Evicted count goes up',
-          'Redis grows past its limit and evicts later',
-          'Redis evicts the key with the shortest TTL left',
+          'The SET fails with an OOM error, because memory is at its limit',
+          'Redis evicts the least recently used key and stores the new one',
+          'Redis grows past its limit and evicts in a later background sweep',
+          'Redis evicts the key with the shortest TTL left to make room',
         ],
         answer: 1,
         explanation:
@@ -501,9 +506,9 @@ CONFIG SET maxmemory-policy allkeys-lru -> evict when full`,
         prompt: 'Same Lab, memory full. You switch the eviction policy to noeviction. What do you see?',
         options: [
           'Nothing changes: noeviction only matters for keys without a TTL',
-          'Redis crashes with an out-of-memory error',
-          'Reads start failing',
-          'SET refused climbs: new keys cannot be cached, but reads are still answered - hits from Redis, misses from the database',
+          'Redis crashes with an out-of-memory error on the next write',
+          'Reads start failing, because Redis rejects every command when full',
+          'SET refused climbs, but reads are still answered',
         ],
         answer: 3,
         explanation:
@@ -513,10 +518,10 @@ CONFIG SET maxmemory-policy allkeys-lru -> evict when full`,
         id: 'redis-3',
         prompt: 'A team installs Redis with the default config on a 64-bit server and uses it as a cache, with no TTLs. A few weeks later the server starts swapping and Redis is killed. Why?',
         options: [
-          'maxmemory defaults to 0 on 64-bit systems, meaning no limit, so Redis kept every key until the machine ran out of RAM',
-          'The default policy allkeys-lru evicted too slowly',
-          'Redis leaks memory after a few weeks',
-          'AOF persistence filled the RAM',
+          'maxmemory defaults to 0 (no limit) on 64-bit, so Redis never evicted',
+          'The default policy allkeys-lru evicted too slowly to keep up with new keys',
+          'Redis leaks memory after a few weeks and needs a scheduled restart',
+          'AOF persistence filled the RAM with its growing log of every write',
         ],
         answer: 0,
         explanation:
@@ -526,10 +531,10 @@ CONFIG SET maxmemory-policy allkeys-lru -> evict when full`,
         id: 'redis-4',
         prompt: 'Login sessions are stored only in Redis, with a 30-minute TTL. Memory fills up during a traffic peak. Which policy fits, and why?',
         options: [
-          'allkeys-lru, so Redis silently logs out the users who were idle longest',
-          'allkeys-random, to spread the logouts fairly',
-          'noeviction with a memory alert: a full Redis refuses new logins visibly instead of silently logging people out',
-          'No maxmemory, so sessions are never lost',
+          'allkeys-lru, so Redis logs out the users who were idle longest first',
+          'allkeys-random, to spread the forced logouts fairly across all users',
+          'noeviction with a memory alert, so a full Redis fails visibly',
+          'No maxmemory, so sessions are never evicted and nobody is logged out',
         ],
         answer: 2,
         explanation:
@@ -539,10 +544,10 @@ CONFIG SET maxmemory-policy allkeys-lru -> evict when full`,
         id: 'redis-5',
         prompt: 'An engineer runs KEYS user:* on a production Redis holding 20 million keys, to find a few test users. What happens to the other clients?',
         options: [
-          'Nothing - KEYS runs in the background',
-          'They all wait: commands run one at a time on one thread, and KEYS scans every key before anything else runs. SCAN walks the keys in small steps instead',
-          'Only clients reading user:* keys are slowed',
-          'Redis splits the scan across its CPU cores',
+          'Nothing - KEYS runs in a background thread while other commands continue',
+          'They all wait until KEYS has scanned all 20 million keys',
+          'Only clients reading user:* keys are slowed, because KEYS locks that prefix',
+          'Redis splits the scan across its CPU cores, so the pause is short',
         ],
         answer: 1,
         explanation:
@@ -552,10 +557,10 @@ CONFIG SET maxmemory-policy allkeys-lru -> evict when full`,
         id: 'redis-6',
         prompt: 'A rate limiter runs on four app instances. Each does GET count, adds 1 in code, then SET count. Under load, users get more requests through than the limit allows. What is the fix?',
         options: [
-          'Use INCR, which reads and increments in one atomic command (or a small Lua script for check-and-increment)',
-          'Add more app instances',
-          'Give the counter a longer TTL',
-          'Use a bigger Redis machine',
+          'Use INCR, which reads and increments in one atomic command',
+          'Add more app instances so each one handles fewer requests',
+          'Give the counter a longer TTL so the window does not reset early',
+          'Use a bigger Redis machine so GET and SET finish faster',
         ],
         answer: 0,
         explanation:
@@ -581,7 +586,7 @@ CONFIG SET maxmemory-policy allkeys-lru -> evict when full`,
           'Sentinel deleted them during the failover',
           'The TTL on those keys ran out',
           'The replica was evicting keys',
-          'Replication is asynchronous: the primary acknowledged the writes before the replica had them',
+          'Replication is asynchronous, so the replica never got them',
         ],
         answer: 3,
         explanation:
@@ -591,9 +596,9 @@ CONFIG SET maxmemory-policy allkeys-lru -> evict when full`,
         id: 'redis-9',
         prompt: 'Sessions are written with SET session:abc {json} EX 1800. Later, a bug fix updates the session with a plain SET session:abc {json}. Weeks later memory is full of old sessions. Why?',
         options: [
-          'The plain SET replaced the value and cleared its TTL, so those keys never expire',
-          'EX 1800 means 1800 days',
-          'Redis ignores TTLs when memory is not full',
+          'The plain SET cleared the TTL, so those sessions never expire',
+          'EX 1800 means 1800 days, so the sessions expire only in about five years',
+          'Redis ignores TTLs until memory is full, then expires the oldest keys first',
           'Expired keys are only removed on restart',
         ],
         answer: 0,
@@ -604,10 +609,10 @@ CONFIG SET maxmemory-policy allkeys-lru -> evict when full`,
         id: 'redis-10',
         prompt: 'A weekly leaderboard must show the top 10 of 2 million players and the rank of any one player, updated on every game. Which Redis structure fits?',
         options: [
-          'A string per player, with a KEYS scan to rank them',
-          'A sorted set: ZADD on each game, ZREVRANGE 0 9 for the top 10, ZREVRANK for one player',
-          'A list, sorted in the application after LRANGE',
-          'A hash of player to score, sorted with HGETALL in the application',
+          'One string per player, ranked with a KEYS scan',
+          'A sorted set: ZADD per game, ZREVRANGE and ZREVRANK to read',
+          'A list of scores, sorted in the application after an LRANGE of all players',
+          'A hash of player to score, read with HGETALL and sorted in the application',
         ],
         answer: 1,
         explanation:
@@ -617,10 +622,10 @@ CONFIG SET maxmemory-policy allkeys-lru -> evict when full`,
         id: 'redis-11',
         prompt: 'After moving to Redis Cluster, MGET user:1:name user:2:name fails with a CROSSSLOT error. What is going on?',
         options: [
-          'Cluster mode does not support MGET at all',
-          'One of the keys has expired',
-          'The keys hash to different slots on different nodes, and multi-key commands need all keys in one slot - a hash tag such as {user:1} controls which slot a key goes to',
-          'The cluster needs more replicas',
+          'Cluster mode does not support MGET at all; fetch each key separately',
+          'One of the keys has expired, and MGET fails when any key is missing',
+          'The keys hash to different slots, and multi-key commands need one slot',
+          'The cluster needs more replicas so each node can answer for every slot',
         ],
         answer: 2,
         explanation:
@@ -692,9 +697,9 @@ Cache-Control: public, max-age=31536000, immutable
           'In the CDN Lab the policy is public, s-maxage=30 on URLs that stay the same between deploys. You press Deploy new version. Triangles appear and "Old version served" jumps near 100%, then falls to 0 over about 30 seconds. Why?',
         options: [
           'The deploy failed on some servers and they are still running the old code',
-          'Each edge copy of the old bytes is still fresh by its TTL, and it is only replaced when it expires',
-          'The purge is still on its way to the edges',
-          'Browsers are sending the old version back to the edge',
+          'Each edge copy stays fresh for its 30 s TTL and is replaced only on expiry',
+          'The purge is still on its way to the edges, one location at a time',
+          'Browsers are sending their cached old version back up to the edge',
         ],
         answer: 1,
         explanation:
@@ -719,10 +724,10 @@ Cache-Control: public, max-age=31536000, immutable
         prompt:
           'In the CDN Lab you set Cache-Control to no-cache for the hashed static files. The hit rate drops to 0% and origin traffic equals total traffic, though most answers are small 304s. Why is this the wrong policy for these files?',
         options: [
-          'Every request still pays a trip to the origin, yet a hashed file can never change - immutable with a long max-age would make them edge hits',
-          'no-cache forbids the edge from storing the file at all',
-          '304 responses are larger than full responses',
-          'no-cache makes the edge serve old versions',
+          'Each use still waits on the origin, though a hashed file never changes',
+          'no-cache forbids the edge from storing the file at all, so every request is a miss',
+          '304 responses are larger than full responses once headers are counted',
+          'no-cache makes the edge serve old versions after each deploy',
         ],
         answer: 0,
         explanation:
@@ -733,24 +738,24 @@ Cache-Control: public, max-age=31536000, immutable
         prompt:
           'You want edges to keep the public product list for 60 seconds, while browsers check again on every page view. Which Cache-Control header does that?',
         options: [
-          'max-age=60',
-          'private, max-age=60',
+          'public, max-age=60',
+          'private, max-age=0, s-maxage=60',
           'public, max-age=0, s-maxage=60',
-          'no-store, s-maxage=60',
+          'no-store, max-age=0, s-maxage=60',
         ],
         answer: 2,
         explanation:
-          's-maxage applies only to shared caches such as a CDN and overrides max-age there, so the edge keeps 60 seconds while browsers get 0. max-age=60 alone is the tempting answer, but it would let every browser keep its own copy for a minute too. private forbids the edge from storing it at all.',
+          's-maxage applies only to shared caches such as a CDN and overrides max-age there, so the edge keeps 60 seconds while browsers get 0. public, max-age=60 is the tempting answer, but it would let every browser keep its own copy for a minute too. private forbids the edge from storing it at all.',
       },
       {
         id: 'cdn-caching-5',
         prompt:
           'In the CDN Lab you set the cache key to Host + path + Cookie header. The hit rate falls to almost 0% and the edges fill with thousands of objects. What should the key be for these static files?',
         options: [
-          'Host + path + Cookie, with a longer TTL',
-          'Host + path only - the files do not change per visitor, and ideally they are served from a cookie-free hostname',
-          'Host + path + User-Agent',
-          'No key - static files should skip the CDN',
+          'Host + path + Cookie, with a longer TTL so each copy earns more hits',
+          'Host + path only, since the files are the same for every visitor',
+          'Host + path + User-Agent, so each browser gets a copy it can render',
+          'No key - static files should skip the CDN and come from the origin',
         ],
         answer: 1,
         explanation:
@@ -775,10 +780,10 @@ Cache-Control: public, max-age=31536000, immutable
         prompt:
           'To serve a mobile layout, the origin adds Vary: User-Agent to its HTML. The edge hit rate falls from 95% to 20%. Why, and what fixes it?',
         options: [
-          'There are thousands of distinct User-Agent strings, so each page is stored once per string - vary on a small device-class value instead, or use separate URLs',
-          'Vary headers are not supported by CDNs',
-          'The mobile layout is larger, so the edge runs out of space',
-          'Vary forces every request to revalidate',
+          'Each of thousands of User-Agent strings gets its own copy; vary on device class',
+          'Vary headers are not supported by CDNs, so the edge stops caching the HTML',
+          'The mobile layout is larger, so the edges run out of space and evict pages; add storage',
+          'Vary forces every request to revalidate with the origin; send an ETag too',
         ],
         answer: 0,
         explanation:
@@ -789,10 +794,10 @@ Cache-Control: public, max-age=31536000, immutable
         prompt:
           'In the CDN Lab (public, s-maxage) at 200 requests per second, you drag the Edge TTL from 30 s to 1 s. The hit rate drops much more than it did at 20,000 requests per second. Why?',
         options: [
-          'The edges are too far from the users at low traffic',
-          'Low traffic makes the origin slower',
-          'Each edge asks the origin about each file at most once per TTL; at low traffic a rare file is asked for again only after its copy has expired',
-          'A 1 s TTL turns off the cache',
+          'The edges are too far from the users at low traffic, so requests expire before they arrive',
+          'Low traffic makes the origin slower, so edge copies are refreshed late',
+          'A copy earns hits only while fresh, and at low traffic few requests arrive in 1 s',
+          'A 1 s TTL turns off the cache entirely, whatever the traffic level',
         ],
         answer: 2,
         explanation:
@@ -803,10 +808,10 @@ Cache-Control: public, max-age=31536000, immutable
         prompt:
           'In the CDN Lab you press Purge all edges. Europe drops its copies first; Asia Pacific keeps serving the old version for another second or so. In production, what should the design assume about a purge?',
         options: [
-          'It reaches locations one by one, so for a short window different users see different versions - and it never touches browser caches',
+          'It reaches locations one by one, and never touches browser caches',
           'It is atomic - every location drops its copies at the same moment',
-          'It only works for hashed URLs',
-          'It permanently disables caching for the purged URL',
+          'It only works for hashed URLs, since only they have a unique cache key',
+          'It permanently disables caching for the purged URL until the next deploy',
         ],
         answer: 0,
         explanation:
@@ -816,7 +821,12 @@ Cache-Control: public, max-age=31536000, immutable
         id: 'cdn-caching-10',
         prompt:
           'A public product list gets 5,000 requests per second, spread across 100 edge locations, and each edge keeps it with s-maxage=10. About how many requests per second reach the origin for it?',
-        options: ['About 5,000', 'About 500', 'At most about 10', 'Zero'],
+        options: [
+          'About 5,000, since each request still asks the origin',
+          'About 500 - a cache removes about 90% of the load',
+          'At most about 10',
+          'Zero, since every edge already holds a copy',
+        ],
         answer: 2,
         explanation:
           'Each of the 100 edges fetches it at most once every 10 seconds: 100 / 10 = 10 requests per second, against 5,000 without the cache, and no user sees data older than 10 seconds. 500 is the tempting answer - it treats the cache as dropping only 90% of the load. Zero would need a TTL that never ends.',
@@ -826,10 +836,10 @@ Cache-Control: public, max-age=31536000, immutable
         prompt:
           'The same product list has s-maxage=10. Every 10 seconds, the first user at each edge waits 300 ms while the edge fetches a fresh copy. Which directive removes that wait without lowering freshness much?',
         options: [
-          'no-cache',
+          'no-cache, with an ETag for cheap checks',
           'stale-while-revalidate=60',
           'Vary: Accept-Encoding',
-          'private',
+          'private, max-age=10',
         ],
         answer: 1,
         explanation:
@@ -910,10 +920,10 @@ Materialized view: read 1 precomputed row
         prompt:
           'A product API got three times slower over six months with no code change. The buffer cache hit ratio fell from 99.5% to 88% while the table grew from 20 GB to 90 GB on a 64 GB server. What is the first thing to do?',
         options: [
-          'Put Redis in front of the API so the database sees fewer reads',
-          'Make the working set fit in RAM again: more memory, archive old rows, or slimmer indexes',
-          'Add two more app instances behind the load balancer',
-          'Rewrite the service against a NoSQL database',
+          'Put Redis in front of the API so most reads never reach the database',
+          'Make the working set fit in RAM again, for example with more memory',
+          'Add two more app instances so the requests are spread across more CPUs',
+          'Rewrite the service against a NoSQL database built for large tables',
         ],
         answer: 1,
         explanation:
@@ -938,9 +948,9 @@ Materialized view: read 1 precomputed row
         prompt:
           'An admin dashboard sums 40 million order rows per tenant. With the right index it still takes 300 ms, it is loaded 50 times per second, and the product owner confirms that numbers up to 10 minutes old are fine. What fits best?',
         options: [
-          'Turn on the MySQL query cache for that statement',
-          'Give shared_buffers all of the RAM on the server',
-          'Add a read replica and send the dashboard there',
+          'Turn on the MySQL query cache for that statement so repeat loads skip the sum',
+          'Give shared_buffers all of the RAM so the 40 million rows stay in memory',
+          'Add a read replica and send the dashboard there to take load off the primary',
           'A materialized view of daily totals per tenant, refreshed every 10 minutes',
         ],
         answer: 3,
@@ -952,10 +962,10 @@ Materialized view: read 1 precomputed row
         prompt:
           'The database restarts at 09:00. For the next 20 minutes p95 latency is five times normal, then it recovers without anyone doing anything. What happened?',
         options: [
-          'The buffer pool started empty, so pages came from disk until the working set was read back into RAM',
-          'The query planner forgot the indexes and rebuilt them',
-          'Replication lag built up on the replicas',
-          'The materialized views were dropped and recreated',
+          'The buffer pool started empty, so pages came from disk for a while',
+          'The query planner forgot the indexes and rebuilt them in the background',
+          'Replication lag built up on the replicas while the primary was down',
+          'The materialized views were dropped and recreated from scratch',
         ],
         answer: 0,
         explanation:
@@ -966,8 +976,8 @@ Materialized view: read 1 precomputed row
         prompt:
           'A PostgreSQL job runs REFRESH MATERIALIZED VIEW sales_view every 5 minutes. During each refresh the dashboard that reads the view hangs for about 8 seconds. What fixes the hanging?',
         options: [
-          'Refresh every minute instead, so each refresh has less to do',
-          'Raise shared_buffers so the refresh finishes faster',
+          'Refresh every minute instead, so each refresh has fewer new rows to process',
+          'Raise shared_buffers so the refresh reads from RAM and finishes faster',
           'Add a unique index on the view and use REFRESH MATERIALIZED VIEW CONCURRENTLY',
           'Replace the view with the MySQL query cache',
         ],
@@ -980,10 +990,10 @@ Materialized view: read 1 precomputed row
         prompt:
           'In the Lab you turn the materialized view on with a 30 s refresh. The product page now reads fast, but the checkout team needs the units-sold number to be exact to the second. What do you do for checkout?',
         options: [
-          'Refresh the view every second',
-          'Read the live total for checkout - an indexed query, or a counter updated in the same transaction as the order',
-          'Double the buffer pool',
-          'Turn on the in-process cache with a 1 s TTL',
+          'Refresh the view every second so it is never more than a moment old',
+          'Read the live total, or a counter updated in the order transaction',
+          'Double the buffer pool so the view is always read from memory',
+          'Turn on the in-process cache with a 1 s TTL for the checkout path',
         ],
         answer: 1,
         explanation:
@@ -994,10 +1004,10 @@ Materialized view: read 1 precomputed row
         prompt:
           'After upgrading from MySQL 5.7 to 8.0 the server refuses the query_cache_size setting. One hot read path relied on it. What is the sound plan?',
         options: [
-          'Stay on 5.7 until the setting comes back',
-          'Give the buffer pool 100% of RAM to make up for it',
-          'Put a materialized view on every query the cache used to serve',
-          'Fix the query and its index first, then cache the assembled result in the application if it is still needed',
+          'Stay on 5.7 until the setting comes back in a later 8.x release',
+          'Give the buffer pool 100% of RAM to make up for the lost cache',
+          'Put a materialized view behind every query the cache used to serve, refreshed each minute',
+          'Fix the query and index first, then cache in the application if needed',
         ],
         answer: 3,
         explanation:
@@ -1009,9 +1019,9 @@ Materialized view: read 1 precomputed row
           'The hottest query reads 50,000 rows for every row it returns. The buffer cache hit ratio is 99.8%. The team wants to add Redis. What is the better first step?',
         options: [
           'Add the missing index so the query reads only the rows it returns',
-          'Add Redis with a 5 minute TTL',
-          'Double the buffer pool',
-          'Create a materialized view of the whole table',
+          'Add Redis with a 5 minute TTL so the query runs once per key',
+          'Double the buffer pool so more of the 50,000 rows come from RAM',
+          'Create a materialized view of the whole table so the query reads a precomputed copy',
         ],
         answer: 0,
         explanation:
@@ -1022,10 +1032,10 @@ Materialized view: read 1 precomputed row
         prompt:
           'A service runs the same short lookup 20,000 times per second. Profiling shows that parsing and planning take longer than executing. Users must always see current data. What helps?',
         options: [
-          'A materialized view of the lookup',
+          'A materialized view of the lookup, refreshed every few seconds',
           'An in-process cache of the results with a 10 s TTL',
-          'Prepared statements, so each connection plans the query once and reuses the plan',
-          'A bigger buffer pool',
+          'Prepared statements, so the plan is made once and reused',
+          'A bigger buffer pool, so the lookup never touches disk',
         ],
         answer: 2,
         explanation:
@@ -1036,10 +1046,10 @@ Materialized view: read 1 precomputed row
         prompt:
           'A new DBA sets shared_buffers to 60 GB on a dedicated 64 GB PostgreSQL server "so the whole database is cached". What is the problem?',
         options: [
-          'None - more buffer pool is always faster',
-          'PostgreSQL also relies on the OS page cache and needs memory for sorts and connections; its docs start at 25% of RAM and rarely go above 40%',
-          'It turns off the OS page cache',
-          'It makes materialized views refresh more slowly',
+          'None - a bigger buffer pool always means fewer disk reads and faster queries',
+          'PostgreSQL also needs the OS page cache and memory for sorts and connections',
+          'It turns off the OS page cache, so PostgreSQL reads straight from disk',
+          'It makes materialized views refresh more slowly, since they need spare RAM',
         ],
         answer: 1,
         explanation:
@@ -1050,9 +1060,9 @@ Materialized view: read 1 precomputed row
         prompt:
           'In the Lab, with the buffer pool left at 4,000 pages, you turn the materialized view on. The buffer pool hit ratio goes to about 100%. Why, when the buffer pool did not grow?',
         options: [
-          'The view is kept only in RAM, never on disk',
-          'The view turns the disk off',
-          'The query engine now caches whole results',
+          'The view is kept only in RAM, never on disk, so its reads never count as misses',
+          'The view makes the database skip the disk for any table it covers',
+          'The query engine now caches whole results instead of pages',
           'The view is 10 pages, so the working set shrank until it fits',
         ],
         answer: 3,
@@ -1131,10 +1141,10 @@ Two-tier: local (5 s TTL) -> Redis (5 min TTL) -> database`,
         prompt:
           'Feature flags are checked 20 times per request. At 2,000 requests per second across 20 instances that is 40,000 Redis reads per second. The flags change a few times a day and are 8 KB in total. What fits best?',
         options: [
-          'A bigger Redis cluster',
-          'Each instance keeps the whole flag set in memory and refreshes it every few seconds',
-          'Read the flags from the database on every check',
-          'A request-scoped cache only',
+          'A bigger Redis cluster, so 40,000 reads per second stop being a strain',
+          'Each instance keeps all flags in memory and refreshes every few seconds',
+          'Read the flags from the database on every check, so they are never stale',
+          'A request-scoped cache, so each request reads the flags from Redis only once',
         ],
         answer: 1,
         explanation:
@@ -1145,9 +1155,9 @@ Two-tier: local (5 s TTL) -> Redis (5 min TTL) -> database`,
         prompt:
           'In the Cache Layers Lab (TTL 30 s, 5 orders per second) the metric says the instances disagree on 6 of the 10 hot products. A user refreshing a product page sees 1,204 sold, then 1,198, then 1,204. Why?',
         options: [
-          'The database rolled back a transaction',
-          'The buffer pool evicted the page with the total',
-          'The load balancer sends each refresh to another instance, and each holds a copy of a different age',
+          'The database rolled back a transaction, so the total briefly went down',
+          'The buffer pool evicted the page with the total and reloaded an old one',
+          'Each refresh lands on another instance with a copy of a different age',
           'The clocks of the instances are out of sync',
         ],
         answer: 2,
@@ -1158,10 +1168,10 @@ Two-tier: local (5 s TTL) -> Redis (5 min TTL) -> database`,
         id: 'app-cache-3',
         prompt: 'In the Lab you lower the local TTL from 30 s to 2 s. What happens?',
         options: [
-          'Stale reads and disagreements drop, the local hit rate drops, and more queries reach the database',
-          'Stale reads drop and nothing else changes',
-          'The hit rate goes up, because entries are fresher',
-          'Nothing, because the TTL only affects memory use',
+          'Staleness drops, the hit rate drops, and database queries rise',
+          'Stale reads drop and nothing else changes, since the TTL only bounds age',
+          'The hit rate goes up, because fresher entries are served more often',
+          'Nothing, because the TTL only affects how much memory the cache uses',
         ],
         answer: 0,
         explanation:
@@ -1172,10 +1182,10 @@ Two-tier: local (5 s TTL) -> Redis (5 min TTL) -> database`,
         prompt:
           'A process-wide LRU caches account settings under the key "settings:" plus the tenant id. The settings are per user. What goes wrong?',
         options: [
-          'Only a small performance loss',
-          'Entries expire too early',
-          'The cache fills up faster',
-          'The first user of a tenant to load settings fills the entry, and every other user of that tenant gets those settings - a data leak',
+          'Only a small performance loss, from more misses than necessary',
+          'Entries expire too early, because each user overwrites the tenant key',
+          'The cache fills up faster, since it holds one entry per user',
+          'Every user of a tenant gets the settings of whoever loaded them first',
         ],
         answer: 3,
         explanation:
@@ -1186,10 +1196,10 @@ Two-tier: local (5 s TTL) -> Redis (5 min TTL) -> database`,
         prompt:
           'A service is killed for running out of memory at peak every few days. A heap dump shows a HashMap cache of product results with 40 million entries. What is the fix?',
         options: [
-          'Bound the cache - a maximum number of entries with LRU eviction - and give entries a TTL',
-          'Give the process more memory',
-          'Restart the service every night',
-          'Move the map to a file on disk',
+          'Bound the cache with a maximum size and LRU eviction, plus a TTL',
+          'Give the process more memory so 40 million entries fit at peak',
+          'Restart the service every night to clear the map before peak',
+          'Move the map to a file on disk, where it has room to grow',
         ],
         answer: 0,
         explanation:
@@ -1200,10 +1210,10 @@ Two-tier: local (5 s TTL) -> Redis (5 min TTL) -> database`,
         prompt:
           'The team adds Redis pub/sub invalidation - every change publishes the key and each instance drops its local copy - and removes the TTL from local entries because "every change is broadcast". What is the risk?',
         options: [
-          'Pub/sub makes every read slower',
-          'Redis pub/sub delivers at most once: an instance that is reconnecting during a publish misses it and keeps its stale copy forever',
-          'The instances will drop their copies too often',
-          'There is no risk; broadcast invalidation is exact',
+          'Pub/sub makes every read slower, since instances check for messages first',
+          'A missed message leaves a stale copy forever, since pub/sub is at most once',
+          'The instances will drop their copies too often and hammer the database',
+          'There is no risk; broadcast invalidation is exact and reaches every instance',
         ],
         answer: 1,
         explanation:
@@ -1214,10 +1224,10 @@ Two-tier: local (5 s TTL) -> Redis (5 min TTL) -> database`,
         prompt:
           'Three layers of code each load the tenant settings, so every request runs the same query three times. The settings must never be stale between two requests. What do you use?',
         options: [
-          'A process-wide cache with a 60 s TTL',
-          'Redis with a 5 minute TTL',
-          'A request-scoped cache: a map that lives for one request and is thrown away',
-          'A materialized view of the settings',
+          'A process-wide cache with a 60 s TTL shared by all requests',
+          'Redis with a 5 minute TTL, so every instance sees the same copy',
+          'A request-scoped cache that lives for one request',
+          'A materialized view of the settings, read in one query',
         ],
         answer: 2,
         explanation:
@@ -1228,10 +1238,10 @@ Two-tier: local (5 s TTL) -> Redis (5 min TTL) -> database`,
         prompt:
           'After every deploy the database CPU spikes for about two minutes, then settles. The app uses an in-process cache. Why?',
         options: [
-          'The deploy rebuilt the database indexes',
+          'The deploy rebuilt the database indexes, which takes a few minutes',
           'The load balancer sends all traffic to one instance during a deploy',
-          'The database restarts during every deploy',
-          'New instances start with empty local caches, so for a while almost every read is a miss that queries the database',
+          'The database restarts during every deploy and warms its buffer pool',
+          'New instances start with empty local caches, so reads miss',
         ],
         answer: 3,
         explanation:
@@ -1241,7 +1251,12 @@ Two-tier: local (5 s TTL) -> Redis (5 min TTL) -> database`,
         id: 'app-cache-9',
         prompt:
           'Reads go local cache (TTL 5 s), then Redis (TTL 5 minutes), then the database. A price changes; the code updates the database and deletes the Redis key. How long can users still see the old price?',
-        options: ['Not at all', 'Up to 5 seconds, until the local copy on each instance expires', 'Up to 5 minutes', 'Until the next deploy'],
+        options: [
+          'Not at all, since the Redis key was deleted at once',
+          'Up to 5 seconds',
+          'Up to 5 minutes, the TTL of the Redis entry',
+          'Until the next deploy clears the local caches',
+        ],
         answer: 1,
         explanation:
           'Deleting the Redis key fixes the shared copy at once, but each instance may still hold the old price in memory for up to its local TTL. That is why the local TTL is kept short. 5 minutes is the tempting answer, but the Redis entry was deleted, so its TTL no longer matters.',
@@ -1251,10 +1266,10 @@ Two-tier: local (5 s TTL) -> Redis (5 min TTL) -> database`,
         prompt:
           'The units-sold counter of a product changes several times a second and is read 1,000 times a second. In the Lab most in-process hits on the hot products show up as stale reads. What does that tell you?',
         options: [
-          'The TTL should be raised so the hit rate goes up',
-          'The local cache is broken',
-          'A value that changes many times per second goes stale almost as soon as it is cached, so a local cache fits only if an approximate number is acceptable',
-          'The buffer pool is too small',
+          'The TTL should be raised so the hit rate goes up and hides the stale reads',
+          'The local cache is broken, since a working cache never serves stale data',
+          'The value changes too often to cache locally, unless approximate is fine',
+          'The buffer pool is too small to keep the counter row in memory',
         ],
         answer: 2,
         explanation:
@@ -1265,10 +1280,10 @@ Two-tier: local (5 s TTL) -> Redis (5 min TTL) -> database`,
         prompt:
           'A dashboard keeps the saved filters of each user in the memory of the instance that served them. Behind a round-robin load balancer, filters seem to reset at random. Which fix still works after deploys and autoscaling?',
         options: [
-          'Store the filters in a shared store (Redis or the database) or on the client, not in one instance',
-          'Turn on sticky sessions',
-          'Raise the local TTL to one hour',
-          'Run a single instance',
+          'Keep the filters in a shared store or on the client',
+          'Turn on sticky sessions so each user always reaches the same instance',
+          'Raise the local TTL to one hour so the filters stay in memory longer',
+          'Run a single instance so every request finds the same memory',
         ],
         answer: 0,
         explanation:
