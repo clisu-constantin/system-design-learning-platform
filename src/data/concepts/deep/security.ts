@@ -196,7 +196,7 @@ start with RBAC; move to ReBAC when sharing and hierarchy appear.`,
           caption: 'What a token contains, and what to verify',
           body: `header   {"alg":"RS256","kid":"2026-09"}
 payload  {"sub":"user_42","iss":"https://auth.example.com",
-          "aud":"api.example.com","exp":1695034800,
+          "aud":"api.example.com","exp":1695032100,
           "iat":1695031200,"scope":"read:orders"}
 signature RS256(base64(header) + "." + base64(payload), private_key)
 
@@ -258,8 +258,8 @@ verify: signature with the key for kid
     remember: [
       'The payload is readable by anyone - signed, not encrypted.',
       'Validate signature, expiry, issuer and audience, and pin the algorithm.',
-      'A JWT cannot be revoked; short lifetimes plus refresh tokens bound the damage.',
-      'HttpOnly cookies beat localStorage for browsers; never put a token in a URL.',
+      'A JWT cannot be revoked without extra state; short lifetimes plus refresh tokens bound the damage.',
+      'An HttpOnly cookie hides the token from XSS but needs CSRF defence; never put a token in a URL.',
       'Rotating refresh tokens with reuse detection is what catches a stolen one.',
     ],
   },

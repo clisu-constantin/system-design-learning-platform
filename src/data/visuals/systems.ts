@@ -1127,7 +1127,7 @@ export const systemVisuals: Record<string, VisualSpec> = {
       { id: 's1', kind: 'service', label: 'Service A', sub: 'verifies locally', x: 320, y: 15, w: 180, h: 80 },
       { id: 's2', kind: 'service', label: 'Service B', sub: 'verifies locally', x: 320, y: 105, w: 180, h: 80 },
       { id: 's3', kind: 'service', label: 'Service C', sub: 'verifies locally', x: 320, y: 195, w: 180, h: 80 },
-      { id: 'keys', kind: 'storage', label: 'Public key', x: 590, y: 105, w: 140, h: 76 },
+      { id: 'keys', kind: 'storage', label: 'Public key', sub: 'JWKS, cached', x: 590, y: 105, w: 140, h: 80 },
     ],
     edges: [
       { from: 'client', to: 's1', tone: 'brand', rate: 1.6 },
@@ -1140,8 +1140,8 @@ export const systemVisuals: Record<string, VisualSpec> = {
       { from: 's3', to: 'keys', tone: 'muted', dashed: true },
     ],
     steps: [
-      { from: 'client', to: 's1', label: 'Token sent to Service A' },
-      { from: 's1', to: 'keys', label: 'Signature checked with public key' },
+      { from: 'client', to: 's1', label: 'Service A verifies the signature' },
+      { from: 's1', to: 'keys', label: 'Public key fetched once, cached' },
       { from: 'client', to: 's2', label: 'Service B verifies, no auth call' },
       { from: 'client', to: 's3', label: 'Revoked token passes until expiry', outcome: 'warning' },
     ],

@@ -434,14 +434,25 @@ Missing that check = IDOR / BOLA, number one in the OWASP API Top 10.`,
     category: 'security',
     difficulty: 'Intermediate',
     lab: 'stateless',
-    keywords: ['token', 'claims', 'signature', 'revocation', 'refresh token'],
-    what: 'A JSON Web Token carries claims (subject, expiry, scopes) in a base64 payload with a signature. Any service holding the key can verify it without contacting an auth server.',
+    labFocus: 'jwt',
+    keywords: ['token', 'claims', 'signature', 'revocation', 'refresh token', 'jwks', 'bearer'],
+    what: 'A JSON Web Token carries claims (subject, expiry, scopes) in a base64url-encoded payload with a signature. Any service holding the verification key - a shared secret, or the public key of the issuer - can verify it without contacting an auth server.',
     why: 'It makes authentication stateless, which is what lets any instance in any region serve any request without a shared session store.',
     how: [
       'Sign with a strong algorithm and validate alg, issuer, audience and expiry on every request.',
-      'Keep access tokens short-lived (minutes) and pair them with a longer-lived refresh token.',
+      'Keep access tokens short-lived (5-15 minutes) and pair them with a longer-lived refresh token stored server-side.',
       'Store the refresh token where XSS cannot reach it - an HttpOnly cookie.',
-      'Maintain a revocation list for the short access-token window when immediate revocation matters.',
+      'Maintain a denylist of token ids for the short access-token window when immediate revocation matters.',
+    ],
+    when: [
+      'Many services or regions must check identity without all calling one session store.',
+      'An identity provider issues tokens that other services only verify (OAuth 2.0 and OpenID Connect).',
+      'Machine-to-machine calls that need a signed, expiring credential instead of a static key.',
+    ],
+    advantages: [
+      'Verification is local: no network hop, and no store that can go down.',
+      'Any instance can serve any request, so the app tier stays disposable.',
+      'The claims travel with the request, so downstream services know the caller without asking.',
     ],
     diagram: `header.payload.signature
 
@@ -459,13 +470,185 @@ Consequence: a stolen token is valid until it expires.`,
           'Key rotation must be designed in',
         ],
       },
+      {
+        approach: 'Opaque session id + server-side store',
+        gains: ['Instant revocation: delete one key', 'Tiny cookie, nothing readable inside it'],
+        costs: ['A store lookup on every request', 'The store becomes a critical dependency'],
+      },
+      {
+        approach: 'Short access token + refresh token',
+        gains: ['Exposure after revocation is bounded by the access token lifetime', 'Most requests still need no lookup'],
+        costs: ['A refresh flow in every client', 'The refresh tokens need a server-side store again'],
+      },
+      {
+        approach: 'JWT + denylist check',
+        gains: ['Revoked tokens rejected at once'],
+        costs: ['A lookup on every request - the main advantage of JWT is gone', 'The denylist store must stay up, or requests fail'],
+      },
     ],
     mistakes: [
       'Long-lived access tokens with no revocation path.',
       'Accepting alg: none or failing to pin the expected algorithm.',
       'Storing tokens in localStorage, where any XSS can read them.',
+      'Skipping the aud check, so a token issued for another service is accepted.',
+      'Removing the old signing key the moment a new one is published, which rejects every token still signed with it.',
     ],
     related: ['authentication', 'oauth', 'stateless-applications', 'api-gateway'],
+    quiz: [
+      {
+        id: 'jwt-1',
+        prompt:
+          'In the Lab on Stateless JWT with 15-minute tokens, you click Revoke user A. What happens to the next requests that carry the stolen token of A?',
+        options: [
+          'Rejected at once, because every server learns about the logout',
+          'Rejected by the server that issued the token, accepted by the others',
+          'Accepted by every server until the exp claim passes, about 15 minutes later, then rejected',
+          'Accepted forever, because a JWT never expires',
+        ],
+        answer: 2,
+        explanation:
+          'Verification uses only the key and the token, so nothing on the servers says it was revoked. The token is good until it expires. The issuing server is not special - they all hold the same key - and exp does end it.',
+      },
+      {
+        id: 'jwt-2',
+        prompt: 'Still in JWT mode, you kill Server 1 and Server 2. What happens to logged-in users?',
+        options: [
+          'Nothing they notice: Server 3 verifies every token with the same key',
+          'Users whose token was issued by Server 1 or 2 must log in again',
+          'Everyone is logged out, because the tokens were stored on the dead servers',
+          'Requests queue until a second server comes back',
+        ],
+        answer: 0,
+        explanation:
+          'The session state is in the token the client carries, so no server holds anything to lose. The tempting answer assumes the issuing server matters; it does not, because any holder of the key can verify.',
+      },
+      {
+        id: 'jwt-3',
+        prompt:
+          'A code review finds that the JWT payload carries the home address of the user and a password-reset code. What is wrong?',
+        options: [
+          'Nothing - the signature keeps the payload secret',
+          'The token is now too long to sign',
+          'Only the reset code is a problem, the address is harmless',
+          'The payload is only base64url-encoded, so anyone who holds the token can read both',
+        ],
+        answer: 3,
+        explanation:
+          'A signature proves who made the token and that it was not changed; it does not hide anything. Paste any JWT into a decoder and the claims are plain JSON. Keep payloads to identifiers and scopes, or use an encrypted token (JWE).',
+      },
+      {
+        id: 'jwt-4',
+        prompt:
+          'A verifier reads the algorithm from the token header. An attacker sends a token with alg: none and no signature. What happens?',
+        options: [
+          'The library rejects it, because every JWT has a signature',
+          'It may be accepted as valid with no signature at all - so pin the expected algorithm in the verifier',
+          'It is accepted only for read-only scopes',
+          'The token is re-signed automatically',
+        ],
+        answer: 1,
+        explanation:
+          'The header is attacker-controlled. Trusting it enables alg: none and HS/RS confusion attacks, both described in the JWT best current practice (RFC 8725). The verifier, not the token, must decide which algorithm is allowed.',
+      },
+      {
+        id: 'jwt-5',
+        prompt:
+          'The billing API and the reports API trust the same identity provider. A token issued for the reports API is replayed against the billing API. Which check stops it?',
+        options: [
+          'The exp check',
+          'The signature check',
+          'The aud (audience) check: the token says it was issued for reports, not billing',
+          'Nothing can stop it',
+        ],
+        answer: 2,
+        explanation:
+          'The signature is valid - the same provider signed it - and it may not have expired. Only aud says who the token is for, so a service must reject a token whose audience is not itself.',
+      },
+      {
+        id: 'jwt-6',
+        prompt:
+          'Access tokens live 60 minutes, and an abusive user must be cut off now. Which change does that, and at what cost?',
+        options: [
+          'Delete the token from the localStorage of the user - no cost',
+          'Rotate the signing key - it logs out only that user',
+          'Shorten new tokens to 5 minutes - the current token dies at once',
+          'Add the token id to a denylist that every server checks - at the cost of a lookup on every request',
+        ],
+        answer: 3,
+        explanation:
+          'Deleting the client copy does nothing to a copy the attacker holds, and a shorter lifetime only affects tokens issued later. Rotating the key does cut the token off, but it logs out every user. The Lab shows the denylist trade: revoked tokens are rejected at once while Store lookups climbs with every request.',
+      },
+      {
+        id: 'jwt-7',
+        prompt:
+          'Users complain that 10-minute access tokens force them to log in every 10 minutes. What keeps the short lifetime without the logins?',
+        options: [
+          'A refresh token: long-lived, stored server-side and revocable, used to get new access tokens silently',
+          'Raise the access token lifetime to 30 days',
+          'Store the password in the browser and log in automatically',
+          'Turn off the exp check',
+        ],
+        answer: 0,
+        explanation:
+          'The access token stays short, so a stolen one is useful for at most 10 minutes. Revoking the refresh token stops new access tokens from being minted. A 30-day access token removes the logins but makes every leak last a month.',
+      },
+      {
+        id: 'jwt-8',
+        prompt:
+          'One identity provider issues tokens and 30 microservices verify them. The team is choosing between HS256 (shared secret) and RS256 (key pair). What does RS256 change?',
+        options: [
+          'Tokens become encrypted',
+          'The services hold only the public key, which can verify but not create tokens - so one compromised service cannot forge tokens for all',
+          'Verification needs a call to the identity provider',
+          'Nothing, the two are interchangeable',
+        ],
+        answer: 1,
+        explanation:
+          'With HS256 the same secret signs and verifies, so all 30 services could mint tokens. With RS256 only the provider holds the private key. Neither encrypts the payload, and both verify locally.',
+      },
+      {
+        id: 'jwt-9',
+        prompt:
+          'A single-page app keeps its access token in localStorage. A compromised third-party script runs on the page. What can it do, and what reduces the risk?',
+        options: [
+          'Nothing - localStorage is sandboxed per script',
+          'Only change the page layout',
+          'Read the token and send it anywhere; an HttpOnly cookie keeps it out of JavaScript, paired with SameSite and a CSRF token',
+          'Read the token, but it is useless outside the original browser',
+        ],
+        answer: 2,
+        explanation:
+          'Any script on the origin can read localStorage. A bearer token works from any machine that holds it - there is no binding to the browser. Cookies cannot be read by script when HttpOnly, but they are sent automatically, so CSRF defence comes with them.',
+      },
+      {
+        id: 'jwt-10',
+        prompt:
+          'You publish a new signing key and remove the old one from the JWKS at the same moment. Access tokens live 15 minutes. What happens?',
+        options: [
+          'For up to 15 minutes, every token still signed with the old key fails verification and those users get errors',
+          'Nothing - verifiers switch keys smoothly',
+          'Old tokens keep working until they expire',
+          'Every token is re-signed with the new key',
+        ],
+        answer: 0,
+        explanation:
+          'Verifiers find the key by kid. Remove it and the old tokens cannot be checked, so they are rejected. Keep the old public key published until the last token signed with it has expired, then retire it.',
+      },
+      {
+        id: 'jwt-11',
+        prompt:
+          'In the Lab you turn on the denylist check in JWT mode and then click Kill Redis. What happens, and what does it show?',
+        options: [
+          'Nothing - JWT does not need Redis',
+          'Only revoked tokens fail',
+          'Servers skip the denylist and accept everything',
+          'Every request fails, because the servers fail closed when they cannot check the denylist - JWT is now as dependent on a store as a session was',
+        ],
+        answer: 3,
+        explanation:
+          'Adding the denylist brought back a shared store and a lookup per request. Failing open would let every revoked token in during the outage, so the Lab fails closed, and Redis becomes as critical as it was for sessions.',
+      },
+    ],
   },
   {
     slug: 'oauth',

@@ -1,5 +1,5 @@
 import { useCallback, useRef, useState } from 'react';
-import { Power, RotateCw, UserCheck } from 'lucide-react';
+import { Ban, Power, RotateCw, UserCheck } from 'lucide-react';
 import {
   ArchNode,
   DiagramCanvas,
@@ -11,12 +11,12 @@ import {
   type ParticleView,
 } from '@/components/architecture';
 import { Insight, LabShell, MetricsPanel } from '@/components/learning';
-import { Button, SegmentedControl, Slider } from '@/components/ui';
+import { Button, SegmentedControl, Slider, Toggle } from '@/components/ui';
 import { advanceParticles, nextParticleId, useEventLog, useTicker, type Particle } from '@/simulations/engine';
 import { useRerender } from '@/hooks/useRerender';
 import { sampleArrivals } from '@/utils/math';
 import { formatLatency, formatNumber, formatPercent } from '@/utils/format';
-import type { NodeStatus } from '@/types';
+import type { LabFocus, LabProps, NodeStatus } from '@/types';
 
 type Mode = 'local' | 'sticky' | 'shared' | 'jwt';
 
@@ -29,15 +29,42 @@ const MODES: { value: Mode; label: string }[] = [
 
 const MODE_NOTE: Record<Mode, string> = {
   local:
-    'Sessions live in the memory of whichever server handled the login. Round robin sends the next request somewhere else, and that server has never heard of this user.',
+    'Sessions live in the memory of whichever server handled the login. Round robin sends the next request somewhere else, and that server has never heard of this user - so about two requests in three find no session.',
   sticky:
-    'The load balancer pins each user to one server, so sessions are found - until that server dies and takes its users sessions with it. Load also becomes uneven.',
+    'The load balancer pins each user to one server, so sessions are found - until that server dies and takes its users sessions with it. Kill a server and watch its users log in again. Load also becomes uneven.',
   shared:
-    'Sessions live in Redis. Any server can serve any user, at the cost of one network hop per request and a new critical dependency.',
-  jwt: 'The client carries a signed token. Every server verifies it locally - no lookup, no shared store. The trade is that revoking a token before it expires needs extra machinery.',
+    'Sessions live in Redis. Any server can serve any user and any server can die without logging anyone out, at the cost of one network hop per request and a new critical dependency - try Kill Redis.',
+  jwt: 'The client carries a signed token. Every server checks the signature locally with the same key - no lookup, no shared store, and killing a server logs nobody out. The trade: revoking a token before it expires needs extra state. Try Revoke user A.',
 };
 
 const USERS = ['A', 'B', 'C', 'D', 'E', 'F'];
+/** The user the Revoke control logs out. Their stolen copy keeps sending requests. */
+const REVOKED_USER = 'A';
+
+/** Every control of the lab, in one object so Reset cannot miss one. */
+interface Setup {
+  mode: Mode;
+  traffic: number;
+  /** JWT only: check a Redis denylist of revoked token ids on every request. */
+  denylist: boolean;
+  /** JWT only: access token lifetime in minutes, played back at 1 minute per second. */
+  tokenMinutes: number;
+}
+
+/** What the lab opens on at /labs/stateless, with no Lab focus: the naive setup that breaks. */
+const DEFAULT_SETUP: Setup = { mode: 'local', traffic: 6, denylist: false, tokenMinutes: 15 };
+
+/**
+ * The Lab focus of each Concept that hosts this lab. Stateless applications
+ * opens on the shared session store; Stateful applications on sessions held
+ * inside each instance (sticky, so the loss shows the moment a server dies);
+ * JWT on a signed token any instance can verify.
+ */
+const FOCUS_SETUPS: Record<LabFocus<'stateless'>, Setup> = {
+  'stateless-applications': { ...DEFAULT_SETUP, mode: 'shared' },
+  'stateful-applications': { ...DEFAULT_SETUP, mode: 'sticky' },
+  jwt: { ...DEFAULT_SETUP, mode: 'jwt' },
+};
 
 interface ServerModel {
   id: string;
@@ -52,8 +79,13 @@ interface RequestRow {
   id: number;
   user: string;
   server: string;
-  result: 'ok' | 'lost';
+  result: 'ok' | 'lost' | 'blocked' | 'leaked';
   detail: string;
+}
+
+interface Revocation {
+  /** Simulated seconds on the lab clock when the user was revoked. */
+  at: number;
 }
 
 interface State {
@@ -61,28 +93,44 @@ interface State {
   redisUp: boolean;
   particles: Particle[];
   cursor: number;
+  /** Simulated seconds since the lab started. */
+  clock: number;
+  revoked: Revocation | null;
   ok: number;
   lost: number;
   lookups: number;
+  /** Requests from the revoked user that were turned away - the correct outcome. */
+  blocked: number;
+  /** Requests from the revoked user that were still let in. */
+  leaked: number;
   recent: RequestRow[];
 }
 
-const createState = (): State => ({
-  servers: [0, 1, 2].map((index) => ({
+/** Every user starts logged in, their session on the server round robin gave them. */
+const createState = (): State => {
+  const servers: ServerModel[] = [0, 1, 2].map((index) => ({
     id: `s${index}`,
     name: `Server ${index + 1}`,
     status: 'healthy',
     sessions: new Set<string>(),
     handled: 0,
-  })),
-  redisUp: true,
-  particles: [],
-  cursor: 0,
-  ok: 0,
-  lost: 0,
-  lookups: 0,
-  recent: [],
-});
+  }));
+  USERS.forEach((user, index) => servers[index % servers.length].sessions.add(user));
+  return {
+    servers,
+    redisUp: true,
+    particles: [],
+    cursor: 0,
+    clock: 0,
+    revoked: null,
+    ok: 0,
+    lost: 0,
+    lookups: 0,
+    blocked: 0,
+    leaked: 0,
+    recent: [],
+  };
+};
 
 const LAYOUT: Layout = {
   users: { x: 380, y: 14, w: 200, h: 58 },
@@ -93,27 +141,49 @@ const LAYOUT: Layout = {
   redis: { x: 390, y: 410, w: 180, h: 92 },
 };
 
-export function StatelessLab() {
+const SESSION_WHERE: Record<Mode, string> = {
+  local: '',
+  sticky: '',
+  shared: 'in Redis',
+  jwt: 'in the token',
+};
+
+export function StatelessLab({ focus }: LabProps<'stateless'>) {
+  // The page keys this lab by Concept, so the focus never changes under a mounted lab.
+  const start = focus ? FOCUS_SETUPS[focus] : DEFAULT_SETUP;
+  const [setup, setSetup] = useState(start);
+  const { mode, traffic, denylist, tokenMinutes } = setup;
+  const change =
+    <K extends keyof Setup>(key: K) =>
+    (value: Setup[K]) =>
+      setSetup((current) => ({ ...current, [key]: value }));
   const [running, setRunning] = useState(true);
-  const [mode, setMode] = useState<Mode>('local');
-  const [traffic, setTraffic] = useState(6);
   const state = useRef<State>(createState());
   const rerender = useRerender(30);
   const { events, log, clear } = useEventLog();
 
-  /** Clears the counters but keeps the servers and their sessions. */
-  const resetStats = useCallback(() => {
+  /**
+   * Clears the counters but keeps the servers and their sessions. A new session
+   * strategy also clears the revocation; the denylist switch keeps it, as if the
+   * revocation had been written to the denylist too.
+   */
+  const resetStats = useCallback((keepRevocation = false) => {
     const current = state.current;
     current.ok = 0;
     current.lost = 0;
     current.lookups = 0;
+    current.blocked = 0;
+    current.leaked = 0;
+    if (!keepRevocation) current.revoked = null;
     current.recent = [];
   }, []);
 
   const reset = useCallback(() => {
+    // Back to this Concept's starting setup, not the lab's global default.
+    setSetup(start);
     state.current = createState();
     clear();
-  }, [clear]);
+  }, [clear, start]);
 
   const login = useCallback(() => {
     const current = state.current;
@@ -121,12 +191,32 @@ export function StatelessLab() {
     if (healthy.length === 0) return;
     for (const server of current.servers) server.sessions.clear();
     USERS.forEach((user, index) => {
-      const server = healthy[index % healthy.length];
-      server.sessions.add(user);
+      healthy[index % healthy.length].sessions.add(user);
     });
-    log('All users logged in - sessions created on the servers that handled the login', 'ok');
+    current.revoked = null;
+    log('All users logged in - a session or token issued by the server that handled each login', 'ok');
     rerender();
   }, [log, rerender]);
+
+  const revoke = useCallback(() => {
+    const current = state.current;
+    current.revoked = { at: current.clock };
+    current.blocked = 0;
+    current.leaked = 0;
+    // A server-side session can simply be deleted. A JWT has nothing to delete.
+    for (const server of current.servers) server.sessions.delete(REVOKED_USER);
+    if (mode === 'jwt') {
+      log(
+        denylist
+          ? `User ${REVOKED_USER} revoked - token id added to the Redis denylist`
+          : `User ${REVOKED_USER} revoked - but the token stays valid until it expires`,
+        denylist ? 'ok' : 'warn',
+      );
+    } else {
+      log(`User ${REVOKED_USER} revoked - session deleted, the stolen cookie is now useless`, 'ok');
+    }
+    rerender();
+  }, [denylist, log, mode, rerender]);
 
   const toggleServer = useCallback(
     (id: string) => {
@@ -137,7 +227,7 @@ export function StatelessLab() {
         if (server.sessions.size && (mode === 'local' || mode === 'sticky')) {
           log(`${server.name} down - ${server.sessions.size} in-memory session(s) lost`, 'danger');
         } else {
-          log(`${server.name} down`, 'warn');
+          log(`${server.name} down - no sessions lived there, nobody is logged out`, 'warn');
         }
         server.sessions.clear();
       } else {
@@ -151,8 +241,10 @@ export function StatelessLab() {
 
   useTicker(running, (dt) => {
     const current = state.current;
+    current.clock += dt;
     const healthy = current.servers.filter((server) => server.status === 'healthy');
     const arrivals = sampleArrivals(traffic, dt);
+    const checksRedis = mode === 'shared' || (mode === 'jwt' && denylist);
 
     for (let index = 0; index < arrivals; index += 1) {
       const user = USERS[Math.floor(Math.random() * USERS.length)];
@@ -183,50 +275,79 @@ export function StatelessLab() {
         server = healthy[current.cursor];
       }
 
-      let ok = true;
+      let result: RequestRow['result'] = 'ok';
       let detail: string;
       const route: string[] = ['users', 'lb', server.id];
+      if (checksRedis) {
+        route.push('redis');
+        current.lookups += 1;
+      }
+      const revokedHere = current.revoked !== null && user === REVOKED_USER;
 
-      if (mode === 'local') {
-        ok = server.sessions.has(user);
-        detail = ok ? 'session found in local memory' : 'SESSION NOT FOUND - user logged out';
-        if (!ok) {
+      if (checksRedis && !current.redisUp) {
+        // Fail closed: without the store nobody can prove a session (or that a token is not revoked).
+        result = 'lost';
+        detail =
+          mode === 'shared'
+            ? 'Redis unavailable - no session store'
+            : 'Redis unavailable - denylist unreachable, fail closed';
+      } else if (revokedHere && current.revoked) {
+        if (mode === 'jwt' && !denylist) {
+          const minutesLeft = tokenMinutes - (current.clock - current.revoked.at);
+          if (minutesLeft > 0) {
+            result = 'leaked';
+            detail = `REVOKED token still valid - expires in ${Math.ceil(minutesLeft)} min`;
+          } else {
+            result = 'blocked';
+            detail = 'token expired, refresh token revoked - rejected';
+          }
+        } else {
+          result = 'blocked';
+          detail =
+            mode === 'jwt'
+              ? 'token id on the denylist - rejected'
+              : mode === 'shared'
+                ? 'session deleted from Redis - rejected'
+                : 'session deleted on logout - rejected';
+        }
+      } else if (mode === 'local') {
+        if (server.sessions.has(user)) {
+          detail = 'session found in local memory';
+        } else {
+          result = 'lost';
+          detail = 'SESSION NOT FOUND - user logged out';
           // The user logs in again on this server. The new session cookie
           // replaces the old one, so the session on any other server is dead.
           for (const other of current.servers) other.sessions.delete(user);
           server.sessions.add(user);
         }
       } else if (mode === 'sticky') {
-        if (!server.sessions.has(user)) {
-          ok = false;
+        if (server.sessions.has(user)) {
+          detail = 'sticky route found the session';
+        } else {
+          result = 'lost';
           server.sessions.add(user);
           detail = 'SESSION NOT FOUND - re-pinned here, user logs in again';
-        } else {
-          detail = 'sticky route found the session';
         }
       } else if (mode === 'shared') {
-        route.push('redis');
-        current.lookups += 1;
-        ok = current.redisUp;
-        detail = ok ? 'session loaded from Redis (+1 network hop)' : 'Redis unavailable - no session store';
+        detail = 'session loaded from Redis (+1 network hop)';
       } else {
-        detail = 'JWT verified locally, no session lookup';
+        detail = denylist ? 'signature verified, denylist checked (+1 hop)' : 'signature verified locally, no lookup';
       }
 
-      if (ok) {
+      if (result === 'ok') {
         current.ok += 1;
         server.handled += 1;
-      } else {
+      } else if (result === 'lost') {
         current.lost += 1;
+      } else if (result === 'blocked') {
+        current.blocked += 1;
+      } else {
+        current.leaked += 1;
+        server.handled += 1;
       }
 
-      current.recent.unshift({
-        id: nextParticleId(),
-        user,
-        server: server.name,
-        result: ok ? 'ok' : 'lost',
-        detail,
-      });
+      current.recent.unshift({ id: nextParticleId(), user, server: server.name, result, detail });
       current.recent = current.recent.slice(0, 8);
 
       current.particles.push({
@@ -235,7 +356,14 @@ export function StatelessLab() {
         leg: 0,
         t: 0,
         speed: 1.1,
-        outcome: ok ? (mode === 'shared' ? 'cache-hit' : 'success') : 'failure',
+        outcome:
+          result === 'ok'
+            ? checksRedis
+              ? 'cache-hit'
+              : 'success'
+            : result === 'leaked'
+              ? 'warning'
+              : 'failure',
       });
     }
 
@@ -245,10 +373,15 @@ export function StatelessLab() {
   });
 
   const current = state.current;
-  const showRedis = mode === 'shared';
+  const showRedis = mode === 'shared' || (mode === 'jwt' && denylist);
+  const localState = mode === 'local' || mode === 'sticky';
   const total = current.ok + current.lost;
   const successRate = total ? current.ok / total : 1;
   const healthyCount = current.servers.filter((server) => server.status === 'healthy').length;
+  const tokenLeft =
+    current.revoked && mode === 'jwt' && !denylist
+      ? Math.max(0, tokenMinutes - (current.clock - current.revoked.at))
+      : 0;
 
   const layout: Layout = { ...LAYOUT };
   const serverXs = spread(3, 480, 180, 50);
@@ -268,6 +401,8 @@ export function StatelessLab() {
           ? [...server.sessions].slice(0, 3).join(',') || undefined
           : undefined,
     })),
+    // Every server talks to Redis, not just the one that happens to be busy -
+    // the servers are replicas and are wired identically.
     ...(showRedis
       ? current.servers.map<DiagramEdge>((server) => ({
           from: server.id,
@@ -286,22 +421,56 @@ export function StatelessLab() {
     outcome: particle.outcome ?? 'success',
   }));
 
+  const insight = current.revoked ? (
+    mode === 'jwt' && !denylist ? (
+      tokenLeft > 0 ? (
+        <>
+          User {REVOKED_USER} was revoked, but a JWT is checked with the key alone - nothing on the servers says
+          it was revoked. The stolen token keeps getting in for about {Math.ceil(tokenLeft)} more minutes, until
+          its exp claim passes. Shorten the token lifetime to shrink that window, or turn on the denylist check to
+          close it at the cost of a Redis lookup on every request.
+        </>
+      ) : (
+        <>
+          The revoked token has expired, and the refresh token that could mint a new one was deleted at
+          revocation - so it is finally rejected. The exposure window was the access token lifetime:{' '}
+          {tokenMinutes} minutes.
+        </>
+      )
+    ) : (
+      <>
+        User {REVOKED_USER} was revoked and the next request with the stolen credential is rejected at once:{' '}
+        {mode === 'jwt'
+          ? 'every server checks the denylist in Redis. That lookup per request is exactly what JWT was meant to avoid.'
+          : 'the session was stored on the server side, so deleting it is enough.'}
+      </>
+    )
+  ) : (
+    MODE_NOTE[mode]
+  );
+
   return (
     <LabShell
       title="Stateless vs Stateful Lab"
-      description="Six users, three servers, one load balancer. Switch session strategy and watch which requests survive a round-robin hop or a dead server."
+      description="Six users, three servers, one load balancer. Switch where the session lives and watch which requests survive a round-robin hop, a dead server or a revoked login."
       running={running}
       onToggleRun={() => setRunning((value) => !value)}
       onReset={reset}
-      legend={<ParticleLegend outcomes={['success', 'cache-hit', 'failure']} />}
+      legend={<ParticleLegend outcomes={['success', 'cache-hit', 'warning', 'failure']} />}
       events={events}
       actions={
-        <Button onClick={login}>
-          <UserCheck className="h-4 w-4" />
-          Log all users in
-        </Button>
+        <>
+          <Button onClick={login}>
+            <UserCheck className="h-4 w-4" />
+            Log all users in
+          </Button>
+          <Button variant="danger" onClick={revoke} disabled={current.revoked !== null}>
+            <Ban className="h-4 w-4" />
+            Revoke user {REVOKED_USER}
+          </Button>
+        </>
       }
-      insight={<Insight title={MODES.find((item) => item.value === mode)?.label}>{MODE_NOTE[mode]}</Insight>}
+      insight={<Insight title={MODES.find((item) => item.value === mode)?.label}>{insight}</Insight>}
       metrics={
         <>
           <MetricsPanel
@@ -311,7 +480,7 @@ export function StatelessLab() {
                 label: 'Successful',
                 value: formatPercent(successRate, 1),
                 tone: successRate > 0.98 ? 'ok' : successRate > 0.8 ? 'warn' : 'danger',
-                hint: 'Requests that found a valid session.',
+                hint: 'Requests from logged-in users that found a valid session or token. Requests from a revoked user are counted apart.',
               },
               {
                 key: 'lost',
@@ -324,16 +493,33 @@ export function StatelessLab() {
                 key: 'lookups',
                 label: 'Store lookups',
                 value: formatNumber(current.lookups),
-                hint: 'Round trips to the shared session store.',
+                hint: 'Round trips to Redis: the session store, or the JWT denylist.',
               },
               {
                 key: 'latency',
                 label: 'Extra latency',
-                value: mode === 'shared' ? formatLatency(2.5) : formatLatency(0),
-                hint: 'Additional per-request cost of the session strategy. An illustrative figure.',
+                value: showRedis ? formatLatency(2.5) : formatLatency(0),
+                hint: 'Additional per-request cost of the session strategy: a Redis round trip, or a signature check that takes microseconds. An illustrative figure.',
                 simulated: true,
               },
               { key: 'instances', label: 'Healthy servers', value: `${healthyCount}/3` },
+              ...(current.revoked
+                ? [
+                    {
+                      key: 'leaked',
+                      label: `Revoked ${REVOKED_USER}: let in`,
+                      value: formatNumber(current.leaked),
+                      tone: current.leaked > 0 ? ('danger' as const) : ('ok' as const),
+                      hint: 'Requests with the revoked credential that a server still accepted.',
+                    },
+                    {
+                      key: 'blocked',
+                      label: `Revoked ${REVOKED_USER}: rejected`,
+                      value: formatNumber(current.blocked),
+                      hint: 'Requests with the revoked credential that were turned away - the correct outcome.',
+                    },
+                  ]
+                : []),
             ]}
           />
           <div className="card p-4">
@@ -345,7 +531,13 @@ export function StatelessLab() {
                 current.recent.map((row) => (
                   <p
                     key={row.id}
-                    className={row.result === 'ok' ? 'text-muted' : 'text-danger'}
+                    className={
+                      row.result === 'ok' || row.result === 'blocked'
+                        ? 'text-muted'
+                        : row.result === 'leaked'
+                          ? 'text-warn'
+                          : 'text-danger'
+                    }
                   >
                     <span className="text-faint">user {row.user}</span> {'->'} {row.server}{' '}
                     <span className="text-faint">{row.detail}</span>
@@ -359,14 +551,14 @@ export function StatelessLab() {
       controls={
         <>
           <div className="space-y-2">
-            <p className="text-xs font-medium text-muted">Session strategy</p>
+            <p className="text-xs font-medium text-muted">Where the session lives</p>
             <div className="grid grid-cols-2 gap-1.5">
               {MODES.map((item) => (
                 <button
                   key={item.value}
                   type="button"
                   onClick={() => {
-                    setMode(item.value);
+                    change('mode')(item.value);
                     // Each strategy is its own experiment. Without this the
                     // success rate keeps averaging in the sessions the previous
                     // strategy lost, so switching to JWT looked broken too.
@@ -389,10 +581,34 @@ export function StatelessLab() {
             value={traffic}
             min={1}
             max={30}
-            onChange={setTraffic}
+            onChange={change('traffic')}
             format={(value) => `${value} req/sec`}
             hint="Kept low so individual requests stay visible."
           />
+          {mode === 'jwt' ? (
+            <div className="space-y-3">
+              <Slider
+                label="Access token lifetime"
+                value={tokenMinutes}
+                min={5}
+                max={60}
+                step={5}
+                onChange={change('tokenMinutes')}
+                format={(value) => `${value} min`}
+                hint="Simplified: the lab plays one minute of token life per second, so a revoked token visibly expires. Real access tokens usually live 5-15 minutes."
+              />
+              <Toggle
+                label="Denylist check in Redis"
+                checked={denylist}
+                onChange={(value) => {
+                  change('denylist')(value);
+                  resetStats(true);
+                  log(value ? 'Denylist on - every request now checks Redis' : 'Denylist off - pure local verification', 'info');
+                }}
+                description="Rejects revoked tokens at once, for one lookup per request."
+              />
+            </div>
+          ) : null}
           <div className="space-y-2">
             <p className="text-xs font-medium text-muted">Failure injection</p>
             {current.servers.map((server) => (
@@ -415,7 +631,7 @@ export function StatelessLab() {
                 onClick={() => {
                   current.redisUp = !current.redisUp;
                   log(
-                    current.redisUp ? 'Redis recovered' : 'Redis down - every request loses its session',
+                    current.redisUp ? 'Redis recovered' : 'Redis down - every request that needs it fails',
                     current.redisUp ? 'ok' : 'danger',
                   );
                   rerender();
@@ -461,9 +677,9 @@ export function StatelessLab() {
             status={server.status}
           >
             <NodeStatRow
-              label="Local sessions"
-              value={mode === 'local' || mode === 'sticky' ? [...server.sessions].join(' ') || 'none' : 'none'}
-              tone={mode === 'local' || mode === 'sticky' ? 'text-warn' : 'text-ok'}
+              label="Sessions"
+              value={localState ? [...server.sessions].join(' ') || 'none' : SESSION_WHERE[mode]}
+              tone={localState ? 'text-warn' : 'text-ok'}
             />
             <NodeStatRow label="Handled" value={formatNumber(server.handled)} />
           </ArchNode>
@@ -472,12 +688,16 @@ export function StatelessLab() {
           <ArchNode
             kind="cache"
             title="Redis"
-            subtitle="shared session store"
+            subtitle={mode === 'jwt' ? 'token denylist' : 'shared session store'}
             placed={layout.redis}
             status={current.redisUp ? 'healthy' : 'down'}
             compact
           >
-            <NodeStatRow label="Sessions" value={USERS.length} />
+            {mode === 'jwt' ? (
+              <NodeStatRow label="Revoked ids" value={current.revoked ? 1 : 0} />
+            ) : (
+              <NodeStatRow label="Sessions" value={USERS.length - (current.revoked ? 1 : 0)} />
+            )}
           </ArchNode>
         ) : null}
       </DiagramCanvas>

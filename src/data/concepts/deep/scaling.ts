@@ -231,7 +231,7 @@ STATELESS
     jargon: [
       { term: 'Stateless', plain: 'The instance keeps nothing between requests that anyone else needs. State lives in shared storage.' },
       { term: 'Session store', plain: 'A shared place (usually Redis) where login sessions live so every instance sees them.' },
-      { term: 'JWT', plain: 'A signed token carrying user data in the cookie, so no lookup is needed. Hard to revoke early.' },
+      { term: 'JWT', plain: 'A signed token carrying user data in a cookie or header, so no lookup is needed. Hard to revoke early.' },
       { term: 'Disposable instance', plain: 'A server you can kill at any moment without losing anything. The goal of statelessness.' },
       { term: 'Pre-signed URL', plain: 'A temporary URL that lets a browser upload or download straight from object storage.' },
       { term: 'Sticky session', plain: 'Routing a user to the same instance every time. A workaround for statefulness, not a cure.' },

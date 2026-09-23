@@ -149,7 +149,7 @@ export const scalingVisuals: Record<string, VisualSpec> = {
     edges: [
       { from: 'app', to: 'db', tone: 'info', rate: 1.6 },
       { from: 'app', to: 'cache', tone: 'danger', rate: 2.2, outcome: 'cache-hit' },
-      { from: 'app', to: 'queue', tone: 'warn', rate: 1.2, outcome: 'warning' },
+      { from: 'app', to: 'queue', tone: 'warn', rate: 1.2 },
     ],
     steps: [
       { from: 'app', to: 'db', label: 'Rows persist in replicated Postgres' },
