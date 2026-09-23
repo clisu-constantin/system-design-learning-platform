@@ -41,7 +41,12 @@ interface Setup {
   jitter: boolean;
   failureRate: number;
   clients: number;
+  /** Playback speed of the diagram, as a multiplier (see SPEEDS). */
+  speed: PlaybackSpeed;
 }
+
+/** Playback speeds of the storm on the diagram: simulated seconds per real second. */
+type PlaybackSpeed = '0.25' | '0.5' | '1';
 
 /** What the lab opens on at /labs/retry-backoff, with no Lab focus. */
 const DEFAULT_SETUP: Setup = {
@@ -51,6 +56,7 @@ const DEFAULT_SETUP: Setup = {
   jitter: true,
   failureRate: 0.7,
   clients: 2000,
+  speed: '0.5',
 };
 
 /**
@@ -66,8 +72,7 @@ const FOCUS_SETUPS: Record<LabFocus<'retry-backoff'>, Setup> = {
 
 const SEED = 7;
 
-/** Playback speeds of the storm on the diagram: simulated seconds per real second. */
-const SPEEDS = [
+const SPEEDS: { value: PlaybackSpeed; label: string }[] = [
   { value: '0.25', label: '0.25x' },
   { value: '0.5', label: '0.5x' },
   { value: '1', label: '1x' },
@@ -115,14 +120,13 @@ export function RetryBackoffLab({ focus }: LabProps<'retry-backoff'>) {
   const start = focus ? FOCUS_SETUPS[focus] : DEFAULT_SETUP;
   // Every control lives in one object, so Reset cannot miss one.
   const [setup, setSetup] = useState(start);
-  const { strategy, baseMs, maxAttempts, jitter, failureRate, clients } = setup;
+  const { strategy, baseMs, maxAttempts, jitter, failureRate, clients, speed } = setup;
   const change =
     <K extends keyof Setup>(key: K) =>
     (value: Setup[K]) =>
       setSetup((current) => ({ ...current, [key]: value }));
   const [seed, setSeed] = useState(SEED);
   const [running, setRunning] = useState(true);
-  const [speed, setSpeed] = useState('0.5');
 
   const sim = useRef<SimState>(createSimState());
   const rerender = useRerender(30);
@@ -509,7 +513,7 @@ export function RetryBackoffLab({ focus }: LabProps<'retry-backoff'>) {
           ) : null}
           <div className="space-y-2">
             <p className="text-xs font-medium text-muted">Playback speed of the diagram</p>
-            <SegmentedControl size="sm" className="w-full" value={speed} options={SPEEDS} onChange={setSpeed} />
+            <SegmentedControl size="sm" className="w-full" value={speed} options={SPEEDS} onChange={change('speed')} />
           </div>
         </>
       }
