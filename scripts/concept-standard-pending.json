@@ -6,9 +6,7 @@
     "what-happens-when-you-type-a-url",
     "dns",
     "http-https",
-    "database-indexing",
     "replication",
-    "sharding",
     "read-replicas",
     "caching",
     "cache-strategies",
@@ -35,7 +33,6 @@
   "labs": [
     "requirements",
     "url-journey",
-    "indexing",
     "retry-backoff",
     "tracing"
   ]

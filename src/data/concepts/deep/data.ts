@@ -258,19 +258,20 @@ Unsure / early product?                          -> Postgres`,
       {
         heading: 'What a B-tree index actually does',
         paragraphs: [
-          'Without an index, finding rows matching a condition means a sequential scan: read every row and test it. On a million-row table that is a million comparisons and a lot of disk reads. An index is a separate, sorted structure mapping column values to row locations, so the database can binary-search instead.',
-          'The shape used almost everywhere is a B-tree: a shallow tree where each node holds many keys. Its depth grows logarithmically, so a table of a thousand rows and a table of a billion rows differ by only a few levels - typically 3 to 4 disk reads to locate any row. That is why indexes feel like magic: a thousandfold growth in data costs one extra hop.',
-          'The sorted order is a second gift. An index on created_at makes ORDER BY created_at LIMIT 20 free, because the data is already in order - no sort of the whole table. Range queries (BETWEEN, >, <) work for the same reason.',
+          'A database does not read rows one at a time. It reads pages: fixed blocks of 8 KB in PostgreSQL, each holding many rows. Without an index, finding rows matching a condition means a sequential scan: read every page and test every row on it. A 5 million row table of about 100 rows per page is 50,000 pages. An index is a separate, sorted structure mapping column values to row locations, so the database can search it instead of reading everything.',
+          'The shape used almost everywhere is a B-tree: a shallow tree of pages where each page holds hundreds of keys. Each level multiplies the reach of the tree by that many, so a table of a thousand rows and a table of a billion rows differ by only a couple of levels - typically 3 to 4 page reads to locate any row, then one more for the row itself. That is why indexes feel like magic: a table a few hundred times larger costs about one extra page read.',
+          'The sorted order is a second gift. An index on created_at makes ORDER BY created_at LIMIT 20 cheap, because the data is already in order - the database reads the first 20 entries and stops, with no sort of the whole table. Range queries (BETWEEN, >, <) work for the same reason.',
         ],
         code: {
           caption: 'Same query, two plans',
           body: `SELECT * FROM users WHERE email = 'ana@example.com';
 
 WITHOUT index
-  Seq Scan on users  (rows=5,000,000)  ~1,200 ms
+  Seq Scan on users   50,000 pages read   ~1,200 ms
 
 WITH index on (email)
-  Index Scan using users_email_idx     ~0.3 ms
+  Index Scan using users_email_idx
+    3 index pages + 1 table page          ~0.3 ms
 
 Cost of that index: ~200 MB, and every INSERT/UPDATE of email
 now writes to the table AND the index.`,
@@ -281,20 +282,20 @@ now writes to the table AND the index.`,
         paragraphs: [
           'An index on (tenant_id, created_at) sorts by tenant first, then by date inside each tenant. That serves WHERE tenant_id = 7 and it serves WHERE tenant_id = 7 ORDER BY created_at. It does not serve WHERE created_at > x on its own, because the dates are only sorted within each tenant - a phone book sorted by surname then first name is useless for finding everyone called Ana.',
           'This left-prefix rule is the most valuable index fact to know. An index on (a, b, c) can be used for queries on a, on (a, b) and on (a, b, c), but not for b alone. Order the columns by putting equality filters first, then the range or sort column last.',
-          'A covering index goes one step further: include every column the query needs, and the database never touches the table at all - it answers entirely from the index. That can turn a 50 ms query into a 2 ms one, at the cost of a larger index.',
+          'A covering index goes one step further: include every column the query needs, and the database can answer from the index alone and skip the table page (PostgreSQL calls this an index-only scan, and still checks the table for rows changed very recently). It removes one page read per lookup on a hot path, at the cost of a larger index.',
         ],
         bullets: [
           'Equality columns first, range or ORDER BY column last.',
           '(a, b) also covers queries on a alone - so do not create both.',
           'Low-selectivity columns (a boolean, a status with 3 values) rarely deserve their own index.',
-          'A covering index answers the query without reading the table - great for hot read paths.',
+          'A covering index answers the query without reading the table page - useful for one hot read path.',
           'Partial indexes (WHERE deleted_at IS NULL) are small and fast when most rows are irrelevant.',
         ],
       },
       {
         heading: 'The cost side, stated honestly',
         paragraphs: [
-          'Every index must be updated on every insert, update of an indexed column, and delete. A table with eight indexes does nine writes per insert. On a write-heavy table that is the difference between comfortable and saturated, which is why "add an index for every query" is bad advice.',
+          'Every index must be updated on every insert, update of an indexed column, and delete. A table with eight indexes does nine writes per insert. On a write-heavy table that is the difference between comfortable and saturated, which is why "add an index for every query" is bad advice. Building an index costs too: a plain CREATE INDEX in PostgreSQL blocks writes to the table until it finishes, so large production tables use CREATE INDEX CONCURRENTLY.',
           'Indexes also consume memory. The reason an index is fast is that its upper levels stay cached in RAM; once the working set of indexes exceeds memory, every lookup starts hitting disk and the benefit collapses. Unused indexes are therefore not free even when nobody queries them - they evict useful pages.',
           'So the workflow is: find the slow queries, read the execution plan, add the narrowest index that fixes them, and periodically delete indexes that statistics show are never used. Most databases expose usage counts, and most mature systems have several indexes that have never been read.',
         ],
@@ -321,12 +322,12 @@ now writes to the table AND the index.`,
       { term: 'Sequential scan', plain: 'Reading every row to find matches. Fine for small tables, fatal for large ones.' },
       { term: 'B-tree', plain: 'The sorted tree structure behind most indexes. Depth grows very slowly with data size.' },
       { term: 'Selectivity', plain: 'How much a condition narrows the rows. An email is highly selective; a boolean is not.' },
-      { term: 'Composite index', plain: 'An index on several columns, usable left-to-right only.' },
+      { term: 'Page', plain: 'The block a database reads and writes, 8 KB in PostgreSQL. Query cost is counted in pages, not rows.' },
       { term: 'Covering index', plain: 'An index containing every column a query needs, so the table is never read.' },
       { term: 'EXPLAIN / query plan', plain: 'The database telling you how it intends to run a query. The first thing to look at.' },
     ],
     remember: [
-      'An index turns a full scan into a few sorted hops - logarithmic, not linear.',
+      'An index turns a full scan of every page into one page per tree level - logarithmic, not linear.',
       'Composite indexes work left-to-right: equality columns first, range or sort last.',
       'Every index is a write tax on every insert and update.',
       'Read EXPLAIN before adding anything; guessing at indexes wastes writes and memory.',
@@ -465,6 +466,7 @@ consistent hashing    adding a shard moves only ~1/N of keys
           'Globally unique ids need a scheme that does not depend on one sequence: UUIDv7, Snowflake, or per-shard ranges.',
           'Accept that some queries become scatter-gather, and keep those off the hot path.',
           'Plan the rebalancing procedure before you need it, and rehearse it.',
+          'Replicate every shard - sharding splits the data, it does not copy it, so a lost shard is lost for its users.',
         ],
       },
     ],
