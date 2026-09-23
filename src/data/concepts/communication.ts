@@ -986,7 +986,7 @@ data: {"id":"123","status":"shipped"}`,
         ],
         answer: 2,
         explanation:
-          'An event stream must be UTF-8 text. You can base64 binary into it, at about 33 percent extra size and an encode and decode for every frame. WebSockets have binary frames. Polling at 20 ms would be 50 requests a second per client.',
+          'An event stream must be UTF-8 text. You can base64 binary into it, at about 33 percent extra size and an encode and decode for every frame. WebSockets have binary frames. Polling at 20 ms would be 50 requests a second per client, and long polling with one frame per response is the same: a full HTTP request and response for every frame.',
       },
       {
         id: 'sse-8',
