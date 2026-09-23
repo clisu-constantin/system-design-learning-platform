@@ -66,7 +66,7 @@ export const LABS: LabDefinition[] = [
   {
     id: 'horizontal-scaling',
     title: 'Horizontal Scaling Lab',
-    blurb: 'Add servers behind a load balancer and watch load, latency and errors redistribute.',
+    blurb: 'Add servers behind a load balancer, fail one, and find the shared database limit.',
     category: 'scaling',
     difficulty: 'Beginner',
     concept: 'horizontal-scaling',

@@ -43,7 +43,7 @@ one core busy, others idle   single-threaded      NO - fix the code/query`,
         heading: 'The two ceilings: hardware and availability',
         paragraphs: [
           'The hardware ceiling is the obvious one. There is a largest instance type, and its price does not grow linearly - the top of the range typically costs far more per unit of capacity than the middle. Long before you reach the physical limit, you reach the point where one more step up is bad value.',
-          'The availability ceiling is the one that hurts more, and it is invisible in performance graphs. One machine is one machine no matter how large. A kernel panic, a failed disk, a bad deploy or a routine reboot takes the whole service down. You cannot reach three nines of availability on a single instance, because a single unplanned restart plus the time to notice it already blows the budget.',
+          'The availability ceiling is the one that hurts more, and it is invisible in performance graphs. One machine is one machine no matter how large. A kernel panic, a failed disk, a bad deploy or a routine reboot takes the whole service down. Three nines allows about 43 minutes of downtime a month; one failed disk and a restore from backup, or a few maintenance reboots, uses it up. The cloud providers price this in: AWS promises 99.5 percent for a single EC2 instance, and 99.99 percent only for instances spread over two or more Availability Zones.',
           'The practical policy most teams land on: scale up freely until you are comfortable, but put a second machine and a load balancer in place as soon as downtime starts costing real money - not because you need the capacity, but because you need the redundancy.',
         ],
       },
@@ -106,7 +106,7 @@ one core busy, others idle   single-threaded      NO - fix the code/query`,
         heading: 'Scaling is linear only until you hit the shared dependency',
         paragraphs: [
           'Adding app servers multiplies the capacity of the app tier and nothing else. Every one of those servers talks to the same database, the same cache, the same third-party API. Three servers send three times the queries to a database that has not changed size, so the usual outcome of scaling out is that the database becomes the bottleneck within a week.',
-          'Connection pooling makes this concrete and painful. If each instance keeps a pool of 100 connections and you run 20 instances, you are asking the database for 2,000 connections. Postgres allocates real memory per connection and typically falls over well before that; the fix is a smaller pool per instance or a pooler like PgBouncer in front.',
+          'Connection pooling makes this concrete and painful. If each instance keeps a pool of 100 connections and you run 20 instances, you are asking the database for 2,000 connections. Postgres runs one server process per connection and ships with max_connections set to typically 100, so most of those 2,000 are refused - and raising the limit that far costs memory and contention on the database. The fix is a smaller pool per instance or a pooler like PgBouncer in front.',
           'The honest mental model is that horizontal scaling moves the bottleneck downstream. That is still progress - the app tier is the easy tier to scale - but plan the next step: read replicas, caching, or partitioning for the data tier.',
         ],
         code: {
