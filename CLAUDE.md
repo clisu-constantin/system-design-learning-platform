@@ -129,6 +129,24 @@ caller") rather than escaping them.
 The lab then appears on the concept page's "Interactive lab" tab, at `/labs/<id>`, in search, and
 on the labs index — no other wiring.
 
+#### A Lab focus for a shared lab
+
+When several concepts host one lab, each opens it on the setup that teaches its own concept - its
+Lab focus. `RetryBackoffLab` is the worked example (Retry opens on immediate retries, Exponential
+backoff on backoff with jitter):
+
+1. List the focus ids in `LabFocusIds` in `src/types/index.ts`: `'<lab-id>': 'focus-a' | 'focus-b'`.
+2. In the lab, take `{ focus }: LabProps<'<lab-id>'>`, keep a `DEFAULT_SETUP`, and map every id to
+   its setup in a `Record<LabFocus<'<lab-id>'>, Setup>` - a new id without a setup fails typecheck.
+   Keep the controls in one `Setup` state that starts from
+   `focus ? FOCUS_SETUPS[focus] : DEFAULT_SETUP`, and make Reset set it back to that same start,
+   not to `DEFAULT_SETUP` - one object, so Reset cannot miss a control.
+3. Set `labFocus: 'focus-a'` next to `lab: '<lab-id>'` on the concept. The `Concept` type pairs the
+   two, so a typo, or a focus of another lab, fails typecheck.
+
+The concept page passes the focus and keys the lab by concept slug, so moving between two hosts of
+the same lab remounts it on the new focus. `/labs/<id>` passes no focus and gets `DEFAULT_SETUP`.
+
 ### A new playground component kind
 
 Add it to `NODE_KINDS` in `src/components/architecture/nodeKinds.tsx` (icon, accent, capacity,

@@ -6,6 +6,7 @@ import { Button, SegmentedControl, Slider, Toggle } from '@/components/ui';
 import { formatLatency, formatNumber } from '@/utils/format';
 import { cn } from '@/utils/cn';
 import { mulberry32 } from '@/utils/math';
+import type { LabFocus, LabProps } from '@/types';
 import { BUCKET_MS, FAILURE_WINDOW_MS, delayFor, simulateFleetLoad, type Strategy } from './retryLoadModel';
 
 const STRATEGIES: { value: Strategy; label: string }[] = [
@@ -14,6 +15,38 @@ const STRATEGIES: { value: Strategy; label: string }[] = [
   { value: 'exponential', label: 'Exponential backoff' },
 ];
 
+interface Setup {
+  strategy: Strategy;
+  baseMs: number;
+  maxAttempts: number;
+  jitter: boolean;
+  failureRate: number;
+  clients: number;
+}
+
+/** What the lab opens on at /labs/retry-backoff, with no Lab focus. */
+const DEFAULT_SETUP: Setup = {
+  strategy: 'exponential',
+  baseMs: 1000,
+  maxAttempts: 5,
+  jitter: true,
+  failureRate: 0.7,
+  clients: 2000,
+};
+
+/**
+ * The Lab focus of each Concept that hosts this lab. Retry opens on immediate
+ * retries, so the first thing the learner sees is the retry storm; Exponential
+ * backoff opens on the cure, backoff with jitter.
+ */
+const FOCUS_SETUPS: Record<LabFocus<'retry-backoff'>, Setup> = {
+  'no-backoff': { ...DEFAULT_SETUP, strategy: 'immediate', jitter: false },
+  // The same as the default today, on purpose: spelled out so it stays the cure if the default moves.
+  'backoff-jitter': { ...DEFAULT_SETUP, strategy: 'exponential', jitter: true },
+};
+
+const SEED = 7;
+
 interface Attempt {
   index: number;
   delayMs: number;
@@ -21,14 +54,17 @@ interface Attempt {
   success: boolean;
 }
 
-export function RetryBackoffLab() {
-  const [strategy, setStrategy] = useState<Strategy>('exponential');
-  const [baseMs, setBaseMs] = useState(1000);
-  const [maxAttempts, setMaxAttempts] = useState(5);
-  const [jitter, setJitter] = useState(true);
-  const [failureRate, setFailureRate] = useState(0.7);
-  const [clients, setClients] = useState(2000);
-  const [seed, setSeed] = useState(7);
+export function RetryBackoffLab({ focus }: LabProps<'retry-backoff'>) {
+  // The page keys this lab by Concept, so the focus never changes under a mounted lab.
+  const start = focus ? FOCUS_SETUPS[focus] : DEFAULT_SETUP;
+  // Every control lives in one object, so Reset cannot miss one.
+  const [setup, setSetup] = useState(start);
+  const { strategy, baseMs, maxAttempts, jitter, failureRate, clients } = setup;
+  const change =
+    <K extends keyof Setup>(key: K) =>
+    (value: Setup[K]) =>
+      setSetup((current) => ({ ...current, [key]: value }));
+  const [seed, setSeed] = useState(SEED);
 
   /** One request's attempt timeline, deterministic per seed so it can be replayed. */
   const attempts = useMemo<Attempt[]>(() => {
@@ -71,8 +107,9 @@ export function RetryBackoffLab() {
       title="Retry and Exponential Backoff Lab"
       description="One request retrying, and what happens when thousands of clients retry the same way at the same time."
       onReset={() => {
-        setSeed(7);
-        setStrategy('exponential');
+        // Back to this Concept's starting setup, not the lab's global default.
+        setSetup(start);
+        setSeed(SEED);
       }}
       actions={
         <Button variant="primary" onClick={replay}>
@@ -224,7 +261,7 @@ export function RetryBackoffLab() {
                 <button
                   key={item.value}
                   type="button"
-                  onClick={() => setStrategy(item.value)}
+                  onClick={() => change('strategy')(item.value)}
                   className={cn(
                     'w-full rounded-lg border px-3 py-2 text-left text-xs font-medium transition-colors',
                     strategy === item.value
@@ -240,7 +277,7 @@ export function RetryBackoffLab() {
           <Toggle
             label="Jitter"
             checked={jitter}
-            onChange={setJitter}
+            onChange={change('jitter')}
             description="Randomise each delay between 0 and the computed value"
             disabled={strategy === 'immediate'}
           />
@@ -250,7 +287,7 @@ export function RetryBackoffLab() {
             min={100}
             max={5000}
             step={100}
-            onChange={setBaseMs}
+            onChange={change('baseMs')}
             disabled={strategy === 'immediate'}
             format={(value) => `${value} ms`}
             hint="First delay. Exponential doubles it on each subsequent attempt."
@@ -260,7 +297,7 @@ export function RetryBackoffLab() {
             value={maxAttempts}
             min={1}
             max={8}
-            onChange={setMaxAttempts}
+            onChange={change('maxAttempts')}
             format={(value) => `${value} attempts`}
             hint="Always cap retries - an uncapped client is a denial-of-service tool."
           />
@@ -270,7 +307,7 @@ export function RetryBackoffLab() {
             min={0}
             max={0.95}
             step={0.05}
-            onChange={setFailureRate}
+            onChange={change('failureRate')}
             format={(value) => `${Math.round(value * 100)}%`}
             tone="danger"
           />
@@ -280,7 +317,7 @@ export function RetryBackoffLab() {
             min={100}
             max={20000}
             step={100}
-            onChange={setClients}
+            onChange={change('clients')}
             format={(value) => formatNumber(value)}
             hint={`They all fail within ${FAILURE_WINDOW_MS} ms of each other and retry with the same policy.`}
           />
@@ -295,7 +332,7 @@ export function RetryBackoffLab() {
                 { value: 'none', label: 'No jitter' },
                 { value: 'jitter', label: 'Full jitter' },
               ]}
-              onChange={(value) => setJitter(value === 'jitter')}
+              onChange={(value) => change('jitter')(value === 'jitter')}
             />
           ) : null}
         </>

@@ -1,9 +1,9 @@
 import type { LazyExoticComponent, ComponentType } from 'react';
 import { lazyWithRetry } from '@/utils/lazyWithRetry';
-import type { CategoryId, Difficulty, LabId } from '@/types';
+import type { CategoryId, Difficulty, LabId, LabProps } from '@/types';
 
-export interface LabDefinition {
-  id: LabId;
+interface LabDefinitionFor<Id extends LabId> {
+  id: Id;
   title: string;
   blurb: string;
   category: CategoryId;
@@ -12,14 +12,18 @@ export interface LabDefinition {
   concept: string;
   /** Shown on the home page as a featured lab. */
   featured?: boolean;
-  Component: LazyExoticComponent<ComponentType>;
+  /** Takes the Lab focus ids listed for this Lab in `LabFocusIds`, and no others. */
+  Component: LazyExoticComponent<ComponentType<LabProps<Id>>>;
 }
+
+export type LabDefinition = { [Id in LabId]: LabDefinitionFor<Id> }[LabId];
 
 /**
  * Every interactive lab in one registry.
  *
  * Adding a lab is: build the component, add a row here, and set `lab: '<id>'`
- * on the concept that should host it. Nothing else needs to change.
+ * on the concept that should host it. Nothing else needs to change. A shared
+ * lab can also open on a Lab focus per host: see `LabFocusIds`.
  */
 export const LABS: LabDefinition[] = [
   {
@@ -228,8 +232,18 @@ export const LABS: LabDefinition[] = [
   },
 ];
 
-export const LAB_BY_ID = new Map(LABS.map((lab) => [lab.id, lab]));
+/**
+ * A lab as a page renders it. `LABS` checks each component against its own
+ * focus ids; a page only forwards a focus that the Concept type already paired
+ * with this lab (or none), so it gets one wide props type. That also spares
+ * TypeScript rendering a union of 22 component types.
+ */
+export type HostedLab = Omit<LabDefinition, 'Component'> & {
+  Component: LazyExoticComponent<ComponentType<LabProps>>;
+};
 
-export const getLab = (id: string | undefined) => (id ? LAB_BY_ID.get(id as LabId) : undefined);
+const LAB_BY_ID = new Map<string, HostedLab>(LABS.map((lab) => [lab.id, lab as HostedLab]));
+
+export const getLab = (id: string | undefined) => (id ? LAB_BY_ID.get(id) : undefined);
 
 export const FEATURED_LABS = LABS.filter((lab) => lab.featured);

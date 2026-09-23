@@ -197,7 +197,8 @@ function ConceptBody({ concept }: { concept: Concept }) {
                 </div>
               }
             >
-              <lab.Component />
+              {/* Keyed by slug: two Concepts sharing this Lab each start on their own focus. */}
+              <lab.Component key={concept.slug} focus={concept.labFocus} />
             </Suspense>
           </ErrorBoundary>
         ),
