@@ -49,7 +49,6 @@
     "rate-limiting",
     "tls-https",
     "secrets-management",
-    "waf",
     "monolith",
     "modular-monolith",
     "microservices",

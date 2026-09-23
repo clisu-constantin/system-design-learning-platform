@@ -404,7 +404,7 @@ export const LABS: LabDefinition[] = [
   {
     id: 'waf',
     title: 'WAF Lab',
-    blurb: 'Normal traffic and attacks through one firewall with a strictness dial.',
+    blurb: 'Real users and attacks through one firewall: turn the strictness dial and count blocked attacks, missed attacks and blocked users.',
     category: 'security',
     difficulty: 'Intermediate',
     concept: 'waf',
