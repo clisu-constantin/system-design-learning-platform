@@ -160,7 +160,34 @@ export type LabId =
   | 'monolith-microservices'
   | 'api-gateway'
   | 'tracing'
-  | 'url-journey';
+  | 'url-journey'
+  | 'proxy'
+  | 'data-models'
+  | 'schema-design'
+  | 'cache-layers'
+  | 'consensus'
+  | 'api-styles'
+  | 'realtime'
+  | 'event-log'
+  | 'broker-routing'
+  | 'redundancy'
+  | 'auth'
+  | 'monitoring'
+  | 'slo'
+  | 'transport'
+  | 'partitioning'
+  | 'connection-pool'
+  | 'distributed-lock'
+  | 'idempotency'
+  | 'disaster-recovery'
+  | 'oauth'
+  | 'secrets'
+  | 'waf'
+  | 'serverless'
+  | 'fan-out'
+  | 'bulkhead'
+  | 'saga'
+  | 'outbox';
 
 /**
  * The Lab focus ids a shared Lab accepts: the starting setups it can open with,
@@ -169,7 +196,31 @@ export type LabId =
  * typecheck in the Lab.
  */
 export interface LabFocusIds {
+  'requirements': 'what-is-system-design' | 'functional-requirements' | 'non-functional-requirements';
+  'capacity': 'capacity-estimation' | 'back-of-the-envelope';
+  'url-journey': 'what-happens-when-you-type-a-url' | 'dns' | 'http-https' | 'tls-https';
+  'stateless': 'stateless-applications' | 'stateful-applications' | 'jwt';
+  'load-balancer': 'load-balancing' | 'health-checks';
+  'cdn': 'cdn' | 'cdn-caching';
+  'caching': 'caching' | 'redis';
+  'replication': 'replication' | 'read-replicas' | 'strong-consistency' | 'eventual-consistency' | 'leader-follower';
+  'cap-theorem': 'cap-theorem' | 'consistency' | 'partition-tolerance';
+  'queue': 'message-queues' | 'background-workers' | 'task-queues' | 'backpressure' | 'producer-consumer' | 'request-response';
+  'monolith-microservices': 'monolith' | 'modular-monolith' | 'microservices' | 'service-oriented-architecture';
   'retry-backoff': 'no-backoff' | 'backoff-jitter';
+  'proxy': 'reverse-proxy' | 'forward-proxy';
+  'data-models': 'sql-databases' | 'nosql-databases' | 'relational-vs-non-relational';
+  'schema-design': 'database-normalization' | 'denormalization';
+  'cache-layers': 'database-caching' | 'application-caching';
+  'consensus': 'leader-election' | 'consensus';
+  'api-styles': 'rest-apis' | 'graphql' | 'grpc';
+  'realtime': 'websockets' | 'server-sent-events' | 'polling' | 'long-polling';
+  'event-log': 'kafka' | 'cqrs' | 'event-sourcing';
+  'broker-routing': 'rabbitmq-concepts' | 'event-driven-architecture' | 'pub-sub';
+  'redundancy': 'availability' | 'redundancy' | 'fault-tolerance' | 'high-availability' | 'single-point-of-failure' | 'failover';
+  'auth': 'authentication' | 'authorization' | 'api-keys';
+  'monitoring': 'logging' | 'metrics' | 'monitoring' | 'alerting';
+  'slo': 'sli' | 'slo' | 'sla';
 }
 
 /** The focus ids of one Lab, or of every Lab when no id is given. */
