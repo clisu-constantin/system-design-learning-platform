@@ -1,12 +1,13 @@
-import { useState } from 'react';
-import { NavLink } from 'react-router-dom';
+import { useState, type FocusEvent, type MouseEvent } from 'react';
+import { createPortal } from 'react-dom';
+import { NavLink, matchPath, useLocation } from 'react-router-dom';
 import { Check, ChevronDown, FlaskConical, Layers3, BookMarked, Route, GitCompare, Waypoints } from 'lucide-react';
 import { CategoryIcon } from '@/data/categoryIcons';
 import { cn } from '@/utils/cn';
 import { CATEGORIES } from '@/data/categories';
-import { CONCEPTS_BY_CATEGORY } from '@/data/concepts';
+import { CONCEPTS_BY_CATEGORY, getConcept } from '@/data/concepts';
 import { useProgress } from '@/app/providers/ProgressProvider';
-import type { Difficulty } from '@/types';
+import type { Category, CategoryId, Difficulty } from '@/types';
 
 const DIFFICULTY_DOT: Record<Difficulty, string> = {
   Beginner: 'bg-ok',
@@ -43,41 +44,7 @@ export function Sidebar({ difficulty, folded = false, onUnfold, onNavigate }: Si
     ),
   );
 
-  if (folded) {
-    return (
-      <nav aria-label="Concept navigation" className="flex h-full w-14 flex-col items-center gap-0.5 overflow-y-auto py-4">
-        {TOOLS.map(({ to, label, Icon }) => (
-          <NavLink
-            key={to}
-            to={to}
-            aria-label={label}
-            className={({ isActive }) =>
-              cn(
-                'flex h-9 w-9 items-center justify-center rounded-lg transition-colors',
-                isActive ? 'bg-brand/10 text-brand' : 'text-muted hover:bg-elevated hover:text-ink',
-              )
-            }
-          >
-            <Icon className="h-4 w-4" />
-          </NavLink>
-        ))}
-
-        <div className="my-2 h-px w-8 shrink-0 bg-line" />
-
-        {visibleCategories.map((category) => (
-          <button
-            key={category.id}
-            type="button"
-            aria-label={category.title}
-            onClick={onUnfold}
-            className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-faint transition-colors hover:bg-elevated hover:text-ink"
-          >
-            <CategoryIcon name={category.icon} className="h-4 w-4" />
-          </button>
-        ))}
-      </nav>
-    );
-  }
+  if (folded) return <SidebarStrip categories={visibleCategories} onUnfold={onUnfold} />;
 
   return (
     <nav aria-label="Concept navigation" className="flex h-full flex-col gap-1 overflow-y-auto px-3 pb-8 pt-4">
@@ -158,6 +125,99 @@ export function Sidebar({ difficulty, folded = false, onUnfold, onNavigate }: Si
           </div>
         );
       })}
+    </nav>
+  );
+}
+
+/** The category the current page belongs to: a category page, or a concept page in it. */
+function useActiveCategory(): CategoryId | undefined {
+  const { pathname } = useLocation();
+  const concept = matchPath('/concepts/:slug', pathname);
+  if (concept) return getConcept(concept.params.slug)?.category;
+  return matchPath('/categories/:categoryId', pathname)?.params.categoryId as CategoryId | undefined;
+}
+
+interface TipState {
+  text: string;
+  top: number;
+  left: number;
+}
+
+const ITEM =
+  'relative flex h-9 w-9 shrink-0 items-center justify-center rounded-lg transition-colors outline-none focus-visible:ring-2 focus-visible:ring-brand';
+/** Current-page marker: a bar on the left edge as well as the tint, so it does not rely on color alone. */
+const ACTIVE = 'bg-brand/10 text-brand before:absolute before:-left-2.5 before:h-5 before:w-1 before:rounded-r before:bg-brand';
+
+/**
+ * The folded sidebar: one icon per tool and per category. Each icon names
+ * itself in a tooltip on hover or focus, and a category adds its Done count. The tooltip is
+ * portalled to the body because the strip clips anything that leaves it.
+ */
+function SidebarStrip({ categories, onUnfold }: { categories: Category[]; onUnfold?: () => void }) {
+  const { categoryProgress } = useProgress();
+  const activeCategory = useActiveCategory();
+  const [tip, setTip] = useState<TipState | null>(null);
+
+  const show = (text: string) => (event: MouseEvent<HTMLElement> | FocusEvent<HTMLElement>) => {
+    const rect = event.currentTarget.getBoundingClientRect();
+    setTip({ text, top: rect.top + rect.height / 2, left: rect.right + 10 });
+  };
+  // Visual only: every icon already carries the same text (and the Done count) in its aria-label.
+  const tipProps = (text: string) => ({
+    onMouseEnter: show(text),
+    onFocus: show(text),
+    onMouseLeave: () => setTip(null),
+    onBlur: () => setTip(null),
+  });
+
+  return (
+    <nav aria-label="Concept navigation" className="flex h-full w-14 flex-col items-center gap-0.5 overflow-y-auto py-4">
+      {TOOLS.map(({ to, label, Icon }) => (
+        <NavLink
+          key={to}
+          to={to}
+          aria-label={label}
+          {...tipProps(label)}
+          className={({ isActive }) =>
+            cn(ITEM, isActive ? ACTIVE : 'text-muted hover:bg-elevated hover:text-ink')
+          }
+        >
+          <Icon className="h-4 w-4" />
+        </NavLink>
+      ))}
+
+      <div className="my-2 h-px w-8 shrink-0 bg-line" />
+
+      {categories.map((category) => {
+        const progress = categoryProgress(category.id);
+        const isActive = category.id === activeCategory;
+        return (
+          <button
+            key={category.id}
+            type="button"
+            aria-label={`${category.title}, ${progress.done} of ${progress.total} done`}
+            aria-current={isActive ? 'page' : undefined}
+            {...tipProps(`${category.title} ${progress.done}/${progress.total}`)}
+            onClick={onUnfold}
+            className={cn(ITEM, isActive ? ACTIVE : 'text-faint hover:bg-elevated hover:text-ink')}
+          >
+            <CategoryIcon name={category.icon} className="h-4 w-4" />
+          </button>
+        );
+      })}
+
+      {tip
+        ? createPortal(
+            <span
+              aria-hidden
+              style={{ top: tip.top, left: tip.left }}
+              className="pointer-events-none fixed z-50 -translate-y-1/2 whitespace-nowrap rounded-lg border border-line bg-surface px-2.5 py-1.5 text-xs font-medium text-ink shadow-card animate-fade-in"
+            >
+              {tip.text}
+            </span>,
+            document.body,
+          )
+        : null}
     </nav>
   );
 }
