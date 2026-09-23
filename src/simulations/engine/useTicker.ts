@@ -24,7 +24,9 @@ export function useTicker(running: boolean, onTick: TickCallback, maxStep = 0.1)
     let elapsed = 0;
 
     const loop = (now: number) => {
-      const dt = Math.min((now - last) / 1000, maxStep);
+      // A frame timestamp can be earlier than the performance.now() taken when the loop
+      // started, so the first dt can come out negative; clamp it at zero.
+      const dt = Math.max(0, Math.min((now - last) / 1000, maxStep));
       last = now;
       elapsed += dt;
       callbackRef.current(dt, elapsed);
