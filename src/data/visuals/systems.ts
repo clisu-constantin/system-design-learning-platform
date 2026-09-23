@@ -1131,7 +1131,7 @@ export const systemVisuals: Record<string, VisualSpec> = {
     height: 280,
     caption: 'The app never sees the password - only a scoped, revocable token.',
     nodes: [
-      { id: 'user', kind: 'client', label: 'User', x: 40, y: 15, w: 130, h: 74 },
+      { id: 'user', kind: 'client', label: 'User', sub: 'browser', x: 40, y: 15, w: 130, h: 82 },
       { id: 'app', kind: 'server', label: 'Client app', x: 230, y: 95, w: 150, h: 78 },
       { id: 'auth', kind: 'api-gateway', label: 'Authorization server', sub: 'login + consent', x: 480, y: 15, w: 200, h: 82 },
       { id: 'res', kind: 'service', label: 'Resource server', sub: 'checks scopes', x: 480, y: 180, w: 200, h: 82 },
@@ -1141,14 +1141,20 @@ export const systemVisuals: Record<string, VisualSpec> = {
       // The user signs in at the authorization server itself - that direct hop
       // is why the client app never sees the password.
       { from: 'user', to: 'auth', tone: 'violet', rate: 1 },
+      // The back channel: code + code_verifier in, tokens out.
       { from: 'app', to: 'auth', tone: 'violet', rate: 1.4 },
       { from: 'app', to: 'res', tone: 'ok', rate: 2, label: 'access token' },
     ],
+    // Both redirects travel through the browser (app -> user -> auth, then
+    // auth -> user -> app); only the code-for-token exchange is a direct call.
     steps: [
       { from: 'user', to: 'app', label: 'User clicks Sign in' },
-      { from: 'app', to: 'auth', label: 'Redirect to authorization server' },
+      { from: 'app', to: 'user', label: 'Redirect carries PKCE challenge' },
       { from: 'user', to: 'auth', label: 'Password and consent go here' },
-      { from: 'auth', to: 'app', label: 'Code swapped for scoped token' },
+      { from: 'auth', to: 'user', label: 'Redirect back with one-time code' },
+      { from: 'user', to: 'app', label: 'Browser hands code to app' },
+      { from: 'app', to: 'auth', label: 'Code plus verifier to /token' },
+      { from: 'auth', to: 'app', label: 'Scoped access token issued' },
       { from: 'app', to: 'res', label: 'API call with access token' },
       { from: 'res', to: 'app', label: 'Scopes checked, data returned' },
     ],

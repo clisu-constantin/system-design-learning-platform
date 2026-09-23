@@ -73,7 +73,6 @@
     "authentication",
     "authorization",
     "jwt",
-    "oauth",
     "rate-limiting",
     "api-keys",
     "tls-https",
