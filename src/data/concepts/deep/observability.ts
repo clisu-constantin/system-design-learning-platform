@@ -506,7 +506,7 @@ FRESHNESS (for a pipeline)
         heading: 'The measurement decisions that quietly change the number',
         paragraphs: [
           'Where you measure matters enormously. The same system can show 99.99 percent at the application, 99.9 percent at the load balancer and 99.5 percent from real users - none of them wrong, all measuring different things. Write down the measurement point alongside the definition.',
-          'Aggregation windows matter too. A four-minute outage is invisible in a monthly average and glaring in a five-minute window. Rolling windows (the last 28 days) are generally more useful than calendar months, because they do not reset the picture on the first of the month.',
+          'Aggregation windows matter too. A four-minute outage is invisible in a monthly average and glaring in a five-minute window. Rolling windows (the last 30 days) are generally more useful than calendar months, because they do not reset the picture on the first of the month.',
           'And decide about excluded traffic explicitly: bots, scrapers, health checks, load tests, requests from your own office. Each exclusion is defensible and each one moves the number, so they should be agreed and documented rather than discovered during a dispute.',
         ],
       },
@@ -533,7 +533,7 @@ FRESHNESS (for a pipeline)
       { term: 'Good event / valid event', plain: 'What counts as success, and what counts at all.' },
       { term: 'Measurement point', plain: 'Where the number is taken: app, load balancer, CDN or client.' },
       { term: 'Threshold ratio', plain: 'Share of requests under a latency limit. Preferred over a raw percentile for SLOs.' },
-      { term: 'Rolling window', plain: 'A trailing period such as 28 days, rather than a calendar month.' },
+      { term: 'Rolling window', plain: 'A trailing period such as the last 30 days, rather than a calendar month.' },
       { term: 'Freshness', plain: 'How current the data is. The right SLI for pipelines and caches.' },
     ],
     remember: [
@@ -555,36 +555,36 @@ FRESHNESS (for a pipeline)
       {
         heading: 'The error budget is the point',
         paragraphs: [
-          'An SLO is a target for an SLI over a window: 99.9 percent of requests successful over 28 days. The complement - 0.1 percent - is the error budget, and it converts reliability from an argument into arithmetic. At a million requests a month, you may fail a thousand of them.',
+          'An SLO is a target for an SLI over a window: 99.9 percent of requests successful over 30 days. The complement - 0.1 percent - is the error budget, and it converts reliability from an argument into arithmetic. At a million requests a month, you may fail a thousand of them.',
           'That changes how teams decide. Budget remaining means you can ship risky changes, run experiments and do migrations. Budget exhausted means you stop feature work and spend the next period on reliability. The rule is agreed in advance, so nobody has to win an argument during an incident.',
           'It also stops the pursuit of perfection. A team well inside budget is arguably being too cautious - unspent budget is velocity nobody used. That framing is genuinely useful, because "more reliable" is not free and beyond a point it costs more than the failures it prevents.',
         ],
         code: {
           caption: 'What each target actually permits',
-          body: `over 28 days
-  99%      6 h 43 m of failure    a hobby project
-  99.5%    3 h 21 m
-  99.9%    40 m 19 s              a sensible default for most services
-  99.95%   20 m 10 s
-  99.99%   4 m 2 s                needs automated everything
-  99.999%  24 s                   no human can be in the loop
+          body: `over 30 days
+  99%      7 h 12 m of failure    a hobby project
+  99.5%    3 h 36 m
+  99.9%    43 m 12 s              a sensible default for most services
+  99.95%   21 m 36 s
+  99.99%   4 m 19 s               needs automated everything
+  99.999%  26 s                   no human can be in the loop
 
 burn rate = how fast you are spending it
-  1x  = you will exactly exhaust the budget at the end of the window
-  14x = the entire monthly budget gone in 2 days -> page now`,
+  1x    = you will exactly exhaust the budget at the end of the window
+  14.4x = 2% of the budget per hour, all of it in about 2 days -> page`,
         },
       },
       {
         heading: 'Setting a target you can defend',
         paragraphs: [
-          'Start from what you currently achieve, not from an aspiration. Measure the SLI for a month; if you are at 99.5 percent, setting 99.99 percent means being permanently out of budget, which makes the whole mechanism meaningless. Set a target slightly better than current performance and tighten it over time.',
+          'Use what you currently achieve as a starting point, not as the goal. Measure the SLI for a month; if you are at 99.5 percent, setting 99.99 percent means being permanently out of budget, which makes the whole mechanism meaningless. But do not simply copy the current number either - the Google SRE book warns against it, because it can lock you into a level users never needed. Start near what you achieve, then move the target towards what users need.',
           'Then check it against what users need. If users cannot tell the difference between 99.9 and 99.95 percent - and for many products they cannot - the extra nine buys nothing and costs a great deal. Conversely, if a payment failure loses a customer permanently, the target should be higher than what feels comfortable.',
           'Deliberately aim to be slightly worse than perfect. If you consistently deliver 99.999 percent against a 99.9 percent target, users start depending on the higher number, and you are spending effort nobody asked for. Some organisations inject failures precisely to keep expectations aligned with the commitment.',
         ],
         bullets: [
-          'Base the target on measured performance, then improve it deliberately.',
+          'Start from measured performance, then move the target towards what users need.',
           'Different SLOs for different journeys - checkout and the help page are not equally critical.',
-          'Rolling 28-day windows avoid calendar-boundary resets.',
+          'Rolling windows (30 days, or 28 so every window holds four of each weekday) avoid calendar-boundary resets.',
           'Write down the policy for an exhausted budget before you need it.',
         ],
       },
@@ -592,8 +592,8 @@ burn rate = how fast you are spending it
         heading: 'Alerting on burn rate instead of thresholds',
         paragraphs: [
           'A fixed threshold alert cannot distinguish a brief spike from a sustained problem. Burn-rate alerting does: measure how fast the budget is being consumed relative to the rate that would exactly exhaust it over the window, and alert on multiples.',
-          'A common configuration uses two windows. A fast burn - 14 times the normal rate sustained over an hour - means the monthly budget will be gone in two days, so it pages immediately. A slow burn - 3 times over six hours - is a ticket, because it is real degradation but not an emergency.',
-          'The benefit is fewer, more meaningful pages. A 30-second blip consumes a negligible amount of budget and does not fire; a sustained 2 percent error rate does, even though it is well below any threshold someone would have picked by hand. The alert is tied directly to the promise you made rather than to a guess.',
+          'The Google SRE Workbook recommends three rules for a 30-day SLO. A fast burn - 14.4 times the sustainable rate over an hour - spends 2 percent of the budget in that hour and would spend all of it in about two days, so it pages. A burn of 6 times over six hours also pages. A slow burn - 1 time over three days, on track to spend exactly the whole budget - opens a ticket, because it is real degradation but not an emergency. Each rule also checks a short window (5 minutes, 30 minutes, 6 hours), so the alert stops soon after the problem does.',
+          'The benefit is fewer, more meaningful pages. A 30-second blip of total failure spends about 1 percent of the budget and averages to about 8 times over the hour, so it does not page; a sustained 2 percent error rate (20 times) does, even though it is well below any threshold someone would have picked by hand. The alert is tied directly to the promise you made rather than to a guess.',
         ],
       },
     ],
@@ -601,21 +601,21 @@ burn rate = how fast you are spending it
       {
         title: 'The first quarter with an error budget',
         setup:
-          'A team adopts a 99.9 percent availability SLO over a rolling 28 days - about 40 minutes of allowed failure.',
+          'A team adopts a 99.9 percent availability SLO over a rolling 30 days - about 43 minutes of allowed failure.',
         walkthrough: [
-          'Week 1: a bad deploy causes 12 minutes of errors. That is 30 percent of the budget for one release, which makes the cost of skipping canary testing concrete rather than theoretical.',
-          'Week 2: a dependency outage costs 8 minutes. Budget remaining: 50 percent, halfway through the window.',
-          'Week 3: the team wants to ship a risky database migration. With 20 minutes left, they decide to do it behind a feature flag with a tested rollback - a decision driven by the number rather than by opinion.',
-          'Week 4: 6 more minutes are spent. The window closes at 99.91 percent, just inside target.',
+          'Week 1: a bad deploy causes 12 minutes of errors. That is 28 percent of the budget for one release, which makes the cost of skipping canary testing concrete rather than theoretical.',
+          'Week 2: a dependency outage costs 8 minutes. Budget remaining: 23 of 43 minutes, a little over half, halfway through the window.',
+          'Week 3: the team wants to ship a risky database migration. With 23 minutes left, they decide to do it behind a feature flag with a tested rollback - a decision driven by the number rather than by opinion.',
+          'Week 4: 6 more minutes are spent, 26 in total. The window closes at 99.94 percent (26 of 43,200 minutes failed), inside target.',
           'Retrospective: 12 of the 26 minutes came from deploys without canaries. Automated canary analysis is prioritised, and the following window uses 9 minutes total.',
-          'Effect on culture: the conversation moved from "was that outage acceptable?" to "we have 20 minutes left, what do we want to spend them on?", which is a question engineers and product managers can answer together.',
+          'Effect on culture: the conversation moved from "was that outage acceptable?" to "we have 23 minutes left, what do we want to spend them on?", which is a question engineers and product managers can answer together.',
         ],
         result:
           'The budget turned reliability into a shared, quantified resource. The most valuable outcome was not the target itself but that risky changes and reliability work became comparable in the same unit.',
       },
     ],
     jargon: [
-      { term: 'SLO', plain: 'The target for an SLI over a window, e.g. 99.9 percent over 28 days.' },
+      { term: 'SLO', plain: 'The target for an SLI over a window, e.g. 99.9 percent over 30 days.' },
       { term: 'Error budget', plain: 'The permitted failure: 100 percent minus the target.' },
       { term: 'Burn rate', plain: 'How fast the budget is being consumed relative to the sustainable rate.' },
       { term: 'Rolling window', plain: 'A trailing period so the budget does not reset on a calendar boundary.' },
@@ -642,14 +642,14 @@ burn rate = how fast you are spending it
         heading: 'SLI, SLO, SLA - three different audiences',
         paragraphs: [
           'The SLI is the measurement. The SLO is your internal target, chosen by engineering and product. The SLA is a contractual commitment to a customer, with financial or contractual consequences when it is missed. Same underlying number, three different purposes.',
-          'The SLA must be looser than the SLO, always. If both are 99.9 percent, then the instant you breach your internal target you are also in breach of contract, with no buffer to react. The standard shape is an SLO of 99.95 percent and an SLA of 99.9 percent, so the internal alarm goes off well before money is at stake.',
+          'The SLA must be looser than the SLO, always. If both are 99.9 percent, then the instant you breach your internal target you are also in breach of contract, with no buffer to react. A common shape is an SLO of 99.9 percent and an SLA of 99.5 percent: the internal budget of 43 minutes a month runs out long before the 216 minutes the contract allows, so the internal alarm goes off well before money is at stake.',
           'And not everything with an SLO needs an SLA. Internal services, free tiers and non-critical features usually have targets without contracts. SLAs appear where a customer is paying for a guarantee and has negotiated one - typically enterprise contracts.',
         ],
         code: {
           caption: 'The buffer, drawn',
-          body: `SLA  99.9%   contractual, credits owed below this   <- customer-facing
-SLO  99.95%  internal target, alerting fires here    <- engineering
-SLI  actual measured value
+          body: `SLA  99.5%   216 min a month, credits owed below   <- customer-facing
+SLO  99.9%    43 min a month, alerting fires here   <- engineering
+SLI  actual measured value, the same for both
 
 the gap between SLO and SLA is your reaction time.
 If they are equal, the first alert is also the first invoice credit.`,
@@ -659,8 +659,8 @@ If they are equal, the first alert is also the first invoice credit.`,
         heading: 'What the fine print actually says',
         paragraphs: [
           'Read any real SLA and most of its length is definitions and exclusions. Scheduled maintenance windows are excluded. Failures caused by the customer, by their network, or by third-party providers are excluded. Force majeure is excluded. Beta and preview features are excluded. Sometimes only "unavailability" of a narrowly defined core API counts, while degraded performance does not.',
-          'Remedies are almost always service credits - a percentage of the monthly fee applied to a future invoice - and are usually capped at some fraction of that fee. They rarely come close to the actual business cost of an outage, which is why an SLA is best understood as a commitment signal rather than as insurance.',
-          'Many SLAs also require the customer to claim: within 30 days, with evidence, in writing. Credits are frequently not automatic, which means an unclaimed breach costs the provider nothing.',
+          'Remedies are almost always service credits - a percentage of the monthly fee applied to a future invoice, in tiers (Amazon EC2 gives 10, 30 or 100 percent as availability falls) and capped at the fee itself. They rarely come close to the actual business cost of an outage, which is why an SLA is best understood as a commitment signal rather than as insurance.',
+          'Many SLAs also require the customer to claim: in writing, with evidence, before a deadline (Amazon EC2 asks by the end of the second billing cycle after the incident). Credits are frequently not automatic, which means an unclaimed breach costs the provider nothing.',
         ],
         bullets: [
           'Measurement point and method - who measures, and where.',
@@ -673,7 +673,7 @@ If they are equal, the first alert is also the first invoice credit.`,
       {
         heading: 'Consuming other people SLAs',
         paragraphs: [
-          'When you depend on a provider, their SLA is a floor on your own achievable reliability. If your database provider guarantees 99.95 percent and you depend on it synchronously for every request, you cannot credibly promise more than that without adding redundancy that does not share their failure mode.',
+          'When you depend on a provider, their SLA is a ceiling on your own achievable reliability. If your database provider guarantees 99.95 percent and you depend on it synchronously for every request, you cannot credibly promise more than that without adding redundancy that does not share their failure mode.',
           'Compose the numbers honestly. Three dependencies at 99.9 percent, all required, give 99.7 percent before you have written a line of code. Either reduce the number of hard dependencies, add fallbacks so a failure degrades rather than fails, or set a target that reflects reality.',
           'Also remember that a provider SLA credit does not compensate you for your own losses. The mitigation is architectural - caching, fallbacks, a secondary provider for critical paths - not contractual. The contract tells you what they are willing to commit to; the design decides what you can survive.',
         ],
@@ -683,13 +683,13 @@ If they are equal, the first alert is also the first invoice credit.`,
       {
         title: 'Working out what an SLA is worth',
         setup:
-          'A SaaS provider offers 99.9 percent with 10 percent service credit below that. A customer pays 5,000 euro per month. An outage lasts 6 hours.',
+          'A SaaS provider offers 99.5 percent, with a 10 percent service credit below that and 30 percent below 99 percent. A customer pays 5,000 euro per month. An outage lasts 6 hours.',
         walkthrough: [
-          '99.9 percent of a 30-day month allows about 43 minutes. A 6-hour outage gives roughly 99.17 percent availability - a clear breach.',
-          'Credit: 10 percent of 5,000 euro is 500 euro, applied to the next invoice.',
+          '99.5 percent of a 30-day month allows 216 minutes, 3 hours 36 minutes. A 6-hour outage is 360 minutes, roughly 99.17 percent availability - a clear breach.',
+          '99.17 percent is below 99.5 but above 99, so the 10 percent tier applies: 500 euro, applied to the next invoice.',
           'Customer cost of the outage: 6 hours of their own operations stopped, staff idle, customers affected - realistically tens of thousands.',
           'So the credit covers roughly 2 percent of the impact. The SLA is not insurance; it is a statement of how seriously the provider takes availability.',
-          'The customer must also file a claim within 30 days with evidence, or receive nothing at all.',
+          'The customer must also file a claim with evidence before the deadline in the contract, or receive nothing at all.',
           'What the customer actually does with this: keeps a read-only cached fallback so the provider outage degrades their product rather than stopping it, and reduces the number of user journeys that depend on that provider synchronously.',
         ],
         result:
