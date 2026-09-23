@@ -224,7 +224,7 @@ export const LABS: LabDefinition[] = [
   {
     id: 'tracing',
     title: 'Distributed Tracing Lab',
-    blurb: 'A waterfall of spans that shows exactly where the time went.',
+    blurb: 'One checkout across five services: a waterfall of spans, and the hop each span lights up on the diagram.',
     category: 'observability',
     difficulty: 'Intermediate',
     concept: 'distributed-tracing',

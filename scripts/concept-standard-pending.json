@@ -14,14 +14,12 @@
     "modular-monolith",
     "microservices",
     "service-oriented-architecture",
-    "distributed-tracing",
     "backpressure",
     "leader-follower",
     "producer-consumer",
     "request-response"
   ],
   "labs": [
-    "requirements",
-    "tracing"
+    "requirements"
   ]
 }

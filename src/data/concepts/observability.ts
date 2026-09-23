@@ -413,58 +413,263 @@ p99 latency 1.7 s   -> 1 request in 100 takes 1.7 s or more`,
     keywords: [
       'span',
       'trace id',
+      'trace_id',
       'waterfall',
       'latency breakdown',
       'instrumentation',
       'opentelemetry',
       'context propagation',
+      'traceparent',
+      'w3c trace context',
       'sampling',
       'span attributes',
     ],
-    what: 'A trace records the path of one request through the system as a tree of spans, each with a start time, a duration and attributes. Distributed tracing keeps that tree whole across process boundaries, by propagating context through HTTP headers, message metadata and database instrumentation.',
-    why: 'In a system with several services, "the request was slow" is useless on its own. A trace answers "where did those 900 ms go?" - which hop consumed the time, including the asynchronous ones.',
+    what: 'A trace records the path of one request through the system as a tree of spans, each with a start time, a duration, a parent span id and attributes. Distributed tracing keeps that tree whole across process boundaries by propagating the trace context - the W3C traceparent header on HTTP calls, the same context in message headers on a queue.',
+    why: 'In a system with several services, "the request was slow" is useless on its own. Metrics show that something is slow; a trace answers "where did those 900 ms go?" - which hop consumed the time, including the asynchronous ones.',
     how: [
-      'Generate a trace id at the entry point and propagate it on every outbound call (W3C traceparent), including into queue messages.',
-      'Each operation opens a span with its parent span id, producing a tree.',
-      'Adopt OpenTelemetry so instrumentation is vendor-neutral.',
-      'Use tail-based sampling to keep the interesting traces (errors, slow) rather than a blind percentage.',
-      'Attach useful attributes: tenant, route, cache hit/miss - not unbounded ids.',
+      'The entry point creates a trace_id; every outbound call carries it in the W3C traceparent header, next to the span id of the caller.',
+      'Each operation opens a span whose parent is the span that called it, producing a tree - the waterfall.',
+      'On a queue, the producer injects the context into the message headers and the consumer extracts it; forget either and the trace ends at the publish.',
+      'Instrument with OpenTelemetry: auto-instrumentation covers HTTP, database drivers and frameworks, and the data is not tied to one vendor.',
+      'Keep a sample: tail-based sampling keeps every error and slow trace and a small share of the rest.',
+      'Name spans after the operation or route template (/orders/{id}); put ids such as order.id in attributes, and never secrets.',
     ],
     when: [
       'A request crosses more than two or three services, queues or datastores.',
       'A latency or error question that metrics can show but cannot attribute to one hop.',
+      'Not as a replacement for metrics: traces are sampled, so rates and alerts still come from metrics.',
     ],
-    diagram: `trace abc123 (total 265 ms)
-API Gateway      [#######]                 40 ms
-  Order Service     [#########]            80 ms
-    Payment Service    [###########]      120 ms
-      Database              [###]          25 ms
+    advantages: [
+      'Exact attribution: the span with the largest self time is the hop that owns the latency.',
+      'Shows the calls that really happen - N+1 loops, forgotten dependencies, sync calls that could be async.',
+      'With the trace_id in every log line, one slow trace leads straight to the log lines that explain it.',
+    ],
+    diagram: `trace_id 4bf92f35...   response 260 ms
+POST /api/orders      [##########################] 260
+  order-service       [  ########################] 242
+    redis GET cart    [     #                    ]   3
+    inventory reserve [      #####               ]  55
+      postgres UPDATE [         ##               ]  25
+    payment authorize [           ###############] 145 <- 120 own
+      postgres INSERT [                       ###]  25
+    kafka publish     [                          #]   4
 
-HTTP:   traceparent: 00-4bf92f...-00f067aa0ba902b7-01
-Queue:  message headers carry the same context
-  producer span --> [queue] --> consumer span (same trace)`,
+HTTP:   traceparent: 00-4bf92f35...-00f067aa0ba902b7-01
+Queue:  the same context rides in the message headers`,
     tradeoffs: [
       {
         approach: 'Distributed tracing',
-        gains: ['Exact latency attribution', 'Shows real service dependencies'],
-        costs: ['Instrumentation effort across every service', 'Storage cost drives sampling', 'Context must be propagated everywhere, including async hops'],
+        gains: ['Exact latency attribution to one hop', 'Shows the real service dependencies'],
+        costs: ['Instrumentation in every service', 'Storage cost forces sampling', 'Context must be propagated everywhere, including async hops'],
+      },
+      {
+        approach: 'Auto-instrumentation (OpenTelemetry)',
+        gains: ['A full request tree without writing code', 'Vendor-neutral, so a backend change keeps the instrumentation'],
+        costs: ['Generic spans only - business steps need manual spans', 'An agent or library in every service, with some overhead'],
       },
       {
         approach: 'Tail-based sampling',
-        gains: ['Keeps every error and slow trace', 'Much better signal per stored byte'],
-        costs: ['Needs a collector buffering complete traces', 'More infrastructure'],
+        gains: ['Keeps every error and slow trace', 'Much more signal per stored byte'],
+        costs: ['A collector must buffer every span until the trace is complete', 'More infrastructure to run and size'],
       },
       {
         approach: 'Head-based sampling',
-        gains: ['Simple and cheap'],
-        costs: ['Rare failures are usually not sampled - exactly the traces you wanted'],
+        gains: ['Simple and cheap: decided once at the entry point', 'The sampled flag in traceparent makes every service keep or drop the same trace'],
+        costs: ['Rare failures are usually not kept - exactly the traces you wanted'],
       },
     ],
     mistakes: [
       'Losing trace context across a queue, so the async half of the workflow is invisible.',
-      'Naming spans with raw ids (/orders/4711), which makes traces unsearchable and expensive.',
+      'A hand-written HTTP client or SDK that does not forward traceparent, so the trace breaks in two at that hop.',
+      'Naming spans with raw ids (/orders/4711), which makes traces impossible to group and expensive to index.',
+      'Head-based sampling at 1% and expecting to find the rare failed request.',
+      'Not logging the trace_id, so a slow trace cannot be joined to the log lines that explain it.',
     ],
-    related: ['logging', 'metrics', 'microservices', 'monitoring'],
+    related: ['logging', 'metrics', 'monitoring', 'microservices'],
+    quiz: [
+      {
+        id: 'dt-1',
+        prompt:
+          'Checkout p99 jumped from 300 ms to 1.2 s. The gateway latency graph shows it, but each of the 6 services behind it looks only a little slower on its own dashboard. What finds the hop that owns the time?',
+        options: [
+          'Add CPU to the gateway, since that is where the latency is measured',
+          'Compare the average latency of the 6 services and pick the highest',
+          'Open traces of slow checkouts and find the span with the largest self time in the waterfall',
+          'Raise every service to DEBUG logging and read the lines',
+        ],
+        answer: 2,
+        explanation:
+          'A trace breaks one slow request into its hops, and self time says which hop spent the time itself rather than waiting on a child. The gateway only measures the total, so more gateway CPU fixes nothing. Service averages hide the slow tail and do not tell you which calls a slow request made.',
+      },
+      {
+        id: 'dt-2',
+        prompt:
+          'In the Lab you raise Payment service to 800 ms. The order-service bar grows by the same amount, although its own work is still 35 ms. What does that tell you?',
+        options: [
+          'A parent span lasts as long as its children, so read self time: order-service is waiting, payment-service owns the time',
+          'order-service got slower too and needs its own fix',
+          'The trace is broken - a parent cannot be longer than its own work',
+          'The gateway is retrying the order call',
+        ],
+        answer: 0,
+        explanation:
+          'A span duration includes every child it waits on, so a slow leaf makes every ancestor bar long. The Slowest span (self) metric and the lit Payment node point at the real owner. Blaming order-service is the tempting mistake - its self time did not move.',
+      },
+      {
+        id: 'dt-3',
+        prompt:
+          'In the Lab you turn off "Inject context into the message". Emails are still sent, but the waterfall now ends at kafka publish order.created. What happened?',
+        options: [
+          'Kafka dropped the message, so the notification service never ran',
+          'The consumer found no traceparent in the message headers and started a new trace_id, so its span is in a trace nothing links to',
+          'The notification service stopped recording spans',
+          'Sampling removed the consumer span to save storage',
+        ],
+        answer: 1,
+        explanation:
+          'The message still arrives - the Lab shows its dot reach Notification as a triangle - but it carries no context, so the consumer span starts a fresh trace. Inject the context at every publish and extract it at every consume. Kafka dropping the message is the tempting reading, but the email was sent.',
+      },
+      {
+        id: 'dt-4',
+        prompt:
+          'The payment team replaced the instrumented HTTP library with a hand-written client to call the card-risk service. Since then, payment spans have no children and card-risk spans show up as root spans of their own traces. What is the cause?',
+        options: [
+          'The card-risk service needs a bigger sampling rate',
+          'The clocks of the two services drifted apart',
+          'The card-risk service is too fast to be traced',
+          'The new client does not send the traceparent header, so card-risk sees no parent and starts a new trace',
+        ],
+        answer: 3,
+        explanation:
+          'Tracing only works across a hop if the caller sends the context and the callee reads it. A client that skips the header breaks the trace in two at that exact hop. Clock drift can misplace bars on the waterfall, but it cannot turn a child into a root span.',
+      },
+      {
+        id: 'dt-5',
+        prompt:
+          'A service handles 1,000,000 requests a day and 0.1% of them fail. You use head-based sampling at 1%. About how many traces of failed requests do you keep each day?',
+        options: [
+          'All 1,000, because errors are always kept',
+          'About 100',
+          'About 10 - the decision is made before the outcome is known; tail-based sampling would keep all 1,000',
+          'None, because head-based sampling drops errors on purpose',
+        ],
+        answer: 2,
+        explanation:
+          '1,000,000 x 0.1% = 1,000 failures, and a 1% coin flip at the start keeps about 10 of them. Head-based sampling cannot keep errors because it decides before the error happens. Tail-based sampling buffers the whole trace in a collector and decides after seeing the outcome, so it keeps every error.',
+      },
+      {
+        id: 'dt-6',
+        prompt:
+          'A developer names each gateway span with the real path, such as "GET /orders/4711". Why is that a problem, and what is the fix?',
+        options: [
+          'Every order becomes its own operation name, so latency cannot be grouped per endpoint and the index grows without limit; name it GET /orders/{id} and put the id in an attribute',
+          'Span names cannot contain numbers',
+          'The trace_id stops being propagated',
+          'Nothing - more detail in the name makes traces easier to find',
+        ],
+        answer: 0,
+        explanation:
+          'Span names are what the backend groups by, so they must be low cardinality: one name per route template. The id still belongs in the span, as an attribute such as order.id. "More detail is easier to find" is the tempting answer, but it makes every request look like a different operation.',
+      },
+      {
+        id: 'dt-7',
+        prompt:
+          'A customer complains that their checkout was slow yesterday. Where should their user id be recorded so you can find their traces?',
+        options: [
+          'In the span name, so it shows in the waterfall',
+          'As a label on the request latency metric',
+          'Nowhere - traces cannot be searched by user',
+          'As a span attribute such as user.id on the root span',
+        ],
+        answer: 3,
+        explanation:
+          'Attributes are what make traces searchable, and a trace is per request, so a user id costs one field, not a new time series. As a metric label it would make every user their own series - the cardinality problem from the Metrics Concept. In the span name it breaks grouping per endpoint.',
+      },
+      {
+        id: 'dt-8',
+        prompt:
+          'A trace of a 480 ms product page shows pricing.calculate at 340 ms, made of 40 identical http POST /prices spans of about 8 ms each, one after another. What is the fix?',
+        options: [
+          'Give the pricing service a faster database',
+          'Batch the 40 calls into one request with 40 item ids',
+          'Cache the product page for 1 second',
+          'Raise the timeout of the pricing call',
+        ],
+        answer: 1,
+        explanation:
+          'Each call is fast; the count is the problem - an N+1 pattern. One batched call takes about 12 ms instead of 340 ms. A faster database is the tempting answer, but no single span is slow, so there is little to gain there.',
+      },
+      {
+        id: 'dt-9',
+        prompt:
+          'A span for report.generate lasts 900 ms. Its only children are two database queries of 20 ms each, and the first one starts 700 ms after the span starts. Where is the time going?',
+        options: [
+          'In the database, because it is the only dependency',
+          'In the network between the two services',
+          'Inside the report service itself - queuing for a thread or connection, or slow work before the first call',
+          'Nowhere - the trace is missing spans, so it cannot be read',
+        ],
+        answer: 2,
+        explanation:
+          'The children account for 40 ms, so about 860 ms is self time in the parent, and a long gap before the first child means waiting or work inside the parent. Blaming the database is the reflex, but the waterfall shows its queries are small. Add manual spans or a profile inside the service to split that time.',
+      },
+      {
+        id: 'dt-10',
+        prompt:
+          'In the Lab, with async notification on, the notification-service span ends after the root span has already ended. Is the trace broken?',
+        options: [
+          'Yes - every span must end before its root span',
+          'Yes - the consumer should have been a separate trace',
+          'No, but the response time now includes the email',
+          'No - the consumer runs after the response went back; the trace covers all work the request caused, while the response time is the root span alone',
+        ],
+        answer: 3,
+        explanation:
+          'Async work is the point of the queue: the user gets the response after the root span, and the email is sent later in the same trace. That is why the Lab shows the response time separately from the length of the trace. Turning async off puts the 150 ms email call back on the request path, and the response grows by 150 ms.',
+      },
+      {
+        id: 'dt-11',
+        prompt:
+          'You found the trace of a failing checkout: the error is in payment-service. How do you get the log lines that explain it?',
+        options: [
+          'Search every log line from payment-service in the minute around the failure',
+          'Query the log store for the trace_id of that trace - every line of that request carries it',
+          'Increase the sampling rate and wait for it to happen again',
+          'Read the span attributes; logs are not needed once you have traces',
+        ],
+        answer: 1,
+        explanation:
+          'When services write the trace_id in every log line, one query returns the lines of exactly that request, from every service. A time window is the tempting approach, but at thousands of lines a second it returns everyone else too. Span attributes carry a few fields; logs carry the story of the step.',
+      },
+      {
+        id: 'dt-12',
+        prompt:
+          'A company wants to move from one tracing vendor to another. Its 30 services use the first vendor SDK directly. What would have made the move a configuration change?',
+        options: [
+          'Writing spans to log files instead',
+          'Using head-based sampling everywhere',
+          'Instrumenting with OpenTelemetry and exporting through a collector, so only the exporter changes',
+          'Running both vendors in parallel from the start',
+        ],
+        answer: 2,
+        explanation:
+          'OpenTelemetry keeps instrumentation vendor-neutral, and the collector decides where spans go, so a backend change is an exporter setting instead of 30 code changes. Running two vendors doubles the cost and still ties the code to both SDKs. Sampling has nothing to do with the lock-in.',
+      },
+      {
+        id: 'dt-13',
+        prompt:
+          'In the Lab, click the postgres INSERT payments span. Postgres never receives a traceparent header, yet the span is in the trace. How?',
+        options: [
+          'It is a client span recorded by the database driver inside payment-service, which already has the context',
+          'Postgres reads the trace_id from the SQL text',
+          'The collector guesses which queries belong to which trace by time',
+          'It is not really in the trace; the waterfall only draws it nearby',
+        ],
+        answer: 0,
+        explanation:
+          'Database and cache spans are usually recorded on the calling side: the instrumented driver wraps the query in a child span of the current span. The database does not need to know about tracing. Guessing by time would mix up concurrent requests, which is exactly what the trace context avoids.',
+      },
+    ],
   },
   {
     slug: 'monitoring',
