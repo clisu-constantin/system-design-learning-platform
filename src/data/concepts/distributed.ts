@@ -61,10 +61,10 @@ write arrives at A:
         id: 'cap-1',
         prompt: 'A payment system is partitioned in two. Which behaviour is appropriate?',
         options: [
-          'Accept payments on both sides and merge later',
+          'Accept payments on both sides and merge the ledgers after the heal',
           'Refuse writes on the minority side to avoid double-spending',
-          'Shut down the whole system',
-          'Switch to eventual consistency temporarily',
+          'Shut down the whole system until the network link is repaired',
+          'Switch to eventual consistency until the partition heals',
         ],
         answer: 1,
         explanation:
@@ -75,10 +75,10 @@ write arrives at A:
         prompt:
           'Your store has a 99.99% uptime SLA, so the team calls it "AP". During a partition, one live replica answers writes it cannot replicate with a 503. In CAP terms, what is that 503?',
         options: [
-          'Still CAP-available, because the SLA allows a few errors',
-          'A loss of partition tolerance',
-          'A loss of CAP availability: a non-failing node answered with an error',
-          'Proof that the replica crashed',
+          'Still CAP-available, because 99.99% allows a few errors per year',
+          'A loss of partition tolerance, because the replica can no longer replicate',
+          'A loss of CAP availability: a live node answered with an error',
+          'Proof that the replica crashed and needs replacing',
         ],
         answer: 2,
         explanation:
@@ -103,10 +103,10 @@ write arrives at A:
         prompt:
           'In the Lab you switch to AP mid-partition, both clients write several times, then you heal the partition. What happens to the writes?',
         options: [
-          'Both sides keep their own value until an operator decides',
-          'The heal fails until the conflict is resolved by hand',
-          'All writes from both sides are merged into one value',
-          'Last-write-wins keeps the newest version and silently drops the writes the other side acknowledged',
+          'Both sides keep their own value until an operator picks the winner',
+          'The heal is refused until someone resolves the conflicting writes from both sides by hand',
+          'All writes from both sides are merged into one value, since every write was acknowledged',
+          'Last-write-wins keeps the newest version and drops what the other side acknowledged',
         ],
         answer: 3,
         explanation:
@@ -117,10 +117,10 @@ write arrives at A:
         prompt:
           'A colleague says: "We run in one cloud region, so partitions cannot happen - our database is CA." What do you answer?',
         options: [
-          'Agreed - CA is the right label inside one region',
-          'Partitions happen inside a region too (a switch, a firewall rule, a long pause), so a multi-node store still chooses CP or AP',
-          'CA is fine as long as backups are taken every hour',
-          'Partition tolerance only matters for multi-cloud setups',
+          'Agreed - inside one region the network is reliable enough to call it CA',
+          'Partitions happen in one region too (a switch, a firewall rule), so it still picks CP or AP',
+          'CA is fine as long as a backup is taken every hour and restored on failure',
+          'Partition tolerance only matters when traffic crosses clouds or continents, not zones in a region',
         ],
         answer: 1,
         explanation:
@@ -144,9 +144,9 @@ write arrives at A:
         id: 'cap-7',
         prompt: 'A shop has a like counter, a shopping cart and the stock count for the last unit of an item. Which assignment fits?',
         options: [
-          'All three CP, to be safe',
-          'All three AP, to stay fast',
-          'Likes CP, cart CP, stock AP',
+          'All three CP, because a wrong number anywhere loses trust',
+          'All three AP, since the shop must stay fast and up',
+          'Likes CP, cart CP, stock AP - stock changes too often to coordinate',
           'Likes AP, cart AP with a merge, last-unit stock CP',
         ],
         answer: 3,
@@ -157,10 +157,10 @@ write arrives at A:
         id: 'cap-8',
         prompt: 'Your team chooses AP for the shopping cart. What else must be decided before shipping?',
         options: [
-          'Nothing - AP stores resolve conflicts correctly by themselves',
-          'How conflicting cart changes from both sides are merged when the partition heals',
-          'Which side of a partition should return errors',
-          'How to make every read linearizable',
+          'Nothing - an AP store resolves conflicting writes correctly on its own',
+          'How conflicting cart changes are merged when the partition heals',
+          'Which side of a partition should return errors to its clients, and for how long',
+          'How to make every cart read linearizable while the network is partitioned',
         ],
         answer: 1,
         explanation:
@@ -171,10 +171,10 @@ write arrives at A:
         prompt:
           'In CP mode, the minority side of a partition refuses reads as well as writes. A developer asks why it does not at least serve reads from its own copy. What do you answer?',
         options: [
-          'It cannot know whether the majority side accepted newer writes, so its copy may be stale',
-          'Reading would corrupt its data',
-          'Reads need a leader, and the leader is always on the majority side',
-          'It could - refusing reads is just a performance optimisation',
+          'It cannot know whether the majority accepted newer writes, so its copy may be stale',
+          'Serving reads while cut off would corrupt its local copy of the data',
+          'Reads need the leader, and the leader always sits on the majority side of the split network',
+          'It could safely - refusing reads is only an optimisation that saves the minority side load',
         ],
         answer: 0,
         explanation:
@@ -199,9 +199,9 @@ write arrives at A:
         prompt:
           'A Cassandra table has 3 replicas and uses QUORUM for reads and writes. One replica is cut off from the other two, and a client reaches only that replica. What happens?',
         options: [
-          'The request succeeds with the local value',
-          'The request fails: 2 of 3 replicas cannot be reached; at consistency level ONE it would succeed, possibly stale',
-          'Cassandra waits until the partition heals, however long it takes',
+          'The request succeeds with the local value, which is repaired later by read repair',
+          'The request fails: QUORUM needs 2 of 3 replicas and only 1 is reachable',
+          'Cassandra holds the request until the partition heals, however long it takes',
           'Cassandra promotes that replica to leader',
         ],
         answer: 1,
@@ -268,9 +268,9 @@ write arrives at A:
           'A user changes their avatar. The page reloads and still shows the old one; after another refresh it is correct. What is missing, and what is the cheap fix?',
         options: [
           'Linearizability - make every read in the product go through a quorum',
-          'Read-your-writes - route reads of that user to the primary for a few seconds after a write',
+          'Read-your-writes - read that user from the primary briefly after a write',
           'Causal consistency - put avatars and posts in one partition',
-          'Nothing - this is correct eventual behaviour and cannot be improved',
+          'Nothing - this is correct eventual behaviour and cannot be improved on',
         ],
         answer: 1,
         explanation:
@@ -280,10 +280,10 @@ write arrives at A:
         id: 'consistency-2',
         prompt: 'An unread badge shows 3, then 5, then 3 again on consecutive page loads. Which guarantee is being violated?',
         options: [
-          'Read-your-writes',
+          'Read-your-writes - the user is not being shown their own latest changes',
           'Linearizability of writes',
-          'Monotonic reads - consecutive requests hit replicas with different lag',
-          'ACID consistency',
+          'Monotonic reads - each load hit a replica with a different lag',
+          'ACID consistency - the unread count broke a database constraint',
         ],
         answer: 2,
         explanation:
@@ -295,8 +295,8 @@ write arrives at A:
           'In a chat app, a reply sometimes appears before the message it answers. The two messages live in different partitions. Which model would prevent this?',
         options: [
           'Causal consistency - the effect is never shown without its cause',
-          'Monotonic reads',
-          'Eventual consistency with a shorter replication delay',
+          'Monotonic reads - a reader never sees an older value after a newer one',
+          'Eventual consistency with a much shorter replication delay between partitions',
           'A bigger cache in front of the database',
         ],
         answer: 0,
@@ -308,10 +308,10 @@ write arrives at A:
         prompt:
           'Two customers in different regions both buy the last concert ticket, and both get a confirmation. Which fix matches the problem?',
         options: [
-          'Monotonic reads for the ticket page',
-          'Read-your-writes for each customer',
-          'A longer cache TTL on the stock count',
-          'A linearizable operation for the stock decrement, such as a compare-and-set',
+          'Monotonic reads for the ticket page, so the count never jumps back',
+          'Read-your-writes for each customer, so each sees their own purchase',
+          'A longer cache TTL on the stock count, so both see the same number',
+          'A linearizable compare-and-set on the stock decrement',
         ],
         answer: 3,
         explanation:
@@ -322,10 +322,10 @@ write arrives at A:
         prompt:
           'In the Lab (AP, partitioned, client A writes and client B reads), client B reads v1 although side A has already acknowledged v3. Which model is the store giving client B?',
         options: [
-          'Linearizable - the read happened before the write',
+          'Linearizable - the read was ordered before the write, which is allowed',
           'Eventual - the sides converge only once the partition heals',
-          'Read-your-writes',
-          'Causal',
+          'Read-your-writes, since each client only ever sees its own side',
+          'Causal - v1 caused v3, so a reader must be shown v1 before v3',
         ],
         answer: 1,
         explanation:
@@ -335,10 +335,10 @@ write arrives at A:
         id: 'consistency-6',
         prompt: 'Now you switch the same Lab to CP. What does client B get instead of the stale v1?',
         options: [
-          'v3, fetched across the partition',
-          'v1, marked as stale',
-          'A 503: side B cannot reach a majority, so it refuses rather than return a value that may be old',
-          'A random value from either side',
+          'v3, which side B fetches from side A over the partitioned network',
+          'v1 with a stale flag, so the client can decide what to do with it',
+          'A 503: side B cannot reach a majority to confirm it is current',
+          'A value from either side, whichever replica happens to answer first',
         ],
         answer: 2,
         explanation:
@@ -349,10 +349,10 @@ write arrives at A:
         prompt:
           'Your database rejects an insert because it would break a foreign key. A colleague says: "That is the consistency CAP is about." Is it?',
         options: [
-          'No - that is the C of ACID (constraints hold); CAP consistency is about replicas agreeing on the latest value',
-          'Yes - both mean the data is correct',
-          'Yes - foreign keys are how replicas stay in sync',
-          'No - CAP consistency is about transactions being isolated',
+          'No - that is the C of ACID; CAP consistency is replicas agreeing on the latest value',
+          'Yes - both mean the data is correct, and a broken foreign key is incorrect data',
+          'Yes - foreign keys are how replicas check that they hold the same rows',
+          'No - CAP consistency is about concurrent transactions being isolated from each other',
         ],
         answer: 0,
         explanation:
@@ -363,10 +363,10 @@ write arrives at A:
         prompt:
           'Your store is linearizable across 3 regions and every write pays about 150 ms for the cross-region quorum. Product wants likes to feel instant. What do you propose?',
         options: [
-          'Keep likes linearizable and buy faster servers',
-          'Make the whole store eventually consistent',
-          'Remove one region so the quorum is smaller',
-          'Use a weaker model for likes and keep linearizable writes for the few operations that need them',
+          'Keep likes linearizable and buy faster servers to cut the quorum time',
+          'Make the whole store eventually consistent so every write is fast',
+          'Remove one region so the quorum is smaller and writes wait less',
+          'Use a weaker model for likes, keep linearizable writes where they are needed',
         ],
         answer: 3,
         explanation:
@@ -391,10 +391,10 @@ write arrives at A:
         prompt:
           'A user edits a document on a laptop, then opens it on a phone a second later and sees the old version. The phone reads from a replica. What fixes it without making every read linearizable?',
         options: [
-          'Ask the user to wait before switching devices',
+          'Ask the user to wait a few seconds before switching to another device',
           'Sticky routing of the phone to one replica',
-          'Carry the version of the last write in the user session, and let the replica wait until it has at least that version',
-          'Disable caching on the phone',
+          'Send the version of the last write with the session; the replica waits for it',
+          'Disable caching in the phone app so every open fetches from the server',
         ],
         answer: 2,
         explanation:
@@ -405,10 +405,10 @@ write arrives at A:
         prompt:
           'To be safe, a team configures strong consistency as one global setting for the whole product. What does that cost?',
         options: [
-          'Nothing - stronger is always safe',
-          'Only disk space',
-          'It weakens durability of writes',
-          'Every operation pays coordination latency and becomes unavailable on the minority side of a partition, even where stale data is harmless',
+          'Nothing - stronger is always safe, and costs extra only in failures',
+          'Only disk space, because every replica keeps an extra copy of each value',
+          'It weakens write durability, since writes wait on fewer replicas to stay fast',
+          'Coordination latency on every operation, and errors on the minority side of a partition',
         ],
         answer: 3,
         explanation:
@@ -460,10 +460,10 @@ Redundant DB (two independent 99.9 nodes)   -> ~99.9999% for that tier,
         prompt:
           'A checkout request needs the load balancer (99.99%), the API (99.9%) and the database (99.9%) - all three, every time. Roughly what availability can checkout reach?',
         options: [
-          '99.9% - the weakest part sets it',
-          '99.99% - the best part sets it',
+          '99.9% - the weakest part sets the ceiling and the result',
+          '99.99% - the load balancer is the strongest part and sets it',
           'About 99.79% - the three availabilities multiply',
-          'About 99.93% - the average of the three',
+          'About 99.93% - the average of the three availabilities',
         ],
         answer: 2,
         explanation:
@@ -472,10 +472,15 @@ Redundant DB (two independent 99.9 nodes)   -> ~99.9999% for that tier,
       {
         id: 'avail-2',
         prompt: 'The team promises 99.99% availability over a year. How much downtime does that allow?',
-        options: ['About 8.8 hours', 'About 4.4 hours', 'About 5 minutes', 'About 52.6 minutes'],
+        options: [
+          'About 8.8 hours',
+          'About 263 minutes',
+          'About 5.3 minutes',
+          'About 53 minutes',
+        ],
         answer: 3,
         explanation:
-          '0.01% of a year (525,960 minutes) is about 52.6 minutes. 8.8 hours is the budget of 99.9% and 4.4 hours of 99.95% - one nine less is ten times more downtime. 5 minutes is five nines.',
+          '0.01% of a year (525,960 minutes) is about 52.6 minutes. 8.8 hours is the budget of 99.9% and 263 minutes (4.4 hours) of 99.95% - one nine less is ten times more downtime. 5.3 minutes is five nines.',
       },
       {
         id: 'avail-3',
@@ -483,8 +488,8 @@ Redundant DB (two independent 99.9 nodes)   -> ~99.9999% for that tier,
           'For a whole day the service returns errors for 5% of requests, but the process never stops, so the uptime dashboard shows 100%. How should availability be measured?',
         options: [
           'As good requests over total requests - about 95% today',
-          'Trust the uptime - the process was running',
-          'By CPU usage',
+          'Trust the uptime check - the process was running the whole day',
+          'By average CPU usage across the servers',
           'Count only full outages longer than five minutes',
         ],
         answer: 0,
@@ -496,9 +501,9 @@ Redundant DB (two independent 99.9 nodes)   -> ~99.9999% for that tier,
         prompt:
           'In the Lab (Availability focus) every part is up 99%, and the design allows about 14.6 days of downtime a year. You switch Each part is up to 99.9%. What happens?',
         options: [
-          'The downtime halves',
+          'The downtime halves, since each part fails half as often',
           'The downtime falls roughly tenfold, to under two days',
-          'Nothing, because the design did not change',
+          'Nothing, because the design and the number of parts did not change',
           'The downtime falls to zero',
         ],
         answer: 1,
@@ -509,7 +514,12 @@ Redundant DB (two independent 99.9 nodes)   -> ~99.9999% for that tier,
         id: 'avail-5',
         prompt:
           'The database tier gets a second node. Each node is up 99.9%, they fail independently, and failover is instant. What availability can the tier reach?',
-        options: ['99.8%', '99.9%', 'About 99.9999%', '99.99%'],
+        options: [
+          '99.8% - two parts multiply',
+          '99.9% - still one node at a time',
+          'About 99.9999% - both must fail',
+          '99.99% - one extra nine per node',
+        ],
         answer: 2,
         explanation:
           'The tier is down only when both nodes are down: 0.1% x 0.1% = 0.0001%, so about six nines. 99.8% is the series formula - it would apply if every request needed both nodes. Real failover is not instant, and each switch adds its own downtime on top of this number.',
@@ -519,10 +529,10 @@ Redundant DB (two independent 99.9 nodes)   -> ~99.9999% for that tier,
         prompt:
           'The same pair of database nodes fails over by hand: someone is paged and promotes the standby in about 30 minutes. The primary fails about 9 times a year. What dominates the downtime of the tier?',
         options: [
-          'The 30-minute manual switch on every failure - about 4.5 hours a year',
-          'The chance that both nodes are down at once',
-          'Nothing - two nodes make it six nines',
-          'The replication lag',
+          'The 30-minute manual switch, nine times - about 4.5 hours a year',
+          'The chance that both nodes are down at the same moment',
+          'Nothing much - two nodes of 99.9% make the tier six nines',
+          'The replication lag that the standby must replay before it serves',
         ],
         answer: 0,
         explanation:
@@ -533,10 +543,10 @@ Redundant DB (two independent 99.9 nodes)   -> ~99.9999% for that tier,
         prompt:
           'A checkout page calls six services synchronously and measures 99.2%. Recommendations and loyalty points are not needed to place the order. What is usually the cheapest way to raise availability?',
         options: [
-          'Make all six services more reliable',
-          'Add retries with no limit to every call',
+          'Make all six services more reliable, starting with the one that fails most often',
+          'Add retries with no limit to every call, so transient errors never reach users',
           'Add a seventh service that monitors the six',
-          'Make recommendations and loyalty points soft: a timeout with a fallback, or send the work to a queue',
+          'Make recommendations and loyalty soft: a timeout with a fallback, or a queue',
         ],
         answer: 3,
         explanation:
@@ -547,10 +557,10 @@ Redundant DB (two independent 99.9 nodes)   -> ~99.9999% for that tier,
         prompt:
           'Two app servers, each 99.9%, sit in the same rack and receive every deploy at the same moment. The spreadsheet says the pair reaches 99.9999%. What is wrong?',
         options: [
-          'Nothing - 0.1% squared is 0.0001%',
-          'Six nines needs three copies',
-          'The copies share a rack and a deploy, so they fail together and the squaring does not apply',
-          'Racks are more reliable than servers, so it is even better',
+          'Nothing - 0.1% squared is 0.0001%, and that maths holds for any two separate copies',
+          'Six nines needs three copies, since each copy adds only one nine',
+          'They share a rack and a deploy, so they fail together and squaring does not apply',
+          'Racks are more reliable than servers, so the real number is even better than six nines',
         ],
         answer: 2,
         explanation:
@@ -561,10 +571,10 @@ Redundant DB (two independent 99.9 nodes)   -> ~99.9999% for that tier,
         prompt:
           'The target is 99.9% of requests this quarter. Three weeks in, a bad deploy and a dependency outage have used 90% of the error budget. What does the error budget tell the team to do?',
         options: [
-          'Ship faster to make up for lost time',
-          'Slow down risky releases and spend the time on reliability until the budget recovers',
-          'Lower the target to 99%',
-          'Nothing - the budget resets next quarter',
+          'Ship faster to make up for lost time before the quarter ends',
+          'Slow down risky releases and spend time on reliability until it recovers',
+          'Lower the target to 99% so the remaining budget becomes ten times larger again',
+          'Nothing yet - the budget only matters once it is fully spent, then it resets next quarter',
         ],
         answer: 1,
         explanation:
@@ -574,10 +584,10 @@ Redundant DB (two independent 99.9 nodes)   -> ~99.9999% for that tier,
         id: 'avail-10',
         prompt: 'An API runs at 99.95% today. The product manager asks for 99.999%. What is the honest first answer?',
         options: [
-          'Add a second server and it is done',
-          'Yes, with better monitoring',
-          'It is impossible for any system',
-          'That allows about 5 minutes of downtime a year, so no human step can be on any recovery path - it needs redundancy and automatic failover everywhere; does the business need that?',
+          'Add a second server behind the load balancer and it is done',
+          'Yes, with better monitoring and a faster on-call rotation',
+          'It is impossible for any real system, however it is built',
+          'That is 5 minutes a year: fully automatic failover everywhere - does the business need it?',
         ],
         answer: 3,
         explanation:
@@ -650,8 +660,8 @@ Without quorum: both sides accept writes -> split brain -> divergent data`,
         options: [
           'Both nodes keep writing safely, because each holds a full copy',
           'Each node checks whether the other is alive, and safely takes over if it is not',
-          'Either both stop accepting writes, or one or both proceed and risk split brain - a third voter (a witness) removes the dilemma',
-          'Nothing happens, because 2 nodes is a majority',
+          'Stop writes, or proceed and risk split brain - a third voter (a witness) fixes it',
+          'Nothing happens, because 2 nodes is a majority of a 2-node cluster',
         ],
         answer: 2,
         explanation:
@@ -662,10 +672,10 @@ Without quorum: both sides accept writes -> split brain -> divergent data`,
         prompt:
           'To be safer, the team grows a 3-node cluster to 4. In the Lab, you set 4 replicas and partition the network. What do you see, and what does it teach?',
         options: [
-          'A 2 | 2 split with no majority anywhere: in CP mode both sides refuse. A 4th node adds cost, not failure tolerance',
+          'A 2 | 2 split with no majority: both sides refuse. A 4th node adds cost, not tolerance',
           'Side A keeps serving, because 4 nodes always leave a majority',
           'Both sides keep serving, because 4 nodes tolerate 2 failures',
-          'The Lab adds a leader to break the tie',
+          'The Lab adds a tie-breaking leader so one side can continue',
         ],
         answer: 0,
         explanation:
@@ -676,10 +686,10 @@ Without quorum: both sides accept writes -> split brain -> divergent data`,
         prompt:
           'A primary pauses for 9 seconds in garbage collection. After 5 seconds the other nodes elect a new primary. The old one wakes up and tries to write to shared storage. What prevents corrupted data?',
         options: [
-          'A longer heartbeat interval',
+          'A longer heartbeat interval, so the cluster raises fewer false failure alarms',
           'The old primary notices the pause and stops itself',
-          'Quorum alone - the old primary is outvoted',
-          'A fencing token: the storage has seen a newer epoch and rejects the write carrying the old one',
+          'Quorum alone - the old primary is outvoted by the others',
+          'A fencing token: storage has seen a newer epoch and rejects the old one',
         ],
         answer: 3,
         explanation:
@@ -689,9 +699,9 @@ Without quorum: both sides accept writes -> split brain -> divergent data`,
         id: 'partition-5',
         prompt: 'Node A stops receiving heartbeats from node B. What can node A know for certain?',
         options: [
-          'Node B has crashed',
-          'Nothing certain: node B may have crashed, paused, or be alive behind a broken network',
-          'The network is broken, because nodes rarely crash',
+          'Node B has crashed, since a live node always answers heartbeats',
+          'Nothing certain: B may have crashed, paused, or be cut off by the network',
+          'The network is broken, because processes crash far less often than links fail',
           'Node B will be back within the timeout',
         ],
         answer: 1,
@@ -703,10 +713,10 @@ Without quorum: both sides accept writes -> split brain -> divergent data`,
         prompt:
           'The failure-detection timeout is 2 seconds, and the database regularly has 6-second garbage collection pauses. What will you see?',
         options: [
-          'Nothing - GC pauses are not partitions',
-          'Faster recovery from real crashes, with no downside',
-          'False failovers: paused nodes are declared dead and replaced while still alive',
-          'The pauses shrink to fit the timeout',
+          'Nothing - GC pauses are not partitions, so the detector ignores them',
+          'Faster recovery from real crashes, with no downside for healthy nodes',
+          'False failovers: paused nodes are declared dead while still alive',
+          'The pauses shrink to fit the timeout, as the runtime adapts its GC',
         ],
         answer: 2,
         explanation:
@@ -717,10 +727,10 @@ Without quorum: both sides accept writes -> split brain -> divergent data`,
         prompt:
           'In a 3 | 2 split, product wants the 2-node minority side to keep showing product pages. Which minority behaviour allows that while keeping writes safe?',
         options: [
-          'Read-only: serve reads from the local copy (possibly stale) and refuse writes',
-          'Accept writes locally and replay them later',
-          'Return an error for every request',
-          'Promote one of the two to leader',
+          'Read-only: serve local (possibly stale) reads and refuse writes',
+          'Accept writes locally and replay them to the majority after the heal',
+          'Return an error for every read and write until the partition heals',
+          'Promote one of the two nodes to leader so the minority side can serve',
         ],
         answer: 0,
         explanation:
@@ -731,10 +741,10 @@ Without quorum: both sides accept writes -> split brain -> divergent data`,
         prompt:
           'In the Lab, with the partition in place, you switch from CP to AP and both clients keep writing. Which real failure does this reproduce if a cluster has no quorum rule?',
         options: [
-          'A cache stampede',
-          'A slow disk',
-          'A retry storm',
-          'Split brain: both sides accept writes, the copies diverge, and the heal has to discard or merge writes',
+          'A cache stampede: both sides miss and reload at once',
+          'Replication lag: the replicas fall behind the primary and catch up after the heal',
+          'A retry storm: clients hammer both sides after errors',
+          'Split brain: both sides accept writes and the copies diverge',
         ],
         answer: 3,
         explanation:
@@ -745,10 +755,10 @@ Without quorum: both sides accept writes -> split brain -> divergent data`,
         prompt:
           'A misapplied firewall rule blocks traffic between two subnets of your cluster for 3 minutes. Every process stays up and healthy. Is this a partition?',
         options: [
-          'No - a partition needs a cut cable',
-          'No - it is a crash, because nodes stopped answering',
-          'Yes - live nodes that cannot reach each other is exactly a partition',
-          'Only if it lasts longer than 5 minutes',
+          'No - a partition needs a physical fault, such as a cut cable or dead switch',
+          'No - it is a crash, because the nodes stopped answering each other',
+          'Yes - live nodes that cannot reach each other are a partition',
+          'Only if it lasts longer than the 5-minute failure-detection timeout',
         ],
         answer: 2,
         explanation:
@@ -759,10 +769,10 @@ Without quorum: both sides accept writes -> split brain -> divergent data`,
         prompt:
           'A company runs 2 nodes in data centre X and 2 in data centre Y. The link between X and Y fails. The cluster uses majority quorum. What happens, and what is the usual fix?',
         options: [
-          'X keeps working because it was first',
-          'Neither side has 3 of 4 votes, so writes stop; a witness in a third location gives one side the majority',
-          'Both sides keep working because each has 2 nodes',
-          'The cluster automatically removes one node from each side',
+          'X keeps working, because it hosted the leader before the split',
+          'Neither side has 3 of 4 votes, so writes stop; a witness in a third site fixes it',
+          'Both sides keep working, because each side still has 2 full nodes',
+          'The cluster automatically removes one node from each side to rebuild the quorum count',
         ],
         answer: 1,
         explanation:
@@ -826,10 +836,10 @@ cost: 1+ extra round trips, unavailable to the minority during a partition`,
         prompt:
           'Two users redeem the same one-time voucher at the same instant. Each request reads status = unused from a different replica of an eventually consistent store, then writes status = used. What happens, and what prevents it?',
         options: [
-          'The second write fails automatically',
-          'Both succeed and the voucher is used twice - use a compare-and-set against one strongly consistent copy, so only one update matches',
-          'Only the faster region succeeds, because it wrote first',
-          'The store merges the two writes into one',
+          'The second write fails automatically, since the row changed after it was read',
+          'Both succeed and it is used twice - fix it with a compare-and-set on one strong copy',
+          'Only the faster region succeeds, because it wrote first and the other is overwritten',
+          'The store merges the two writes into one used status',
         ],
         answer: 1,
         explanation:
@@ -840,10 +850,10 @@ cost: 1+ extra round trips, unavailable to the minority during a partition`,
         prompt:
           'The Lab opens on Sync with reads on the replicas, and "Reads behind" shows 0%. Why can a read from a replica never be behind here?',
         options: [
-          'Replicas are faster than the primary',
+          'Replicas are faster than the primary, so they never fall behind it',
           'The read rate is low',
-          'Reads secretly go to the primary',
-          'A write is acknowledged only after every replica has applied it, so no replica can miss an acknowledged write',
+          'Reads silently go to the primary while Sync mode is on',
+          'A write is acknowledged only after every replica has applied it',
         ],
         answer: 3,
         explanation:
@@ -854,10 +864,10 @@ cost: 1+ extra round trips, unavailable to the minority during a partition`,
         prompt:
           'Still in the Lab on Sync, you kill Replica 2. Writes are refused until you recover it. Is that a flaw of strong consistency?',
         options: [
-          'Yes - a correct system would keep accepting writes',
-          'No - it is the guarantee working: without every copy, the system refuses rather than let copies disagree',
-          'Yes - the primary should have been promoted',
-          'No - the refused writes will be applied later automatically',
+          'Yes - a correct system would keep accepting writes on the live nodes',
+          'No - it is the guarantee: it refuses rather than let copies disagree',
+          'Yes - the primary should have promoted another replica',
+          'No - the refused writes are queued and applied automatically later',
         ],
         answer: 1,
         explanation:
@@ -868,10 +878,10 @@ cost: 1+ extra round trips, unavailable to the minority during a partition`,
         prompt:
           'In the Lab you switch from Sync to Semi-sync. "Lost writes" stays 0 after you kill the primary, but "Reads behind" climbs above 0%. What does that show?',
         options: [
-          'Semi-sync is broken',
-          'Semi-sync is strongly consistent',
-          'Durability and consistent reads are different promises: the write is safe on two machines, but the other replicas are still behind',
-          'Stale reads only happen after a failover',
+          'Semi-sync is broken: a write that is safe should already be visible on every replica',
+          'Semi-sync is strongly consistent, and the metric just counts reads still in flight',
+          'Durability and consistent reads differ: the write is safe, other replicas lag',
+          'Stale reads only happen after a failover, and the kill caused one',
         ],
         answer: 2,
         explanation:
@@ -882,10 +892,10 @@ cost: 1+ extra round trips, unavailable to the minority during a partition`,
         prompt:
           'A five-node consensus cluster is split by a partition into a group of 3 and a group of 2. A client can only reach the group of 2. What should it get?',
         options: [
-          'An error or a timeout - the group of 2 has no majority, so it cannot accept writes or promise a current read',
-          'The latest data, served by the group of 2',
-          'A successful write that is merged later',
-          'A new leader elected by the group of 2',
+          'An error or a timeout, because 2 of 5 nodes is not a majority',
+          'The latest data, served by the group of 2 from its own local copy',
+          'A successful write that is merged with the majority after the heal',
+          'A new leader elected by the group of 2, which then accepts the write',
         ],
         answer: 0,
         explanation:
@@ -896,10 +906,10 @@ cost: 1+ extra round trips, unavailable to the minority during a partition`,
         prompt:
           'A strongly consistent database has its quorum spread over Virginia, Frankfurt and Singapore. Users complain every save takes about 150 ms, even when nothing is failing. What is happening?',
         options: [
-          'A bug - latency should only rise during failures',
-          'The disks are slow',
+          'A bug - coordination should only add latency during failures',
+          'The disks are slow: every write must be flushed with fsync before the reply',
           'The cache is cold',
-          'Every write waits for a round trip to a majority, and the majority spans continents - the cost is paid on every write, forever',
+          'Each write waits for a majority round trip that spans continents',
         ],
         answer: 3,
         explanation:
@@ -910,7 +920,7 @@ cost: 1+ extra round trips, unavailable to the minority during a partition`,
         prompt:
           'Which of these operations most needs strong consistency?',
         options: [
-          'Showing the number of likes on a post',
+          'Showing the number of likes on a popular post',
           'Allocating a unique username at sign-up',
           'Displaying a profile picture',
           'Listing search results',
@@ -924,10 +934,10 @@ cost: 1+ extra round trips, unavailable to the minority during a partition`,
         prompt:
           'One seat is left. Two customers click Book at the same instant, and both requests run UPDATE seats SET remaining = remaining - 1 WHERE flight = 9 AND remaining > 0 on the same strongly consistent database. What happens?',
         options: [
-          'Both succeed and remaining becomes -1',
-          'Both fail with a deadlock',
-          'Exactly one updates a row; the other updates zero rows and is told the seat is sold out',
-          'The database asks the customers to retry together',
+          'Both succeed and remaining becomes -1, since both read 1 first',
+          'Both fail with a deadlock, because they lock the same row at the same instant',
+          'Exactly one updates a row; the other matches zero rows and sees sold out',
+          'The database asks both customers to retry, since the updates conflict with each other',
         ],
         answer: 2,
         explanation:
@@ -939,9 +949,9 @@ cost: 1+ extra round trips, unavailable to the minority during a partition`,
           'In the Lab on Sync, you drag Network delay to replicas from 100 ms to 1000 ms. What happens to Write latency and Reads behind?',
         options: [
           'Write latency rises to over 1 s; Reads behind stays at 0%',
-          'Write latency stays at 8 ms; Reads behind rises',
-          'Both stay the same',
-          'Both rise',
+          'Write latency stays near 8 ms; Reads behind climbs above 0%',
+          'Both stay the same, since the delay only affects the network links',
+          'Both rise, since the slower replicas now fall further behind',
         ],
         answer: 0,
         explanation:
@@ -952,10 +962,10 @@ cost: 1+ extra round trips, unavailable to the minority during a partition`,
         prompt:
           'A database advertises serializable transactions. A client commits a transfer, then a second client immediately reads the balance on another connection. Does serializability alone promise the second client sees the transfer?',
         options: [
-          'Yes - serializable means every read sees the latest commit',
-          'No - serializable only means transactions behave as if run one at a time in some order; seeing the latest commit in real time is linearizability, and both together is strict serializability',
-          'Yes, but only on the primary',
-          'No - serializable transactions are never visible to other clients',
+          'Yes - serializable means every read sees the latest committed write, in real time too',
+          'No - it only promises some one-at-a-time order; real-time recency is linearizability',
+          'Yes, but only when both connections are served by the primary',
+          'No - serializable transactions are never visible to other clients until they reconnect',
         ],
         answer: 1,
         explanation:
@@ -1016,10 +1026,10 @@ Conflict: A=x@t2, B=y@t1 -> LWW keeps x (and silently drops y)`,
         prompt:
           'The Lab opens with async replication and 1500 ms of network delay, and a large share of reads are behind. You drag Write rate to 0. What happens over the next two seconds?',
         options: [
-          'Nothing - stale replicas stay stale until restarted',
-          'Every replica applies the writes still in flight and they all reach the same version: the copies converge',
-          'The primary rolls back to match the replicas',
-          'Reads are refused until the replicas catch up',
+          'Nothing - stale replicas stay stale until they are restarted',
+          'Every replica applies the writes in flight and they reach the same version',
+          'The primary rolls back its newest writes so that it matches what the replicas hold',
+          'Reads are refused on every replica until each one catches up with the primary',
         ],
         answer: 1,
         explanation:
@@ -1030,10 +1040,10 @@ Conflict: A=x@t2, B=y@t1 -> LWW keeps x (and silently drops y)`,
         prompt:
           'A like counter is stored as a single number on three replicas with last-write-wins. Two replicas each accept a like at the same moment, both writing 101 over 100. After they sync, what is the count?',
         options: [
-          '102 - both likes are kept',
-          '100 - both likes are dropped',
-          '101 - one like is silently lost; a CRDT counter that keeps a count per replica and sums them would keep both',
-          'The store reports a conflict to the user',
+          '102 - both likes are kept, since both replicas accepted a write',
+          '100 - both likes are dropped as conflicting writes',
+          '101 - one like is silently lost; a per-replica CRDT counter would keep both',
+          'The store sees two concurrent writes of 101 and reports the conflict to the user to resolve',
         ],
         answer: 2,
         explanation:
@@ -1044,10 +1054,10 @@ Conflict: A=x@t2, B=y@t1 -> LWW keeps x (and silently drops y)`,
         prompt:
           'During a 3-minute partition, a customer adds a hat to their cart in Europe and removes a scarf in the US. The cart is stored as one document with last-write-wins. What happens when the partition heals?',
         options: [
-          'Both changes survive automatically',
-          'The cart is emptied',
-          'The user is asked to choose',
-          'One whole document replaces the other, so either the hat or the scarf removal is lost',
+          'Both changes survive, since they touch different items in the cart',
+          'The cart is emptied to be safe',
+          'The user is asked to choose which version of the cart to keep',
+          'One whole document replaces the other, so the hat or the scarf removal is lost',
         ],
         answer: 3,
         explanation:
@@ -1058,9 +1068,9 @@ Conflict: A=x@t2, B=y@t1 -> LWW keeps x (and silently drops y)`,
         prompt:
           'Two replicas use last-write-wins by wall-clock timestamp. The clock of Replica B runs 3 seconds behind. A user changes a setting on A, then 1 second later changes it again on B. Which value wins?',
         options: [
-          'The first change, on A - its timestamp looks 2 seconds newer, so the real latest change is discarded',
-          'The second change, on B - it happened later',
-          'Both are kept',
+          'The first change, on A - its timestamp looks 2 s newer, so the later change is lost',
+          'The second change, on B - it happened later in real time, so it has the later timestamp',
+          'Both are kept as sibling versions, and the application has to pick the right one later',
           'Neither - the replicas refuse the write',
         ],
         answer: 0,
@@ -1072,10 +1082,10 @@ Conflict: A=x@t2, B=y@t1 -> LWW keeps x (and silently drops y)`,
         prompt:
           'An online shop keeps stock counts in an eventually consistent store replicated across two regions. One unit is left and two customers in different regions buy it at the same moment. What should the design do?',
         options: [
-          'Nothing - the replicas will converge',
-          'Show approximate stock from the fast store, but make the purchase itself a strongly consistent reservation',
-          'Use last-write-wins on the stock count',
-          'Add a third region',
+          'Nothing - the replicas will converge on the right count',
+          'Show approximate stock, but make the purchase a strongly consistent reservation',
+          'Use last-write-wins on the stock count, so only one sale is kept',
+          'Add a third region so each region handles less traffic',
         ],
         answer: 1,
         explanation:
@@ -1086,10 +1096,10 @@ Conflict: A=x@t2, B=y@t1 -> LWW keeps x (and silently drops y)`,
         prompt:
           'In the Lab, "Own save not seen" is high: users reload right after saving and get the old value. Which change fixes that for them without making the whole system strongly consistent?',
         options: [
-          'Switch to synchronous replication',
-          'Turn off the replicas',
-          'Turn on read-your-writes routing, so a user who just saved reads from the primary',
-          'Lower the read rate',
+          'Switch to synchronous replication so every replica has each write',
+          'Turn off the replicas and read everything from the primary',
+          'Read-your-writes routing: a user who just saved reads the primary',
+          'Lower the read rate so replicas have time to catch up between reads',
         ],
         answer: 2,
         explanation:
@@ -1100,10 +1110,10 @@ Conflict: A=x@t2, B=y@t1 -> LWW keeps x (and silently drops y)`,
         prompt:
           'A dashboard reads from replicas. An engineer sees a count of 540, refreshes, and sees 512, then 560. Nothing was deleted. What guarantee is missing?',
         options: [
-          'Monotonic reads - each refresh hit a different replica with a different lag; keeping the user on one replica stops values going backwards',
-          'Durability - the database lost 28 events',
-          'Strong consistency for all writes',
-          'Nothing - that is a bug in the dashboard',
+          'Monotonic reads - each refresh hit a replica with a different lag',
+          'Durability - the database lost 28 events between refreshes',
+          'Strong consistency for all writes, so each write reaches every replica',
+          'Nothing - that is a rendering bug in the dashboard',
         ],
         answer: 0,
         explanation:
@@ -1114,10 +1124,10 @@ Conflict: A=x@t2, B=y@t1 -> LWW keeps x (and silently drops y)`,
         prompt:
           'In the Lab, async mode with a long delay, you kill the primary and "Lost writes" rises. A colleague says: "That is impossible, the system is eventually consistent." Who is right?',
         options: [
-          'The colleague - eventual consistency means no write is ever lost',
-          'Neither - the Lab counts reads, not writes',
-          'The colleague - the writes will appear after the lag',
-          'The Lab - eventual consistency promises the copies converge, not that every acknowledged write survives; they converge on the promoted replica, which never had those writes',
+          'The colleague - eventual consistency means no acknowledged write is ever lost',
+          'Neither - the Lab counts reads that were behind, not writes that were lost',
+          'The colleague - the writes will show up on every replica once the lag has passed',
+          'The Lab - copies converge on the promoted replica, which never had those writes',
         ],
         answer: 3,
         explanation:
@@ -1128,10 +1138,10 @@ Conflict: A=x@t2, B=y@t1 -> LWW keeps x (and silently drops y)`,
         prompt:
           'Two regions are cut off from each other for 10 minutes. An eventually consistent store keeps serving in both. What happens during and after the partition?',
         options: [
-          'Both regions refuse writes until the link is back',
-          'Only the larger region accepts writes',
-          'Both regions keep accepting reads and writes; when the link returns they exchange changes and resolve any conflicting writes with their merge rule',
-          'The regions become two separate databases forever',
+          'Both regions refuse writes until the link is back, to avoid conflicts',
+          'Only the larger region accepts writes, since it holds the majority of the replicas',
+          'Both keep serving reads and writes, then exchange changes and merge conflicts',
+          'The regions drift into two separate databases that never reconcile with each other',
         ],
         answer: 2,
         explanation:
@@ -1142,10 +1152,10 @@ Conflict: A=x@t2, B=y@t1 -> LWW keeps x (and silently drops y)`,
         prompt:
           'A shipping service receives status updates through an eventually consistent pipeline that may deliver them twice or out of order. Which update format keeps every replica correct?',
         options: [
-          '"Add 1 to the delivered count" - simple and small',
-          '"Set status to shipped, version 7" - applied only if newer than the stored version, so duplicates and old updates are ignored',
-          '"Toggle the delivered flag"',
-          '"Set status to the next step"',
+          '"Add 1 to the delivered count" - simple, small, and cheap to apply on every replica',
+          '"Set status to shipped, version 7" - applied only if newer than the stored one',
+          '"Toggle the delivered flag" - one bit, so a replay costs nothing',
+          '"Set status to the next step" - the order of steps is fixed, so it cannot go wrong',
         ],
         answer: 1,
         explanation:
@@ -1220,10 +1230,10 @@ Worker 1 wakes and writes with token 41 -> storage rejects it (41 < 42)`,
         prompt:
           'In the Lab, fencing is off. Worker 1 gets token 41 and freezes for 15 s; the TTL is 8 s. Worker 2 gets token 42 and writes. Worker 1 wakes and writes with token 41. What happens?',
         options: [
-          'The lock service blocks the write of Worker 1, because its lease has expired',
+          'The lock service blocks the write of Worker 1, because its lease has already expired',
           'Worker 1 notices its lease expired when it wakes and skips the write',
-          'Storage accepts the write with token 41 on top of the data from token 42 - a lost update',
-          'Storage rejects it, because every write is compared with the lock service',
+          'Storage accepts the write with token 41 over the data of token 42 - a lost update',
+          'Storage rejects it, because every single write is checked against the lock service first',
         ],
         answer: 2,
         explanation:
@@ -1234,7 +1244,7 @@ Worker 1 wakes and writes with token 41 -> storage rejects it (41 < 42)`,
         prompt:
           'You turn fencing tokens on in the Lab and pause Worker 1 past its TTL again. What changes in the metrics?',
         options: [
-          'Two-owner moments still goes up, but the stale write is refused instead of accepted',
+          'Two-owner moments still rises, but the stale write is refused',
           'Two-owner moments stays at 0, because fencing stops two workers holding the lock',
           'Nothing changes, because the TTL is still shorter than the pause',
           'Worker 2 is refused, because Worker 1 held the lock first',
@@ -1248,10 +1258,10 @@ Worker 1 wakes and writes with token 41 -> storage rejects it (41 < 42)`,
         prompt:
           'Worker A holds a Redis lock with a 30 s TTL, but its job takes 45 s. At 30 s the key expires and Worker B takes the lock. At 45 s Worker A finishes and runs DEL lock:job in a finally block. What happens?',
         options: [
-          'Nothing - DEL only removes a key the caller created',
-          'A deletes the lock of B, so a third worker can take it while B is still working',
-          'Redis rejects the DEL because the TTL was reset by B',
-          'A waits until B releases the lock, then deletes it',
+          'Nothing - DEL only removes a key the caller created itself',
+          'A deletes the lock of B, so a third worker can take it while B still works',
+          'Redis rejects the DEL, because B reset the TTL when it took over the key from A',
+          'A blocks until B releases the lock, then deletes the key as part of its own cleanup',
         ],
         answer: 1,
         explanation:
@@ -1262,10 +1272,10 @@ Worker 1 wakes and writes with token 41 -> storage rejects it (41 < 42)`,
         prompt:
           'To avoid leases expiring under slow work, a team acquires its Redis lock with SET NX and no expiry. A worker holding the lock is killed by the out-of-memory killer. What happens next?',
         options: [
-          'Redis sees the connection close and deletes the key',
-          'The next worker takes the lock after the default 30 s TTL',
-          'The key stays forever: every worker is refused until someone deletes it by hand',
-          'The lock is safe, because nobody else can ever hold it twice',
+          'Redis sees the connection close and deletes the key that client set',
+          'The next worker takes the lock once the default 30 s TTL runs out',
+          'The key stays forever: every worker is refused until someone deletes it',
+          'The lock is safe, because no second worker can ever hold it while the key exists',
         ],
         answer: 2,
         explanation:
@@ -1276,10 +1286,10 @@ Worker 1 wakes and writes with token 41 -> storage rejects it (41 < 42)`,
         prompt:
           'After a double run, a team raises the lock TTL from 30 s to 10 minutes "so it can never expire mid-job". What have they actually bought?',
         options: [
-          'Complete safety: no pause lasts 10 minutes',
+          'Complete safety, since no process pause ever lasts 10 minutes',
           'Nothing - the TTL has no effect on how long a crashed holder blocks the lock',
-          'Fewer expiries mid-job, but a crashed holder now blocks the job for up to 10 minutes, and a longer pause still gives two owners',
-          'Faster acquisition, because the key is written less often',
+          'Fewer mid-job expiries, but a crash can block the job for 10 minutes',
+          'Faster acquisition, because the key is rewritten less often',
         ],
         answer: 2,
         explanation:
@@ -1290,10 +1300,10 @@ Worker 1 wakes and writes with token 41 -> storage rejects it (41 < 42)`,
         prompt:
           'A nightly billing job runs in 12 instances, and a Redis lock is the only thing stopping 12 sets of invoices. Duplicate invoices would be a serious incident. What is the most durable fix?',
         options: [
-          'Switch to Redlock across 5 Redis nodes',
-          'Raise the TTL to 24 hours',
-          'Run the job on only one of the 12 instances, chosen by hostname',
-          'Key invoices by (customer_id, period) with a unique constraint, so a second run inserts nothing',
+          'Switch to Redlock across 5 Redis nodes, so one Redis failure cannot grant two locks',
+          'Raise the TTL to 24 hours so it never expires mid-run',
+          'Run the job on only one of the 12 instances, picked by a fixed hostname in config',
+          'A unique constraint on (customer_id, period), so a second run inserts nothing',
         ],
         answer: 3,
         explanation:
@@ -1305,7 +1315,7 @@ Worker 1 wakes and writes with token 41 -> storage rejects it (41 < 42)`,
           'Several API instances rebuild the same expensive cached report when it expires. If two rebuild it at once, the only cost is some wasted CPU. Which lock fits?',
         options: [
           'A single Redis SET NX PX lock - a rare double rebuild only wastes work',
-          'A ZooKeeper lock with fencing tokens checked by the cache',
+          'A ZooKeeper lock with fencing tokens checked by the cache on every write',
           'A lock with no TTL, so the rebuild is never duplicated',
           'No lock and no coordination - duplicate rebuilds cannot happen',
         ],
@@ -1319,9 +1329,9 @@ Worker 1 wakes and writes with token 41 -> storage rejects it (41 < 42)`,
           'Worker A takes a lock on a Redis primary. The primary crashes before the key reaches its replica (replication is asynchronous), and the replica is promoted. Worker B asks for the same lock. What happens?',
         options: [
           'B is refused, because the replica has a copy of every key',
-          'B is refused until the old primary comes back',
+          'B is refused until the old primary comes back and is checked',
           'B gets the lock too, so two workers hold it at once',
-          'Both locks are merged when the old primary rejoins',
+          'Both locks are merged when the old primary rejoins the cluster',
         ],
         answer: 2,
         explanation:
@@ -1333,9 +1343,9 @@ Worker 1 wakes and writes with token 41 -> storage rejects it (41 < 42)`,
           'A lock protects calls to a third-party email API that has no idea what a token is. A teammate proposes adding fencing tokens to the lock. What does that achieve?',
         options: [
           'It stops duplicate emails, because the token travels with every call',
-          'Nothing on its own: fencing only works where the resource compares tokens, so use an idempotency key the API honours, or accept a rare duplicate',
-          'It makes the lock survive a Redis failover',
-          'It lets the API process two holders in parallel safely',
+          'Nothing on its own: the API never compares tokens; use an idempotency key it honours',
+          'It makes the lock survive a Redis failover without granting it twice',
+          'It lets the API process two holders in parallel, since each call is tagged',
         ],
         answer: 1,
         explanation:
@@ -1346,9 +1356,9 @@ Worker 1 wakes and writes with token 41 -> storage rejects it (41 < 42)`,
         prompt:
           'A worker renews its 30 s lease every 10 s from a background heartbeat thread. The whole process then hits a 45 s stop-the-world GC pause. What happens?',
         options: [
-          'The heartbeat keeps the lease alive, because it runs on its own thread',
-          'The lease expires during the pause and another worker can take it; the woken worker still believes it holds the lock',
-          'The lock service extends the lease while the process is paused',
+          'The heartbeat keeps the lease alive, because it runs on its own thread outside the GC',
+          'The lease expires during the pause; the woken worker still thinks it holds the lock',
+          'The lock service extends the lease while the process is paused, since it is connected',
           'The worker loses the lock only if it crashes',
         ],
         answer: 1,
@@ -1361,9 +1371,9 @@ Worker 1 wakes and writes with token 41 -> storage rejects it (41 < 42)`,
           'Storage enforces fencing and has seen token 42. Three delayed writes then arrive in this order: token 43, token 41, token 42. Which are accepted?',
         options: [
           'All three, since each came from a worker that held the lock at some point',
-          'Only 43; then 41 and 42 are both refused, because 43 is now the highest seen',
-          '43 and 42; only 41 is refused',
-          'Only 41, because it held the lock first',
+          'Only 43; 41 and 42 are refused, as 43 is now the highest seen',
+          '43 and 42, since 42 was already the accepted token; only 41 is refused',
+          'Only 41, because the worker with 41 held the lock before the others',
         ],
         answer: 1,
         explanation:
@@ -1375,9 +1385,9 @@ Worker 1 wakes and writes with token 41 -> storage rejects it (41 < 42)`,
           'A correctness-critical job must not double-apply, and the team already runs etcd for Kubernetes. Redis would be faster. What is the sound choice?',
         options: [
           'Redis SET NX, using the random value as the fencing token',
-          'Redlock across 3 Redis nodes, which removes the need for fencing',
-          'A lock with no TTL in etcd, so it never expires',
-          'An etcd lease-based lock, passing its revision number as the fencing token that storage checks',
+          'Redlock across 3 independent Redis nodes, which removes the need for fencing tokens',
+          'A lock with no TTL in etcd, so it can never expire under a slow job or a pause',
+          'An etcd lease lock, passing its revision as the fencing token storage checks',
         ],
         answer: 3,
         explanation:
@@ -1462,10 +1472,10 @@ A restarts, sees term 8 and stays a follower`,
         prompt:
           'A 5-node cluster loses its leader. Node B times out first and asks for votes. Nodes C and D vote for B; Node E has not answered yet. What happens?',
         options: [
-          'B waits for E, because every live node must vote',
-          'B becomes leader: its own vote plus C and D make 3 of 5, a majority',
+          'B waits for E, because every live node must vote in an election',
+          'B becomes leader: its own vote plus C and D make 3 of 5',
           'B becomes leader only after the old leader confirms it is dead',
-          'C and D must also stand as candidates to break the tie',
+          'C and D must also stand as candidates to break the tie with B',
         ],
         answer: 1,
         explanation:
@@ -1476,9 +1486,9 @@ A restarts, sees term 8 and stays a follower`,
         prompt:
           'A partition splits a 5-node cluster into {A, B} and {C, D, E}. A was the leader. In the Lab this is "Cut off the leader". What happens?',
         options: [
-          'A keeps leading and the majority side waits for it',
+          'A keeps leading, and the majority side waits for it to come back into contact',
           'Both sides elect a leader, accept writes and merge them after the partition heals',
-          'C, D and E elect a new leader in a higher term; A still believes it leads, but can commit nothing',
+          'C, D and E elect a leader in a higher term; A still leads but commits nothing',
           'The whole cluster stops until the partition heals',
         ],
         answer: 2,
@@ -1490,10 +1500,10 @@ A restarts, sees term 8 and stays a follower`,
         prompt:
           'In the Lab you turn off "Randomised timeouts" and kill the leader. The Elections counter climbs and no leader appears for a long time. Why?',
         options: [
-          'Every follower times out at almost the same moment, votes for itself, and nobody reaches a majority - a split vote, repeated',
-          'The election timeout is too long for the cluster to recover',
-          'The crashed leader still holds the votes of the others',
-          'Five nodes cannot elect a new leader without the old one',
+          'All followers time out together, vote for themselves, and split the vote again',
+          'The election timeout is too long for the cluster to recover from a crash',
+          'The crashed leader still holds the votes that the others gave it in the last term',
+          'Five nodes cannot elect a new leader without the old leader stepping down first',
         ],
         answer: 0,
         explanation:
@@ -1505,9 +1515,9 @@ A restarts, sees term 8 and stays a follower`,
           'The leader freezes for 4 s in a garbage-collection pause; the election timeout is 1 s. The others elect a new leader for term 8. Then the old leader wakes up and sends heartbeats for term 7. What happens?',
         options: [
           'The followers accept them, and the cluster now has two working leaders',
-          'The new leader steps down, because the old one was elected first',
-          'The followers ignore it and it keeps sending heartbeats forever',
-          'The followers reject them with term 8; the old leader sees the higher term and steps down',
+          'The new leader steps down, because the old one was elected first in term 7',
+          'The followers ignore the messages, and it keeps sending heartbeats forever',
+          'The followers reject them with term 8, and the old leader steps down',
         ],
         answer: 3,
         explanation:
@@ -1519,8 +1529,8 @@ A restarts, sees term 8 and stays a follower`,
           'Your cluster re-elects its leader several times an hour, yet no node crashed. Logs show garbage-collection pauses of up to 800 ms, and the election timeout is 300 ms. What do you change?',
         options: [
           'Lower the timeout to 150 ms so failures are detected faster',
-          'Add two more nodes to the cluster',
-          'Raise the election timeout above the worst pause (and reduce the pauses), accepting a slower failover',
+          'Add two more nodes, so one paused leader matters less to the cluster',
+          'Raise the timeout above the worst pause, and accept slower failover',
           'Turn heartbeats off during garbage collection',
         ],
         answer: 2,
@@ -1531,10 +1541,10 @@ A restarts, sees term 8 and stays a follower`,
         id: 'le-6',
         prompt: 'You run leader election on 4 nodes, and a partition splits them 2 and 2. What happens?',
         options: [
-          'Neither side can collect 3 of 4 votes, so no leader is elected and writes stop',
-          'Each side elects its own leader',
+          'Neither side reaches 3 of 4 votes, so no leader and no writes',
+          'Each side elects its own leader with 2 of 4 votes',
           'The side that holds the old leader keeps it and carries on',
-          'The side with the lower node ids wins',
+          'The side with the lower node ids wins the tie-break and elects a leader',
         ],
         answer: 0,
         explanation:
@@ -1545,10 +1555,10 @@ A restarts, sees term 8 and stays a follower`,
         prompt:
           'Node C was slow and missed the last 20 committed log entries. The leader dies and C happens to time out first. Will C become leader?',
         options: [
-          'Yes - the first node to time out always wins',
-          'Yes, and it removes the 20 entries from every other node',
+          'Yes - the first node to time out always wins the election',
+          'Yes, and as the new leader it removes the 20 entries from every other node',
           'Only after it copies the missing entries from the dead leader',
-          'No - voters with newer logs refuse it, so a node holding every committed entry wins instead',
+          'No - voters with newer logs refuse it, so an up-to-date node wins',
         ],
         answer: 3,
         explanation:
@@ -1559,10 +1569,10 @@ A restarts, sees term 8 and stays a follower`,
         prompt:
           'Twelve replicas of a service each run an hourly report job, so the customer gets 12 reports. How do you make it run once, and keep running when a pod dies?',
         options: [
-          'Run the job on replica 1 only',
-          'Replicas compete for a Lease (etcd, ZooKeeper or Kubernetes); only the holder runs the job, and the report is keyed by hour so a rare overlap is harmless',
+          'Run the job on replica 1 only, since it is the first pod every deployment starts',
+          'Replicas compete for a Lease; only the holder runs it; reports are keyed by hour',
           'Let all 12 run and delete the duplicates by hand',
-          'Add a random sleep before each run',
+          'Add a random sleep before each run so the replicas do not start together',
         ],
         answer: 1,
         explanation:
@@ -1574,9 +1584,9 @@ A restarts, sees term 8 and stays a follower`,
           'A worker holds a 15 s leader lease, pauses for 20 s, and wakes up still believing it leads - while another worker has taken the lease. What prevents damage?',
         options: [
           'Nothing is needed - a lease guarantees a single holder',
-          'A longer lease',
-          'A fencing token (such as the term or lease revision) that the storage checks, or writes that are idempotent',
-          'Renewing the lease more often',
+          'A longer lease, set well above the worst pause seen so far',
+          'A fencing token (the term or lease revision) checked by storage, or idempotent writes',
+          'Renewing the lease more often, say every second instead of every 5 seconds',
         ],
         answer: 2,
         explanation:
@@ -1587,10 +1597,10 @@ A restarts, sees term 8 and stays a follower`,
         prompt:
           'Election timeouts are randomised between 1 and 2 s, and an election round takes about 50 ms. The leader crashes. Roughly how long can writes stall?',
         options: [
-          'About 1 to 2 s: the time to notice (the timeout) plus the election',
-          'About 50 ms: only the election itself',
-          '0 ms: the followers take over at once',
-          'Until an operator restarts the old leader',
+          'About 1 to 2 s: the timeout to notice, plus the election',
+          'About 50 ms: only the election round itself counts toward it',
+          '0 ms: the followers take over at once, since they hold the log',
+          'Until an operator notices and restarts the old leader by hand',
         ],
         answer: 0,
         explanation:
@@ -1600,10 +1610,10 @@ A restarts, sees term 8 and stays a follower`,
         id: 'le-11',
         prompt: 'A 3-node cluster loses 2 nodes. The survivor times out and stands for election. What happens?',
         options: [
-          'It becomes leader with its own vote',
-          'It becomes leader, but for reads only',
-          'It waits one more timeout, then wins by default',
-          'It never reaches 2 votes, so there is no leader and no writes until another node returns',
+          'It becomes leader with its own vote, as the only live node',
+          'It becomes leader, but serves reads only until the others return',
+          'It waits one more timeout, then wins by default since nobody else is running',
+          'It never reaches 2 votes, so no leader and no writes until a node returns',
         ],
         answer: 3,
         explanation:
@@ -1614,10 +1624,10 @@ A restarts, sees term 8 and stays a follower`,
         prompt:
           'During a partition a client keeps sending writes to the old leader on the minority side. What does the client see?',
         options: [
-          'Success - the writes are merged when the partition heals',
-          'Timeouts: the old leader appends the writes but never gets a majority to store them, so it never acknowledges them',
+          'Success - the writes are merged into the new leader log when the partition heals',
+          'Timeouts: the old leader appends them but can never commit them to a majority',
           'An instant error naming the new leader',
-          'Success for small writes and errors for large ones',
+          'Success for small writes that fit in one message, and errors for the larger ones',
         ],
         answer: 1,
         explanation:
@@ -1706,9 +1716,9 @@ partition {A,B,C} | {D,E}
           'In a 5-node cluster the leader appends an entry. Followers 1 and 2 store it; followers 3 and 4 are slow and have not answered. Is the entry committed?',
         options: [
           'Yes - the leader plus 2 followers is 3 of 5, a majority',
-          'No - all 5 nodes must store it first',
-          'No - 4 of 5 must store it, to tolerate one failure',
-          'Only once the slow followers answer, even with a no',
+          'No - all 5 nodes must store it before it can count as committed',
+          'No - 4 of 5 must store it, so that it can survive one more failure',
+          'Only once the slow followers answer, even if their answer is a no',
         ],
         answer: 0,
         explanation:
@@ -1718,9 +1728,9 @@ partition {A,B,C} | {D,E}
         id: 'cons-2',
         prompt: 'Your 3-node etcd cluster tolerates one failure. To be safer you add a fourth node. What did you gain?',
         options: [
-          'Tolerance of two failures',
+          'Tolerance of two failures, since two nodes can now be spare',
           'Faster writes, since there is one more node to answer',
-          'No extra tolerance: a majority of 4 is 3, so it still survives only one failure - and each write now waits for one more node',
+          'No extra tolerance - a majority of 4 is 3, and writes wait for one more node',
           'The ability to split 2 and 2 and keep both halves running',
         ],
         answer: 2,
@@ -1732,8 +1742,8 @@ partition {A,B,C} | {D,E}
         prompt: 'A partition splits a 5-node cluster into {A, B, C} and {D, E}. Clients write on both sides. What happens?',
         options: [
           'Both sides commit, and the logs are merged when the partition heals',
-          'The {A, B, C} side keeps committing; writes on the {D, E} side never commit, so the logs cannot diverge',
-          'Both sides refuse writes until the partition heals',
+          '{A, B, C} keeps committing; writes on {D, E} never commit',
+          'Both sides refuse writes until the partition heals and logs match',
           'The side with the most recent leader wins, whatever its size',
         ],
         answer: 1,
@@ -1745,10 +1755,10 @@ partition {A,B,C} | {D,E}
         prompt:
           'A team runs a 3-node etcd cluster with one node in Europe, one in the US and one in Asia. Kubernetes feels slow. What is the cause and the usual fix?',
         options: [
-          'etcd is slow; replace it with a faster store',
-          'Too few nodes; add two more in each region',
-          'Heartbeats are too frequent; raise the heartbeat interval',
-          'Every write waits for a cross-ocean round trip to a second node; put the three nodes in one region, in three availability zones',
+          'etcd is slow by design; replace it with a faster key-value store',
+          'Too few nodes to share the load; add two more nodes in each region so reads are local',
+          'Heartbeats are too frequent across the oceans; raise the heartbeat interval to cut traffic',
+          'Writes wait for a cross-ocean round trip; move all three to one region, three zones',
         ],
         answer: 3,
         explanation:
@@ -1759,10 +1769,10 @@ partition {A,B,C} | {D,E}
         prompt:
           'In the Lab (5 nodes) you kill three followers one after the other while writes flow. What do you see?',
         options: [
-          'Writes keep committing, just more slowly',
-          'The leader steps down after the first crash',
-          'Writes commit while 2 are down; after the third crash new entries stay dashed and writes time out',
-          'The cluster elects a second leader to share the load',
+          'Writes keep committing, just more slowly with each crash',
+          'The leader steps down after the first follower crash',
+          'Writes commit with 2 down; after the third crash they time out',
+          'The cluster elects a second leader to share the load of the crashed nodes',
         ],
         answer: 2,
         explanation:
@@ -1772,9 +1782,9 @@ partition {A,B,C} | {D,E}
         id: 'cons-6',
         prompt: 'A team wants to store 50,000 user click events per second in etcd, "because it never loses data". Good idea?',
         options: [
-          'No - every write pays a majority round trip and lands on every node; consensus stores are built for small critical metadata, so use a log like Kafka or a database',
-          'Yes - consensus makes it the safest place for any data',
-          'Yes, if the cluster has 7 nodes',
+          'No - consensus stores are for small critical metadata; use a log like Kafka',
+          'Yes - consensus makes it the safest place for any data that must not be lost',
+          'Yes, if the cluster grows to 7 nodes so the writes spread over more machines',
           'Yes, if heartbeats are turned off for speed',
         ],
         answer: 0,
@@ -1785,10 +1795,10 @@ partition {A,B,C} | {D,E}
         id: 'cons-7',
         prompt: 'To make writes faster, someone proposes committing an entry once any 2 of the 5 nodes store it. What breaks?',
         options: [
-          'Nothing - 2 copies already survive one crash',
-          'Two groups of 2 that share no node could each commit a different entry at the same index, so the replicas disagree',
-          'Reads become slower',
-          'Leader election stops working',
+          'Nothing - 2 copies already survive one crash, which is the goal',
+          'Two disjoint pairs could commit different entries at the same index',
+          'Reads become slower, since they must check more nodes',
+          'Leader election stops working, so no new leader can ever be chosen',
         ],
         answer: 1,
         explanation:
@@ -1799,10 +1809,10 @@ partition {A,B,C} | {D,E}
         prompt:
           'The leader stores a write on 3 of 5 nodes, commits it, and crashes before replying to the client. The client times out. What happened to the write?',
         options: [
-          'It is lost, because the client got no answer',
-          'It is rolled back by the next leader',
+          'It is lost, because the client never received an answer',
+          'It is rolled back by the next leader, since no client was ever told it succeeded',
           'It is committed only if the old leader restarts',
-          'It is committed and survives: the new leader must hold it - so the client should retry with a request id, to avoid applying it twice',
+          'It is committed and survives - so the client retries with a request id',
         ],
         answer: 3,
         explanation:
@@ -1813,9 +1823,9 @@ partition {A,B,C} | {D,E}
         prompt:
           'In the Lab you choose "Cut off the leader". The old leader keeps appending the writes it receives, shown dashed. What happens to those entries when you heal the partition?',
         options: [
-          'The new leader log overwrites them - they were never committed, and their clients already timed out',
-          'They are merged into the new leader log',
-          'They are committed, because the old leader accepted them first',
+          'The new leader log overwrites them - they were never committed',
+          'They are merged into the new leader log at the next index',
+          'They are committed, because the old leader accepted them before the new one existed',
           'The new leader steps down and adopts them',
         ],
         answer: 0,
@@ -1826,10 +1836,10 @@ partition {A,B,C} | {D,E}
         id: 'cons-10',
         prompt: 'A bug makes one node acknowledge entries it never stored. Does Raft protect the cluster?',
         options: [
-          'Yes - the majority vote filters out any bad node',
+          'Yes - the majority vote filters out any bad node, since the other nodes outvote it',
           'Yes, as long as the cluster has 5 nodes',
-          'No - Raft and Paxos assume nodes fail by stopping, not by lying; tolerating that needs a Byzantine fault tolerant protocol',
-          'No, but adding an even number of nodes fixes it',
+          'No - Raft assumes nodes stop, not lie; that needs Byzantine fault tolerance',
+          'No, but adding an even number of nodes lets the honest ones outvote the liar every time',
         ],
         answer: 2,
         explanation:
@@ -1840,10 +1850,10 @@ partition {A,B,C} | {D,E}
         prompt:
           'A 5-node cluster: the leader round trip to its four followers is 1 ms, 1 ms, 2 ms and 40 ms (one follower is far away). About how long does a write take to commit, ignoring disk?',
         options: [
-          'About 40 ms - the slowest follower',
+          'About 40 ms - it waits for the slowest follower to answer',
           'About 1 ms - it needs the 2 fastest followers',
-          'About 44 ms - the sum of all round trips',
-          'About 0 ms - the leader commits alone',
+          'About 44 ms - the sum of all four follower round trips',
+          'About 0 ms - the leader commits alone, then replicates',
         ],
         answer: 1,
         explanation:
@@ -1856,8 +1866,8 @@ partition {A,B,C} | {D,E}
         options: [
           'The partition corrupted the leader log',
           'The leader crashed during the partition without anyone noticing',
-          'Rejoining nodes always become the new leader',
-          'While cut off, they kept timing out and raising their term; the higher term forces the leader to step down. Pre-vote (on by default in etcd since 3.5) makes a node check it could win before raising its term',
+          'Rejoining nodes always take over, since their logs are newer than the leader log',
+          'They raised their term on each timeout, which unseats the leader; pre-vote stops it',
         ],
         answer: 3,
         explanation:
@@ -1951,8 +1961,8 @@ at-least-once delivery + idempotent processing = exactly-once effect`,
         id: 'idem-1',
         prompt: 'A client times out after POST /orders and retries. Two orders are created. What is the fix?',
         options: [
-          'Increase the client timeout',
-          'Accept an idempotency key and return the original result for repeats',
+          'Increase the client timeout so the first response always arrives in time',
+          'Accept an idempotency key and replay the first result for repeats',
           'Use a distributed lock around order creation',
           'Switch to GET requests',
         ],
@@ -1979,10 +1989,10 @@ at-least-once delivery + idempotent processing = exactly-once effect`,
         prompt:
           'Your mobile app puts a fresh UUID in the Idempotency-Key header right before every HTTP call, retries included. Customers are still charged twice now and then. Why?',
         options: [
-          'UUIDs collide too often for payments',
+          'Random UUIDs collide now and then at the volume a payment system handles',
           'The keys table is too slow to answer in time',
-          'Each retry carries a key the server has never seen, so it is a new payment',
-          'The server must also compare the amount',
+          'Each retry has a key the server never saw, so it is a new payment',
+          'The server must also compare the amount and card, or it cannot spot a repeat',
         ],
         answer: 2,
         explanation:
@@ -1993,9 +2003,9 @@ at-least-once delivery + idempotent processing = exactly-once effect`,
         prompt:
           'A user double-taps Pay. Both requests carry the same key and arrive 100 ms apart, while the first is still charging the card. What should the second request get?',
         options: [
-          'A second charge, because the first has not finished',
-          'The stored result of the first request',
-          'Nothing at all - the server drops it silently',
+          'A second charge, because the first has not finished yet',
+          'The stored result of the first request, replayed as usual',
+          'Nothing at all - the server drops the duplicate silently',
           '409 Conflict - the key is in progress, retry shortly',
         ],
         answer: 3,
@@ -2007,8 +2017,8 @@ at-least-once delivery + idempotent processing = exactly-once effect`,
         prompt:
           'A handler inserts the key as in progress, writes the charge row and commits, then marks the key completed in a second transaction. The process crashes between the two commits. What happens when the client retries?',
         options: [
-          'The key is found completed and the stored result is replayed',
-          'The key is stuck in progress with no stored result, so the retry can never be answered from it',
+          'The key is found completed, so the stored result is replayed to the client',
+          'The key is stuck in progress with no stored result to replay',
           'The database rolls back the charge',
           'Nothing, because the client already has the response',
         ],
@@ -2021,9 +2031,9 @@ at-least-once delivery + idempotent processing = exactly-once effect`,
         prompt:
           'PUT /carts/42/items appends the item in the body to the cart. A proxy retries the PUT after a timeout. What happens?',
         options: [
-          'The item is added once, because HTTP makes PUT idempotent',
-          'The proxy never retries a PUT',
-          'The item is added twice: the handler breaks the idempotent meaning of PUT that the proxy relied on',
+          'The item is added once, because HTTP makes every PUT idempotent by definition',
+          'Nothing, because a proxy never retries a PUT once the request has reached the server',
+          'The item is added twice: the handler is not idempotent, whatever the method',
           'The server returns 409',
         ],
         answer: 2,
@@ -2049,9 +2059,9 @@ at-least-once delivery + idempotent processing = exactly-once effect`,
           'A consumer reads "add 10 loyalty points" messages from a queue with at-least-once delivery. After a crash and redelivery, some customers got 20 points. What fixes it?',
         options: [
           'Acknowledge each message before processing it',
-          'Store each message id in a processed table in the same transaction as the points, and skip ids already seen',
-          'Add more consumers so crashes matter less',
-          'Retry the points update until it succeeds',
+          'Record each message id with the points in one transaction and skip repeats',
+          'Add more consumers so a single crash affects fewer messages',
+          'Retry the points update until it succeeds, so no crash is visible',
         ],
         answer: 1,
         explanation:
@@ -2062,10 +2072,10 @@ at-least-once delivery + idempotent processing = exactly-once effect`,
         prompt:
           'Your server keeps idempotency keys for 24 hours. A phone that was offline for 3 days comes back and retries a payment with its original key. What happens?',
         options: [
-          'The stored result is replayed, since keys identify the intent',
-          'The request is rejected with 409',
+          'The stored result is replayed, since the key identifies the intent forever',
+          'The request is rejected with 409, since the key is too old',
           'The phone generates a new key automatically',
-          'The key has been pruned, so the server treats it as a new payment and may charge again',
+          'The key was pruned, so the server sees a new payment and may charge again',
         ],
         answer: 3,
         explanation:
@@ -2076,10 +2086,10 @@ at-least-once delivery + idempotent processing = exactly-once effect`,
         prompt:
           'A client bug reuses the key of a 20 dollar payment from yesterday for a new 50 dollar payment today, inside the retention window. What should the server do?',
         options: [
-          'Replay the stored 20 dollar result',
-          'Charge 50 dollars under the same key',
-          'Reject the request, because its body differs from the original request for that key',
-          'Delete the old key and start again',
+          'Replay the stored 20 dollar result, since the key was already used',
+          'Charge 50 dollars and overwrite the stored result, since the new request is the latest',
+          'Reject it, because its body differs from the original request for that key',
+          'Delete the old key and start again, since the new request is newer',
         ],
         answer: 2,
         explanation:
@@ -2104,10 +2114,10 @@ at-least-once delivery + idempotent processing = exactly-once effect`,
         prompt:
           'After a failover, the monthly invoice job sometimes runs twice for the same month. What is the simplest guard that stays correct?',
         options: [
-          'A distributed lock around the job',
-          'A cron schedule that never overlaps',
-          'A unique constraint on (customer_id, month), treating the duplicate insert as already done',
-          'Logging a warning when the job runs twice',
+          'A distributed lock around the job, held for the whole run',
+          'A cron schedule that never overlaps, with runs 24 hours apart',
+          'A unique constraint on (customer_id, month); a duplicate insert counts as done',
+          'Logging a warning when the job runs twice, so someone can refund the duplicate',
         ],
         answer: 2,
         explanation:
