@@ -231,7 +231,7 @@ Fix: more workers, faster workers, or fewer messages.`,
     labFocus: 'kafka',
     keywords: ['log', 'partition', 'offset', 'consumer group', 'retention', 'ordering'],
     what: 'Kafka stores records in an append-only log split into partitions. Consumers track their own offset, so data is replayable and multiple independent consumer groups can read the same stream.',
-    why: 'When several systems need the same events, and you want to reprocess history after a bug or a new feature, a retained log beats a queue that deletes on acknowledgement.',
+    why: 'When several systems need the same events, and you want to reprocess history after a bug or a new feature, a retained log gives you that replay, which a queue that deletes on acknowledgement cannot.',
     how: [
       'Producers write to a topic; the partition is chosen by key (same key = same partition = ordered).',
       'Each partition is replicated; a leader handles writes and in-sync replicas follow.',

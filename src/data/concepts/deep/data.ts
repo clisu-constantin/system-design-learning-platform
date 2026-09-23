@@ -772,7 +772,7 @@ KEPT IN SYNC BY
       {
         heading: 'The cheapest large win for a read-heavy system',
         paragraphs: [
-          'Most applications read far more than they write - ratios of 10:1 to 1000:1 are typical. A read replica takes that dominant traffic off the primary, which then has spare capacity for the writes that only it can do. Adding two replicas can triple effective read capacity with no application redesign beyond routing.',
+          'Most applications read far more than they write - ratios of 10:1 to 1000:1 are typical. A read replica takes that dominant traffic off the primary, which then has spare capacity for the writes that only it can do. Adding two replicas can triple effective read capacity when the primary keeps serving a share of the reads too with no application redesign beyond routing.',
           'Replicas also let you isolate workloads that behave badly. Analytics queries, exports, and the nightly report that scans a year of data can run on a dedicated replica where a slow query cannot lock, saturate or evict cache on the machine serving customers.',
           'And they double as standby nodes. A replica that is already streaming changes can be promoted on failure, so the same machines that serve reads also provide your failover path - which is why read replicas are usually the first thing added after a single instance.',
         ],

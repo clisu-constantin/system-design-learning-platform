@@ -21,7 +21,7 @@ export const distributedDepth: DepthMap = {
 
 PARTITION: node A and node B cannot talk
 
-  CP  both refuse writes they cannot confirm
+  CP  the side without a majority refuses what it cannot confirm
       -> no wrong answers, some requests fail
       -> banking, inventory, unique constraints
 
@@ -179,7 +179,7 @@ the middle three.`,
       {
         heading: 'Measuring it: nines, error budgets and what counts as down',
         paragraphs: [
-          'Availability is the fraction of requests (or of time) where the system responds successfully. Expressed as nines: 99.9 percent allows about 8.8 hours of downtime per year, 99.99 percent allows 52 minutes, 99.999 percent allows five minutes - less than one human reaction.',
+          'Availability is the fraction of requests (or of time) where the system responds successfully. Expressed as nines: 99.9 percent allows about 8.8 hours of downtime per year, 99.99 percent allows about 52.6 minutes, 99.999 percent allows five minutes - less than one human reaction.',
           'Request-based measurement is usually more honest than time-based. A system that returns errors for 5 percent of requests all day is not down by a time-based measure, but users experience it as broken. Counting good requests over total requests captures partial failures, which are far more common than total ones.',
           'The error budget flips the number into something a team can use. If the target is 99.9 percent, you may fail 0.1 percent of requests this quarter. Spend it on deploys and experiments while it lasts; when it is exhausted, stop shipping risky changes and fix reliability. That converts availability from an aspiration into a decision rule.',
         ],
@@ -242,7 +242,7 @@ This is why: fewer hard dependencies, more redundant copies.`,
       { term: 'Hard vs soft dependency', plain: 'One whose failure fails the request, versus one you can degrade around.' },
       { term: 'Graceful degradation', plain: 'Serving a reduced but useful response when a part is unavailable.' },
       { term: 'Correlated failure', plain: 'Redundant components failing together because they share a rack, zone or config.' },
-      { term: 'MTTR', plain: 'Mean time to recovery. For availability, reducing it usually beats reducing failure frequency.' },
+      { term: 'MTTR', plain: 'Mean time to recovery. It counts as much as MTBF, and it is often the cheaper one to improve.' },
     ],
     remember: [
       'Serial dependencies multiply availability down; redundant copies multiply it up.',

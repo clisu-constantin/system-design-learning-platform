@@ -718,8 +718,9 @@ This is the AWS-recommended default. Use it unless you have a reason not to.`,
   failing this = restart me
 
 GET /readyz    (readiness)
-  check: can I serve? DB pool has a connection, cache reachable,
+  check: can I serve? local DB pool has a connection,
          startup complete, not shedding load
+  do NOT check soft dependencies (the cache): degrade instead
   failing this = stop sending me traffic, but let me live
 
 GET /startupz  (startup)

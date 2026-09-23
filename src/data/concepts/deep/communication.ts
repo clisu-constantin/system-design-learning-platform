@@ -178,7 +178,7 @@ instead of 3 in a row.`,
     analogy: {
       title: 'A shared, pre-agreed order form',
       body:
-        'Instead of writing a letter in prose and hoping the other office interprets it, both sides agree on a numbered form in advance. Filling it in is fast, it is compact to send, and nobody can submit a form with a field the other side does not know about. If the form changes, both offices must be given the new template - which is the cost of the efficiency.',
+        'Instead of writing a letter in prose and hoping the other office interprets it, both sides agree on a numbered form in advance. Filling it in is fast and it is compact to send. Because every box has a fixed number, an office still on the old form simply skips a box it does not recognise, so the form can grow without breaking anyone. But a box must never be renumbered or reused - and both offices must agree the form in advance, which is the cost of the efficiency.',
     },
     deepDive: [
       {

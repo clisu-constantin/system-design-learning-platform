@@ -118,7 +118,7 @@ Independent groups, independent progress, no copying of data.`,
         heading: 'Why teams choose it: throughput and replay',
         paragraphs: [
           'Kafka achieves very high throughput by doing simple things: sequential disk writes (which are surprisingly fast), batching, zero-copy transfer to the network, and no per-message state to track beyond an offset. Hundreds of thousands of messages per second per broker is ordinary rather than exceptional.',
-          'Replay is the feature that changes architectures. Because the log is retained, a new service can be deployed and read a month of history to build its own state, a bug in a consumer can be fixed and the affected range reprocessed, and a rebuilt search index can be repopulated without touching the source database.',
+          'Replay is the feature that changes architectures. Because the log is retained, a new service can be deployed and read the whole retained history (7 days by default) to build its own state, a bug in a consumer can be fixed and the affected range reprocessed, and a rebuilt search index can be repopulated without touching the source database.',
           'This is what makes Kafka the backbone of event-driven systems rather than merely a fast queue. Several consumer groups read the same events for different purposes - billing, analytics, search indexing, notifications - and adding a new consumer requires no change to the producer at all.',
         ],
         bullets: [

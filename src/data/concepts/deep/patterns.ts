@@ -22,7 +22,8 @@ export const patternsDepth: DepthMap = {
              each feed read = 1 lookup of a built list
   on read:   5 writes/day, one row per post
              each feed read merges every account the
-             reader follows (say 200 queries)
+             reader follows: 1 follow-list lookup
+             + 200 post queries = 201 queries
 
 celebrity, 50,000,000 followers, 20 posts/day
   on write:  1,000,000,000 writes/day for ONE account

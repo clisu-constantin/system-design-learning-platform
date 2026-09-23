@@ -2048,13 +2048,13 @@ Denormalized:     posts.like_count  (maintained on write)
           'A primary runs at 85% CPU, and 90% of its queries are SELECTs that tolerate a second of staleness. You add two read replicas and route those SELECTs to them. What happens?',
         options: [
           'Nothing changes - replicas only help during a failover',
-          'The primary CPU drops sharply and read capacity roughly triples, while writes still all go to the primary',
+          'The primary CPU drops sharply and the two replicas carry the read load, while writes still all go to the primary',
           'Write capacity triples',
           'Reads get slower because they cross the network to a replica',
         ],
         answer: 1,
         explanation:
-          'The dominant load moves off the primary, and three machines now answer reads. Write capacity does not change at all - every write still lands on the primary and is replayed by each replica. Extra network hops to a replica are the same as to the primary.',
+          'The dominant load moves off the primary, and two replicas now answer those reads. Write capacity does not change at all - every write still lands on the primary and is replayed by each replica. Extra network hops to a replica are the same as to the primary.',
       },
       {
         id: 'rr-2',

@@ -419,7 +419,7 @@ write arrives at A:
   {
     slug: 'availability',
     title: 'Availability',
-    tagline: 'The share of time the system answers correctly - and what it takes to raise it.',
+    tagline: 'The share of time the system answers successfully - and what it takes to raise it.',
     category: 'distributed',
     difficulty: 'Beginner',
     lab: 'redundancy',

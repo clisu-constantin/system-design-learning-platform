@@ -194,7 +194,7 @@ start with RBAC; move to ReBAC when sharing and hierarchy appear.`,
         ],
         code: {
           caption: 'What a token contains, and what to verify',
-          body: `header   {"alg":"RS256","kid":"2026-09"}
+          body: `header   {"alg":"RS256","kid":"2023-09"}
 payload  {"sub":"user_42","iss":"https://auth.example.com",
           "aud":"api.example.com","exp":1695032100,
           "iat":1695031200,"scope":"read:orders"}
