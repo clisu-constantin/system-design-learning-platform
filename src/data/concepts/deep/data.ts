@@ -99,7 +99,7 @@ FIX 3 optimistic version
       {
         heading: 'NoSQL is four different things, not one',
         paragraphs: [
-          'Lumping them together causes most of the confusion. Key-value stores (Redis, DynamoDB) map a key to a blob and are essentially a distributed hash map. Document stores (MongoDB) hold JSON documents and can index fields inside them. Wide-column stores (Cassandra, HBase) are built around a partition key plus a sorted clustering key, optimised for enormous write volume. Graph databases (Neo4j) store relationships as first-class objects for traversal queries.',
+          'Lumping them together causes most of the confusion. Key-value stores (Redis, DynamoDB) map a key to a value and behave like a hash map, usually spread over many machines. Document stores (MongoDB) hold JSON documents and can index fields inside them. Wide-column stores (Cassandra, HBase) are built around a partition key plus a sorted clustering key, optimised for enormous write volume. Graph databases (Neo4j) store relationships as first-class objects for traversal queries.',
           'They share one design philosophy: give up some of what a relational database offers - joins, arbitrary queries, strong multi-row transactions - in exchange for horizontal scalability and a data model that matches a specific access pattern exactly.',
           'So the useful question is never "SQL or NoSQL". It is "which of these four shapes matches how I read and write this data, and can I live with what it cannot do?"',
         ],
@@ -178,7 +178,7 @@ graph         (user42)-[:ORDERED]->(order9)   traverse relationships`,
       {
         heading: 'Ask about access patterns, not about scale',
         paragraphs: [
-          'Most teams choose a database on an imagined future scale and regret it. The better question is the shape of the queries. If you mostly fetch one object by a known id, almost anything works. If you need to answer questions that combine several entities - and especially questions you cannot list today - relational wins decisively.',
+          'Most teams choose a database on an imagined future scale and regret it. The better question is the shape of the queries. If you mostly fetch one object by a known id, almost anything works. If you need to answer questions that combine several entities - and especially questions you cannot list today - a relational store is the low-effort fit, because it runs the join where the data lives.',
           'The second question is about transactions: does any single user action have to change several things atomically? Orders, payments, bookings and inventory almost always do. Feeding that requirement into a store without multi-object transactions means implementing sagas and compensations, which is a large amount of hand-written correctness work.',
           'Only the third question is scale, and be honest about the numbers. A single Postgres instance on decent hardware handles tens of thousands of transactions per second and terabytes of data. Most products never reach that, and the ones that do usually reach it for one table, not the whole database.',
         ],
