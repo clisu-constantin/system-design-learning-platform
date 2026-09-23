@@ -3,8 +3,6 @@
     "what-is-system-design",
     "functional-requirements",
     "non-functional-requirements",
-    "capacity-estimation",
-    "back-of-the-envelope",
     "what-happens-when-you-type-a-url",
     "vertical-scaling",
     "horizontal-scaling",
@@ -88,7 +86,6 @@
   ],
   "labs": [
     "requirements",
-    "capacity",
     "url-journey",
     "indexing",
     "retry-backoff",
