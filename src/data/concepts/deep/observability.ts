@@ -415,7 +415,7 @@ SYMPTOM-BASED (few, meaningful)
         heading: 'Thresholds, duration and burn rate',
         paragraphs: [
           'A threshold alone produces flapping: a metric hovering around the line fires and resolves repeatedly. Require the condition to hold for a duration - five minutes is a common default - so momentary spikes are ignored while genuine problems still page quickly.',
-          'Error budget burn rate is the more sophisticated version, and it is worth adopting once you have SLOs. Instead of a fixed threshold, alert on how fast you are consuming your allowed failures: burning at 14 times the normal rate over an hour is urgent, while burning at 2 times over six hours is a ticket. This automatically distinguishes a sudden outage from a slow degradation.',
+          'Error budget burn rate is the more sophisticated version, and it is worth adopting once you have SLOs. Instead of a fixed threshold, alert on how fast you are consuming your allowed failures. Burning at 14.4 times the sustainable rate for an hour spends 2 percent of a 30-day budget in that hour and would empty it in about two days - that pages, and so does 6 times sustained over six hours. Burning at 1 times for three days would empty it exactly at the end of the 30 days - that is a ticket. This automatically distinguishes a sudden outage from a slow degradation.',
           'Also suppress the noise created by your own alerts. Grouping (one notification for fifty pods with the same problem), inhibition (do not page for a downstream symptom when the upstream cause is already paging) and maintenance windows are what keep an incident from producing forty separate notifications.',
         ],
       },
