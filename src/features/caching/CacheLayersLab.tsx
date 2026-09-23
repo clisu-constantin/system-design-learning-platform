@@ -66,14 +66,15 @@ const DEFAULT_SETUP: Setup = {
 
 /**
  * The Lab focus of each Concept that hosts this lab.
- * Database caching opens with no app cache and no view, on a buffer pool too small for the
- * orders table, so the first thing on screen is pages coming from disk. Raising the buffer
- * pool, or turning the view on, is the lesson.
+ * Database caching opens on the two database layers: no app cache, the materialized view on,
+ * and a buffer pool too small for the orders table - small enough only for the view. Turning
+ * the view off shows what it was saving: every read sums the order rows again, the working set
+ * outgrows the pool and pages come from disk. Raising the buffer pool is the other fix.
  * Application caching opens with a long local TTL, a database that fits in memory (so the
  * database is not the story) and enough orders that the three copies drift apart.
  */
 const FOCUS_SETUPS: Record<LabFocus<'cache-layers'>, Setup> = {
-  'database-caching': { ...DEFAULT_SETUP, localCache: false, view: false, bufferPages: 4000 },
+  'database-caching': { ...DEFAULT_SETUP, localCache: false, view: true, bufferPages: 4000 },
   'application-caching': { ...DEFAULT_SETUP, localTtl: 30, writes: 5, view: false, bufferPages: 24000 },
 };
 
@@ -631,7 +632,8 @@ function insightFor({ setup, saturated, localHitRate, staleRate, staleFromView, 
         Each read now touches 1 page of the view instead of {PAGES_PER_PRODUCT} pages of the orders table, so the whole
         view ({VIEW_PAGES} pages) stays in the buffer pool and the database does a fraction of the work. The price is
         freshness: the view is only as current as its last refresh, and {formatPercent(staleFromView, 1)} of reads got
-        an old total. Hot products get the most orders, so they go stale first.
+        an old total. Hot products get the most orders, so they go stale first. Turn the view off to see what it
+        saves at a buffer pool of {formatNumber(setup.bufferPages)} pages.
       </>
     );
   }

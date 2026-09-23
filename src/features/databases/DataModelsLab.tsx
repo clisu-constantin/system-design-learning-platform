@@ -273,13 +273,15 @@ export function DataModelsLab({ focus }: LabProps<'data-models'>) {
           } else spawn(['app', cart, 'app', product, 'app', order, 'app'], 'success', 2.4);
         }
       }
+      // Only a store on screen runs checkouts, so a hidden side counts nothing
+      // and does not come back with a total it was never seen building.
       const done = checkouts * dt * crashRate;
-      sim.rolledBackSql += done * (1 - checkout.sql.errorRate);
-      if (docTransactions) sim.rolledBackDoc += done * (1 - checkout.doc.errorRate);
-      else {
+      if (showSql) sim.rolledBackSql += done * (1 - checkout.sql.errorRate);
+      if (showDoc && docTransactions) sim.rolledBackDoc += done * (1 - checkout.doc.errorRate);
+      else if (showDoc) {
         const before = Math.floor(sim.partialOrders / 100);
         sim.partialOrders += done * (1 - checkout.doc.errorRate);
-        if (showDoc && Math.floor(sim.partialOrders / 100) > before)
+        if (Math.floor(sim.partialOrders / 100) > before)
           log(`${formatNumber(sim.partialOrders)} half-done checkouts: stock reserved, no order written`, 'danger');
       }
       trackOverload(checkout.sql.saturated, checkout.doc.busiest >= 1);
@@ -655,10 +657,10 @@ function GroupFrames({ view, partitions }: { view: View; partitions: number }) {
             rx={14}
             fill="none"
             strokeDasharray="6 6"
-            className="stroke-[rgb(var(--c-line))]"
+            className="stroke-line"
             strokeWidth={1.5}
           />
-          <text x={frame.x + 12} y={417} className="fill-[rgb(var(--c-faint))]" style={{ fontSize: 10.5 }}>
+          <text x={frame.x + 12} y={417} className="fill-faint" style={{ fontSize: 10.5 }}>
             {frame.label}
           </text>
         </g>
@@ -755,7 +757,7 @@ function metricRows(setup: Setup, results: Results, sim: SimState): Row[] {
         },
         {
           label: 'Half-done checkouts',
-          hint: 'Stock reserved but no order written, since the lab started. Each one is a support ticket or a clean-up job.',
+          hint: 'Stock reserved but no order written, counted while that store is on screen and running checkouts. Each one is a support ticket or a clean-up job.',
           sql: { value: `0 (${formatNumber(sim.rolledBackSql)} rolled back)`, tone: 'ok' },
           doc: setup.docTransactions
             ? { value: `0 (${formatNumber(sim.rolledBackDoc)} rolled back)`, tone: 'ok' }

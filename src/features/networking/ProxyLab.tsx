@@ -73,13 +73,16 @@ const PLACEMENTS: { value: Placement; label: string }[] = [
 /**
  * Addresses from the documentation ranges (RFC 5737), plus private ones inside the
  * server network. Simplified: each laptop has its own public address (no NAT).
+ * Without a reverse proxy nothing sits in front of the two app servers, so each has
+ * its own public address and DNS for shop.example returns both (round robin). The
+ * proxy pair shares one floating address that only one of them holds at a time.
  */
 const IP = {
   laptops: ['198.51.100.21', '198.51.100.22'],
   forwardProxy: '198.51.100.1',
   reverseProxyPublic: '192.0.2.10',
   reverseProxyInside: '10.0.0.2',
-  appPublic: '192.0.2.50',
+  appPublic: '192.0.2.50-51',
   appPrivate: '10.0.1.5-6',
 } as const;
 
@@ -172,7 +175,7 @@ function describe(setup: Setup) {
         : 'The app server addresses, from the laptops';
   const laptopsConnectTo =
     placement === 'none'
-      ? `shop.example = ${IP.appPublic}, the app itself`
+      ? `shop.example = ${IP.appPublic}, DNS round robin across the two app servers`
       : placement === 'client'
         ? `The proxy at ${IP.forwardProxy}, asking for shop.example`
         : `shop.example = ${IP.reverseProxyPublic}, the proxy`;
@@ -521,7 +524,8 @@ export function ProxyLab({ focus }: LabProps<'proxy'>) {
               <p className="mt-3 text-[11px] text-faint">
                 peer is the address of the TCP connection that reached the app; xff is the X-Forwarded-For header, when
                 a proxy adds one. Addresses are documentation examples, and each laptop is given its own public address
-                (no NAT) to keep the picture simple.
+                (no NAT) to keep the picture simple. The two proxies share one floating address; without a reverse proxy
+                each app server has its own public address.
               </p>
             </div>
           </div>
@@ -642,7 +646,8 @@ function insightFor(setup: Setup, view: ReturnType<typeof describe>, hitRate: nu
   if (setup.placement === 'none') {
     return (
       <>
-        No proxy: each laptop opens its own TLS connection to shop.example, and the app servers log two caller
+        No proxy: DNS gives shop.example both app server addresses, {IP.appPublic}, so each app server is exposed
+        on the internet. Each laptop opens its own TLS connection to one of them, and the app servers log two caller
         addresses, {IP.laptops[0]} and {IP.laptops[1]}. Move the proxy to the client side to hide the laptops, or to
         the server side to hide the app servers.
       </>
