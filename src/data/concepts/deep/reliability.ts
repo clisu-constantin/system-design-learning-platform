@@ -803,24 +803,26 @@ GET /startupz  (startup)
         ],
         code: {
           caption: 'Strategies, and what they cost',
-          body: `strategy         RTO         RPO        relative cost
-backup/restore   hours-days  hours      lowest
-pilot light      10s of min  minutes    low (data replicated, compute off)
-warm standby     minutes     seconds    medium (scaled-down copy running)
-active-active    seconds     ~zero      highest (full second region live)
+          body: `strategy         RTO          RPO (region lost)  relative cost
+backup/restore   hours        backup interval    lowest (copies only)
+pilot light      10s of min   seconds            low (data replicated, apps off)
+warm standby     minutes      seconds            medium (small copy running)
+hot standby /    minutes      seconds, or 0      highest (full second region)
+active-active    or less      with sync
 
+a bad write or DROP TABLE: every strategy restores from backup.
 pick per system, not per company.`,
         },
       },
       {
         heading: 'Backups: the 3-2-1 rule and the only test that counts',
         paragraphs: [
-          'Three copies of the data, on two different media or systems, with one offsite and ideally offline or immutable. The offline copy is what protects you from ransomware and from a compromised account deleting your backups - an increasingly common failure that replication and even versioned storage do not cover.',
+          'The 3-2-1 rule: three copies of the data, on two different media or systems, with one offsite - and ideally one offline or immutable. The offline copy is what protects you from ransomware and from a compromised account deleting your backups - an increasingly common failure that replication and even versioned storage do not cover.',
           'A backup that has never been restored is not a backup, it is a file. Restores fail for mundane reasons: a missing encryption key, an incompatible version, a corrupted archive, a dependency the restore script assumes. Schedule restore tests, measure how long they take, and use that measured number as your real RTO rather than an optimistic estimate.',
           'Also check the retention window against the detection window. If a corruption is noticed after 10 days and you keep 7 days of backups, every copy contains the corruption. For destructive-error protection specifically, a delayed replica - one deliberately kept hours behind - is a cheap and very effective complement.',
         ],
         bullets: [
-          '3 copies, 2 media, 1 offsite and immutable.',
+          '3 copies, 2 media, 1 offsite - and one offline or immutable if you can.',
           'Test restores on a schedule; the measured time is your RTO.',
           'Retention must exceed your realistic detection time.',
           'Back up the configuration, secrets and infrastructure definitions too, not just the data.',
@@ -832,7 +834,7 @@ pick per system, not per company.`,
         paragraphs: [
           'Teams practise restoring a database and discover, during a real event, that they cannot deploy the application because the CI system was in the failed region, the container registry is unreachable, the secrets manager is down, or DNS is managed by an account nobody can access. Disaster recovery covers the whole ability to operate, not the data alone.',
           'Infrastructure as code is what makes this tractable: if the environment can be recreated from a repository, recovery is a pipeline run rather than an archaeology project. The repository itself, the secrets, and the DNS control must all be reachable from outside the failed region.',
-          'Finally, write the plan down and make it executable by someone who did not design the system. Include the decision criteria for declaring a disaster, who is authorised to do so, the order of restoration for dependent services, and how to verify the system is actually correct afterwards. Then run a game day against it, because a plan that has never been executed contains an average of several wrong assumptions.',
+          'Finally, write the plan down and make it executable by someone who did not design the system. Include the decision criteria for declaring a disaster, who is authorised to do so, the order of restoration for dependent services, and how to verify the system is actually correct afterwards. Then run a game day against it, because a plan that has never been executed almost always contains wrong assumptions.',
         ],
       },
     ],

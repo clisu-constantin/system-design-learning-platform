@@ -69,7 +69,6 @@
     "retry",
     "exponential-backoff",
     "health-checks",
-    "disaster-recovery",
     "authentication",
     "authorization",
     "jwt",

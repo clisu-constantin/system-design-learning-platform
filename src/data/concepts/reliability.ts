@@ -406,32 +406,237 @@ Balance: check dependencies, but fail open when every instance would fail.`,
     tagline: 'RPO and RTO: how much data you can lose, and how long you can be down.',
     category: 'reliability',
     difficulty: 'Advanced',
-    keywords: ['rpo', 'rto', 'backup', 'restore', 'region failure', 'runbook'],
+    lab: 'disaster-recovery',
+    keywords: ['rpo', 'rto', 'backup', 'restore', 'region failure', 'runbook', 'pilot light', 'warm standby', 'hot standby', '3-2-1'],
     what: 'Disaster recovery is the plan and capability to restore service after a large failure: a corrupted dataset, a deleted resource, or the loss of a whole region.',
-    why: 'High availability handles component failure. It does not help when a migration deletes a table or an entire region becomes unreachable - replication copies that faithfully.',
+    why: 'High availability handles component failure. It does not help when a migration deletes a table or an entire region becomes unreachable - replication copies the bad write faithfully, and the standby in the next zone sits in the same region.',
     how: [
-      'Define RPO (acceptable data loss) and RTO (acceptable downtime) per system.',
-      'Take backups, store them in a separate account/region, and test restores on a schedule.',
-      'Keep point-in-time recovery for logical errors, not just snapshots.',
-      'Write and rehearse the runbook - an untested plan is a hypothesis.',
+      'Set RPO (how much data you may lose) and RTO (how long you may be down) per system.',
+      'Take backups, store them in a separate account and region, and keep them longer than it takes to notice corruption.',
+      'Replicate to a second region when hours of restore are too slow: pilot light, warm standby or hot standby, by how much already runs there.',
+      'Write and rehearse the runbook - the time a real restore drill took is your RTO.',
     ],
-    diagram: `RPO 5 min  -> continuous backup / log shipping
-RTO 1 hour -> pre-provisioned standby, automated restore
+    when: [
+      'Every system that stores data someone would miss: at least backups in another account and region.',
+      'A second region (pilot light or warmer) when the business cannot wait hours for a restore.',
+      'Synchronous cross-region replication only where losing seconds of writes is not acceptable, such as a payments ledger.',
+    ],
+    advantages: [
+      'Survives what high availability cannot: a lost region, a deleted table, ransomware.',
+      'Turns data loss and downtime into two numbers the business chose, RPO and RTO.',
+    ],
+    diagram: `strategy          RTO           RPO (region lost)
+backup/restore    hours         the backup interval
+pilot light       10s of min    seconds (async replica)
+warm standby      minutes       seconds (async replica)
+hot standby       minutes       seconds, or 0 with sync
 
-Backup that has never been restored = unverified hope.`,
+Bad write or DROP TABLE: every strategy restores
+from a backup. Replication copied the damage.`,
     tradeoffs: [
       {
-        approach: 'Warm standby in a second region',
-        gains: ['RTO in minutes', 'Region failure survivable'],
-        costs: ['Roughly double infrastructure cost', 'Data replication complexity and lag'],
+        approach: 'Backup and restore only',
+        gains: ['Lowest cost: storage for the copies, nothing running in region B', 'Also undoes a bad write, which replication would have copied'],
+        costs: ['RTO in hours: restoring a large database is slow', 'RPO up to the full backup interval', 'The restore path rots unless it is drilled'],
       },
       {
-        approach: 'Backup and restore only',
-        gains: ['Cheap', 'Simple to reason about'],
-        costs: ['RTO measured in hours', 'Restore path rarely exercised'],
+        approach: 'Pilot light (replicated database, app servers off)',
+        gains: ['RPO of seconds after a region loss', 'Low running cost: only the database runs in region B'],
+        costs: ['RTO in tens of minutes: app servers are deployed at failover', 'Replication copies corruption, so backups are still needed'],
+      },
+      {
+        approach: 'Warm standby (scaled-down copy running)',
+        gains: ['RTO in minutes: a small fleet already serves', 'Can be tested continuously, because it is running'],
+        costs: ['Paying for a running copy all the time', 'Must scale up at failover, which needs capacity in region B'],
+      },
+      {
+        approach: 'Hot standby or active-active (full size in region B)',
+        gains: ['Shortest RTO, often with automated failover', 'No scale-up at the worst moment'],
+        costs: ['Roughly double the infrastructure cost', 'An automated failover on a false alarm costs data and availability', 'Still needs backups for corruption'],
+      },
+      {
+        approach: 'Synchronous cross-region replication',
+        gains: ['RPO zero for a region loss: no acknowledged write is lost'],
+        costs: ['Every write waits a cross-region round trip, tens of milliseconds', 'If region B is unreachable, writes stall until it falls back to async'],
       },
     ],
-    mistakes: ['Backups in the same account and region as the primary, lost in the same event.'],
-    related: ['high-availability', 'replication', 'failover'],
+    mistakes: [
+      'Backups in the same account and region as the primary, lost in the same event.',
+      'Treating a replica as a backup: it copies a bad migration within seconds.',
+      'Retention shorter than the time it takes to notice corruption, so every copy holds it.',
+      'An RTO on paper that no restore drill has ever measured.',
+      'Restoring the data but not the ability to deploy: CI, registry, secrets and DNS lived in the lost region.',
+    ],
+    related: ['high-availability', 'replication', 'failover', 'redundancy'],
+    quiz: [
+      {
+        id: 'dr-1',
+        prompt:
+          'Backups run nightly at 02:00 and are copied to region B. There is no database replica. Region A is lost at 17:00. How much data is gone?',
+        options: [
+          'None - the backups are safe in region B',
+          'About 15 hours of writes - everything since the 02:00 backup',
+          'A full 24 hours - RPO always equals the backup interval',
+          'Only the requests in flight at 17:00',
+        ],
+        answer: 1,
+        explanation:
+          'Region B holds the data as it was at 02:00, so every write from 02:00 to 17:00 is gone - 15 hours. In the Lab, Data at risk climbs between backups and drops at each one. The tempting 24 hours is the worst case, when the region dies just before the next backup; the loss is the time since the last surviving copy.',
+      },
+      {
+        id: 'dr-2',
+        prompt:
+          'The database replicates asynchronously to region B. An engineer runs a migration that deletes half the orders table by mistake. What does the replica hold a minute later?',
+        options: [
+          'The same deleted rows - replication copied the delete within seconds',
+          'A clean copy - fail over to it and nothing is lost',
+          'A copy one backup interval old',
+          'Nothing - replication stops when it sees an error',
+        ],
+        answer: 0,
+        explanation:
+          'Replication copies every committed write, including a wrong one, so the replica is as broken as the primary. In the Lab, Ship a bad migration marks the standby Corrupted and recovery needs the restore. Failing over to the replica looks like the quick fix, but it only moves the damage to another region; only a backup from before the migration is clean.',
+      },
+      {
+        id: 'dr-3',
+        prompt:
+          'A team keeps hourly backups in the same cloud account and region as the database, with no replica. The region goes down for good. What can they restore?',
+        options: [
+          'Everything up to the last hourly backup',
+          'Everything, because backups are always replicated by the provider',
+          'Nothing - the backups were lost with the region they protected',
+          'Only the schema, not the data',
+        ],
+        answer: 2,
+        explanation:
+          'A copy in the same failure domain dies in the same event. In the Lab, backups in Region A plus Lose region A ends in "nothing to restore from". The tempting answer assumes the hourly backup survived; it would have, only if it lived in another region and ideally another account.',
+      },
+      {
+        id: 'dr-4',
+        prompt:
+          'A payments ledger must lose no acknowledged write even if a whole region is lost. Which setup gives that, and what does it cost?',
+        options: [
+          'Backups every 5 minutes to region B - costs a little storage',
+          'Async replication to region B - costs nothing extra per write',
+          'A warm standby of app servers in region B - costs running servers',
+          'Synchronous replication to region B - every write waits a cross-region round trip',
+        ],
+        answer: 3,
+        explanation:
+          'With synchronous replication a write is acknowledged only after region B has it, so a region loss loses no acknowledged write - the Lab shows Data at risk 0 and write latency up by about 70 ms. Async is the tempting answer because it is fast, but it trails by seconds and those seconds are lost. Frequent backups still lose up to 5 minutes, and app servers hold no data.',
+      },
+      {
+        id: 'dr-5',
+        prompt:
+          'In the Lab, pilot light (async replica, app servers off) recovers from a region loss in about 50 minutes. Which one change cuts the most time, and what does it cost?',
+        options: [
+          'Back up every 5 minutes instead of every hour - costs more storage',
+          'Keep a small fleet of app servers running in region B - costs paying for it all the time',
+          'Switch to synchronous replication - costs write latency',
+          'Move the backups to region A - costs nothing',
+        ],
+        answer: 1,
+        explanation:
+          'The slowest step of pilot light is deploying app servers (30 of the 50 minutes); a warm fleet only has to scale up, which brings RTO to about 25 minutes. Backup frequency and synchronous replication are tempting because they sound like recovery settings, but they change how much data you lose (RPO), not how long you are down (RTO).',
+      },
+      {
+        id: 'dr-6',
+        prompt:
+          'The runbook says RTO 1 hour. The first restore drill ever run took 7 hours for the 2 TB database, and the key was in a vault only one person could open. What RTO should the team plan with?',
+        options: [
+          'At least 7 hours, plus the time to find the key and repoint clients - until they make it faster',
+          '1 hour - the target is what they agreed with the business',
+          'Unknown - one drill is not enough data',
+          'About 1 hour, because a real incident gets everyone working faster',
+        ],
+        answer: 0,
+        explanation:
+          'The measured end-to-end restore is the honest RTO; the 1 hour target is a wish until a drill meets it. Toggle Runbook rehearsed off in the Lab and every recovery grows by the surprises nobody found. The tempting "keep the target" answer is how teams discover the real number during a real disaster.',
+      },
+      {
+        id: 'dr-7',
+        prompt:
+          'A company wants hot standby in a second region for every system, including an internal analytics warehouse that is rebuilt from source data each night. What is the problem?',
+        options: [
+          'None - the strictest setup everywhere is the safe choice',
+          'Hot standby cannot protect a warehouse',
+          'RPO and RTO should be set per system: the warehouse can accept backup and restore, and paying for a second full copy of it buys nothing the business needs',
+          'Analytics data does not need backups at all',
+        ],
+        answer: 2,
+        explanation:
+          'RPO and RTO are business decisions with a price, set per system. A warehouse that can be rebuilt overnight tolerates hours of RTO, so backup and restore fits; the Lab shows hot standby near 200 against 105 on the cost scale. Applying the strictest setup everywhere is the tempting safe answer, and it is how disaster recovery budgets get wasted.',
+      },
+      {
+        id: 'dr-8',
+        prompt:
+          'A bug has been silently corrupting customer records. It is noticed after 10 days. Backups are daily and kept for 7 days. What can the team restore?',
+        options: [
+          'The backup from 8 days ago, which is clean',
+          'Yesterday, then fix the few bad rows by hand',
+          'Any backup - a backup is a snapshot, so it is always clean',
+          'No clean copy - every backup they still have holds the corruption',
+        ],
+        answer: 3,
+        explanation:
+          'The corruption started 10 days ago and the oldest backup is 7 days old, so every copy they have already contains it. Retention must be longer than the realistic time to notice a problem. The tempting 8-day-old backup is exactly the one the 7-day retention deleted.',
+      },
+      {
+        id: 'dr-9',
+        prompt:
+          'A system runs hot standby with automated failover driven by health checks. A bad deploy starts writing wrong prices. What does the automated failover do?',
+        options: [
+          'Fails over within minutes and users get correct prices from region B',
+          'Nothing useful - health checks stay green, and region B has the same wrong prices anyway',
+          'Rolls back the deploy',
+          'Restores the last backup automatically',
+        ],
+        answer: 1,
+        explanation:
+          'Health checks test whether the service answers, not whether the data is right, so nothing trips; and the replica already holds the wrong prices. In the Lab, Ship a bad migration with Hot still waits for someone to notice and then for the full restore. Expecting failover to fix it is the tempting mistake: it protects against losing a region, not against bad data.',
+      },
+      {
+        id: 'dr-10',
+        prompt:
+          'After a region loss the database is promoted in region B in 5 minutes, but the app cannot be deployed for hours: CI, the container registry and the secrets manager were all in region A. What did the plan miss?',
+        options: [
+          'Recovery covers the whole ability to operate - pipelines, images, secrets and DNS must be reachable outside the failed region',
+          'The database should have been restored from backup instead of promoted',
+          'The replica should have been synchronous',
+          'Nothing - app deployment is not part of disaster recovery',
+        ],
+        answer: 0,
+        explanation:
+          'Data is only half of recovery; the RTO clock runs until users are served, which needs the tools to deploy and configure the app. Synchronous replication is the tempting fix, but it changes data loss, not the ability to deploy. Infrastructure as code, a registry and secrets copied to region B turn this into a pipeline run.',
+      },
+      {
+        id: 'dr-11',
+        prompt:
+          'An async replica normally trails the primary by about 1 second. During a traffic peak the lag grows to 90 seconds, and then region A is lost. How much data is gone?',
+        options: [
+          'About 1 second - the normal lag',
+          'Nothing - async replication catches up after the failure',
+          'Up to about 90 seconds of acknowledged writes - the lag at the moment of failure',
+          'Everything since the last backup',
+        ],
+        answer: 2,
+        explanation:
+          'Writes the replica had not received when region A died are gone, so the RPO is the lag at that moment, not the usual lag. That is why teams alert on replication lag against their RPO. The replica cannot catch up from a region that no longer exists. Everything older than the lag did reach region B, so the loss is far smaller than going back to the last backup.',
+      },
+      {
+        id: 'dr-12',
+        prompt:
+          'A team runs its database with a synchronous standby in a second availability zone of the same region, and says they have disaster recovery. Which event does that setup not cover?',
+        options: [
+          'The loss of one availability zone',
+          'A crashed database server',
+          'A failed disk on the primary',
+          'The loss of the whole region, or a DROP TABLE that the standby copies at once',
+        ],
+        answer: 3,
+        explanation:
+          'A multi-AZ standby is high availability: it handles a failed server, disk or zone. It sits in the same region, so a region loss takes both, and it replicates a DROP TABLE instantly. The tempting answers are all component failures, which is exactly what this setup is built for; disaster recovery adds copies outside the region and backups that can be restored to an earlier point.',
+      },
+    ],
   },
 ];
