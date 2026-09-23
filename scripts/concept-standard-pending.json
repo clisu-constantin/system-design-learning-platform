@@ -3,9 +3,6 @@
     "what-is-system-design",
     "functional-requirements",
     "non-functional-requirements",
-    "what-happens-when-you-type-a-url",
-    "dns",
-    "http-https",
     "replication",
     "read-replicas",
     "strong-consistency",
@@ -16,7 +13,6 @@
     "circuit-breaker",
     "retry",
     "exponential-backoff",
-    "tls-https",
     "monolith",
     "modular-monolith",
     "microservices",
@@ -29,7 +25,6 @@
   ],
   "labs": [
     "requirements",
-    "url-journey",
     "retry-backoff",
     "tracing"
   ]

@@ -425,8 +425,8 @@ Useful conversions
       {
         heading: 'Stage 1: finding the address (and the five caches before it)',
         paragraphs: [
-          'Before any network traffic happens, the browser checks its own caches: is this URL in the HTTP cache, is there a service worker, is the hostname in the browser DNS cache, then the operating system cache, then the hosts file. A surprising number of "requests" never leave the machine at all, which is why cache headers are among the highest-leverage settings you control.',
-          'If the name is still unresolved, a DNS query goes to a resolver, usually run by your ISP or a public provider. The resolver walks the hierarchy - root servers, then the .com nameservers, then the nameservers for the domain - and caches the answer for as long as the TTL says. A cold lookup can take 20-120 ms; a warm one is free.',
+          'Before any network traffic happens, the browser checks its own caches: is this URL in the HTTP cache, is there a service worker, is the hostname in the browser DNS cache, then in the operating system (its own cache and the hosts file). A surprising number of "requests" never leave the machine at all, which is why cache headers are among the highest-leverage settings you control.',
+          'If the name is still unresolved, a DNS query goes to a resolver, usually run by your ISP or a public provider. The resolver walks the hierarchy - root servers, then the .com nameservers, then the nameservers for the domain - and caches every answer for as long as its TTL says (the list of .com servers for two days, so a busy resolver almost never needs a root server). A cold lookup can take 20-120 ms; a warm one is free.',
           'This is why DNS TTL is an operational decision, not a detail. A 24-hour TTL makes lookups cheap but means a failover takes a day to be noticed by some clients. A 60-second TTL makes failover fast and multiplies DNS traffic. Teams usually lower the TTL days before a planned migration.',
         ],
       },

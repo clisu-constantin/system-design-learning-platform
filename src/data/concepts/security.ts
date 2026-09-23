@@ -1410,14 +1410,24 @@ leaked?  whoever holds the string IS Integration A
     category: 'security',
     difficulty: 'Beginner',
     lab: 'url-journey',
-    keywords: ['handshake', 'certificate', 'termination', 'mtls', 'hsts'],
+    labFocus: 'tls-https',
+    keywords: ['handshake', 'certificate', 'termination', 'mtls', 'hsts', 'forward secrecy'],
     what: 'TLS encrypts the connection and authenticates the server through a certificate chain; HTTPS is HTTP carried over TLS.',
     why: 'Without it, anyone on the path can read and modify traffic. It is also a prerequisite for HTTP/2, service workers and most modern browser APIs.',
     how: [
-      'The handshake negotiates parameters and establishes session keys; TLS 1.3 needs one round trip (or zero on resumption).',
+      'The handshake negotiates parameters and establishes session keys; TLS 1.3 needs one round trip (TLS 1.2 needed two), and a resumed session can send data in the first flight (0-RTT).',
       'The certificate proves the server owns the hostname, validated against trusted roots.',
       'TLS is commonly terminated at the load balancer or CDN; encrypt internal hops too if the network is not trusted.',
       'mTLS authenticates both sides and is the usual approach inside service meshes.',
+    ],
+    when: [
+      'Every connection that crosses a network you do not fully control - which today means every public one.',
+      'Inside the data centre too, when data is regulated or the network is not trusted (zero trust).',
+    ],
+    advantages: [
+      'Confidentiality, integrity and server authentication in one standard layer.',
+      'The expensive public-key work happens once per connection; the data uses fast symmetric encryption.',
+      'Forward secrecy: a key stolen later does not decrypt traffic recorded today.',
     ],
     diagram: `ClientHello -> ServerHello + certificate -> key exchange -> encrypted
 TLS 1.3: 1-RTT handshake, 0-RTT on resumption
@@ -1428,11 +1438,182 @@ Client --TLS--> CDN --TLS--> Load Balancer --?--> services
       {
         approach: 'Terminate TLS at the edge',
         gains: ['Cheaper backends', 'Central certificate management', 'Edge can inspect and cache'],
-        costs: ['Traffic inside the network is plaintext unless re-encrypted'],
+        costs: ['Traffic inside the network is plaintext unless re-encrypted', 'The edge holds your private key, so it must be trusted'],
+      },
+      {
+        approach: 'Re-encrypt to the backends, or mTLS between services',
+        gains: ['No plaintext anywhere on the network', 'With mTLS, services prove who they are to each other'],
+        costs: ['A certificate per service to issue and rotate', 'A handshake on every new internal connection'],
+      },
+      {
+        approach: 'Short-lived certificates with automated renewal',
+        gains: ['A leaked key is useful only briefly', 'Renewal is routine, so it cannot be forgotten'],
+        costs: ['Renewal automation becomes critical infrastructure', 'Needs monitoring that the automation still works'],
       },
     ],
-    mistakes: ['Expired certificates - still a leading cause of outages.', 'Serving mixed content that browsers block.'],
-    related: ['http-https', 'cdn', 'secrets-management'],
+    mistakes: [
+      'Expired certificates - still a leading cause of outages.',
+      'Serving mixed content that browsers block.',
+      'Serving the certificate without its intermediate: it works in some browsers and fails in curl and mobile apps.',
+      'Checking expiry only from inside the network, where a different termination point is used.',
+    ],
+    related: ['http-https', 'cdn', 'secrets-management', 'what-happens-when-you-type-a-url'],
+    quiz: [
+      {
+        id: 'tls-1',
+        prompt:
+          'The certificate of your payment API expires at 03:00 on a Sunday. It was renewed by hand a year ago by an engineer who has left. What stops this from happening again?',
+        options: [
+          'A calendar reminder for next year',
+          'Automated renewal (ACME) well before expiry, plus an external monitor that alerts on the certificate expiry date itself',
+          'A certificate valid for ten years',
+          'Turning off certificate checks in the clients',
+        ],
+        answer: 1,
+        explanation:
+          'Renewal that runs by itself removes the human step, and an external expiry alert catches the day the automation silently stops. A reminder still depends on one person. Very long certificates are no longer issued by public CAs, and disabling verification removes the protection TLS exists for.',
+      },
+      {
+        id: 'tls-2',
+        prompt:
+          'After a certificate change, your site works in Chrome, but curl and your Android app fail with "unable to verify the certificate". What is the most likely cause?',
+        options: [
+          'The certificate has expired',
+          'The domain name is wrong',
+          'curl and Android do not support TLS',
+          'The server sends its certificate without the intermediate, so clients that do not already have it cannot build a chain to a trusted root',
+        ],
+        answer: 3,
+        explanation:
+          'Browsers often have the intermediate cached or fetch it, which hides the mistake; other clients need the server to send the full chain. An expired or wrong-name certificate would fail in Chrome too. Always test with an external checker after a change.',
+      },
+      {
+        id: 'tls-3',
+        prompt:
+          'Your origin is 100 ms away and has no CDN. You move from TLS 1.2 to TLS 1.3. What changes for a new visitor?',
+        options: [
+          'The handshake drops from two round trips to one, saving about 100 ms on each new connection',
+          'Nothing measurable',
+          'Every request gets 100 ms faster, even on a reused connection',
+          'The page becomes slower, because 1.3 uses stronger encryption',
+        ],
+        answer: 0,
+        explanation:
+          'TLS 1.3 removed a round trip from the handshake. In the Lab, switch between TLS 1.2 and TLS 1.3 and the TLS stage halves. It only helps new connections - a reused connection has no handshake at all, which is why "every request" is wrong.',
+      },
+      {
+        id: 'tls-4',
+        prompt:
+          'An attacker recorded your encrypted traffic last year. Today they steal the private key of your server. Your servers use TLS 1.3. Can they decrypt last year of traffic?',
+        options: [
+          'Yes - the private key decrypts everything ever sent to the server',
+          'Only the traffic from the last 90 days',
+          'No - TLS 1.3 uses fresh (ephemeral) key exchange for every session, so the private key only proves identity and cannot recreate old session keys',
+          'Yes, if they also have the certificate',
+        ],
+        answer: 2,
+        explanation:
+          'That property is forward secrecy, and TLS 1.3 makes it mandatory. The stolen key lets them impersonate the server from now on - so revoke and replace it - but recorded sessions stay safe. The certificate is public anyway, so having it adds nothing.',
+      },
+      {
+        id: 'tls-5',
+        prompt:
+          'TLS ends at your load balancer and traffic to the backends is plain HTTP on the internal network. An auditor says the data is regulated. What do you change?',
+        options: [
+          'Nothing - the internal network is private',
+          'Encrypt the internal hop too: re-encrypt from the load balancer to the backends, or use mTLS between services',
+          'Move TLS termination to the browser',
+          'Use a longer certificate',
+        ],
+        answer: 1,
+        explanation:
+          'Terminating at the edge is a trade-off: cheaper backends and central certificates, but plaintext behind it. For regulated data or an untrusted network you pay for re-encryption. "The network is private" is the assumption zero trust exists to remove.',
+      },
+      {
+        id: 'tls-6',
+        prompt:
+          'Service A calls service B inside a mesh. B must be sure the caller really is A, not just any process on the network. What fits?',
+        options: [
+          'Plain TLS with a certificate on B only',
+          'An IP allow-list',
+          'A longer session timeout',
+          'Mutual TLS: both sides present certificates, so B verifies A just as A verifies B',
+        ],
+        answer: 3,
+        explanation:
+          'Normal TLS only authenticates the server. mTLS adds a client certificate, which service meshes issue and rotate for every workload. An IP allow-list is tempting, but addresses are reused and shared in dynamic environments - it identifies a place, not a service.',
+      },
+      {
+        id: 'tls-7',
+        prompt:
+          'A first-time visitor on hotel Wi-Fi types yourbank.com without https://. Your server redirects HTTP to HTTPS. What can an attacker on that Wi-Fi do, and what prevents it?',
+        options: [
+          'Answer the first plain HTTP request themselves and never redirect (SSL stripping); HSTS, and the HSTS preload list for first visits, stop the browser from trying plain HTTP',
+          'Nothing - the redirect protects the visitor',
+          'Read the TLS session keys',
+          'Only slow down the redirect',
+        ],
+        answer: 0,
+        explanation:
+          'The redirect is itself sent over plain HTTP, so an attacker can replace it and keep the visitor on HTTP. HSTS makes the browser go straight to HTTPS for that domain, and preloading covers the very first visit. The session keys are never sent on the wire, so they cannot be read.',
+      },
+      {
+        id: 'tls-8',
+        prompt:
+          'A phishing page at paypa1-login.com shows a padlock and a valid certificate. What does the padlock actually prove?',
+        options: [
+          'The site is owned by PayPal',
+          'The site is safe to enter a password into',
+          'The connection is encrypted and the server controls the domain paypa1-login.com - nothing about who runs it or whether it is honest',
+          'The site has passed a security audit',
+        ],
+        answer: 2,
+        explanation:
+          'A domain-validated certificate only proves control of the domain name in the address bar. The channel to the wrong site is perfectly private. That is why the Lesson says the padlock protects the channel, not the trustworthiness of the site.',
+      },
+      {
+        id: 'tls-9',
+        prompt:
+          'In the Lab, with the origin 80 ms away, the TLS handshake takes 80 ms without a CDN and 10 ms with one. Why?',
+        options: [
+          'The CDN uses weaker encryption',
+          'The browser handshakes with the CDN edge nearby, which holds a certificate for the domain; the edge keeps its own connection to the origin open',
+          'The CDN skips certificate checks',
+          'The CDN caches the TLS handshake of other users',
+        ],
+        answer: 1,
+        explanation:
+          'A handshake costs round trips to whatever ends the connection, and the edge is 10 ms away instead of 80. Encryption strength and certificate checks are the same. That is why ending TLS at the edge speeds up even pages the edge must fetch from the origin.',
+      },
+      {
+        id: 'tls-10',
+        prompt:
+          'A page served over HTTPS loads a script from http://cdn.example.net/app.js. Users report that a feature stopped working. What happened?',
+        options: [
+          'The certificate expired',
+          'HTTPS pages cannot load scripts',
+          'The script was too big',
+          'The browser blocked the script as mixed content - a plain HTTP script could be changed on the path and would control the secure page; load it over HTTPS',
+        ],
+        answer: 3,
+        explanation:
+          'A script loaded over plain HTTP could be rewritten by anyone on the path, which would undo the protection of the whole page, so browsers block it. Loading it over https:// fixes it. An expired certificate would break the whole page, not one feature.',
+      },
+      {
+        id: 'tls-11',
+        prompt:
+          'With TLS 1.3 resumption, a returning client can send a request in the very first flight (0-RTT). Which requests should your server accept that way?',
+        options: [
+          'Only idempotent requests such as GET - 0-RTT data can be replayed by an attacker, so it must be safe to process twice',
+          'All requests - 0-RTT is as safe as a full handshake',
+          'Only POST requests, because they carry a body',
+          'None - 0-RTT disables encryption',
+        ],
+        answer: 0,
+        explanation:
+          'Early data is encrypted but has no protection against replay: someone can capture it and send it again. So servers accept it only for requests that are safe to repeat. A POST that places an order is exactly what must not arrive twice.',
+      },
+    ],
   },
   {
     slug: 'secrets-management',

@@ -47,7 +47,7 @@ export const LABS: LabDefinition[] = [
   {
     id: 'url-journey',
     title: 'What Happens When You Type a URL?',
-    blurb: 'Twelve stages from Enter to painted pixels, each one clickable.',
+    blurb: 'One request walks the resolver, root, TLD, CDN edge and origin, stage by stage, from Enter to painted pixels.',
     category: 'networking',
     difficulty: 'Beginner',
     concept: 'what-happens-when-you-type-a-url',
