@@ -206,39 +206,254 @@ No shared database. Every cross-service call can fail.`,
     tagline: 'Per-request compute with no capacity to manage - and different constraints.',
     category: 'architecture',
     difficulty: 'Intermediate',
-    keywords: ['functions', 'cold start', 'scale to zero', 'vendor lock-in', 'concurrency'],
-    what: 'Serverless runs code in response to events on infrastructure you never provision, billed per invocation and duration, scaling to zero when idle.',
+    lab: 'serverless',
+    keywords: ['functions', 'faas', 'lambda', 'cold start', 'scale to zero', 'vendor lock-in', 'concurrency', 'provisioned concurrency'],
+    what: 'Serverless (functions as a service) runs your code in response to events on infrastructure you never provision. The platform starts an instance of the function per concurrent request, bills per request and per millisecond of run time, and scales to zero when nothing arrives.',
     why: 'It removes capacity planning and idle cost for spiky or low-volume workloads, and it makes small event-driven components extremely cheap to run.',
     how: [
-      'A function is instantiated per concurrent request; concurrency is the scaling unit.',
-      'Cold starts add latency when a new instance must be created.',
-      'Functions are stateless; state lives in managed stores.',
-      'Downstream limits (database connections) must be protected, because scaling is aggressive.',
+      'An event arrives - an HTTP request, a queue message, a file upload, a schedule - and the platform hands it to an idle instance of the function.',
+      'On AWS Lambda one instance serves one request at a time, so concurrency (requests in flight) is the scaling unit: 100 events per second x 0.5 s each = 50 instances.',
+      'With no idle instance the platform starts a new one - a cold start: download the code, start the runtime, run the init code. It takes from under 100 ms to over 1 s.',
+      'An idle instance is kept for a while and then reclaimed. With no traffic nothing runs and nothing is billed - scale to zero - and the next event pays a cold start.',
+      'Functions are stateless; state lives in managed stores such as a database, a cache or object storage.',
+      'A concurrency limit caps the instances and throttles above it. Each instance opens its own database connections, so the limit and a pooler protect the database.',
     ],
-    when: ['Spiky or infrequent workloads.', 'Event processing and glue code.', 'Teams without operational capacity for servers.'],
-    diagram: `event -> function instance (new = cold start ~100ms-2s)
-      -> 1000 concurrent events = 1000 instances
-      -> 1000 database connections  <- use a pooler or you take the DB down`,
+    when: [
+      'Spiky or infrequent workloads with idle periods.',
+      'Event processing and glue code: file uploads, queue messages, webhooks, schedules.',
+      'Background work where nobody waits on a cold start.',
+      'Teams without operational capacity for servers.',
+    ],
+    advantages: [
+      'No servers to provision, patch or size.',
+      'Idle costs nothing: the function scales to zero.',
+      'Scales from zero to thousands of concurrent instances without a scaling policy.',
+      'A small event handler needs no service, pipeline or fleet of its own.',
+    ],
+    diagram: `event -> function platform -> idle instance?
+                                 yes: warm, runs now
+                                 no : new instance = cold start
+                                      (under 100 ms to over 1 s)
+
+1,000 concurrent events = 1,000 instances = 1,000 DB connections
+  <- cap concurrency and use a pooler, or the database falls over
+
+no events for a while -> instances reclaimed -> scaled to zero, $0`,
     tradeoffs: [
       {
-        approach: 'Serverless functions',
-        gains: ['No capacity management', 'Scale to zero', 'Pay per use'],
+        approach: 'Serverless functions, on demand',
+        gains: ['No capacity management', 'Scale to zero - idle is free', 'Pay per request and per millisecond of run time'],
         costs: [
-          'Cold start latency',
-          'Execution time and memory limits',
-          'Connection management against traditional databases',
+          'Cold start latency whenever a new instance starts',
+          'Execution time and memory limits (15 minutes and 10 GB on AWS Lambda)',
+          'One set of connections per instance - traditional databases need a pooler',
           'Local testing and debugging are harder',
-          'Strong coupling to one provider',
+          'Triggers, permissions and surrounding services couple you to one provider',
+          'At steady high load, a higher bill per request than always-on servers',
         ],
       },
       {
-        approach: 'Containers on a scheduler',
-        gains: ['Predictable latency', 'Portable', 'Long-running work is fine'],
-        costs: ['You manage capacity and scaling', 'Pay for idle'],
+        approach: 'Functions with provisioned concurrency',
+        gains: ['No cold start for the provisioned instances', 'Still scales on demand above them'],
+        costs: ['A fixed bill for the warm instances, busy or idle', 'That part no longer scales to zero'],
+      },
+      {
+        approach: 'Always-on containers or servers',
+        gains: [
+          'Predictable latency, no cold start',
+          'Lower cost per request at steady high load',
+          'Long-running work and persistent connections are fine',
+          'Portable between providers',
+        ],
+        costs: ['You manage capacity and scaling', 'You pay for idle time'],
       },
     ],
-    mistakes: ['Assuming serverless is always cheaper - at steady high volume it usually is not.'],
-    related: ['auto-scaling', 'connection-pooling', 'event-driven-architecture'],
+    mistakes: [
+      'Assuming serverless is always cheaper - at steady high load the bill per request is higher than on always-on servers.',
+      'Leaving concurrency unlimited in front of a database that allows a few hundred connections.',
+      'Putting a function with multi-second cold starts on a user-facing path without looking at p99.',
+      'Keeping state in instance memory and expecting the next request to see it.',
+      'Handlers that are not idempotent - event sources deliver some events more than once.',
+    ],
+    related: ['auto-scaling', 'connection-pooling', 'event-driven-architecture', 'idempotency'],
+    quiz: [
+      {
+        id: 'serverless-q1',
+        prompt:
+          'A partner calls your webhook function about once every 30 minutes. The handler runs in 100 ms, yet almost every call takes about 1.5 s. What is happening?',
+        options: [
+          'The concurrency limit is too low, so each call waits for a free instance',
+          'The idle instance is reclaimed between calls, so every call pays a cold start',
+          'The platform bills per millisecond, so it slows functions down',
+          'The database needs an index for the webhook query',
+        ],
+        answer: 1,
+        explanation:
+          'Idle instances are kept only for a while. With 30 minutes between calls the function has scaled to zero, so every call starts a new instance before its 100 ms of work - the Trickle shape in the Lab shows exactly this. The concurrency limit is not the cause: one call at a time never reaches any limit, and a throttled call is rejected, not slowed.',
+      },
+      {
+        id: 'serverless-q2',
+        prompt:
+          'An API on AWS Lambda receives a steady 200 requests per second, and each request takes 250 ms. About how many function instances are running?',
+        options: ['200 - one per request per second', '800', '50', '1 - one instance handles all requests with threads'],
+        answer: 2,
+        explanation:
+          'Concurrency = requests per second x duration = 200 x 0.25 s = 50. Each Lambda instance serves one request at a time, so 50 requests in flight need 50 instances. 200 confuses requests per second with requests in flight; one threaded instance describes a server, not a Lambda function.',
+      },
+      {
+        id: 'serverless-q3',
+        prompt:
+          'A bulk import drops 5,000 files into storage at once. Each file triggers a function that writes to a Postgres database with max_connections = 200, and the database starts refusing connections. What is the fix?',
+        options: [
+          'Cap the concurrency of the function and put a connection pooler or proxy in front of the database',
+          'Give the function more memory so each write finishes faster',
+          'Turn on provisioned concurrency for 5,000 instances',
+          'Retry immediately whenever a connection is refused',
+        ],
+        answer: 0,
+        explanation:
+          'The platform scaled toward 5,000 instances, and each opened its own connection. A concurrency limit keeps the instance count below what the database can take (the rest wait in the event queue or are throttled), and a pooler multiplexes many instances onto a few connections - in the Lab, lowering the limit to the database maximum turns refused requests into throttled ones. Immediate retries add even more connection attempts to a database that is already full.',
+      },
+      {
+        id: 'serverless-q4',
+        prompt:
+          'A service handles a steady 2,000 requests per second, 24 hours a day. It moved from servers to functions, and the bill went up. What explains it?',
+        options: [
+          'Functions are billed for idle time between requests',
+          'Cold starts are billed at a premium rate',
+          'Serverless always costs more than servers',
+          'The servers were busy most of the time, so their fixed price spread over many requests; functions charge every busy millisecond at a higher unit price',
+        ],
+        answer: 3,
+        explanation:
+          'Pay per use wins when there is idle time to save. At steady high load there is almost none, and a busy function second costs several times a busy server second, so the cost per request ends up higher. It is not "always" - at low or spiky traffic functions are cheaper, as the Lab cost card shows. Idle time is not billed at all, and cold starts are rare at steady load.',
+      },
+      {
+        id: 'serverless-q5',
+        prompt:
+          'Users upload 50,000 images a day in bursts during business hours and almost none at night. Each needs 2 s of resizing, and nobody waits for the result. Which design fits, and why?',
+        options: [
+          'Functions triggered by the upload: concurrency follows the bursts, idle hours cost nothing, and a cold start on a background job is noise',
+          'Always-on servers sized for the peak, because cold starts would make the resizing too slow',
+          'Functions, because serverless is always the cheapest option',
+          'One server with one worker, since 50,000 a day is only about 0.6 per second',
+        ],
+        answer: 0,
+        explanation:
+          'Bursty, short, stateless, independent work with long idle periods - every property favours functions. Cold starts matter only when a user waits, and here nobody does. The average of 0.6 per second hides a peak of about 20 per second x 2 s = 40 in flight, which one worker cannot keep up with; and "always cheapest" is false at steady high load.',
+      },
+      {
+        id: 'serverless-q6',
+        prompt:
+          'A checkout API runs as a Java function with 3 s cold starts. It always has about 20 requests in flight during the day, and p99 latency spikes every morning as traffic ramps up. What do you change?',
+        options: [
+          'Raise the concurrency limit',
+          'Retry requests that take longer than 1 s',
+          'Provision concurrency for the baseline of 20 (or cut the init work), and accept a fixed bill for those warm instances',
+          'Ask the platform to reclaim idle instances sooner',
+        ],
+        answer: 2,
+        explanation:
+          'The spikes are cold starts on a user-facing path. Provisioned instances are started ahead of traffic, so the baseline never waits; a lighter init (or SnapStart on Java) shortens the start itself. Raising the limit does not help because nothing is throttled, a retry adds a second request that may also cold start, and you cannot tune the reclaim time - reclaiming sooner would cause more cold starts, not fewer.',
+      },
+      {
+        id: 'serverless-q7',
+        prompt:
+          'In the Lab you set Steady traffic at 20 events per second (0.5 s each) and a concurrency limit of 4. What do you see?',
+        options: [
+          'About 10 instances, because the platform ignores the limit under load',
+          'Four instances busy and most events throttled at the platform',
+          'Four instances, each running several requests at once',
+          'All events accepted, with a growing queue inside each instance',
+        ],
+        answer: 1,
+        explanation:
+          'The load needs 20 x 0.5 = 10 instances, but the limit allows 4, so only about 8 events per second are served and the rest are throttled - crosses at the platform. A synchronous caller gets HTTP 429; an asynchronous event source keeps the event and retries later. An instance serves one request at a time, so it neither runs several at once nor keeps a queue.',
+      },
+      {
+        id: 'serverless-q8',
+        prompt:
+          'A function keeps a visitor counter in a global variable and returns it. The numbers jump around and sometimes restart from zero. Why?',
+        options: [
+          'The global variable is shared by all instances but updated without a lock',
+          'The platform clears global variables after every request',
+          'The function needs more memory to hold the counter',
+          'Each instance has its own memory, and instances are started and reclaimed at any time',
+        ],
+        answer: 3,
+        explanation:
+          'Every instance is a separate process with its own copy of the variable, so concurrent requests see different counts, and a new instance starts from zero after a cold start. Globals are not shared between instances - and they are not cleared after each request either, which is why reusing a connection across warm requests works. State belongs in a database or cache.',
+      },
+      {
+        id: 'serverless-q9',
+        prompt:
+          'A team sets provisioned concurrency of 50 on a function that only gets traffic two hours a day. Traffic is unchanged, but the bill goes up a lot. Why?',
+        options: [
+          'Provisioned concurrency doubles the price of each request',
+          'Cold starts became longer',
+          'Provisioned instances are billed for every second they are kept warm, busy or idle',
+          'The function no longer scales above 50',
+        ],
+        answer: 2,
+        explanation:
+          'Provisioned concurrency buys warm instances by the second, so that part of the function stops scaling to zero and pays for 22 idle hours a day - in the Lab, raising Provisioned concurrency adds cost even when no events arrive. Scheduling it for the busy two hours keeps the benefit at a fraction of the cost. It does not cap scaling: above 50 the function still scales on demand.',
+      },
+      {
+        id: 'serverless-q10',
+        prompt: 'A nightly report job takes 40 minutes to run. The team wants to move it to AWS Lambda. What do you tell them?',
+        options: [
+          'Raise the function memory until it fits',
+          'Split it into steps under the 15-minute limit (with a workflow tool), or run it in a container',
+          'Use provisioned concurrency so it does not time out',
+          'Raise the concurrency limit so the job gets more time',
+        ],
+        answer: 1,
+        explanation:
+          'A Lambda invocation can run for at most 15 minutes, so a 40-minute job must be split into shorter steps that pass state along, or run where long jobs are normal. More memory can make it faster but gives no guarantee of fitting, and neither provisioned concurrency nor the concurrency limit changes the timeout.',
+      },
+      {
+        id: 'serverless-q11',
+        prompt:
+          'A function triggered by new files in storage sends a welcome email. A few users receive the same email twice. What is the cause and the fix?',
+        options: [
+          'The event source can deliver the same event more than once; make the handler idempotent, keyed by object id and version',
+          'Two instances cold started at once; turn on provisioned concurrency',
+          'The concurrency limit is too high; lower it to 1',
+          'The email service is retrying; raise the function timeout',
+        ],
+        answer: 0,
+        explanation:
+          'Storage notifications and asynchronous invocations are at-least-once, so a handler will sometimes see the same event twice. Recording which object versions were already handled turns a duplicate into a no-op. Provisioned concurrency changes latency, not delivery, and a limit of 1 only slows everything down while duplicates still arrive.',
+      },
+      {
+        id: 'serverless-q12',
+        prompt:
+          'In the Lab on Bursts, the instance count drops to zero between bursts and the first events of every burst are triangles. Which single change makes the first few events of each burst warm?',
+        options: [
+          'Raise the concurrency limit',
+          'Lower the cold start to 0.1 s',
+          'Switch the diagram to the always-on server',
+          'Set provisioned concurrency to 4',
+        ],
+        answer: 3,
+        explanation:
+          'Provisioned instances are never reclaimed, so the first four concurrent events of each burst find a warm instance - and the cost card shows the fixed charge they add while idle. A faster cold start shortens the wait but it is still a cold start, a higher limit allows more instances without warming any, and the diagram switch only changes which option you look at.',
+      },
+      {
+        id: 'serverless-q13',
+        prompt:
+          'A queue consumer function has 800 ms cold starts. Messages wait in the queue for up to a minute anyway, and nobody is waiting on the result. Someone proposes provisioned concurrency to remove the cold starts. Is it worth it?',
+        options: [
+          'Yes - every cold start loses the message',
+          'Yes - cold starts are billed, so provisioned concurrency is always cheaper',
+          'Usually not - an 800 ms delay on background work is noise, and provisioned concurrency adds a fixed bill for it',
+          'No - provisioned concurrency does not work for queue triggers',
+        ],
+        answer: 2,
+        explanation:
+          'Cold starts matter where a person waits; for a queue consumer they add under a second to work that already waits in the queue. Paying for warm instances around the clock buys almost nothing here. A cold start delays a message, it does not lose it, and provisioned concurrency does work with queue triggers - the question is whether the latency is worth paying for.',
+      },
+    ],
   },
   {
     slug: 'cqrs',
