@@ -89,7 +89,6 @@
     "backpressure",
     "bulkhead",
     "saga-pattern",
-    "outbox-pattern",
     "leader-follower",
     "producer-consumer",
     "request-response"
