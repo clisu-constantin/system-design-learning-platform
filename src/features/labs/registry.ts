@@ -269,7 +269,7 @@ export const LABS: LabDefinition[] = [
   {
     id: 'partitioning',
     title: 'Partitioning Lab',
-    blurb: 'Split one big table by range, list or hash and watch partition pruning work.',
+    blurb: 'Split one big table by range, list or hash, watch partition pruning, then drop an old month instead of deleting it.',
     category: 'data',
     difficulty: 'Intermediate',
     concept: 'partitioning',

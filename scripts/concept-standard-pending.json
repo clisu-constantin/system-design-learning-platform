@@ -25,7 +25,6 @@
     "database-indexing",
     "replication",
     "sharding",
-    "partitioning",
     "database-normalization",
     "denormalization",
     "read-replicas",
