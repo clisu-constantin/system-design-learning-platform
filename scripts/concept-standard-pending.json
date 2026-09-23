@@ -15,8 +15,6 @@
     "dns",
     "http-https",
     "tcp-vs-udp",
-    "reverse-proxy",
-    "forward-proxy",
     "cdn",
     "api-gateway",
     "sql-databases",

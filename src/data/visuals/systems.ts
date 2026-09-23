@@ -113,7 +113,7 @@ export const systemVisuals: Record<string, VisualSpec> = {
     caption: 'One front door: TLS, routing and caching before your code runs.',
     nodes: [
       { id: 'client', kind: 'client', label: 'Client', x: 40, y: 110, w: 140, h: 74 },
-      { id: 'proxy', kind: 'api-gateway', label: 'Reverse proxy', sub: 'TLS terminated', x: 260, y: 105, w: 180, h: 84 },
+      { id: 'proxy', kind: 'api-gateway', label: 'Reverse proxy x2', sub: 'TLS ends here', x: 260, y: 105, w: 180, h: 84 },
       { id: 'api', kind: 'server', label: '/api', x: 560, y: 20, w: 160, h: 74 },
       { id: 'static', kind: 'storage', label: '/static', x: 560, y: 115, w: 160, h: 74 },
       { id: 'ws', kind: 'service', label: '/ws', x: 560, y: 210, w: 160, h: 74 },
@@ -130,6 +130,7 @@ export const systemVisuals: Record<string, VisualSpec> = {
       { from: 'proxy', to: 'static', label: '/static/* served from storage' },
       { from: 'proxy', to: 'ws', label: '/ws upgraded to WebSocket service' },
       { from: 'proxy', to: 'client', label: 'Client never sees backend addresses' },
+      { from: 'proxy', to: 'client', label: 'Repeat page answered from proxy cache', outcome: 'cache-hit' },
     ],
   },
 
@@ -140,7 +141,7 @@ export const systemVisuals: Record<string, VisualSpec> = {
     nodes: [
       { id: 'c1', kind: 'client', label: 'Employee laptop', x: 40, y: 30, w: 170, h: 74 },
       { id: 'c2', kind: 'client', label: 'CI runner', x: 40, y: 140, w: 170, h: 74 },
-      { id: 'proxy', kind: 'api-gateway', label: 'Forward proxy', sub: 'policy + audit', x: 300, y: 85, w: 180, h: 84 },
+      { id: 'proxy', kind: 'api-gateway', label: 'Forward proxy x2', sub: 'policy + audit', x: 300, y: 85, w: 180, h: 84 },
       { id: 'net', kind: 'cdn', label: 'Internet', x: 580, y: 85, w: 150, h: 78 },
     ],
     edges: [
@@ -152,6 +153,7 @@ export const systemVisuals: Record<string, VisualSpec> = {
       { from: 'c1', to: 'proxy', label: 'Laptop sends via the proxy' },
       { from: 'proxy', to: 'net', label: 'Allowed, sent from the proxy IP' },
       { from: 'net', to: 'proxy', label: 'Response logged for the audit' },
+      { from: 'proxy', to: 'c1', label: 'Site saw the proxy, not laptop' },
       { from: 'c2', to: 'proxy', label: 'Blocked domain denied at proxy', outcome: 'failure' },
     ],
   },

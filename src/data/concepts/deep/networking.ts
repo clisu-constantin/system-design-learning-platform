@@ -277,7 +277,7 @@ used by            HTTP, SQL, SSH, Kafka  DNS, QUIC, video, games`,
       {
         heading: 'Reverse proxy or load balancer?',
         paragraphs: [
-          'The honest answer is that the categories overlap and the vocabulary is inconsistent. A load balancer is defined by what it decides (which backend gets this request); a reverse proxy is defined by where it sits (in front, acting on behalf of the servers). Every load balancer is a reverse proxy; not every reverse proxy balances load.',
+          'The honest answer is that the categories overlap and the vocabulary is inconsistent. A load balancer is defined by what it decides (which backend gets this request); a reverse proxy is defined by where it sits (in front, acting on behalf of the servers). The HTTP load balancers most teams run are reverse proxies that also pick a backend; not every reverse proxy balances load, and some network load balancers only forward packets without opening connections of their own.',
           'In practice teams run both roles in one process. nginx in front of three app servers is a reverse proxy doing load balancing. A cloud application load balancer is a managed reverse proxy with health checks and autoscaling integration.',
           'Where the distinction matters is in layering. A common shape is a cloud L4 balancer at the edge for raw distribution and DDoS absorption, then nginx or Envoy inside for routing, retries and per-route policy. Each layer has one job, and each is scaled and configured separately.',
         ],
@@ -295,8 +295,8 @@ used by            HTTP, SQL, SSH, Kafka  DNS, QUIC, video, games`,
       {
         heading: 'The details that cause incidents',
         paragraphs: [
-          'The first is the client IP. Once a proxy forwards a request, the backend sees the proxy address, not the user. The proxy must set X-Forwarded-For (or the standard Forwarded header) and the application must be configured to trust it - but only from the proxy, otherwise anyone can spoof their IP and defeat your rate limiting.',
-          'The second is timeouts. A proxy has its own read and connect timeouts, and if they are shorter than the application timeout, users get a 504 while the backend is still happily working. If they are longer, a stuck backend holds proxy connections until the proxy exhausts its own limits. These numbers should be chosen together, with the proxy slightly more patient than the intended request budget and considerably less patient than infinity.',
+          'The first is the client IP. Once a proxy forwards a request, the backend sees the proxy address, not the user. The proxy must set X-Forwarded-For (or the standard Forwarded header, RFC 7239) - nginx does not add it unless you configure it - and the application must be configured to trust it, but only from the proxy, otherwise anyone can spoof their IP and defeat your rate limiting.',
+          'The second is timeouts. A proxy has its own read and connect timeouts (60 seconds each by default in nginx), and if they are shorter than the application timeout, users get a 504 while the backend is still happily working. If they are longer, a stuck backend holds proxy connections until the proxy exhausts its own limits. These numbers should be chosen together, with the proxy slightly more patient than the intended request budget and considerably less patient than infinity.',
           'The third is buffering. Proxies buffer responses by default, which is what protects slow clients from occupying a worker - but it also breaks streaming responses, server-sent events and long-polling, which appear to hang until the whole response is ready. Those routes need buffering explicitly turned off.',
         ],
       },
@@ -328,7 +328,7 @@ used by            HTTP, SQL, SSH, Kafka  DNS, QUIC, video, games`,
     remember: [
       'A reverse proxy is one public address hiding any internal layout you like.',
       'It is the right home for TLS, routing, compression, caching and rate limits - configured once.',
-      'Every load balancer is a reverse proxy; not every reverse proxy balances load.',
+      'An HTTP load balancer is a reverse proxy that picks a backend; not every reverse proxy balances load.',
       'Forward the client IP explicitly, and only trust that header from your own proxy.',
       'Disable buffering on streaming routes or they will appear to hang.',
     ],
@@ -370,9 +370,10 @@ REVERSE proxy (acts for servers)
       {
         heading: 'Limits and honest caveats',
         paragraphs: [
-          'A forward proxy sees very little of HTTPS traffic. With CONNECT it just tunnels bytes, so it can log and allow by hostname (via SNI) but not inspect the content. Inspecting content requires TLS interception - installing a company certificate on every device and decrypting traffic - which is powerful, invasive, and creates a high-value target.',
+          'A forward proxy sees very little of HTTPS traffic. With CONNECT it just tunnels bytes, so it can log and allow by the hostname the CONNECT request names (and the SNI in the TLS handshake) but not inspect or cache the content. Inspecting content requires TLS interception - installing a company certificate on every device and decrypting traffic - which is powerful, invasive, and creates a high-value target.',
           'It is also a single point of failure and a bottleneck by construction. If everything outbound goes through it, its capacity and availability become your capacity and availability for every third-party call. Run it redundantly and monitor it like a production service, because it is one.',
           'Finally, on a proxy that many clients share, the destination sees one IP for all of them. That is the point, but it means one misbehaving client can get the whole organisation rate limited or blocked by an API provider.',
+          'Hiding the clients is also not automatic. On requests it can read, a proxy may add X-Forwarded-For with the client address - Squid does so by default (its forwarded_for setting is on) - so a proxy meant to hide its clients must be configured to leave the header out.',
         ],
       },
     ],
