@@ -3,7 +3,7 @@ import {
   ArchNode,
   DiagramCanvas,
   NodeStatRow,
-  OUTCOME_STYLE,
+  ParticleLegend,
   type DiagramEdge,
   type Layout,
   type ParticleView,
@@ -663,33 +663,15 @@ export function WafLab() {
 
 /** Shapes, colours and text - status is never colour alone. */
 function WafLegend() {
-  const items: { outcome: RequestOutcome; label: string }[] = [
-    { outcome: 'success', label: 'Real user request' },
-    { outcome: 'warning', label: 'Attack or bad bot' },
-    { outcome: 'failure', label: '403 Forbidden from the WAF' },
-    { outcome: 'cache-hit', label: 'Rule match written to the log' },
-  ];
   return (
-    <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5">
-      {items.map(({ outcome, label }) => (
-        <span key={outcome} className="flex items-center gap-1.5 text-[11px] text-muted">
-          <svg width={14} height={14} viewBox="-7 -7 14 14" aria-hidden>
-            {outcome === 'success' ? <circle r={4.2} style={{ fill: OUTCOME_STYLE.success.fill }} /> : null}
-            {outcome === 'warning' ? <polygon points="0,-5 4.5,3.5 -4.5,3.5" style={{ fill: OUTCOME_STYLE.warning.fill }} /> : null}
-            {outcome === 'cache-hit' ? (
-              <rect x={-4} y={-4} width={8} height={8} rx={1} transform="rotate(45)" style={{ fill: OUTCOME_STYLE['cache-hit'].fill }} />
-            ) : null}
-            {outcome === 'failure' ? (
-              <g style={{ stroke: OUTCOME_STYLE.failure.fill }} strokeWidth={2.2} strokeLinecap="round">
-                <line x1={-3.5} y1={-3.5} x2={3.5} y2={3.5} />
-                <line x1={-3.5} y1={3.5} x2={3.5} y2={-3.5} />
-              </g>
-            ) : null}
-          </svg>
-          {label}
-        </span>
-      ))}
-    </div>
+    <ParticleLegend
+      items={[
+        { outcome: 'success', label: 'Real user request' },
+        { outcome: 'warning', label: 'Attack or bad bot' },
+        { outcome: 'failure', label: '403 Forbidden from the WAF' },
+        { outcome: 'cache-hit', label: 'Rule match written to the log' },
+      ]}
+    />
   );
 }
 

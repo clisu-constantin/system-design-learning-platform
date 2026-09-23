@@ -4,7 +4,7 @@ import {
   ArchNode,
   DiagramCanvas,
   NodeStatRow,
-  OUTCOME_STYLE,
+  ParticleLegend,
   type DiagramEdge,
   type Layout,
   type ParticleView,
@@ -127,35 +127,9 @@ const LEGEND: { outcome: RequestOutcome; label: string }[] = [
   { outcome: 'failure', label: 'Rejected, or lost on a dead link' },
 ];
 
-function LegendShape({ outcome }: { outcome: RequestOutcome }) {
-  const { fill, shape } = OUTCOME_STYLE[outcome];
-  return (
-    <svg width={14} height={14} viewBox="-7 -7 14 14" aria-hidden>
-      {shape === 'diamond' ? (
-        <rect x={-4} y={-4} width={8} height={8} rx={1} fill={fill} transform="rotate(45)" />
-      ) : shape === 'triangle' ? (
-        <polygon points="0,-5 4.5,3.5 -4.5,3.5" fill={fill} />
-      ) : shape === 'cross' ? (
-        <g stroke={fill} strokeWidth={2.2} strokeLinecap="round">
-          <line x1={-3.5} y1={-3.5} x2={3.5} y2={3.5} />
-          <line x1={-3.5} y1={3.5} x2={3.5} y2={-3.5} />
-        </g>
-      ) : (
-        <circle r={4.2} fill={fill} />
-      )}
-    </svg>
-  );
-}
-
 function ConsensusLegend() {
   return (
-    <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5">
-      {LEGEND.map((item) => (
-        <span key={item.outcome} className="flex items-center gap-1.5 text-[11px] text-muted">
-          <LegendShape outcome={item.outcome} />
-          {item.label}
-        </span>
-      ))}
+    <ParticleLegend items={LEGEND}>
       <span className="flex items-center gap-1.5 text-[11px] text-muted">
         <span className="inline-block h-3 w-3 rounded-sm border border-brand/60 bg-brand/20" />
         committed entry
@@ -164,7 +138,7 @@ function ConsensusLegend() {
         <span className="inline-block h-3 w-3 rounded-sm border border-dashed border-warn/80" />
         stored, not committed
       </span>
-    </div>
+    </ParticleLegend>
   );
 }
 
