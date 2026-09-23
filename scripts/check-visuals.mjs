@@ -14,8 +14,10 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-// compact ArchNode chrome: 16 padding + 28 icon + 8 gap
-const CHROME_X = 52;
+// compact ArchNode chrome: 16 padding (p-2) + 2 border + 28 icon (w-7) + 8 gap (gap-2).
+// The border was once left out, and "WHERE created_at >= Sep" passed at 210px
+// while the browser clipped it by a fraction of a pixel.
+const CHROME_X = 54;
 // A "new" badge sits on the title row and pushes the title into its truncation:
 // chip padding 20 + border 2 + ~19 of text + 6 gap. Without this, a node with a
 // badge silently renders as "Replic..." instead of "Replica 1".

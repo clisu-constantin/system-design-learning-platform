@@ -227,14 +227,14 @@ These are editorial rules, not style preferences. They are the reason the app is
   module". Heavy deps reached only from lazy chunks are listed in `optimizeDeps.include` so Vite
   never re-optimizes and force-reloads mid-session.
 - Labs that size node boxes at runtime (load balancer, horizontal scaling, auto scaling, queue) must
-  keep the widest label readable: minimum width is 52 + the title width (the per-letter table in `scripts/check-visuals.mjs`, about 7px a letter), and the whole row must
+  keep the widest label readable: minimum width is 54 + the title width (the per-letter table in `scripts/check-visuals.mjs`, about 7px a letter), and the whole row must
   stay inside the 960px canvas.
 - The Bash tool on this machine has had trouble with large heredocs containing `.tsx`; prefer the
   Write tool for source files.
 - `ArchNode` grows to fit its content and truncates its title, so an undersized box silently
   clips its label or overlaps the node below. `npm run check:visuals` catches both; it runs as part
   of `npm run build`. Minimum height is 62 + 12 (subtitle) + 16 (stat row); minimum width is
-  52 + the per-letter title width table in `scripts/check-visuals.mjs` (about 7px a letter).
+  54 + the per-letter title width table in `scripts/check-visuals.mjs` (about 7px a letter).
 - Everything persists to `localStorage` only (`sdi:theme`, `sdi:progress:v1`, and `sdi:layout` for
   which side panels the learner folded). No backend, no auth, no network calls at runtime — keep it
   that way.

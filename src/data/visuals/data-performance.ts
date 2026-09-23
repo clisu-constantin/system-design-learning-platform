@@ -181,7 +181,7 @@ export const dataVisuals: Record<string, VisualSpec> = {
     height: 290,
     caption: 'One logical table, several physical pieces. The planner skips the ones that cannot match.',
     nodes: [
-      { id: 'query', kind: 'client', label: 'WHERE created_at >= Sep', x: 30, y: 105, w: 210, h: 76 },
+      { id: 'query', kind: 'client', label: 'WHERE created_at >= Sep', x: 30, y: 105, w: 216, h: 76 },
       { id: 'p1', kind: 'sql', label: 'events_2026_07', sub: 'pruned', x: 320, y: 10, w: 170, h: 80, status: 'down' },
       { id: 'p2', kind: 'sql', label: 'events_2026_08', sub: 'pruned', x: 320, y: 100, w: 170, h: 80, status: 'down' },
       { id: 'p3', kind: 'sql', label: 'events_2026_09', sub: 'scanned', x: 320, y: 190, w: 170, h: 80 },
