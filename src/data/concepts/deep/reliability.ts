@@ -434,8 +434,8 @@ slowest: DNS with a long TTL plus client libraries caching resolution`,
         heading: 'Three states, and why the half-open one matters',
         paragraphs: [
           'Closed is normal: calls pass through and failures are counted over a rolling window of recent calls. When the failure rate crosses a threshold within that window, the breaker opens. Open means calls fail immediately without being attempted - no waiting, no threads consumed, an instant fallback for the caller.',
-          'After a cooldown the breaker moves to half-open and allows a small number of trial calls. If they succeed, it closes and normal service resumes. If any fails, it opens again for another cooldown. Without that middle state you either hammer a recovering service the moment the timer expires, or you need a human to reset it.',
-          'The key insight is what the breaker converts: a slow failure into a fast one. A dependency that times out after 10 seconds consumes a thread for 10 seconds on every request; an open breaker consumes nothing and answers in microseconds. That difference is what stops a cascade.',
+          'After a cooldown the breaker moves to half-open and allows a small number of trial calls. If they succeed, it closes and normal service resumes. If any fails, it opens again for another cooldown - that is the classic rule, and the one the Lab uses; Resilience4j instead compares the failure rate of the trial calls with the threshold. Without that middle state you either hammer a recovering service the moment the timer expires, or you need a human to reset it.',
+          'The key insight is what the breaker converts: a slow failure into a fast one. A dependency that times out after 10 seconds consumes a thread for 10 seconds on every request; an open breaker consumes nothing and answers in a millisecond or two. That difference is what stops a cascade.',
           'Stripped of context, this is a reusable structure: a wrapper, a window, a threshold, a cooldown and a probe. So you do not write it into each client - you wrap every dependency in the same machine and give each one its own policy. The numbers become configuration, visible in one place and comparable across the system.',
         ],
         code: {
@@ -470,8 +470,8 @@ count timeouts as failures - they are the expensive case`,
       {
         heading: 'Composing it, and making the open state useful',
         paragraphs: [
-          'The full protective stack around one dependency is: a timeout bounding each attempt, a bounded retry with backoff for transient failures, the circuit breaker to stop calling something that is clearly down, a bulkhead limiting how much capacity this dependency may occupy, and a fallback. Order matters. Retries go inside the breaker, so repeated failures count toward tripping it; if the breaker is inside the retry, you retry a call that fails instantly and achieve nothing. The bulkhead sits outside both.',
-          'An open breaker that returns an error answers in a millisecond instead of hanging for 30 seconds, but an error is still what the user sees. The value comes from what you do instead: serve a cached value, return a sensible default, omit the section, or queue the work for later. Critical dependencies such as payments usually fail closed with a clear error; optional ones such as recommendations fail open with an empty or cached result.',
+          'The full protective stack around one dependency is: a timeout bounding each attempt, a bounded retry with backoff for transient failures, the circuit breaker to stop calling something that is clearly down, a bulkhead limiting how much capacity this dependency may occupy, and a fallback. Order matters. The retry goes around the breaker, so every attempt passes through it and counts toward tripping - the default order in Resilience4j, and the one the Azure guidance describes. The retry must then treat "circuit open" as final: retrying it only waits out backoff delays against a circuit that fails instantly.',
+          'An open breaker that returns an error answers in a millisecond or two instead of hanging for 30 seconds, but an error is still what the user sees. The value comes from what you do instead: serve a cached value, return a sensible default, omit the section, or queue the work for later. Critical dependencies such as payments usually fail closed with a clear error; optional ones such as recommendations fail open with an empty or cached result.',
           'Breaker state changes should be logged and emitted as metrics, because an open breaker is a precise statement that a specific dependency is unhealthy - often a better alert than the monitoring of that dependency. And watch the distributed effect: fifty instances each sending three trial calls per cooldown may be enough to keep a fragile service down, so cap the probes with a low concurrency limit or a shared rate limit.',
         ],
       },
@@ -522,7 +522,7 @@ count timeouts as failures - they are the expensive case`,
       'A breaker converts a slow failure into a fast one - that is what stops cascades.',
       'Half-open is what lets recovery be automatic and gentle.',
       'Trip on timeouts and 5xx over a rolling window with a minimum call count, never on 4xx.',
-      'Wrap any fallible call with one policy per dependency: retries inside the breaker, the bulkhead outside.',
+      'Wrap any fallible call with one policy per dependency, and stop retrying when the breaker says the circuit is open.',
       'Pair it with a timeout and a real fallback - critical calls fail closed, optional ones fail open.',
     ],
   },
@@ -547,7 +547,7 @@ count timeouts as failures - they are the expensive case`,
 never on     400, 401, 403, 404, 422 - these will fail identically
 ambiguous    timeout on a POST -> retry ONLY with an idempotency key
 
-attempts     3 (plus the original), not 10
+attempts     3 in total (1 original + 2 retries), not 10
 delay        base 100 ms, exponential, full jitter
 budget       total time across attempts < the caller deadline
 per-call     each attempt still gets its own timeout`,
@@ -557,7 +557,7 @@ per-call     each attempt still gets its own timeout`,
         heading: 'Retry amplification: how retries cause the outage',
         paragraphs: [
           'Retries multiply load exactly when a system is least able to take it. If a service is struggling and every client retries three times, it receives four times the traffic - and each retry occupies a connection and a thread on the recovering service. Many outages are extended, not caused, by retry storms.',
-          'It gets worse in layered architectures. If the gateway retries 3 times, the service it calls retries 3 times, and its database client retries 3 times, one user request can become 27 database calls. Each layer looks reasonable in isolation; the product is catastrophic.',
+          'It gets worse in layered architectures. If the gateway makes 3 attempts, the service it calls makes 3, and its database client makes 3, one user request can become 3 x 3 x 3 = 27 database calls. With 3 retries (4 attempts) at each of the three layers it is 4 x 4 x 4 = 64 - the example in the Google SRE book. Each layer looks reasonable in isolation; the product is catastrophic.',
           'The fix is to retry at one layer - normally the outermost one that can make a meaningful decision - and to use a retry budget: allow retries only while they are a small percentage of total requests (say 10 percent). When the failure rate is high, the budget is exhausted and retries stop automatically, which is exactly the behaviour you want during an outage.',
         ],
         bullets: [
@@ -582,9 +582,9 @@ per-call     each attempt still gets its own timeout`,
         setup:
           'A database has a brief 10-second hiccup. The dashboard, normally at 500 requests per second, generates enough load that the database stays down for 6 minutes.',
         walkthrough: [
-          'Layer 1: the mobile client retries failed requests 3 times with a 1-second delay.',
-          'Layer 2: the API gateway retries 5xx responses from the service 3 times.',
-          'Layer 3: the service database client retries connection failures 3 times.',
+          'Layer 1: the mobile client makes up to 3 attempts per request, 1 second apart.',
+          'Layer 2: the API gateway makes up to 3 attempts on a 5xx from the service.',
+          'Layer 3: the database client of the service makes up to 3 attempts on a connection failure.',
           'Multiplication: one user tap becomes 3 x 3 x 3 = 27 database attempts, all within a few seconds.',
           'Effective load during the incident: 500 requests per second becomes roughly 13,500 attempts per second at the database, which cannot recover under that pressure.',
           'Fix 1: retries only at the gateway. The database client and the mobile client stop retrying entirely.',
@@ -656,7 +656,7 @@ This is the AWS-recommended default. Use it unless you have a reason not to.`,
       {
         heading: 'Where backoff appears besides retries',
         paragraphs: [
-          'TCP congestion control is exponential backoff at the transport layer - the protocol halves its sending rate on loss and grows back gradually. Ethernet used it for collision recovery decades ago. The pattern is old because the problem is fundamental: contention for a shared resource is best resolved by backing off with randomness.',
+          'TCP uses exponential backoff at the transport layer: each time a retransmission times out, the sender doubles its retransmission timeout (RFC 6298). Classic Ethernet used randomised binary exponential backoff for collision recovery decades ago - backoff and jitter in one rule. The pattern is old because the problem is fundamental: contention for a shared resource is best resolved by backing off with randomness.',
           'In application code you will meet it in reconnection loops for WebSockets and message brokers, in poller intervals that slow down when nothing changes, in rate limiter clients honouring 429s, and in job queue retry policies. It is the same formula each time.',
           'One caveat worth stating: backoff is for the client. It does not protect the server from clients that ignore it, which is why servers still need rate limiting and load shedding. Backoff is cooperative; rate limiting is enforcement, and a production system needs both.',
         ],
@@ -672,7 +672,7 @@ This is the AWS-recommended default. Use it unless you have a reason not to.`,
           'Those clients retry one second later - together again. The synchronised wave repeats indefinitely and the server never gets a quiet moment to become healthy.',
           'Fix 1: exponential backoff with base 1 second and cap 30 seconds. The waves spread out over time - but they are still waves, because every client computes the same schedule.',
           'Fix 2: full jitter. Each client sleeps a random duration between 0 and its computed backoff, so the first wave spreads across a second, the next across two, and so on.',
-          'Effect: instead of 10,000 attempts at t+1, roughly 5,000 spread over the first second, then the remainder spread across widening windows. The server accepts connections steadily and is fully recovered in about 20 seconds.',
+          'Effect: instead of 10,000 attempts in the same instant, the 10,000 first retries spread evenly over the first second - about 1,000 per 100 ms - and the ones that fail spread over the next 2 seconds, then 4. The server accepts connections steadily and is fully recovered in about 20 seconds.',
           'Fix 3: the server also sends a Retry-After hint during shutdown, so clients know to wait rather than guess.',
         ],
         result:

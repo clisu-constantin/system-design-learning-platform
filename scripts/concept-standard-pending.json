@@ -41,9 +41,6 @@
     "high-availability",
     "single-point-of-failure",
     "failover",
-    "circuit-breaker",
-    "retry",
-    "exponential-backoff",
     "health-checks",
     "jwt",
     "rate-limiting",
@@ -69,7 +66,6 @@
     "capacity",
     "url-journey",
     "indexing",
-    "retry-backoff",
     "tracing"
   ]
 }
