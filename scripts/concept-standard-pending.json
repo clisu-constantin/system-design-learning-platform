@@ -42,7 +42,6 @@
     "eventual-consistency",
     "leader-election",
     "consensus",
-    "idempotency",
     "rest-apis",
     "graphql",
     "grpc",
