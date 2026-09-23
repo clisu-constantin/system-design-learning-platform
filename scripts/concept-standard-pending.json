@@ -27,7 +27,6 @@
     "sharding",
     "partitioning",
     "read-replicas",
-    "connection-pooling",
     "caching",
     "cache-strategies",
     "redis",
