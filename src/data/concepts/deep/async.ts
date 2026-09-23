@@ -100,7 +100,7 @@ QUEUED
         paragraphs: [
           'A topic is split into partitions, and each partition is an ordered, append-only sequence of records on disk. Producers append; consumers read forward, tracking an offset. Nothing is removed when it is read - records are deleted by retention policy (seven days, thirty days, or never), which is why replay is a normal operation rather than a recovery procedure.',
           'Partitions are the unit of parallelism and of ordering. Order is guaranteed within a partition and nowhere else, so the partition key is the crucial design decision: keying by order_id means every event for one order is strictly ordered, while different orders process in parallel.',
-          'Consumer groups divide the partitions among their members. With 12 partitions you can run up to 12 consumers in a group, each owning some partitions exclusively. Add a thirteenth and it sits idle - partition count is the ceiling on consumer parallelism, and it is easier to increase than to decrease.',
+          'Consumer groups divide the partitions among their members. With 12 partitions you can run up to 12 consumers in a group, each owning some partitions exclusively. Add a thirteenth and it sits idle - partition count is the ceiling on consumer parallelism. It can be increased but never decreased, and increasing it moves keys to different partitions, so pick it with headroom.',
         ],
         code: {
           caption: 'Topic, partitions, offsets, groups',
@@ -126,12 +126,13 @@ Independent groups, independent progress, no copying of data.`,
           'Multiple consumer groups read the same data independently.',
           'Replay from an offset is routine: fix a bug, reprocess the range.',
           'Compacted topics keep only the latest value per key - a durable snapshot of current state.',
+          'A group slower than retention loses the records deleted before it read them.',
         ],
       },
       {
         heading: 'The costs and the common mistakes',
         paragraphs: [
-          'Operationally Kafka is a real distributed system: brokers, replication factors, in-sync replica settings, partition rebalancing and (historically) ZooKeeper. Running it yourself is a genuine commitment, which is why most teams use a managed offering - and why a smaller broker is often the right answer when you need a queue rather than a log.',
+          'Operationally Kafka is a real distributed system: brokers, replication factors, in-sync replica settings, partition rebalancing, and ZooKeeper until Kafka 4.0 replaced it with the built-in KRaft mode. Running it yourself is a genuine commitment, which is why most teams use a managed offering - and why a smaller broker is often the right answer when you need a queue rather than a log.',
           'The most common design mistake is too few or too many partitions. Too few caps your consumer parallelism and creates hot partitions; too many adds per-partition overhead, slower rebalances and more open files. Start from your target throughput divided by what one consumer can handle, and add headroom.',
           'The second is a key that concentrates traffic - keying by country when 70 percent of users are in one country, or by a constant. And the third is treating Kafka as a database: it is an ordered log, not a query engine, so "get the current state of order 42" means either consuming into a store or using a compacted topic deliberately.',
         ],

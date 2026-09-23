@@ -280,8 +280,8 @@ export const systemVisuals: Record<string, VisualSpec> = {
       { id: 'p0', kind: 'queue', label: 'Partition 0', x: 270, y: 20, w: 170, h: 74 },
       { id: 'p1', kind: 'queue', label: 'Partition 1', x: 270, y: 110, w: 170, h: 74 },
       { id: 'p2', kind: 'queue', label: 'Partition 2', x: 270, y: 200, w: 170, h: 74 },
-      { id: 'ga', kind: 'worker', label: 'Group A', sub: 'offset 8,412', x: 540, y: 55, w: 180, h: 80 },
-      { id: 'gb', kind: 'worker', label: 'Group B', sub: 'offset 120', x: 540, y: 175, w: 180, h: 80 },
+      { id: 'ga', kind: 'worker', label: 'Group A', sub: 'P0 at offset 8,412', x: 540, y: 55, w: 180, h: 80 },
+      { id: 'gb', kind: 'worker', label: 'Group B', sub: 'P0 at offset 120', x: 540, y: 175, w: 180, h: 80 },
     ],
     edges: [
       { from: 'prod', to: 'p0', tone: 'brand', rate: 1.4 },
@@ -965,20 +965,22 @@ export const systemVisuals: Record<string, VisualSpec> = {
     height: 280,
     caption: 'Append-only events; current state is a fold over them, with snapshots for speed.',
     nodes: [
-      { id: 'cmd', kind: 'client', label: 'Deposit 100', x: 40, y: 100, w: 160, h: 74 },
+      { id: 'cmd', kind: 'client', label: 'Withdraw 30', x: 40, y: 100, w: 160, h: 74 },
       { id: 'stream', kind: 'queue', label: 'account-42 stream', sub: 'immutable events', x: 270, y: 95, w: 200, h: 88 },
-      { id: 'snap', kind: 'storage', label: 'Snapshot', sub: 'event 1000', x: 550, y: 20, w: 170, h: 80 },
+      { id: 'snap', kind: 'storage', label: 'Snapshot', sub: 'balance 100 at event 1000', x: 550, y: 20, w: 190, h: 80 },
       { id: 'state', kind: 'sql', label: 'balance 70', sub: 'derived', x: 550, y: 175, w: 170, h: 80 },
     ],
     edges: [
       { from: 'cmd', to: 'stream', tone: 'brand', rate: 2 },
       { from: 'stream', to: 'snap', tone: 'muted', rate: 0.5, dashed: true },
+      { from: 'snap', to: 'state', tone: 'violet', rate: 0.8 },
       { from: 'stream', to: 'state', tone: 'ok', rate: 2 },
     ],
     steps: [
-      { from: 'cmd', to: 'stream', label: 'Deposit appended, nothing overwritten' },
+      { from: 'cmd', to: 'stream', label: 'Withdrawal appended, nothing overwritten' },
       { from: 'stream', to: 'snap', label: 'Snapshot saved at event 1000' },
-      { from: 'stream', to: 'state', label: 'Replay events after the snapshot' },
+      { from: 'snap', to: 'state', label: 'Load state from the snapshot' },
+      { from: 'stream', to: 'state', label: 'Replay only events after it' },
     ],
   },
 

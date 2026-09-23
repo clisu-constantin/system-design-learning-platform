@@ -246,23 +246,30 @@ No shared database. Every cross-service call can fail.`,
     tagline: 'Separate the write model from the read model.',
     category: 'architecture',
     difficulty: 'Advanced',
+    lab: 'event-log',
+    labFocus: 'cqrs',
     keywords: ['command', 'query', 'read model', 'projection', 'eventual consistency'],
     what: 'Command Query Responsibility Segregation uses different models - often different stores - for writing and for reading.',
     why: 'Write models are optimised for invariants and normalisation; read models are optimised for the exact shape a screen needs. Forcing one model to do both makes each worse.',
     how: [
       'Commands validate invariants and write to the authoritative store.',
       'Projections build read models (denormalised views, search indexes, caches) from those writes.',
-      'Queries read only from the read models, never from the write model.',
-      'Accept a propagation delay between write and read side.',
+      'Queries read from the read models; a screen that must show the user their own change at once reads the write side or uses the command result.',
+      'With an asynchronous projection, accept a propagation delay between write and read side - usually milliseconds to seconds.',
     ],
     when: ['Very different read and write loads.', 'Complex domain rules on write with many query shapes on read.', 'Alongside event sourcing.'],
     diagram: `Command -> domain model -> write store -> events
                                             |
                                projections  v
                      read model (denormalised) <- Queries`,
+    advantages: [
+      'Each query gets data already in the shape it needs - no joins at read time.',
+      'Reads and writes scale separately, which matters when reads outnumber writes by 1,000 to 1.',
+      'New read models can be added, or rebuilt from the source of truth, without touching the write side.',
+    ],
     tradeoffs: [
       {
-        approach: 'CQRS',
+        approach: 'CQRS with an asynchronous read model',
         gains: ['Each side scales and is modelled independently', 'Read models can be rebuilt or added freely'],
         costs: [
           'Eventual consistency between write and read - the UI must handle it',
@@ -270,9 +277,163 @@ No shared database. Every cross-service call can fail.`,
           'Rebuilding projections needs tooling',
         ],
       },
+      {
+        approach: 'One model for reads and writes (or separate code paths on one database)',
+        gains: ['Every read sees the latest write', 'Less code and no projection to operate'],
+        costs: [
+          'Read queries fight the normalised write schema - joins and aggregations on every request',
+          'Reads and writes scale together, even when their loads differ by orders of magnitude',
+        ],
+      },
     ],
-    mistakes: ['Applying CQRS to simple CRUD, where it only adds latency and code.'],
+    mistakes: [
+      'Applying CQRS to simple CRUD, where it only adds latency and code.',
+      'No answer for read-your-writes: the user saves and the page shows the old value.',
+      'Letting another service write to the read model, so it can no longer be rebuilt from the source of truth.',
+      'Adopting event sourcing at the same time only because the two are often mentioned together.',
+    ],
     related: ['event-sourcing', 'event-driven-architecture', 'denormalization', 'eventual-consistency'],
+    quiz: [
+      {
+        id: 'cqrs-1',
+        prompt:
+          'A user renames their project and the next page still shows the old name for about a second. The read model is updated asynchronously from events. What is going on, and what is a sound fix?',
+        options: [
+          'The write failed silently - retry the command',
+          'The cache must be disabled everywhere',
+          'Read lag between write and read model; show the new name from the command result, or read the write side for this one screen',
+          'The read model is corrupt and must be rebuilt',
+        ],
+        answer: 2,
+        explanation:
+          'The write succeeded; the projection has simply not applied it yet. That is the eventual consistency an asynchronous read model costs. The fix is a read-your-writes answer for that screen. A rebuild would not help - nothing is wrong, only late. In the Lab, the Projection delay slider is this second.',
+      },
+      {
+        id: 'cqrs-2',
+        prompt:
+          'An internal admin tool has 50 users, simple forms, and about as many reads as writes. A colleague proposes CQRS with a separate read database. What do you say?',
+        options: [
+          'Yes - CQRS always makes reads faster',
+          'Keep one model; a separate asynchronous read store adds eventual consistency and moving parts with nothing to gain here',
+          'Yes, but also add event sourcing so the read model can be rebuilt',
+          'Use two write databases instead',
+        ],
+        answer: 1,
+        explanation:
+          'CQRS pays off when read and write shapes or loads differ a lot. For CRUD with a similar profile, it is ceremony: projections, lag and a rebuild path for no benefit. At most, separate the code paths on the same database, which costs no consistency.',
+      },
+      {
+        id: 'cqrs-3',
+        prompt:
+          'A product listing joins 6 tables and takes 2.5 s. It is read 5,000 times a minute; products change a few times an hour. What is the CQRS move?',
+        options: [
+          'Build a denormalised listing table updated from product events, and query only that',
+          'Add more indexes to all 6 tables and keep the join',
+          'Cache the whole page for a day',
+          'Move the products table to a faster disk',
+        ],
+        answer: 0,
+        explanation:
+          'With about 100,000 reads per write, doing the join once per change instead of once per read is the whole point of a read model: the query becomes a single-table lookup. Indexes help a little but keep the join on every read; a day-long cache would show stale prices for hours.',
+      },
+      {
+        id: 'cqrs-4',
+        prompt: 'Where must the rule "an account can never be overdrawn" be enforced?',
+        options: [
+          'In the read model, because it has the current balance ready',
+          'In the UI, by hiding the withdraw button',
+          'In the projector, which can drop events that overdraw',
+          'In the write model, when it handles the command - before anything is recorded',
+        ],
+        answer: 3,
+        explanation:
+          'The read model may be behind, so a check against it can pass while the real balance is already too low. The write model is the authority: it accepts or refuses commands. A projector must never drop events - by then they already happened. In the Lab, the Accounts API refuses overdrafts before they reach the log.',
+      },
+      {
+        id: 'cqrs-5',
+        prompt:
+          'A projector bug wrote wrong totals into the read model for a week. The code is now fixed. How do you repair the data?',
+        options: [
+          'Leave it - new events will slowly correct the old totals',
+          'Throw the read model away and rebuild it from the source of truth with the fixed code',
+          'Edit the wrong rows by hand in the read database',
+          'Restore the read database from last week and lose the week',
+        ],
+        answer: 1,
+        explanation:
+          'A read model is derived, so repair is a rebuild: replay the events (or re-read the write store) with the fixed projection. Fixing the code only corrects new events - the old damage stays, as the Lab shows when you turn the bug off. Hand edits make the read model a second source of truth.',
+      },
+      {
+        id: 'cqrs-6',
+        prompt:
+          'Writes arrive at 10 per second and the projector can apply 8 per second. What happens over the next hour?',
+        options: [
+          'Commands start failing because the read side is full',
+          'The projector drops 2 events per second to keep up',
+          'Commands are still accepted at once, but the read lag grows without limit, so queries see older and older data',
+          'Nothing - the read model is only a cache',
+        ],
+        answer: 2,
+        explanation:
+          'The write side does not wait for the projection, so writes keep succeeding while the backlog grows by 2 events every second - 7,200 after an hour. Nothing is dropped; it is just later and later. In the Lab, set Projector speed under Write rate and watch Read lag climb.',
+      },
+      {
+        id: 'cqrs-7',
+        prompt:
+          'Another team wants to write directly into your read model to add a field they need. What is the problem?',
+        options: [
+          'The read model stops being derived: the next rebuild erases their data, and there are now two sources of truth',
+          'None - a read model is just a table',
+          'Only performance: two writers slow it down',
+          'Their writes would appear on the write side too',
+        ],
+        answer: 0,
+        explanation:
+          'Everything in a read model must be reproducible from the source of truth, or you can never rebuild it safely. Their field belongs in the write model or in events, and then in a projection - perhaps their own read model.',
+      },
+      {
+        id: 'cqrs-8',
+        prompt:
+          'The write side is a relational database. The team wants a search read model in Elasticsearch, and someone says they must adopt event sourcing first. Are they right?',
+        options: [
+          'Yes - projections can only be built from an event store',
+          'Yes - Elasticsearch needs events as input',
+          'No - but then the read model cannot be rebuilt',
+          'No - CQRS and event sourcing are independent; feed the read model from domain events or change data capture on the relational store',
+        ],
+        answer: 3,
+        explanation:
+          'CQRS only separates the read and write models. A projector can be fed by domain events published by the write side, or by change data capture, and it can still be rebuilt by re-reading the relational source. Adopting both patterns at once only because they appear together is a common way to over-build.',
+      },
+      {
+        id: 'cqrs-9',
+        prompt:
+          'A new screen needs the same orders grouped by warehouse, a shape no existing read model has. What do you change?',
+        options: [
+          'Add a column to the write model and query it with a join',
+          'Add a new projection that builds a read model for that screen from the same events, filled first by replaying history',
+          'Change the existing read model and every screen that uses it',
+          'Let the screen query the event log directly',
+        ],
+        answer: 1,
+        explanation:
+          'Read models are cheap to add because the write side does not change: a new projection subscribes to the same events and replays history to fill itself. Reshaping the write model for a screen is exactly the coupling CQRS removes.',
+      },
+      {
+        id: 'cqrs-10',
+        prompt:
+          'The team likes separate command and query code, but one screen must never show a stale value - not even for 100 ms. Which setup fits?',
+        options: [
+          'Separate code paths on the same database, with any read table updated in the same transaction as the write',
+          'An asynchronous projection with a lower delay',
+          'A second read model in a faster database',
+          'Polling the read model until the value changes',
+        ],
+        answer: 0,
+        explanation:
+          'Separate code paths, or a read table written in the same transaction, give CQRS structure with no consistency gap. Any asynchronous projection - however fast - has some lag, as the Lab shows even at a low Projection delay. Polling only hides the gap.',
+      },
+    ],
   },
   {
     slug: 'event-sourcing',
@@ -280,6 +441,8 @@ No shared database. Every cross-service call can fail.`,
     tagline: 'Store the events, derive the state.',
     category: 'architecture',
     difficulty: 'Advanced',
+    lab: 'event-log',
+    labFocus: 'event-sourcing',
     keywords: ['event store', 'replay', 'audit', 'snapshot', 'projection'],
     what: 'Event sourcing persists every state change as an immutable event. Current state is derived by replaying those events, with snapshots as an optimisation.',
     why: 'You get a perfect audit log, the ability to answer questions nobody asked when the data was written, and the possibility of rebuilding any read model from history.',
@@ -288,6 +451,7 @@ No shared database. Every cross-service call can fail.`,
       'Rebuild state by folding the stream; snapshot periodically to keep replay fast.',
       'Projections turn streams into query-friendly views.',
       'Version event schemas - old events must stay readable forever.',
+      'Correct a mistake by appending a compensating event, never by editing history.',
     ],
     when: ['Finance, ordering, compliance - anywhere history is part of the product.'],
     diagram: `stream: account-42
@@ -296,6 +460,12 @@ No shared database. Every cross-service call can fail.`,
   MoneyWithdrawn     {-30}
   -> folded state: balance 70
   -> snapshot at event 1000 to avoid replaying everything`,
+    advantages: [
+      'A complete audit trail by construction - it is the data, not a side log that can drift.',
+      'State at any past moment, by replaying up to that point.',
+      'New questions about the past can be answered with a new projection over old events.',
+      'Any read model can be rebuilt after a bug by replaying the stream with fixed code.',
+    ],
     tradeoffs: [
       {
         approach: 'Event sourcing',
@@ -307,8 +477,161 @@ No shared database. Every cross-service call can fail.`,
           'Queries require projections',
         ],
       },
+      {
+        approach: 'Store current state (with an audit table if needed)',
+        gains: ['Simple queries straight against the state', 'Familiar tools, migrations and deletes'],
+        costs: [
+          'History is lost on every update unless an audit table is kept - and that table can drift from the real data',
+          'A question about the past that nobody planned for usually cannot be answered',
+        ],
+      },
     ],
-    mistakes: ['Adopting it for an entire system when only one aggregate needs an audit trail.'],
+    mistakes: [
+      'Adopting it for an entire system when only one aggregate needs an audit trail.',
+      'Keeping events in a store or topic with a retention limit, so the history needed to rebuild is deleted.',
+      'Triggering side effects such as emails from the replay path, so a rebuild sends them again.',
+      'Editing or deleting stored events to fix a mistake instead of appending a correction.',
+    ],
     related: ['cqrs', 'event-driven-architecture', 'kafka', 'outbox-pattern'],
+    quiz: [
+      {
+        id: 'es-1',
+        prompt:
+          'Stream account-42 holds: AccountOpened (0), MoneyDeposited +100, MoneyWithdrawn -30, MoneyDeposited +50. An auditor asks for the balance just before the last deposit. How do you answer?',
+        options: [
+          'Read the current balance, 120, and subtract nothing',
+          'It cannot be known - only the current balance is stored',
+          'Replay the first three events: 0 + 100 - 30 = 70',
+          'Read the balance from the latest snapshot',
+        ],
+        answer: 2,
+        explanation:
+          'State at any past point is a fold over the events up to that point, so the answer is 70. The current balance is 120, which is the wrong moment. A snapshot is a shortcut to some state, not to the state the auditor asked about.',
+      },
+      {
+        id: 'es-2',
+        prompt:
+          'A heavily edited order has 20,000 events, and loading it takes 300 ms of replay. What do you do?',
+        options: [
+          'Delete the oldest events once they are applied',
+          'Take a snapshot every 1,000 events and load the latest snapshot plus only the events after it',
+          'Switch the order to a normal table',
+          'Replay in parallel on 20 threads',
+        ],
+        answer: 1,
+        explanation:
+          'A snapshot stores the folded state at an event number, so loading replays at most 1,000 events instead of 20,000. Deleting events destroys the history that is the point of event sourcing. In the Lab, turn Snapshots on and rebuild twice: the second rebuild replays only the events after the snapshot.',
+      },
+      {
+        id: 'es-3',
+        prompt: 'A customer invokes the GDPR right to erasure. Their personal data is inside immutable events. What works?',
+        options: [
+          'Crypto-shredding: personal data was stored encrypted with a per-customer key, and you delete that key',
+          'Rewrite the affected events in place with the data removed',
+          'Delete the whole stream and every projection built from it',
+          'Nothing - event sourcing is exempt from erasure',
+        ],
+        answer: 0,
+        explanation:
+          'Encrypting personal fields with a per-subject key means deleting the key makes the data unreadable while the event sequence stays intact. It has to be designed in before the data is stored. Rewriting events breaks immutability and every consumer that already read them.',
+      },
+      {
+        id: 'es-4',
+        prompt:
+          'MoneyDeposited gains a currency field. Five years of stored events do not have it. What do you do?',
+        options: [
+          'Run a migration that updates every old event',
+          'Refuse to load old events from now on',
+          'Delete the old events and start a new stream',
+          'Version the event type and write an upcaster that gives old events a default currency when they are read',
+        ],
+        answer: 3,
+        explanation:
+          'Stored events are never changed, so old shapes must stay readable forever. An upcaster converts an old version into the current shape at read time. A migration that edits history gives up the audit trail that justified event sourcing.',
+      },
+      {
+        id: 'es-5',
+        prompt:
+          'Orders are event-sourced. Finance asks how often customers added items after placing an order last year. How do you answer?',
+        options: [
+          'Write a new projection over the ItemAdded events and replay the whole history into it',
+          'It cannot be answered - the question was not planned',
+          'Query the current order rows',
+          'Add logging and answer the question next year',
+        ],
+        answer: 0,
+        explanation:
+          'Because the raw facts were kept, a question nobody planned for can be answered for the past with a new projection. With only current order rows, an item added later looks the same as one ordered at the start.',
+      },
+      {
+        id: 'es-6',
+        prompt:
+          'After event-sourcing the order lifecycle successfully, a team wants to event-source user preferences and the product catalogue too. What do you advise?',
+        options: [
+          'Yes - one pattern everywhere is simpler',
+          'Keep them as ordinary tables; history there has no business value, and every query would need a projection',
+          'Yes, but only with snapshots',
+          'Event-source them and drop the order events instead',
+        ],
+        answer: 1,
+        explanation:
+          'Event sourcing is chosen per aggregate, where history is part of the product. For preferences and a catalogue it adds projections, versioning and rebuilds for very little value.',
+      },
+      {
+        id: 'es-7',
+        prompt:
+          'A team uses a Kafka topic with the default 7-day retention as its event store. Months later they need to rebuild a read model. What happens?',
+        options: [
+          'The rebuild works - Kafka keeps event-store topics forever',
+          'The rebuild is only slower',
+          'Only events from the last 7 days are left, so the rebuilt state is wrong and cannot be fixed by replay',
+          'Kafka refuses to start the rebuild',
+        ],
+        answer: 2,
+        explanation:
+          'Retention deleted the older events, and state folded from a partial history is wrong. An event store must keep every event - on Kafka that means turning time and size retention off for that topic. In the Lab, turn on Size retention and rebuild: replay can only start at the oldest record kept, and the balances come out wrong.',
+      },
+      {
+        id: 'es-8',
+        prompt:
+          'During a rebuild of the read models, thousands of customers receive their welcome email again. Why?',
+        options: [
+          'The events were duplicated in the store',
+          'The email code runs inside the projection, so replaying the events re-runs the side effect',
+          'Snapshots were turned off',
+          'The rebuild was too fast for the mail server',
+        ],
+        answer: 1,
+        explanation:
+          'Replaying must only rebuild state. Side effects such as emails belong to a separate consumer that does not replay, or that remembers what it already did (idempotency). Nothing is wrong with the events themselves.',
+      },
+      {
+        id: 'es-9',
+        prompt: 'A deposit of 100 was recorded twice by mistake. How do you correct it?',
+        options: [
+          'Delete the duplicate event',
+          'Edit the second event to 0',
+          'Change the balance in the read model by hand',
+          'Append a compensating event, such as DepositReversed of 100, with the reason',
+        ],
+        answer: 3,
+        explanation:
+          'History is never edited: a correction is a new fact, like a reversing entry on a bank statement. The balance becomes right on the next fold, and the audit trail shows both the mistake and the fix. A hand edit in the read model is erased by the next rebuild.',
+      },
+      {
+        id: 'es-10',
+        prompt:
+          'You fix a bug in a projection. The latest snapshot of that projection was taken while the bug was live. How do you rebuild?',
+        options: [
+          'Discard snapshots made by the old code and replay from the first event',
+          'Start from the snapshot - it is faster',
+          'Start from the snapshot and replay the last 100 events twice',
+          'Keep the old read model - the fix only matters for new events',
+        ],
+        answer: 0,
+        explanation:
+          'A snapshot is the output of one version of the projection code, so it carries the bug. Replaying from the start with fixed code is the only way to a correct state. In the Lab, changing the Projector bug toggle discards the snapshot for exactly this reason.',
+      },
+    ],
   },
 ];
