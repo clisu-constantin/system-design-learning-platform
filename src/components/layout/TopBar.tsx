@@ -1,5 +1,5 @@
 import { Link } from 'react-router-dom';
-import { Menu, Moon, Search, Sun } from 'lucide-react';
+import { Menu, Moon, PanelLeftClose, PanelLeftOpen, Search, Sun } from 'lucide-react';
 import { Button, Select } from '@/components/ui';
 import { useTheme } from '@/app/providers/ThemeProvider';
 import { useProgress } from '@/app/providers/ProgressProvider';
@@ -7,7 +7,9 @@ import type { Difficulty } from '@/types';
 
 interface TopBarProps {
   onOpenSearch: () => void;
+  /** Below lg this opens the drawer; from lg up it folds the sidebar into its icon strip. */
   onToggleSidebar: () => void;
+  sidebarExpanded: boolean;
   difficulty: Difficulty | 'all';
   onDifficultyChange: (value: Difficulty | 'all') => void;
 }
@@ -19,14 +21,26 @@ const DIFFICULTY_OPTIONS: { value: Difficulty | 'all'; label: string }[] = [
   { value: 'Advanced', label: 'Advanced' },
 ];
 
-export function TopBar({ onOpenSearch, onToggleSidebar, difficulty, onDifficultyChange }: TopBarProps) {
+export function TopBar({ onOpenSearch, onToggleSidebar, sidebarExpanded, difficulty, onDifficultyChange }: TopBarProps) {
   const { theme, toggle } = useTheme();
   const { overall } = useProgress();
 
   return (
     <header className="sticky top-0 z-30 flex h-14 items-center gap-3 border-b border-line bg-surface/85 px-3 backdrop-blur lg:px-5">
-      <Button size="icon" variant="ghost" className="lg:hidden" onClick={onToggleSidebar} aria-label="Toggle navigation">
-        <Menu className="h-5 w-5" />
+      <Button
+        size="icon"
+        variant="ghost"
+        onClick={onToggleSidebar}
+        aria-label="Navigation"
+        aria-expanded={sidebarExpanded}
+        title={sidebarExpanded ? 'Fold navigation' : 'Open navigation'}
+      >
+        <Menu className="h-5 w-5 lg:hidden" />
+        {sidebarExpanded ? (
+          <PanelLeftClose className="hidden h-5 w-5 lg:block" />
+        ) : (
+          <PanelLeftOpen className="hidden h-5 w-5 lg:block" />
+        )}
       </Button>
 
       <Link to="/" className="flex items-center gap-2.5">

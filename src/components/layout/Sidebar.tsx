@@ -26,12 +26,58 @@ const TOOLS = [
 interface SidebarProps {
   /** Difficulty filter shared with the topbar control. */
   difficulty: Difficulty | 'all';
+  /** Show only the icon strip (wide screens, when the learner folded the sidebar). */
+  folded?: boolean;
+  /** Asks the shell to open the full sidebar again. */
+  onUnfold?: () => void;
   onNavigate?: () => void;
 }
 
-export function Sidebar({ difficulty, onNavigate }: SidebarProps) {
+export function Sidebar({ difficulty, folded = false, onUnfold, onNavigate }: SidebarProps) {
   const { completed, categoryProgress } = useProgress();
   const [open, setOpen] = useState<Record<string, boolean>>({ 'getting-started': true, scaling: true });
+
+  const visibleCategories = CATEGORIES.filter((category) =>
+    (CONCEPTS_BY_CATEGORY[category.id] ?? []).some(
+      (concept) => difficulty === 'all' || concept.difficulty === difficulty,
+    ),
+  );
+
+  if (folded) {
+    return (
+      <nav aria-label="Concept navigation" className="flex h-full w-14 flex-col items-center gap-0.5 overflow-y-auto py-4">
+        {TOOLS.map(({ to, label, Icon }) => (
+          <NavLink
+            key={to}
+            to={to}
+            aria-label={label}
+            className={({ isActive }) =>
+              cn(
+                'flex h-9 w-9 items-center justify-center rounded-lg transition-colors',
+                isActive ? 'bg-brand/10 text-brand' : 'text-muted hover:bg-elevated hover:text-ink',
+              )
+            }
+          >
+            <Icon className="h-4 w-4" />
+          </NavLink>
+        ))}
+
+        <div className="my-2 h-px w-8 shrink-0 bg-line" />
+
+        {visibleCategories.map((category) => (
+          <button
+            key={category.id}
+            type="button"
+            aria-label={category.title}
+            onClick={onUnfold}
+            className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-faint transition-colors hover:bg-elevated hover:text-ink"
+          >
+            <CategoryIcon name={category.icon} className="h-4 w-4" />
+          </button>
+        ))}
+      </nav>
+    );
+  }
 
   return (
     <nav aria-label="Concept navigation" className="flex h-full flex-col gap-1 overflow-y-auto px-3 pb-8 pt-4">
@@ -56,11 +102,10 @@ export function Sidebar({ difficulty, onNavigate }: SidebarProps) {
 
       <div className="my-2 h-px bg-line" />
 
-      {CATEGORIES.map((category) => {
+      {visibleCategories.map((category) => {
         const concepts = (CONCEPTS_BY_CATEGORY[category.id] ?? []).filter(
           (concept) => difficulty === 'all' || concept.difficulty === difficulty,
         );
-        if (concepts.length === 0) return null;
         const isOpen = open[category.id] ?? false;
         const progress = categoryProgress(category.id);
 

@@ -2,6 +2,7 @@ import { RouterProvider } from 'react-router-dom';
 import { ErrorBoundary } from '@/components/ui';
 import { ThemeProvider } from './providers/ThemeProvider';
 import { ProgressProvider } from './providers/ProgressProvider';
+import { LayoutProvider } from './providers/LayoutProvider';
 import { router } from './router';
 
 export function App() {
@@ -9,7 +10,9 @@ export function App() {
     <ErrorBoundary area="Application">
       <ThemeProvider>
         <ProgressProvider>
-          <RouterProvider router={router} />
+          <LayoutProvider>
+            <RouterProvider router={router} />
+          </LayoutProvider>
         </ProgressProvider>
       </ThemeProvider>
     </ErrorBoundary>
