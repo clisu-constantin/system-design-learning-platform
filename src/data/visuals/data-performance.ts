@@ -209,7 +209,7 @@ export const dataVisuals: Record<string, VisualSpec> = {
       { id: 'a1', kind: 'server', label: 'API 1', x: 50, y: 25, w: 140, h: 74 },
       { id: 'a2', kind: 'server', label: 'API 2', x: 50, y: 115, w: 140, h: 74 },
       { id: 'a3', kind: 'server', label: 'API 3', x: 50, y: 205, w: 140, h: 74 },
-      { id: 'pool', kind: 'api-gateway', label: 'PgBouncer', sub: '40 server connections', x: 300, y: 110, w: 180, h: 84 },
+      { id: 'pool', kind: 'api-gateway', label: 'PgBouncer x2', sub: '40 server conns in total', x: 300, y: 110, w: 180, h: 84 },
       { id: 'db', kind: 'sql', label: 'PostgreSQL', sub: 'max_connections 200', x: 570, y: 110, w: 160, h: 84 },
     ],
     edges: [

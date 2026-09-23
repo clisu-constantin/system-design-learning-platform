@@ -861,7 +861,7 @@ health of replica: lag < 2 s, else take it out of rotation`,
           body: `WITHOUT pool
   TCP+TLS+auth+fork   ~25 ms
   query                 3 ms
-  close                 1 ms     -> 29 ms, and ~500 MB RAM at 100 conns
+  close                 1 ms     -> ~29 ms, a new backend each time
 
 WITH pool (10 connections)
   acquire from pool   ~0.05 ms
@@ -874,14 +874,14 @@ WITH pool (10 connections)
         paragraphs: [
           'The instinct is that a bigger pool means more throughput. It does not. A database executes queries on a limited number of CPU cores and disks; beyond that, extra concurrent queries just context-switch and contend for locks, so total throughput falls while latency rises. The commonly cited starting point is roughly cores x 2 plus effective spindles - often 10 to 30 connections for a single database, not 500.',
           'The number that actually matters is the total across your fleet. Twenty application instances with a pool of 50 each is 1,000 connections requested from a server configured for 200. The failure looks like random connection errors under load and is one of the most common self-inflicted outages when scaling horizontally.',
-          'When the total is genuinely too large - many instances, or serverless functions that each want their own connections - put a pooler like PgBouncer between them. In transaction mode it multiplexes thousands of client connections onto a few dozen server connections, at the cost of losing session-level features like prepared statements and session variables unless configured carefully.',
+          'When the total is genuinely too large - many instances, or serverless functions that each want their own connections - put a pooler like PgBouncer between them. In transaction mode it multiplexes thousands of client connections onto a few dozen server connections, at the cost of session-level features: SET, LISTEN and session advisory locks do not carry over between transactions, and protocol-level prepared statements work only when max_prepared_statements is set.',
         ],
         bullets: [
           'Start around (cores x 2) + spindles, then tune with measurements.',
           'pool_size x instance_count must stay below the server max_connections, with headroom for admin access.',
           'Use a separate, smaller pool for background jobs so they cannot starve web requests.',
           'PgBouncer in transaction mode for very high instance counts or serverless.',
-          'Always set an acquire timeout, or a stuck pool becomes an infinite hang.',
+          'Set a short acquire timeout (HikariCP defaults to 30 seconds), or a stuck pool becomes a long hang.',
         ],
       },
       {
@@ -901,7 +901,7 @@ WITH pool (10 connections)
         walkthrough: [
           'Pool size is 10 per instance. Metrics show connection acquire time averaging 8.6 seconds, which accounts for nearly all of the latency.',
           'One endpoint generates a PDF: it opens a transaction, then calls an external rendering service that takes 4-6 seconds, then commits.',
-          'Those requests hold a connection for the whole external call. Two concurrent PDF requests occupy 2 of 10 connections; twelve occupy all of them and everything else queues.',
+          'Those requests hold a connection for the whole external call. Two concurrent PDF requests occupy 2 of 10 connections; ten occupy all of them and everything else queues.',
           'Fix 1: move the external call outside the transaction. Read what is needed, release the connection, call the service, then reopen briefly to write the result.',
           'Fix 2: give PDF generation its own small pool (3 connections), so it can never consume the pool that serves normal traffic - a bulkhead.',
           'Fix 3: set an acquire timeout of 2 seconds so the failure becomes a fast 503 instead of a 9-second hang, and add an alert on acquire time.',
@@ -923,7 +923,7 @@ WITH pool (10 connections)
       'Small pools outperform large ones; the database has limited cores either way.',
       'Multiply pool size by instance count before you scale out, or you will exhaust the server.',
       'Never hold a connection across a call to an external system.',
-      'Always set an acquire timeout, and alert on acquire wait time.',
+      'Set a short acquire timeout, and alert on acquire wait time.',
     ],
   },
 };

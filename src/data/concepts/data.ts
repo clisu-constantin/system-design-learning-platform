@@ -541,37 +541,72 @@ Denormalized:     posts.like_count  (maintained on write)
     tagline: 'Reuse a small number of database connections instead of opening one per request.',
     category: 'data',
     difficulty: 'Intermediate',
-    keywords: ['pgbouncer', 'max connections', 'saturation', 'thundering herd'],
+    lab: 'connection-pool',
+    keywords: ['pgbouncer', 'max connections', 'acquire timeout', 'pool exhaustion', 'hikaricp'],
     what: 'A connection pool keeps a bounded set of established database connections and lends them to requests, instead of creating a new connection each time.',
-    why: 'Database connections are expensive: each one costs memory and, in Postgres, a backend process. Ten app servers opening 100 connections each will exhaust a database that happily serves the same traffic through 40 pooled connections.',
+    why: 'Database connections are expensive: opening one costs handshakes worth tens of milliseconds, and in Postgres each one is a server process with its own memory. Ten app servers opening 100 connections each will exhaust a database that happily serves the same traffic through 40 pooled connections.',
     how: [
-      'Size the pool from the database limit, not from the request rate: total connections across all instances must stay under max_connections.',
-      'Keep pool size close to the number of cores the database can actually use in parallel.',
-      'Set acquisition timeouts so a saturated pool fails fast instead of queueing forever.',
+      'Open the connections once and lend one to each request for the length of its query or transaction, then take it back.',
+      'Size the pools from the database, not from the request rate: start the total near (database cores x 2) + disk spindles - often 10 to 30 - and tune by measuring.',
+      'Multiply pool size by instance count: the total across all instances must stay under max_connections, with headroom for admin access.',
+      'Set a short acquire timeout so a saturated pool fails fast instead of making requests wait 30 seconds or forever.',
       'Use an external pooler (PgBouncer) when you have many application instances or serverless functions.',
     ],
-    when: ['Any application tier that scales horizontally in front of a relational database.'],
+    when: [
+      'Any application that talks to a relational database more than a few times a second.',
+      'Any application tier that scales horizontally in front of one database - that is where the connection multiplier bites.',
+    ],
+    advantages: [
+      'Each query skips the connection setup, often several times longer than the query itself.',
+      'The pool caps how many queries reach the database at once - backpressure that keeps it responsive.',
+      'The connection count on the database stays predictable as traffic changes.',
+    ],
     diagram: `10 app servers x 100 connections = 1000 -> database max_connections 200  ->  refused
 
 With pooling: 10 servers x 20 = 200, requests queue briefly inside the app
 With PgBouncer: thousands of client connections multiplexed onto ~40 server connections`,
     tradeoffs: [
       {
-        approach: 'Small pool',
-        gains: ['Database stays responsive', 'Queueing happens in the app, where it is visible'],
-        costs: ['Requests wait for a connection under burst'],
+        approach: 'No pool (connect per request)',
+        gains: ['Simplest code, no pool settings to tune', 'No idle connections held on the database'],
+        costs: [
+          'Every request pays the connection setup (~25 ms) before its query',
+          'Nothing caps connections, so a slow database is flooded until it refuses new ones',
+        ],
+      },
+      {
+        approach: 'Small pool (close to cores x 2 in total)',
+        gains: ['Database stays responsive', 'Queueing happens in the app, where it is visible and can time out'],
+        costs: ['Requests wait for a connection under burst', 'Needs an acquire timeout and an alert on wait time'],
       },
       {
         approach: 'Large pool',
-        gains: ['No waiting in the application'],
-        costs: ['Database context-switches and memory pressure', 'Latency collapses for everyone at saturation'],
+        gains: ['No waiting in the application while the database still has headroom'],
+        costs: [
+          'Database context-switches and contends for locks; latency collapses for everyone at saturation',
+          'Easy to pass max_connections when the instance count grows',
+        ],
+      },
+      {
+        approach: 'External pooler (PgBouncer)',
+        gains: [
+          'Thousands of client connections share a few dozen server connections',
+          'Database connections stop multiplying with instance count',
+        ],
+        costs: [
+          'One more hop and one more component to run redundantly',
+          'Transaction mode breaks session features: SET, LISTEN, session advisory locks',
+        ],
       },
     ],
     mistakes: [
       'Autoscaling the app tier without accounting for the connection multiplier.',
-      'Infinite acquisition timeouts, turning a slow database into a fully stalled service.',
+      'Raising the pool size to fix slow requests when the database is already at what its cores can do.',
+      'Infinite or very long acquire timeouts, turning a slow database into a fully stalled service.',
+      'Holding a connection (often inside a transaction) across a call to an external service.',
+      'Leaking connections on error paths, so the pool slowly empties until every request hangs.',
     ],
-    related: ['horizontal-scaling', 'backpressure', 'read-replicas'],
+    related: ['horizontal-scaling', 'backpressure', 'bulkhead', 'serverless', 'read-replicas'],
     quiz: [
       {
         id: 'cp-1',
@@ -584,7 +619,161 @@ With PgBouncer: thousands of client connections multiplexed onto ~40 server conn
         ],
         answer: 1,
         explanation:
-          'Pool size multiplies by instance count. Either size pools with the maximum fleet in mind, or put a shared pooler in front of the database.',
+          'Pool size multiplies by instance count: 4 x 20 = 80 connections became 20 x 20 = 400 against a max_connections of 200. The load balancer holds sockets to the API instances, not to the database, so it cannot be the cause. Size pools with the maximum fleet in mind, or put a shared pooler in front of the database.',
+      },
+      {
+        id: 'cp-2',
+        prompt:
+          'In the Lab at 1,200 req/s with 5 ms queries, p95 is about 5 ms. You switch the pool off and p95 jumps to about 30 ms, although the database is nowhere near busy. Where did the extra 25 ms go?',
+        options: [
+          'The database runs each query slower when it is not pooled',
+          'Requests now wait in a queue inside the app',
+          'Each request first opens a new connection: TCP, TLS and auth handshakes plus a new backend process',
+          'Without a pool the database has to parse every query twice',
+        ],
+        answer: 2,
+        explanation:
+          'Without a pool, connection setup happens on every request, and it costs several times the 5 ms query. There is no queue in the app when the pool is off - every request connects at once - so waiting in the app is the tempting but wrong reading. A pool pays the setup once and reuses the connection.',
+      },
+      {
+        id: 'cp-3',
+        prompt:
+          'An API reports p99 of 9 seconds. The database shows 4 ms average query time and 20% CPU. Each instance has a pool of 10. What do you measure first?',
+        options: [
+          'How long requests wait to acquire a connection from the pool',
+          'Which query is missing an index',
+          'Whether the database needs a bigger machine',
+          'Whether max_connections on the database is too low',
+        ],
+        answer: 0,
+        explanation:
+          'A calm database with slow requests points at the waiting before the query, not the query itself. Pool exhaustion shows up as latency in the app while the database looks idle. An index or a bigger machine speeds up work the database is barely doing, so it would not touch 9 seconds.',
+      },
+      {
+        id: 'cp-4',
+        prompt:
+          'In the Lab, queries slow from 5 to 20 ms and requests start timing out. A teammate raises each of the 4 pools from 5 to 50 connections. Throughput falls and every query gets slower. Why?',
+        options: [
+          'Pools of 50 still are not enough for this load',
+          'The acquire timeout is now too short',
+          'Each new connection has to repeat the TLS handshake',
+          'About 200 queries now run at once on 8 cores; they context-switch and fight over locks, so the database does less work',
+        ],
+        answer: 3,
+        explanation:
+          'The database works best with roughly 2 x its cores in flight. Letting 200 in only adds contention - the Lab shows most of its work lost - so fewer connections serve more requests. A bigger pool looks like the fix for waiting, but here the bottleneck is the database, and the waiting belongs in the app.',
+      },
+      {
+        id: 'cp-5',
+        prompt:
+          'In the Lab, each of 4 instances has a pool of 1 connection. Requests hit the acquire timeout, while the database shows only 4 queries in flight against a best of about 16. What helps?',
+        options: [
+          'Shrink the pool further to protect the database',
+          'Raise the pool size a little, since the database has room for more parallel work',
+          'Raise the acquire timeout to 30 seconds',
+          'Switch the pool off',
+        ],
+        answer: 1,
+        explanation:
+          'Here the pool, not the database, is the bottleneck: 4 connections cannot carry the load, and the database is under-used. Raising the pool to a total near 16 lets it work in parallel. A longer timeout only makes requests wait longer before failing, and switching the pool off adds connection setup to every request.',
+      },
+      {
+        id: 'cp-6',
+        prompt:
+          'The database slows down for a minute. Your pool uses the library default acquire timeout of 30 seconds. What happens to the API, and what should you change?',
+        options: [
+          'Nothing happens: requests fail fast on their own',
+          'The pool opens extra connections past its maximum to absorb the burst',
+          'Requests pile up waiting up to 30 seconds each, holding threads and memory until the whole API stalls; set a short timeout so they fail fast',
+          'The database cancels the slow queries for you',
+        ],
+        answer: 2,
+        explanation:
+          'A request waiting for a connection still holds a thread and memory in the app. With 30 seconds of patience the backlog grows until the whole service stops. A short acquire timeout turns the stall into fast errors the caller can handle. A pool never grows past its maximum - that cap is the point of it.',
+      },
+      {
+        id: 'cp-7',
+        prompt:
+          'You move an API to serverless functions. At peak 2,000 run at once, each opening its own connection, and Postgres refuses them. What is the usual fix?',
+        options: [
+          'Put an external pooler such as PgBouncer between the functions and the database',
+          'Raise max_connections to 2,000',
+          'Give each function a pool of 10 connections',
+          'Add a read replica',
+        ],
+        answer: 0,
+        explanation:
+          'Functions cannot share an in-process pool, so a shared pooler multiplexes their many client connections onto a few dozen server connections. Raising max_connections to 2,000 means 2,000 backend processes contending for a handful of cores, and a pool per function multiplies the problem by 10.',
+      },
+      {
+        id: 'cp-8',
+        prompt:
+          'After putting PgBouncer in transaction mode in front of the database, a feature that runs SET search_path once per session starts reading the wrong schema at random. Why?',
+        options: [
+          'PgBouncer rewrites SQL statements',
+          'The database lost the setting in a restart',
+          'search_path is not supported by Postgres behind a proxy',
+          'Each transaction may run on a different server connection, so session state set on one is not there on the next',
+        ],
+        answer: 3,
+        explanation:
+          'Transaction mode lends a server connection for one transaction only. Session state - SET, LISTEN, session advisory locks - stays on whichever server connection ran it. PgBouncer does not rewrite SQL; the fix is to set the value inside each transaction (SET LOCAL) or use session mode for that client.',
+      },
+      {
+        id: 'cp-9',
+        prompt:
+          'One endpoint opens a transaction, calls a payment provider that takes 5 seconds, then commits. Under traffic, every other endpoint gets slow. What is going on?',
+        options: [
+          'The payment provider is rate limiting the other endpoints',
+          'Each payment request holds a pooled connection for the whole external call, so the pool empties and everything else waits',
+          'The transaction locks every table in the database',
+          'The database is overloaded by the payment queries',
+        ],
+        answer: 1,
+        explanation:
+          'A connection held across a network call you do not control is idle for the database but unavailable to the pool. Ten slow calls occupy a pool of 10. Move the call outside the transaction, or give that endpoint its own small pool (a bulkhead). The database is not busy at all, so it is not overloaded.',
+      },
+      {
+        id: 'cp-10',
+        prompt:
+          'Every morning the first few queries fail with "connection reset", then everything works. At night the app is idle for hours. What is the likely cause?',
+        options: [
+          'The database restarts every night',
+          'The pool is too small for the morning traffic',
+          'A firewall dropped the idle connections, and the pool handed out dead ones; set a max lifetime shorter than the idle timeout',
+          'The acquire timeout is too short',
+        ],
+        answer: 2,
+        explanation:
+          'Firewalls and load balancers silently drop idle TCP connections. The pool does not know, and the first borrower gets an error. Recycling connections before the network idle timeout (max lifetime) and checking a connection on borrow removes this class of error. A small pool would cause waiting, not resets.',
+      },
+      {
+        id: 'cp-11',
+        prompt:
+          'After a few hundred errors from one code path, every request hangs, and the pool reports 0 idle connections while the database shows almost nothing running. What happened?',
+        options: [
+          'A leak: that code path acquires a connection and never releases it when it throws',
+          'The database crashed',
+          'Traffic suddenly grew',
+          'The pool shrank to save memory',
+        ],
+        answer: 0,
+        explanation:
+          'Connections that are borrowed and never returned drain the pool one error at a time, and the database sees them as idle. More traffic would show queries running. Use the scoped block of the framework (try-with-resources, a context manager) so the release happens even on an exception.',
+      },
+      {
+        id: 'cp-12',
+        prompt:
+          'The database has 16 cores and SSD storage, max_connections is 200, and the API runs on 6 instances. Which pool size per instance is a sensible starting point?',
+        options: [
+          '100 per instance, to be safe',
+          '50 per instance, so bursts never wait',
+          '33 per instance, which is 198 in total, just under the limit',
+          'About 5 per instance, around 30 in total',
+        ],
+        answer: 3,
+        explanation:
+          'The (cores x 2) + spindles starting point, about 33 here, is for the database total, not for each instance. 6 x 5 = 30 keeps the database near what its cores can use. 33 per instance fits under max_connections, but lets about 200 queries contend for 16 cores - fitting under the limit is not the same as being fast. 50 or 100 per instance (300 or 600 in total) pass max_connections outright.',
       },
     ],
   },

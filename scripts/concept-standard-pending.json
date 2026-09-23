@@ -29,7 +29,6 @@
     "database-normalization",
     "denormalization",
     "read-replicas",
-    "connection-pooling",
     "caching",
     "cache-strategies",
     "redis",
