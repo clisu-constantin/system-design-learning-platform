@@ -1,4 +1,4 @@
-import { useState, type FocusEvent, type MouseEvent } from 'react';
+import { useEffect, useRef, useState, type FocusEvent, type MouseEvent } from 'react';
 import { createPortal } from 'react-dom';
 import { NavLink, matchPath, useLocation } from 'react-router-dom';
 import { Check, ChevronDown, FlaskConical, Layers3, BookMarked, Route, GitCompare, Waypoints } from 'lucide-react';
@@ -29,7 +29,7 @@ interface SidebarProps {
   difficulty: Difficulty | 'all';
   /** Show only the icon strip (wide screens, when the learner folded the sidebar). */
   folded?: boolean;
-  /** Asks the shell to open the full sidebar again. */
+  /** Asks the shell to open the full sidebar again (a category icon in the strip was clicked). */
   onUnfold?: () => void;
   onNavigate?: () => void;
 }
@@ -37,6 +37,22 @@ interface SidebarProps {
 export function Sidebar({ difficulty, folded = false, onUnfold, onNavigate }: SidebarProps) {
   const { completed, categoryProgress } = useProgress();
   const [open, setOpen] = useState<Record<string, boolean>>({ 'getting-started': true, scaling: true });
+  const navRef = useRef<HTMLElement>(null);
+  /** Category picked from the strip, scrolled into view once the full sidebar is back. */
+  const revealRef = useRef<CategoryId | null>(null);
+
+  useEffect(() => {
+    const id = revealRef.current;
+    if (folded || !id) return;
+    revealRef.current = null;
+    navRef.current?.querySelector(`[data-category="${id}"]`)?.scrollIntoView({ block: 'nearest' });
+  }, [folded]);
+
+  const openAt = (id: CategoryId) => {
+    setOpen((current) => ({ ...current, [id]: true }));
+    revealRef.current = id;
+    onUnfold?.();
+  };
 
   const visibleCategories = CATEGORIES.filter((category) =>
     (CONCEPTS_BY_CATEGORY[category.id] ?? []).some(
@@ -44,10 +60,10 @@ export function Sidebar({ difficulty, folded = false, onUnfold, onNavigate }: Si
     ),
   );
 
-  if (folded) return <SidebarStrip categories={visibleCategories} onUnfold={onUnfold} />;
+  if (folded) return <SidebarStrip categories={visibleCategories} onOpenCategory={openAt} />;
 
   return (
-    <nav aria-label="Concept navigation" className="flex h-full flex-col gap-1 overflow-y-auto px-3 pb-8 pt-4">
+    <nav ref={navRef} aria-label="Concept navigation" className="flex h-full flex-col gap-1 overflow-y-auto px-3 pb-8 pt-4">
       <div className="mb-2 space-y-0.5">
         {TOOLS.map(({ to, label, Icon }) => (
           <NavLink
@@ -77,7 +93,7 @@ export function Sidebar({ difficulty, folded = false, onUnfold, onNavigate }: Si
         const progress = categoryProgress(category.id);
 
         return (
-          <div key={category.id}>
+          <div key={category.id} data-category={category.id}>
             <button
               type="button"
               aria-expanded={isOpen}
@@ -153,7 +169,14 @@ const ACTIVE = 'bg-brand/10 text-brand before:absolute before:-left-2.5 before:h
  * itself in a tooltip on hover or focus, and a category adds its Done count. The tooltip is
  * portalled to the body because the strip clips anything that leaves it.
  */
-function SidebarStrip({ categories, onUnfold }: { categories: Category[]; onUnfold?: () => void }) {
+function SidebarStrip({
+  categories,
+  onOpenCategory,
+}: {
+  categories: Category[];
+  /** Opens the full sidebar with this category expanded. */
+  onOpenCategory: (id: CategoryId) => void;
+}) {
   const { categoryProgress } = useProgress();
   const activeCategory = useActiveCategory();
   const [tip, setTip] = useState<TipState | null>(null);
@@ -198,7 +221,7 @@ function SidebarStrip({ categories, onUnfold }: { categories: Category[]; onUnfo
             aria-label={`${category.title}, ${progress.done} of ${progress.total} done`}
             aria-current={isActive ? 'page' : undefined}
             {...tipProps(`${category.title} ${progress.done}/${progress.total}`)}
-            onClick={onUnfold}
+            onClick={() => onOpenCategory(category.id)}
             className={cn(ITEM, isActive ? ACTIVE : 'text-faint hover:bg-elevated hover:text-ink')}
           >
             <CategoryIcon name={category.icon} className="h-4 w-4" />
