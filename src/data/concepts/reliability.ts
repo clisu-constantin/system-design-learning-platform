@@ -367,14 +367,26 @@ attempt 3 -> fail (0 ms)     attempt 2 -> fail
     category: 'reliability',
     difficulty: 'Beginner',
     lab: 'load-balancer',
-    keywords: ['liveness', 'readiness', 'probe', 'deep check', 'flapping'],
+    labFocus: 'health-checks',
+    keywords: ['liveness', 'readiness', 'probe', 'deep check', 'flapping', 'fail open', 'draining'],
     what: 'A health check is a periodic probe that determines whether an instance should receive traffic (readiness) or be restarted (liveness).',
     why: 'Automatic removal of broken instances is what makes redundancy useful. A wrong health check either keeps broken servers in the pool or removes healthy ones.',
     how: [
-      'Readiness: can this instance serve right now? Include critical dependencies.',
-      'Liveness: is the process wedged and in need of a restart? Keep it shallow.',
-      'Require several consecutive failures before ejection, and several successes before re-admission.',
+      'Readiness: can this instance serve right now? Check what it needs locally (its own database connection pool, startup finished) - not every shared dependency.',
+      'Liveness: is the process wedged and in need of a restart? Keep it shallow, with no dependency checks.',
+      'Require several consecutive failures before ejection (HAProxy: 3 probes, 2 s apart), and a few consecutive passes before re-admission (HAProxy: 2).',
+      'Detection takes time: until the threshold is reached, a dead instance still receives requests - up to about interval x threshold.',
       'Return quickly - a health endpoint that times out is itself an outage.',
+    ],
+    when: [
+      'Any pool of instances behind a load balancer or service discovery.',
+      'Any orchestrator that restarts processes (Kubernetes liveness, a systemd watchdog).',
+      'Deploys and scale-in: fail readiness first, so the instance drains before it stops.',
+    ],
+    advantages: [
+      'A crashed instance leaves the pool in seconds, without a human.',
+      'Recovered and new instances join the pool only once they can serve.',
+      'Deploys drain cleanly instead of cutting requests off mid-flight.',
     ],
     diagram: `Shallow check:  GET /health -> 200 "ok"
   process alive but database unreachable -> still receives traffic -> every request 500
@@ -393,12 +405,169 @@ Balance: check dependencies, but fail open when every instance would fail.`,
         gains: ['Stable, cheap, no correlated ejection'],
         costs: ['Instances that cannot actually serve stay in rotation'],
       },
+      {
+        approach: 'Short interval, low failure threshold',
+        gains: ['A dead instance leaves the pool within seconds, so fewer requests fail'],
+        costs: ['One slow reply or lost probe ejects a healthy instance (flapping)', 'More probe traffic on every instance'],
+      },
+      {
+        approach: 'Long interval, high failure threshold',
+        gains: ['Stable pool: brief hiccups do not eject anyone', 'Little probe traffic'],
+        costs: ['A dead instance keeps receiving requests for up to interval x threshold (30 s x 5 = 150 s)'],
+      },
     ],
     mistakes: [
       'Health check thresholds of one, causing flapping on a single slow response.',
       'Liveness probes that check dependencies, restarting healthy pods during a database incident.',
+      'A check that only proves the port is open, so a server whose database connection is broken stays in the pool.',
+      'An expensive check (a full query) that times out under load and ejects busy but working instances, pushing their load onto the rest.',
+    ],
+    realWorld: [
+      'Kubernetes probes default to every 10 s, a 1 s timeout, 3 failures and 1 success; a failing readiness probe removes the pod from Service endpoints, a failing liveness probe restarts the container.',
+      'An AWS Application Load Balancer defaults to a probe every 30 s, 2 failures to mark a target unhealthy and 5 passes to bring it back, and fails open when every target is unhealthy.',
+      'HAProxy defaults to a probe every 2 s, 3 failures (fall) and 2 passes (rise).',
     ],
     related: ['load-balancing', 'failover', 'auto-scaling', 'monitoring'],
+    quiz: [
+      {
+        id: 'hc-1',
+        prompt: 'In the Lab, health checks probe every 2 s and eject after 3 failures. At 500 req/sec with Round Robin you kill Server 2. What do you see?',
+        options: [
+          'Server 2 leaves the pool at once and no request fails',
+          'For up to about 6 s roughly one request in three fails, then 3 probes in a row fail, Server 2 is ejected and the failures stop',
+          'Every request fails until you restart Server 2',
+          'Server 2 keeps receiving a third of the traffic for good',
+        ],
+        answer: 1,
+        explanation:
+          'The balancer learns about the crash only through its probes, and it waits for 3 consecutive failures, 2 s apart. Until then Server 2 stays in the pool and its third of the requests fail - the event log shows how many. "Leaves at once" is tempting, but no balancer can know without probing; "for good" is what happens with health checks off.',
+      },
+      {
+        id: 'hc-2',
+        prompt: 'To detect crashes faster you set the probe interval to 1 s and eject after a single failure. What new problem are you most likely to see?',
+        options: [
+          'Crashed servers are never detected',
+          'Probes use all the bandwidth of the pool',
+          'Healthy servers are ejected on one slow reply or one lost probe, and bounce in and out of the pool (flapping)',
+          'New servers can no longer join the pool',
+        ],
+        answer: 2,
+        explanation:
+          'One failure is enough evidence only if probes never fail by accident. A garbage collection pause or a dropped packet ejects a working server, the others take its load, and the pool shrinks for no reason. Several consecutive failures trade a few seconds of detection for that stability.',
+      },
+      {
+        id: 'hc-3',
+        prompt: 'Your /health endpoint returns 200 whenever the process is running. After a credentials change, one of three servers can no longer reach the database and returns 500 on every request - yet it stays in the pool. Why, and what fixes it?',
+        options: [
+          'The balancer ignores 500 responses by design; nothing can fix it',
+          'The probe interval is too long',
+          'The server needs a liveness probe that restarts it on database errors',
+          'The check is shallow: the process is alive, so it passes. A readiness check that tests the local database connection of that server would fail and eject it',
+        ],
+        answer: 3,
+        explanation:
+          'A shallow check proves the process answers, not that it can do its job. A readiness check that uses the connection pool of the instance catches this broken server - and since only this one instance is affected, it does not risk the whole fleet. A restart (liveness) does not fix a wrong credential; it just adds restarts.',
+      },
+      {
+        id: 'hc-4',
+        prompt: 'Every instance runs a readiness check that queries the shared database. The database takes 10 s to fail over, every instance fails the check at once, and the balancer empties the pool: a total outage. What prevents it?',
+        options: [
+          'Fail open: when every instance fails, keep sending traffic to all of them (as an AWS ALB does), and do not gate traffic on a shared dependency',
+          'Probe the database more often',
+          'Lower the failure threshold to 1',
+          'Add more instances with the same check',
+        ],
+        answer: 0,
+        explanation:
+          'A check that fails on every instance at the same time says nothing about any one instance - it only takes the fleet out. Failing open keeps serving whatever can be served, and the database problem is handled by timeouts and degradation instead. More instances with the same check fail the same way, and a lower threshold makes it happen sooner.',
+      },
+      {
+        id: 'hc-5',
+        prompt: 'A Kubernetes liveness probe checks that Redis is reachable. Redis fails over for 15 s. What happens to the pods?',
+        options: [
+          'Nothing, liveness probes never affect running pods',
+          'The kubelet restarts every pod, so they all lose warm caches and connection pools and come back slowly - the outage outlasts the Redis blip',
+          'Only one pod restarts',
+          'The pods move to another node',
+        ],
+        answer: 1,
+        explanation:
+          'A failing liveness probe restarts the container. Because every pod checks the same Redis, every pod is restarted at once, and a restart cannot fix Redis anyway. Liveness should check only the process itself; a dependency outage belongs in readiness or degradation, never in the restart decision.',
+      },
+      {
+        id: 'hc-6',
+        prompt: 'An application needs about 90 s to load its caches at boot. Its liveness probe runs every 10 s with a threshold of 3, and the pod is restarted every 30 s forever. What fixes it without weakening liveness?',
+        options: [
+          'Remove the liveness probe',
+          'Set the liveness threshold to 100',
+          'Add a startup probe with a generous budget; liveness and readiness start only after it passes',
+          'Increase the readiness timeout',
+        ],
+        answer: 2,
+        explanation:
+          'A startup probe holds off the other probes until the app has booted, so the strict liveness probe can keep catching real hangs later. Removing liveness or raising its threshold to 100 would also stop the loop, but then a wedged process runs unnoticed for many minutes.',
+      },
+      {
+        id: 'hc-7',
+        prompt: 'During a deploy, each pod exits the instant it receives SIGTERM, and every deploy shows a burst of connection errors. What is the right shutdown order?',
+        options: [
+          'Exit immediately, but deploy at night',
+          'Restart the load balancer after each pod',
+          'Make the liveness probe fail first',
+          'Fail readiness first, keep serving in-flight requests until the balancer stops sending new ones, then exit (draining)',
+        ],
+        answer: 3,
+        explanation:
+          'The balancer only stops routing to a pod once it notices, so a pod that exits at once drops the requests it holds and those still on the way. Draining reverses the order: leave the pool, finish the work, then stop. Failing liveness would make things worse - it asks for a restart, not a quiet exit.',
+      },
+      {
+        id: 'hc-8',
+        prompt: 'The health endpoint runs a full database query. At peak it takes over 2 s, past the probe timeout, so busy instances start failing their checks and get ejected - and the rest fail next. What is happening?',
+        options: [
+          'A cascade: each ejection pushes more load onto the remaining instances, which then time out too. Make the check cheap and cache its result for a few seconds',
+          'The database is down',
+          'The probe interval is too long',
+          'Too many instances are running',
+        ],
+        answer: 0,
+        explanation:
+          'The instances were slow, not broken, but the check treated slow as dead. Every ejection raises the load on the survivors, so the check itself turns overload into an outage. A cheap check with a cached result keeps the signal about the instance, not about a peak-hour query.',
+      },
+      {
+        id: 'hc-9',
+        prompt: 'In the Lab you turn Health checks off and kill Server 2. What happens over the next minute - and what changes when you turn them back on?',
+        options: [
+          'Server 2 leaves the pool after 6 s, the same as with checks on',
+          'The load balancer restarts Server 2 automatically',
+          'Server 2 stays in the pool the whole minute and about one request in three keeps failing; with checks on it is ejected after 3 failed probes',
+          'Traffic stops entirely until you restart Server 2',
+        ],
+        answer: 2,
+        explanation:
+          'Without probes the balancer has no way to tell a dead server from a live one, so the red wire stays and the failures never stop. A load balancer never restarts a server - that is the job of an orchestrator using a liveness probe. Turn checks on and the ringed probe dots fail three times before the wire goes dashed.',
+      },
+      {
+        id: 'hc-10',
+        prompt: 'In the Lab you restart a server. It boots in 2 s, passes one probe, and still does not get traffic until the next probe passes as well. Why does the balancer wait for two passes?',
+        options: [
+          'The balancer is slow to update its routing table',
+          'Requiring consecutive passes keeps an instance that fails on and off from bouncing in and out of the pool (flapping)',
+          'The first probe after boot is always ignored',
+          'Two passes are needed to warm the cache of the server',
+        ],
+        answer: 1,
+        explanation:
+          'A rise threshold (HAProxy defaults to 2) asks for evidence that the recovery is stable before sending real traffic. It does not warm anything - it only waits. The fall threshold does the same on the way out, so one lucky or unlucky probe decides nothing.',
+      },
+      {
+        id: 'hc-11',
+        prompt: 'A target group probes every 30 s and marks a target unhealthy after 2 failures, the AWS ALB defaults. An instance crashes right after passing a probe. Roughly how long can it keep receiving requests?',
+        options: ['About 1 s', 'About 5 s', 'About 30 s', 'About 60 s'],
+        answer: 3,
+        explanation:
+          'Two failures 30 s apart means up to about 60 s between the crash and the ejection. Worst-case detection is roughly interval x failure threshold; 30 s would be one failed probe, and the threshold asks for two. Shorter intervals find it sooner but send more probes, and passive checks on real traffic can react faster.',
+      },
+    ],
   },
   {
     slug: 'disaster-recovery',

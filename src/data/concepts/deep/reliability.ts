@@ -737,7 +737,7 @@ GET /startupz  (startup)
         bullets: [
           'Liveness: no dependency checks, ever.',
           'Readiness: local capability, with caching so the check itself is cheap.',
-          'Never let a shared dependency failure remove 100 percent of the fleet.',
+          'Never let a shared dependency failure remove 100 percent of the fleet. Many balancers fail open: an AWS ALB routes to every target when all of them are unhealthy.',
           'Cache dependency check results for a few seconds - probes run often.',
           'Return a body with detail for humans, and use the status code for machines.',
         ],
@@ -746,7 +746,7 @@ GET /startupz  (startup)
         heading: 'Tuning, draining and the settings that cause incidents',
         paragraphs: [
           'Three numbers matter: interval, timeout and threshold. Too aggressive (every second, one failure removes the instance) and normal latency variance ejects healthy nodes, reducing capacity and increasing load on the rest - a feedback loop. Too lax (every 30 seconds, five failures) and a dead instance keeps receiving traffic for over two minutes.',
-          'A reasonable default is a 5-second interval, a 2-second timeout, and 2-3 consecutive failures to remove but only 1-2 successes to restore. Restoring faster than removing is deliberate: you want to be quick to use a recovered instance and slow to condemn a healthy one.',
+          'The worst-case detection time is roughly interval x failure threshold, and the defaults differ a lot. HAProxy probes every 2 s, removes after 3 failures and restores after 2 passes - about 6 s to detect. Kubernetes probes every 10 s with a 1 s timeout, 3 failures and 1 success - about 30 s. An AWS Application Load Balancer probes every 30 s, removes after 2 failures and restores only after 5 passes - about 60 s, and slow to trust a recovered target. A few seconds of interval and 2-3 failures is a common middle ground: fast enough that few requests fail, slow enough that one hiccup does not eject anyone.',
           'Draining is the other half. During a deploy or a scale-in, the instance should start failing readiness while continuing to serve in-flight requests, wait for the load balancer to notice, and only then shut down. Without that sequence, every deploy produces a burst of connection errors - which is the most common self-inflicted error spike in production.',
         ],
       },
@@ -755,7 +755,7 @@ GET /startupz  (startup)
       {
         title: 'The health check that caused the outage',
         setup:
-          'A service has one /health endpoint used for both liveness and readiness. It checks the process, the database and Redis. Kubernetes restarts on liveness failure.',
+          'A service has one /health endpoint used for both liveness and readiness. It checks the process, the database and Redis. Both probes run every 5 s with a failure threshold of 2, and Kubernetes restarts a pod on liveness failure.',
         walkthrough: [
           'Redis has a 15-second failover. Every instance health check fails, because they all check Redis.',
           'Readiness failing removes every pod from the service - 100 percent of traffic now fails, although the application could have served most requests without Redis.',
@@ -782,7 +782,7 @@ GET /startupz  (startup)
       'Liveness means restart me; readiness means stop sending me traffic. Never share one endpoint.',
       'Liveness must not check dependencies, or an outage becomes a restart loop.',
       'If a check could fail on every instance at once, it should not gate traffic.',
-      'Remove slowly, restore quickly, and cache the check result.',
+      'Eject on a few failures in a row, never one; a dead instance still gets traffic for about interval x threshold.',
       'Drain by failing readiness before shutdown, or every deploy spikes errors.',
     ],
   },

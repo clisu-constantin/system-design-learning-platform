@@ -57,7 +57,7 @@ export const scalingVisuals: Record<string, VisualSpec> = {
   'load-balancing': {
     width: 760,
     height: 360,
-    caption: 'Health checks remove a failed server from the pool automatically.',
+    caption: 'Round robin spreads requests in turn; a failed health check takes Server 2 out of the rotation.',
     nodes: [
       { id: 'users', kind: 'client', label: 'Users', sub: '500 req/sec', x: 305, y: 10, w: 150, h: 80 },
       { id: 'lb', kind: 'load-balancer', label: 'Load Balancer', sub: 'round robin', x: 295, y: 120, w: 170, h: 80 },
