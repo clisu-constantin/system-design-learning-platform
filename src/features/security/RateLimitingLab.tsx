@@ -21,11 +21,11 @@ const NOTES: Record<Algorithm, string> = {
   'fixed-window':
     'A counter per calendar window, reset at the boundary. Simple - but a client can send a full limit at the end of one window and another full limit at the start of the next, producing twice the intended rate in a moment.',
   'sliding-window':
-    'The previous window count is weighted by how far into the current window we are. No boundary spike, at the cost of a little more state and arithmetic per request.',
+    'Sliding window counter: the previous window count is weighted by how much of it still overlaps the trailing window. No 2x boundary spike, for one more counter and a little arithmetic per request. It assumes the previous window was evenly spread, so it is an approximation.',
   'token-bucket':
     'Tokens refill at a steady rate up to a capacity. A request spends one token. An idle client accumulates tokens and may burst - which is usually what you want for real API clients.',
   'leaky-bucket':
-    'Requests enter a queue that drains at a constant rate. Output is perfectly smooth, which protects a fragile downstream - but bursts wait instead of passing.',
+    'Requests enter a queue that drains at a constant rate. Output is perfectly smooth, which protects a fragile downstream - but bursts wait instead of passing, and a full queue rejects.',
 };
 
 interface State {
@@ -43,7 +43,12 @@ interface State {
   windowStart: number;
   windowCount: number;
   previousWindowCount: number;
+  /** "Burst across a window edge": armed until 100 ms before the edge, then fired twice 200 ms apart. */
+  edgeBurst: { stage: 'armed' | 'first-sent'; firstAt: number; allowed: number } | null;
 }
+
+/** Half of the edge burst goes 100 ms before a window edge, the other half 100 ms after it. */
+const EDGE_OFFSET_MS = 100;
 
 const createState = (limit: number): State => ({
   particles: [],
@@ -57,6 +62,7 @@ const createState = (limit: number): State => ({
   windowStart: performance.now(),
   windowCount: 0,
   previousWindowCount: 0,
+  edgeBurst: null,
 });
 
 const LAYOUT: Layout = {
@@ -91,25 +97,20 @@ export function RateLimitingLab() {
   }, [limit, clear, resetSeries]);
 
   const burst = useCallback(() => {
-    const current = state.current;
-    const now = performance.now();
     const size = limit * 2;
-    let allowed = 0;
-    for (let index = 0; index < size; index += 1) {
-      // Counted like any other traffic; only the first 12 are animated, staggered.
-      const { ok, particle } = admitOne(current, algorithm, limit, windowSeconds, now, {
-        t: -index * 0.08,
-        speed: 1.3,
-      });
-      if (ok) allowed += 1;
-      if (index < 12) current.particles.push(particle);
-    }
+    const allowed = sendBurst(state.current, algorithm, limit, windowSeconds, performance.now(), size);
     log(
       `Burst of ${size} requests: ${allowed} ${algorithm === 'leaky-bucket' ? 'queued' : 'allowed'}, ${size - allowed} rejected with 429`,
       'warn',
     );
     rerender();
   }, [algorithm, limit, windowSeconds, log, rerender]);
+
+  const edgeBurst = useCallback(() => {
+    state.current.edgeBurst = { stage: 'armed', firstAt: 0, allowed: 0 };
+    setRunning(true);
+    log(`Armed: ${limit} requests 0.1 s before the next window edge, ${limit} more 0.1 s after it`, 'info');
+  }, [limit, log]);
 
   useTicker(running, (dt) => {
     const current = state.current;
@@ -143,13 +144,30 @@ export function RateLimitingLab() {
       }
     }
 
-    // Window roll
-    if (algorithm === 'fixed-window' || algorithm === 'sliding-window') {
-      if (now - current.windowStart >= windowSeconds * 1000) {
-        current.previousWindowCount = current.windowCount;
-        current.windowCount = 0;
-        current.windowStart = now;
-      }
+    // Window roll. Windows sit on a fixed clock (like calendar minutes), so a pause or a slow frame
+    // cannot stretch one; a window that saw no ticks at all leaves an empty previous window.
+    const windowMs = windowSeconds * 1000;
+    const passed = Math.floor((now - current.windowStart) / windowMs);
+    if (passed >= 1) {
+      current.previousWindowCount = passed === 1 ? current.windowCount : 0;
+      current.windowCount = 0;
+      current.windowStart += passed * windowMs;
+    }
+
+    // Burst across a window edge: half just before the edge, half just after it, 0.2 s apart.
+    const edge = current.edgeBurst;
+    if (edge?.stage === 'armed' && now >= current.windowStart + windowMs - EDGE_OFFSET_MS) {
+      edge.allowed = sendBurst(current, algorithm, limit, windowSeconds, now, limit);
+      edge.firstAt = now;
+      edge.stage = 'first-sent';
+    } else if (edge?.stage === 'first-sent' && now >= edge.firstAt + 2 * EDGE_OFFSET_MS) {
+      const total = edge.allowed + sendBurst(current, algorithm, limit, windowSeconds, now, limit);
+      current.edgeBurst = null;
+      const verb = algorithm === 'leaky-bucket' ? 'queued' : 'allowed';
+      log(
+        `Across the edge: ${total} of ${limit * 2} ${verb} within 0.2 s - the limit is ${limit} per ${windowSeconds} s`,
+        total >= limit * 1.5 && algorithm !== 'leaky-bucket' ? 'danger' : 'ok',
+      );
     }
 
     const arrivals = sampleArrivals(requestRate, dt);
@@ -193,16 +211,26 @@ export function RateLimitingLab() {
   return (
     <LabShell
       title="Rate Limiting Lab"
-      description="Four algorithms, one traffic source. Watch tokens refill, windows roll and buckets leak - and see which one lets a burst through."
+      description="Four algorithms, one traffic source. Watch tokens refill, windows roll and buckets leak - and see which one lets a burst through. Simplified: one client and one limiter instance; with several instances the counters live in a shared store such as Redis."
       running={running}
       onToggleRun={() => setRunning((value) => !value)}
       onReset={reset}
       legend={<ParticleLegend outcomes={['success', 'failure']} />}
       events={events}
       actions={
-        <Button variant="secondary" onClick={burst}>
-          Send a burst of {limit * 2}
-        </Button>
+        <>
+          <Button variant="secondary" onClick={burst}>
+            Send a burst of {limit * 2}
+          </Button>
+          <Button
+            variant="secondary"
+            onClick={edgeBurst}
+            disabled={current.edgeBurst !== null}
+            title="Lower the client request rate first, so the window is not already used up"
+          >
+            Burst across a window edge
+          </Button>
+        </>
       }
       insight={<Insight title={ALGORITHMS.find((item) => item.value === algorithm)?.label}>{NOTES[algorithm]}</Insight>}
       metrics={
@@ -354,6 +382,21 @@ export function RateLimitingLab() {
   );
 }
 
+/**
+ * Sends `size` requests at the same instant through the limiter. Every one is counted like any other
+ * traffic; only the first 12 are animated, staggered, so a large burst does not flood the canvas.
+ * Returns how many were admitted (for a leaky bucket: queued).
+ */
+function sendBurst(state: State, algorithm: Algorithm, limit: number, windowSeconds: number, now: number, size: number) {
+  let allowed = 0;
+  for (let index = 0; index < size; index += 1) {
+    const { ok, particle } = admitOne(state, algorithm, limit, windowSeconds, now, { t: -index * 0.08, speed: 1.3 });
+    if (ok) allowed += 1;
+    if (index < 12) state.particles.push(particle);
+  }
+  return allowed;
+}
+
 /** Applies the selected algorithm. Returns true when the request is admitted. */
 function admit(state: State, algorithm: Algorithm, limit: number, windowSeconds: number, now: number) {
   switch (algorithm) {
@@ -457,7 +500,9 @@ function LeakyBucket({ queued, capacity }: { queued: number; capacity: number })
       <p className="mt-2 font-mono text-[11px] text-muted">
         {queued} queued / {capacity} capacity
       </p>
-      <p className="mt-1 text-[11px] text-faint">Output drains at a constant rate; overflow is rejected.</p>
+      <p className="mt-1 text-[11px] text-faint">
+        Output drains at a constant rate; overflow is rejected. The queue holds 3x the limit - a choice of this Lab.
+      </p>
     </div>
   );
 }

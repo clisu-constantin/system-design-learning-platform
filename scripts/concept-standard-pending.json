@@ -32,7 +32,6 @@
     "circuit-breaker",
     "retry",
     "exponential-backoff",
-    "rate-limiting",
     "tls-https",
     "monolith",
     "modular-monolith",

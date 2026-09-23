@@ -912,77 +912,277 @@ client app -> resource server         Bearer access token, scope checked`,
     category: 'security',
     difficulty: 'Intermediate',
     lab: 'rate-limiting',
-    keywords: ['token bucket', 'leaky bucket', 'fixed window', 'sliding window', '429', 'quota'],
+    keywords: ['token bucket', 'leaky bucket', 'fixed window', 'sliding window', '429', 'Retry-After', 'quota', 'throttling'],
     what: 'Rate limiting caps the number of requests a client may make in a period, rejecting or delaying the excess.',
     why: 'It protects capacity from abuse, runaway clients and retry storms, and it keeps one tenant from consuming the service for everyone else.',
     how: [
-      'Fixed window: count per calendar window. Simple, but allows a 2x burst across the boundary.',
-      'Sliding window: weight the previous window, smoothing the boundary problem.',
-      'Token bucket: tokens refill at a steady rate, a request consumes one - allows controlled bursts.',
-      'Leaky bucket: requests queue and drain at a constant rate - smooths output completely.',
+      'Fixed window: one counter per calendar window. Simple, but up to 2x the limit can pass across a window boundary.',
+      'Sliding window: weight the previous window count by how much of it still overlaps, so the boundary burst disappears.',
+      'Token bucket: tokens refill at a steady rate up to a capacity, and a request spends one - a burst up to the capacity passes.',
+      'Leaky bucket: requests queue and drain at a constant rate - output is smooth, and bursts wait instead of passing.',
+      'Count per user or API key in a shared store such as Redis, updated atomically, so every instance sees one counter.',
       'Reject with 429 plus Retry-After so well-behaved clients back off correctly.',
     ],
-    when: ['Public APIs, login endpoints, expensive operations, per-tenant quotas.'],
+    when: [
+      'Public APIs, with a limit per API key or per user.',
+      'Login, password reset and anything that sends a message - tight limits against credential stuffing and spam.',
+      'Expensive operations such as search, export and reports, weighted by their cost.',
+      'Per-tenant quotas, so one customer cannot use the capacity of everyone else.',
+    ],
+    advantages: [
+      'One runaway or abusive client gets 429s instead of degrading the service for everyone.',
+      'Caps the load that a retry storm or a scraper can put on the API.',
+      'Makes a fair share per tenant explicit, and gives clients a clear signal (429 plus Retry-After) to slow down.',
+    ],
     diagram: `User -> 100 requests -> Rate Limiter
                           |-- allowed -> API
-                          +-- rejected -> HTTP 429 Too Many Requests
+                          +-- rejected -> HTTP 429 + Retry-After
 
 TOKEN BUCKET (capacity 10, refill 5/s)
-  . . . . . . . . . .      bucket full: a burst of 10 passes instantly
+  . . . . . . . . . .      bucket full: a burst of 10 passes at once
   request -> take one token; empty bucket -> 429
 
-FIXED WINDOW boundary problem
-  59.9s: 100 requests   |   60.1s: 100 requests   -> 200 in 0.2s`,
+FIXED WINDOW boundary problem (limit 100 per minute), for example:
+  10:00:59.9  100 requests -> window 10:00 (count 100)
+  10:01:00.1  100 requests -> window 10:01 (count 100)
+  -> all 200 pass within 0.2s: 2x the limit`,
     tradeoffs: [
       {
         approach: 'Token bucket',
-        gains: ['Allows bursts while bounding the average rate', 'Cheap: two numbers per client'],
-        costs: ['Bursts can still overwhelm a fragile downstream', 'Needs shared state across instances'],
+        gains: ['Allows bursts up to the capacity while bounding the average rate', 'Cheap: two numbers per client (tokens, last refill time)'],
+        costs: ['A full-capacity burst still reaches the downstream at once', 'Two settings (rate and capacity) to choose per limit'],
       },
       {
         approach: 'Leaky bucket',
-        gains: ['Perfectly smooth output rate', 'Protects fragile downstreams'],
-        costs: ['Adds queueing latency', 'No burst allowance for legitimate spikes'],
+        gains: ['Perfectly smooth output rate', 'Protects a fragile downstream from any burst'],
+        costs: ['Bursts wait in the queue, adding latency', 'A full queue still rejects, and queued work can go stale'],
       },
       {
         approach: 'Fixed window',
-        gains: ['Trivial to implement with a counter and TTL'],
-        costs: ['Up to 2x the limit across a window boundary'],
+        gains: ['Trivial to implement: one counter with an expiry (INCR plus EXPIRE in Redis)'],
+        costs: ['Up to 2x the limit across a window boundary', 'Everyone blocked early in a window waits until it resets'],
       },
       {
-        approach: 'Sliding window',
-        gains: ['Accurate, no boundary spike'],
-        costs: ['More state and computation per request'],
+        approach: 'Sliding window counter',
+        gains: ['No 2x boundary burst', 'Only two counters per client'],
+        costs: ['An approximation: it assumes the previous window was evenly spread', 'A little more arithmetic per request'],
+      },
+      {
+        approach: 'Sliding window log',
+        gains: ['Exact: counts the real requests in the trailing window'],
+        costs: ['Stores one timestamp per request, so memory grows with the limit and the traffic'],
       },
     ],
     mistakes: [
       'Per-instance limits behind a load balancer, so the real limit is N times the intended one.',
-      'Returning 429 without Retry-After, leaving clients to guess.',
-      'Rate limiting by IP alone - shared NATs punish innocent users.',
+      'A read-then-write counter in a shared store, so two instances both allow the last request - use an atomic INCR or a Lua script.',
+      'Returning 429 without Retry-After, leaving clients to guess and retry at once.',
+      'Rate limiting by IP alone - shared NATs punish innocent users, and a proxy pool evades it.',
+      'One limit for every endpoint, so login is as loose as a product listing.',
+      'Failing closed on every endpoint, so an outage of the limiter store becomes an outage of the API.',
     ],
-    realWorld: ['Redis counters or token buckets with Lua scripts are the usual shared implementation.'],
+    realWorld: [
+      'Stripe describes a token bucket per user kept in Redis, and fails open if the limiter breaks.',
+      'Amazon API Gateway throttles with a token bucket: the rate refills tokens, the burst is the bucket capacity, and excess gets 429.',
+      'GitHub allows 5,000 REST requests per hour per authenticated user and 60 for unauthenticated ones, reported in x-ratelimit-* headers.',
+    ],
     related: ['api-gateway', 'backpressure', 'exponential-backoff', 'redis'],
     quiz: [
       {
         id: 'rl-1',
-        prompt: 'A fixed window of 100 requests per minute is in place. How can a client send 200 requests in about one second?',
+        prompt:
+          'A fixed window allows 100 requests per minute. A client sends 100 requests at 10:00:59.9 and 100 more at 10:01:00.1. What does the limiter do?',
         options: [
-          'It cannot',
-          'By sending 100 at the end of one window and 100 at the start of the next',
-          'By using HTTP/2',
-          'By changing the User-Agent',
+          'Allows the first 100 and rejects the second 100, because 200 arrived within one minute',
+          'Allows all 200, because each batch lands in a different window with its own counter',
+          'Allows 100 in total, spread over both windows',
+          'Rejects all 200, because the burst is detected as abuse',
         ],
         answer: 1,
         explanation:
-          'The classic boundary problem. Sliding windows or token buckets avoid it by not resetting the whole count at a fixed instant.',
+          'A fixed window only counts per calendar window, and the counter resets at 10:01:00. Each batch sees a fresh count of 0, so 200 pass within 0.2 seconds - twice the limit. The tempting "rejects the second 100" is what a sliding window or a token bucket does; a fixed window has no memory of the previous window. In the Lab, the "Burst across a window edge" button shows it.',
       },
       {
         id: 'rl-2',
-        prompt: 'Which algorithm intentionally allows short bursts above the average rate?',
-        options: ['Leaky bucket', 'Token bucket', 'Fixed window', 'None of them'],
+        prompt:
+          'A mobile app sends 30 requests in one second when it opens, then about one request a minute. You want to allow that start-up burst but keep the sustained rate at 5 per second. Which algorithm fits?',
+        options: [
+          'A leaky bucket draining at 5 per second',
+          'A fixed window of 5 requests per second',
+          'A token bucket refilling at 5 per second with a capacity of 30 or more',
+          'No limit at all, because the average is low',
+        ],
+        answer: 2,
+        explanation:
+          'A token bucket fills up to its capacity while the app is idle, so all 30 start-up requests find a token, and the refill rate still caps the sustained rate at 5 per second. A leaky bucket would accept them into its queue but release them at 5 per second, so the app waits 6 seconds; a fixed window of 5 per second rejects 25 of them.',
+      },
+      {
+        id: 'rl-3',
+        prompt:
+          'A legacy billing system falls over above 50 requests per second, even for a moment. Clients are bursty, and callers can accept a few seconds of extra latency. What should sit in front of it?',
+        options: [
+          'A leaky bucket that queues requests and releases them at 50 per second',
+          'A token bucket with a rate of 50 per second and a capacity of 500',
+          'A fixed window of 50 requests per second',
+          'A cache in front of the billing writes',
+        ],
+        answer: 0,
+        explanation:
+          'A leaky bucket turns any burst into a constant output of 50 per second - exactly what a fragile downstream needs - and the queue turns the burst into latency, which the callers accept. The token bucket is tempting, but a full bucket of 500 lets 500 requests hit the billing system at once. A fixed window also lets the whole 50 arrive in the same instant, and up to 100 across a boundary.',
+      },
+      {
+        id: 'rl-4',
+        prompt:
+          'The limit is 100 requests per minute per API key. The API runs on 4 instances behind a round-robin load balancer, each keeping its own in-memory counter. A client measures how much it can really send. What does it find?',
+        options: [
+          'Exactly 100 per minute, because the load balancer enforces it',
+          'About 25 per minute, because each instance only sees a quarter of the traffic',
+          'About 400 per minute, because each instance allows 100 on its own',
+          'An unpredictable number, because counters reset on every request',
+        ],
+        answer: 2,
+        explanation:
+          'Round robin spreads the requests evenly, so each instance sees about a quarter of them and only starts rejecting at 100 - the client gets about 400. The fix is one counter in a shared store such as Redis. The load balancer does not enforce anything here, and "25" gets the direction backwards: splitting traffic raises the real limit.',
+      },
+      {
+        id: 'rl-5',
+        prompt:
+          'Your instances now share a counter in Redis. Each one runs GET count, checks count < 100, then SET count + 1. Under load, some keys end up with 104 allowed requests in a window. Why, and what fixes it?',
+        options: [
+          'Redis loses writes under load; add a replica',
+          'Two instances read 99 at the same moment and both allow a request; do the check and the increment atomically, with INCR or a Lua script',
+          'The window is too long; shorten it to one second',
+          'Clock skew between instances; synchronise them with NTP',
+        ],
         answer: 1,
         explanation:
-          'Tokens accumulate up to the bucket capacity while a client is idle, so it can spend them in a burst - bounded by capacity.',
+          'A read followed by a separate write is a race: several instances can read the same value before any of them writes back. INCR returns the new value atomically, and a Lua script runs the whole check-and-decrement of a token bucket as one step on Redis. A replica or a shorter window leaves the race in place, and the count does not depend on the clocks of the instances.',
+      },
+      {
+        id: 'rl-6',
+        prompt:
+          'An office of 300 people reaches your API through one NAT address. After you add a limit of 1,000 requests per minute per IP, their normal work starts failing with 429. The API requires login. What should you change?',
+        options: [
+          'Raise the per-IP limit to 100,000 for everyone',
+          'Remove rate limiting for authenticated requests',
+          'Block the NAT address, since it looks like abuse',
+          'Limit authenticated requests per user or API key, and keep per-IP limits only for anonymous traffic',
+        ],
+        answer: 3,
+        explanation:
+          'The key decides fairness: all 300 people share one IP, but each has their own user id. Limiting per identity gives each person their own allowance. Raising the per-IP limit for everyone also raises it for an attacker, and removing the limit for logged-in users gives up the protection entirely.',
+      },
+      {
+        id: 'rl-7',
+        prompt:
+          'An attacker tries leaked passwords from 5,000 different IPs, each making 3 login attempts a minute - well under your limit of 20 per minute per IP. What limit actually stops the attack?',
+        options: [
+          'A lower per-IP limit of 2 per minute',
+          'A per-account limit on login attempts, such as 5 per 15 minutes, whatever the source IP',
+          'A global limit of 1,000 requests per minute on the whole API',
+          'A leaky bucket in front of the login endpoint',
+        ],
+        answer: 1,
+        explanation:
+          'Credential stuffing spreads across IPs, so any per-IP limit can be stayed under by adding more IPs. Counting failed attempts per targeted account caps what the attacker gets per victim, however many addresses they use. A global limit would throttle every real user along with the attacker, and a leaky bucket only delays the attempts.',
+      },
+      {
+        id: 'rl-8',
+        prompt:
+          'Clients that hit your limit get a bare 429 with no other headers. Your logs show them retrying immediately, in a tight loop, so the rejected traffic is larger than the allowed traffic. What should the server send?',
+        options: [
+          '500, so clients treat it as a server error',
+          '200 with an empty body, so clients stop retrying',
+          '429 with Retry-After saying how many seconds to wait, plus headers showing the remaining allowance',
+          '403, so clients give up for good',
+        ],
+        answer: 2,
+        explanation:
+          'Retry-After tells a well-behaved client exactly when to come back, and remaining-allowance headers (GitHub sends x-ratelimit-remaining and x-ratelimit-reset) let it pace itself before it is rejected. A 500 invites even more retries, a fake 200 hides the problem and loses data, and 403 says "not allowed at all", which is not true.',
+      },
+      {
+        id: 'rl-9',
+        prompt:
+          'The Redis cluster that holds your rate limit counters becomes unreachable for two minutes. What should the limiter do on the product catalogue endpoint, and on the login endpoint?',
+        options: [
+          'Fail open on the catalogue (serve the request) and fail closed on login (reject), because the risks differ',
+          'Fail closed on both, because unlimited traffic is always dangerous',
+          'Fail open on both, because the limiter must never cause an outage',
+          'Queue every request until Redis is back',
+        ],
+        answer: 0,
+        explanation:
+          'On the catalogue, a limiter outage should not become an API outage - Stripe designs its limiters to fail open for that reason. On login, two minutes without limits is a window for credential stuffing, so rejecting is the safer choice there. Failing closed everywhere turns a Redis blip into a full outage, and queueing for two minutes makes every request time out.',
+      },
+      {
+        id: 'rl-10',
+        prompt:
+          'Your API allows 1,000 requests per minute per key. A customer sends 1,000 CSV export requests in a minute - within the limit - and each export scans a million rows. The database saturates. What change addresses it?',
+        options: [
+          'Lower the limit to 100 requests per minute for all endpoints',
+          'Give endpoints a cost: an export spends 50 tokens, a read spends 1',
+          'Add a read replica and keep the limit as it is',
+          'Switch the limiter from a fixed window to a sliding window',
+        ],
+        answer: 1,
+        explanation:
+          'A request count treats a cheap read and a heavy export as equal. Weighting requests by cost lets the same budget allow 1,000 reads or 20 exports a minute. Lowering the limit for everything punishes the cheap reads, and a sliding window only removes the boundary burst - it still lets 1,000 exports through.',
+      },
+      {
+        id: 'rl-11',
+        prompt:
+          'In the Lab, you choose Token Bucket, set the limit to 10 and the window to 1 s, lower the client rate to 1 req/sec and wait a few seconds. Then you press "Send a burst of 20". What do you see?',
+        options: [
+          'All 20 allowed, because the average rate is only 1 per second',
+          'All 20 rejected, because the burst is larger than the limit',
+          'All 20 queued, and released at 10 per second',
+          'About 10 allowed and about 10 rejected with 429, and the bucket empties',
+        ],
+        answer: 3,
+        explanation:
+          'The idle client let the bucket fill to its capacity of 10, so the first 10 requests each find a token and the next 10 find an empty bucket. The average rate does not matter once the tokens are gone. Queueing and releasing at a constant rate is what the Leaky Bucket button shows, not the token bucket.',
+      },
+      {
+        id: 'rl-12',
+        prompt:
+          'In the Lab, with a limit of 10 per 1 s and a client rate of 1 req/sec, "Burst across a window edge" lets about 19 of 20 through on Fixed Window. You switch to Sliding Window and press it again. What changes?',
+        options: [
+          'Nothing, because both algorithms count per window',
+          'About 10 get through: the previous window still counts, fading out, so the burst just after the edge is mostly rejected',
+          'None get through, because the sliding window blocks all bursts',
+          'All 20 get through, because the window slides past both halves',
+        ],
+        answer: 1,
+        explanation:
+          'Just after the edge, the sliding window counter still weighs the previous window at about 90%, so the 10 requests from 0.1 s ago almost fill the limit and most of the second half gets 429. That removes the 2x boundary burst. It does not block bursts in general: the first 10 fit the limit and pass.',
+      },
+      {
+        id: 'rl-13',
+        prompt:
+          'In the Lab, you choose Leaky Bucket with a limit of 10 per 1 s, lower the client rate to 1 req/sec, and press "Send a burst of 20". The 429 counter does not move. What did the burst cost instead?',
+        options: [
+          'Nothing - a leaky bucket serves bursts for free',
+          'The API received all 20 at once, and may fall over',
+          'Latency: the 20 requests wait in the queue and reach the API at 10 per second, so the last one waits about 2 seconds',
+          'The requests were dropped silently',
+        ],
+        answer: 2,
+        explanation:
+          'The queue (30 in this Lab) had room, so nothing was rejected, but the bucket drains at a constant 10 per second, which you can see as the steady stream on the allowed wire. The burst turned into waiting time, not into a spike at the API - that is exactly the protection it gives, and the price.',
+      },
+      {
+        id: 'rl-14',
+        prompt:
+          'Every client is inside its own limit, but a marketing campaign brought ten times the usual number of clients, and the API is saturated. What helps now?',
+        options: [
+          'Nothing needs to change, because every client is within its limit',
+          'Lower every per-client limit to one tenth',
+          'Switch every limiter to a leaky bucket',
+          'Load shedding: drop or defer low-priority work when the service itself is saturated, whoever sent it',
+        ],
+        answer: 3,
+        explanation:
+          'Per-client limits give fairness between clients; they do not bound the total when the number of clients grows. Load shedding reacts to the saturation of the service itself and protects the important requests. Cutting every limit to a tenth punishes normal traffic on every other day, and a leaky bucket per client still admits ten times as many clients.',
       },
     ],
   },
