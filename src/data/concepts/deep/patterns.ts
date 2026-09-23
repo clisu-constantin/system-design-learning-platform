@@ -186,29 +186,30 @@ choose per data type:
         heading: 'Partition the resource that everything competes for',
         paragraphs: [
           'The failure this prevents is resource monopolisation. One slow dependency causes requests to it to pile up, each holding a thread or a connection, until the shared pool is exhausted - and then every other feature fails too, including ones that never touch the slow dependency.',
-          'A bulkhead caps how much of a shared resource any one dependency may consume. Twenty of two hundred threads for the reviews service means reviews can be completely dead and one hundred and eighty threads remain available for everything else. The reviews feature fails; the product does not.',
+          'The arithmetic is short. Threads in use = calls per second x seconds each call holds its thread. Recommendations at 100 calls a second and 50 ms each holds 5 threads. When it hangs for 30 seconds, the same traffic wants 3,000 threads, and a pool of 200 is gone in 2 seconds.',
+          'A bulkhead caps how much of a shared resource any one dependency may consume. Twenty of two hundred threads for the recommendations service means recommendations can be completely dead and one hundred and eighty threads remain available for everything else. When its twenty are busy, further recommendation calls are rejected at once and the page is shown without them. The recommendations feature fails; the product does not.',
           'The resources worth partitioning are the ones that are finite and shared: worker threads, database connections, concurrent outbound requests, memory buffers. Whichever of them saturates first is the one that transmits a failure from one feature to all of them.',
         ],
         code: {
           caption: 'Same fleet, with and without compartments',
           body: `SHARED POOL (200 threads)
-  reviews service hangs for 30 s
-  -> within 2 s all 200 threads wait on reviews
+  recommendations hangs for 30 s, 100 calls/s
+  -> within 2 s all 200 threads wait on it
   -> checkout, search and profile all fail
   a non-critical feature took down the product
 
 BULKHEADS
-  checkout   80 threads      unaffected
-  search     60 threads      unaffected
-  reviews    20 threads      saturated, fails fast, fallback shown
-  other      40 threads      unaffected
+  checkout          80 threads   unaffected
+  search            60 threads   unaffected
+  recommendations   20 threads   full, fails fast, fallback
+  other             40 threads   unaffected
   the failure is contained to its compartment`,
         },
       },
       {
         heading: 'Levels of isolation, from cheap to expensive',
         paragraphs: [
-          'The cheapest form is a semaphore or a concurrency limit per dependency inside one process: a few lines, no new infrastructure, and it prevents the most common cascade. Separate thread pools go further by also isolating blocking behaviour, at the cost of context switching and more tuning.',
+          'The cheapest form is a semaphore or a concurrency limit per dependency inside one process: a few lines, no new infrastructure, and it prevents the most common cascade. The calling thread still makes the call itself, though, so it cannot walk away from a slow call - it waits until the client timeout. Separate thread pools go further: the call runs on a pool thread, so the caller can stop waiting and keep its own thread, at the cost of queueing, context switching and more tuning. Netflix measured that cost at a few milliseconds at the 99th percentile.',
           'Separate process pools are the next step: run the endpoints that use a risky dependency on their own instances, so even a memory leak or a crash is contained. Deployment-level isolation - separate services, separate clusters, separate cells per customer segment - is the strongest and the most expensive.',
           'Cell-based architecture is the extreme version, and it is what large platforms use: the system is divided into independent cells, each serving a subset of customers with its own full stack. A failure affects one cell rather than everyone, which turns a total outage into a partial one by construction.',
         ],
@@ -222,7 +223,8 @@ BULKHEADS
       {
         heading: 'Sizing, and how it combines with the other patterns',
         paragraphs: [
-          'Size each compartment by its normal concurrency plus headroom, not by an even split. If checkout normally has 40 concurrent requests and reviews has 5, giving them equal shares wastes capacity and still lets reviews take more than it should. Measure first, then allocate.',
+          'Size each compartment by its normal concurrency plus headroom, not by an even split. The Hystrix guideline is peak calls per second when healthy x p99 latency in seconds, plus some breathing room: 50 calls a second at 200 ms is about 10 threads. If checkout normally has 40 concurrent requests and recommendations has 5, equal shares starve checkout and still let recommendations take more than it should. Measure first, then allocate.',
+          'When a compartment is full, fail fast. Resilience4j defaults the wait for a bulkhead slot to zero: a caller that waits is itself holding a thread, so a long wait rebuilds the pile-up one layer up.',
           'Bulkheads pair naturally with timeouts and circuit breakers, and each does a different job. The timeout bounds how long one call may hold its slot. The bulkhead bounds how many slots that dependency may occupy. The circuit breaker stops calling it at all once it is clearly down. Together they turn a dependency failure into a fast, contained, non-propagating event.',
           'The cost is genuine: partitioned resources are less efficiently used, because one compartment can be idle while another queues. That inefficiency is the insurance premium, and it is almost always worth paying on a shared request path.',
         ],
