@@ -411,13 +411,26 @@ relay -> reads outbox -> publishes to Kafka -> marks sent`,
     tagline: 'One node decides, the others copy.',
     category: 'patterns',
     difficulty: 'Intermediate',
-    keywords: ['primary', 'replica', 'ordering', 'failover'],
+    lab: 'replication',
+    labFocus: 'leader-follower',
+    keywords: ['primary', 'replica', 'leader', 'follower', 'ordering', 'failover', 'single leader'],
     what: 'A structural pattern where one node accepts all writes and orders them, and follower nodes replicate that ordered stream.',
     why: 'Ordering writes in one place removes write conflicts entirely, which is why it underpins most databases, brokers and coordination services.',
     how: [
       'Writes go to the leader, which assigns an order and streams it to followers.',
+      'Followers replay the stream in that same order, so they all reach the same state.',
       'Followers serve reads (possibly stale) and stand ready for promotion.',
       'Leader failure triggers election; a quorum prevents two leaders.',
+    ],
+    when: [
+      'Almost any replicated database, queue partition or coordination service - it is the default.',
+      'Read-heavy workloads, where followers carry the reads.',
+      'When write throughput fits one machine, or one machine per shard.',
+    ],
+    advantages: [
+      'No write conflicts: one node decides the order.',
+      'Followers add read capacity and are ready failover targets.',
+      'Simple to reason about - every copy replays the same log.',
     ],
     diagram: `writes -> [LEADER] -> ordered log -> FOLLOWER (reads)
                                -> FOLLOWER (reads)
@@ -433,8 +446,161 @@ leader fails -> elect the most up-to-date follower`,
         gains: ['Writes accepted in several regions', 'Survives leader loss without failover'],
         costs: ['Write conflicts are unavoidable and must be resolved', 'Much harder to reason about'],
       },
+      {
+        approach: 'Leaderless (quorum reads and writes)',
+        gains: ['Any replica accepts writes, so no failover step', 'Tunable consistency per request'],
+        costs: ['Concurrent writes still need a merge rule', 'Every read and write contacts several replicas'],
+      },
     ],
-    related: ['replication', 'leader-election', 'consensus', 'failover'],
+    mistakes: [
+      'Reading from a follower right after a write and showing the user stale data.',
+      'Adding followers to fix a write bottleneck - every write still goes through the one leader.',
+      'Electing a new leader without fencing the old one, so both accept writes (split brain).',
+      'Treating writes that fail during the failover gap as fatal instead of retryable.',
+    ],
+    related: ['replication', 'read-replicas', 'leader-election', 'consensus', 'failover', 'sharding'],
+    quiz: [
+      {
+        id: 'lf-1',
+        prompt:
+          'Two users update the same row at the same moment: one sets price = 10, the other price = 12. With a single leader, what do the followers end up with?',
+        options: [
+          'Some followers 10, some 12, forever',
+          'A conflict that an operator must resolve',
+          'The same value on every follower - the leader put the two writes in one order, and every follower replays that order',
+          'Both values, as a list',
+        ],
+        answer: 2,
+        explanation:
+          'The leader decides which write comes second, and that one is the final value everywhere. Followers never have to agree among themselves - they copy. That is the whole appeal of the pattern: no write conflicts to resolve.',
+      },
+      {
+        id: 'lf-2',
+        prompt:
+          'A single-leader database is saturated at 40,000 writes per second. It already has three followers serving reads. What raises write capacity?',
+        options: [
+          'Add three more followers',
+          'Route writes to the followers',
+          'Promote a follower to a second leader',
+          'Cut unnecessary writes and batch the rest, then shard - one leader per shard',
+        ],
+        answer: 3,
+        explanation:
+          'Followers replay every write, so they add read capacity, not write capacity. Two leaders on the same data bring back write conflicts. Removing and batching writes buys time; sharding gives each leader only its slice, so write capacity grows with the shard count.',
+      },
+      {
+        id: 'lf-3',
+        prompt:
+          'In the Lab you kill the primary (the leader). For about 3 seconds, "Writes refused" climbs, then a replica is promoted. What should the application do with writes that fail in that window?',
+        options: [
+          'Retry them with backoff, because the failover gap is expected and short',
+          'Show a fatal error and discard the input',
+          'Send them to a follower',
+          'Keep them in memory forever',
+        ],
+        answer: 0,
+        explanation:
+          'Detecting the failure, electing a new leader and repointing clients always takes some seconds. Treating those errors as retryable (with backoff, and an idempotency key so a retry cannot apply twice) turns the gap into a short delay. Followers are read-only until one is promoted.',
+      },
+      {
+        id: 'lf-4',
+        prompt:
+          'Followers have applied up to versions 990, 1000 and 998 when the leader dies. Which follower should be promoted, and why?',
+        options: [
+          'Any of them - they are identical',
+          'The one at 1000, because it is missing the fewest writes',
+          'The one at 990, because it is the most stable',
+          'The one with the lowest load',
+        ],
+        answer: 1,
+        explanation:
+          'Followers are at different points in the log. Promoting the one at 1000 loses only writes after 1000; promoting the one at 990 would also throw away 991 to 1000. The Lab does the same: the log names the promoted replica and counts the acknowledged writes it never received.',
+      },
+      {
+        id: 'lf-5',
+        prompt:
+          'The leader pauses for 20 seconds (a long garbage collection). The followers elect a new leader. Then the old leader wakes up and keeps accepting writes. What prevents this from corrupting data?',
+        options: [
+          'Synchronous replication',
+          'A bigger heap',
+          'Fencing: the new leader has a higher term or token, and storage and followers reject writes carrying the old one',
+          'Reading from the leader only',
+        ],
+        answer: 2,
+        explanation:
+          'A leader that was slow, not dead, does not know it was replaced. A quorum election picks one new leader, and fencing makes the old one harmless: its writes carry a stale term and are refused. Without fencing both accept writes and the histories diverge (split brain).',
+      },
+      {
+        id: 'lf-6',
+        prompt:
+          'A three-node cluster splits into one node and two nodes. The leader was the single node. What happens next?',
+        options: [
+          'The single node stays leader, and the two nodes elect a second leader too',
+          'The two-node side can elect a new leader because it has a majority; the old leader cannot reach a majority, so it must stop accepting writes',
+          'Nobody can be leader until the network heals',
+          'The single node wins because it was leader first',
+        ],
+        answer: 1,
+        explanation:
+          'A majority of 3 is 2. Only one side can ever have a majority, so only one side can elect a leader or commit writes. The isolated old leader cannot get its writes acknowledged by a majority, which is how quorum-based election prevents two leaders.',
+      },
+      {
+        id: 'lf-7',
+        prompt:
+          'The Lab opens with writes on the leader and reads spread over the followers. You drag Read rate from 120 to 500 reads per second. Where does the extra load land?',
+        options: [
+          'On the leader',
+          'Nowhere - reads are free',
+          'It is refused',
+          'On the three followers, while the leader keeps serving only writes',
+        ],
+        answer: 3,
+        explanation:
+          'Followers are there to carry reads, so the Reads count grows on the follower nodes and the leader only takes writes. Switch Route reads to Primary and the same load lands on the leader instead - one machine doing everything.',
+      },
+      {
+        id: 'lf-8',
+        prompt:
+          'Your users are in Europe and the US, and the single leader is in the US. European writes take 150 ms. Someone proposes a leader in each region. What do you take on?',
+        options: [
+          'Write conflicts: the same row can be changed in both regions at once, and you now need a rule to merge or pick',
+          'Nothing - multi-leader is strictly faster',
+          'Slower reads in both regions',
+          'Loss of all followers',
+        ],
+        answer: 0,
+        explanation:
+          'Local writes in each region are the gain. The cost is exactly what single-leader avoided: two leaders can accept conflicting writes, so you need conflict resolution. It is worth it only when local write latency or writing through a partition is a real requirement.',
+      },
+      {
+        id: 'lf-9',
+        prompt:
+          'A leaderless store has N = 3 replicas. Writes wait for W = 1 replica and reads ask R = 1 replica. A user writes and immediately reads. What can happen, and what setting fixes it?',
+        options: [
+          'Nothing can go wrong - every replica gets the write',
+          'The read is always refused',
+          'The read may hit a replica that has not got the write yet; choose W + R > N (for example W = 2, R = 2) so every read set overlaps every write set',
+          'The write is lost; choose W = 0',
+        ],
+        answer: 2,
+        explanation:
+          'With W = 1 and R = 1 the replica read may not be the one written. When W + R is greater than N, at least one replica in any read has the latest write. Leaderless systems trade the single writer for this quorum arithmetic.',
+      },
+      {
+        id: 'lf-10',
+        prompt:
+          'In the Lab with reads on the followers, "Own save not seen" is high. Users save, reload, and see their old data. What is the standard fix?',
+        options: [
+          'Make every follower a leader',
+          'Route that user to the leader for a short window after their write (read-your-writes)',
+          'Remove the followers',
+          'Restart the followers',
+        ],
+        answer: 1,
+        explanation:
+          'Followers are behind the leader by the replication lag, and the reload lands inside it. Sending just the recent writer to the leader fixes it and keeps every other read on the followers. Turn on read-your-writes routing in the Lab and the crosses disappear.',
+      },
+    ],
   },
   {
     slug: 'producer-consumer',

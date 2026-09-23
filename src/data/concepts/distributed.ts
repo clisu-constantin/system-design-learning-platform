@@ -182,26 +182,192 @@ Without quorum: both sides accept writes -> split brain -> divergent data`,
     tagline: 'Every read returns the latest committed write, always.',
     category: 'distributed',
     difficulty: 'Intermediate',
-    keywords: ['linearizable', 'quorum', 'serializable', 'coordination'],
-    what: 'Under strong consistency the system behaves as if there were a single copy of the data and operations happened one at a time in a global order.',
+    lab: 'replication',
+    labFocus: 'strong-consistency',
+    keywords: ['linearizable', 'quorum', 'serializable', 'coordination', 'synchronous replication', 'compare-and-set'],
+    what: 'Under strong consistency (linearizability) the system behaves as if there were a single copy of the data and operations happened one at a time in a global order. Once a write is acknowledged, every later read returns it or something newer.',
     why: 'It removes an entire class of bugs. Invariants like "the balance never goes negative" or "this username is unique" can only be enforced with a single agreed-upon truth.',
     how: [
-      'Route all writes through a leader, or require a quorum of replicas to acknowledge.',
-      'Reads must also be coordinated (leader reads, quorum reads, or leases).',
-      'The cost is one or more network round trips per operation.',
+      'Route all writes through a leader, and require a quorum of replicas to store each write before it is acknowledged.',
+      'Coordinate reads too: read from the leader (with a lease or a quorum check), or read from a quorum.',
+      'Or replicate synchronously to every replica before acknowledging, so any replica can serve a current read - at the price that one unreachable replica blocks writes.',
+      'The cost is one or more network round trips per operation, and refusing service when no quorum can be reached.',
     ],
-    when: ['Payments, inventory, bookings, unique identifiers, permissions.'],
+    when: ['Payments, inventory, bookings, unique identifiers, permissions, locks.'],
+    advantages: [
+      'Compare-and-set, uniqueness and locks work as written.',
+      'No user ever sees a value go backwards or miss their own write.',
+      'Application code does not need conflict or staleness handling for this data.',
+    ],
     diagram: `write -> leader -> replicate to quorum -> ack
 read  -> leader (or quorum) -> guaranteed latest value
 cost: 1+ extra round trips, unavailable to the minority during a partition`,
     tradeoffs: [
       {
-        approach: 'Strong consistency',
-        gains: ['Invariants hold', 'Application logic stays simple'],
-        costs: ['Higher latency, especially across regions', 'Availability drops during partitions', 'Throughput limited by coordination'],
+        approach: 'Quorum writes with leader or quorum reads (consensus)',
+        gains: ['Invariants hold', 'Survives the loss of a minority of replicas'],
+        costs: ['A round trip to a majority on every write, especially slow across regions', 'The minority side of a partition must refuse service'],
+      },
+      {
+        approach: 'Synchronous replication to every replica',
+        gains: ['Any replica can serve a current read', 'No acknowledged write is lost on failover'],
+        costs: ['Every write waits for the slowest replica', 'One unreachable replica stops all writes'],
+      },
+      {
+        approach: 'Strong only for the few operations that need it',
+        gains: ['Coordination is paid only where disagreement causes damage', 'Everything else stays fast and available'],
+        costs: ['Two consistency models to reason about', 'Someone must decide, per operation, which one applies'],
       },
     ],
-    related: ['eventual-consistency', 'consensus', 'cap-theorem', 'distributed-locks'],
+    mistakes: [
+      'Making everything strongly consistent, and paying cross-region latency to show a profile picture.',
+      'Waiting for replicas on writes but reading from any replica with no check, and calling it strong.',
+      'Treating serializable and linearizable as the same promise.',
+      'Treating the errors on the minority side of a partition as a bug instead of the guarantee working.',
+    ],
+    related: ['eventual-consistency', 'consistency', 'replication', 'consensus', 'cap-theorem', 'distributed-locks'],
+    quiz: [
+      {
+        id: 'sc-1',
+        prompt:
+          'Two users redeem the same one-time voucher at the same instant. Each request reads status = unused from a different replica of an eventually consistent store, then writes status = used. What happens, and what prevents it?',
+        options: [
+          'The second write fails automatically',
+          'Both succeed and the voucher is used twice - use a compare-and-set against one strongly consistent copy, so only one update matches',
+          'Only the faster region succeeds, because it wrote first',
+          'The store merges the two writes into one',
+        ],
+        answer: 1,
+        explanation:
+          'Both saw the same pre-state, so both passed the check. A conditional update such as UPDATE ... WHERE id = 9 AND status = unused on a strongly consistent store lets exactly one request change the row; the other changes zero rows and is refused. "Wrote first" means nothing when the copies disagree.',
+      },
+      {
+        id: 'sc-2',
+        prompt:
+          'The Lab opens on Sync with reads on the replicas, and "Reads behind" shows 0%. Why can a read from a replica never be behind here?',
+        options: [
+          'Replicas are faster than the primary',
+          'The read rate is low',
+          'Reads secretly go to the primary',
+          'A write is acknowledged only after every replica has applied it, so no replica can miss an acknowledged write',
+        ],
+        answer: 3,
+        explanation:
+          'Strong consistency is about acknowledged writes: once a client is told "saved", every later read must see it. Waiting for every replica before the acknowledgement makes that true on every copy. The price is visible in Write latency, which waits for the slowest replica.',
+      },
+      {
+        id: 'sc-3',
+        prompt:
+          'Still in the Lab on Sync, you kill Replica 2. Writes are refused until you recover it. Is that a flaw of strong consistency?',
+        options: [
+          'Yes - a correct system would keep accepting writes',
+          'No - it is the guarantee working: without every copy, the system refuses rather than let copies disagree',
+          'Yes - the primary should have been promoted',
+          'No - the refused writes will be applied later automatically',
+        ],
+        answer: 1,
+        explanation:
+          'Accepting the write would leave Replica 2 without it, and a later read there would be stale. Refusing keeps the promise. Quorum systems soften this by waiting for a majority instead of every replica, so they tolerate a minority failing - but they refuse too once no majority is reachable.',
+      },
+      {
+        id: 'sc-4',
+        prompt:
+          'In the Lab you switch from Sync to Semi-sync. "Lost writes" stays 0 after you kill the primary, but "Reads behind" climbs above 0%. What does that show?',
+        options: [
+          'Semi-sync is broken',
+          'Semi-sync is strongly consistent',
+          'Durability and consistent reads are different promises: the write is safe on two machines, but the other replicas are still behind',
+          'Stale reads only happen after a failover',
+        ],
+        answer: 2,
+        explanation:
+          'Waiting for one replica makes acknowledged writes survive a single failure, so nothing is lost. Reads from the replicas that were not awaited can still miss the newest write. Strong consistency needs the read side coordinated too - read from the leader or a quorum, or wait for every replica.',
+      },
+      {
+        id: 'sc-5',
+        prompt:
+          'A five-node consensus cluster is split by a partition into a group of 3 and a group of 2. A client can only reach the group of 2. What should it get?',
+        options: [
+          'An error or a timeout - the group of 2 has no majority, so it cannot accept writes or promise a current read',
+          'The latest data, served by the group of 2',
+          'A successful write that is merged later',
+          'A new leader elected by the group of 2',
+        ],
+        answer: 0,
+        explanation:
+          'A majority of 5 is 3. The group of 3 can keep working; the group of 2 cannot know what the majority has committed since the split, so it must refuse. Electing a leader on both sides would create two histories, exactly what the majority rule prevents.',
+      },
+      {
+        id: 'sc-6',
+        prompt:
+          'A strongly consistent database has its quorum spread over Virginia, Frankfurt and Singapore. Users complain every save takes about 150 ms, even when nothing is failing. What is happening?',
+        options: [
+          'A bug - latency should only rise during failures',
+          'The disks are slow',
+          'The cache is cold',
+          'Every write waits for a round trip to a majority, and the majority spans continents - the cost is paid on every write, forever',
+        ],
+        answer: 3,
+        explanation:
+          'Coordination is not a failure-time cost. A write is acknowledged only after a majority has stored it, so the latency floor is the round trip to the slowest member of that majority. Keeping the quorum inside one region, and making only the operations that need it strong, brings it back to a few milliseconds.',
+      },
+      {
+        id: 'sc-7',
+        prompt:
+          'Which of these operations most needs strong consistency?',
+        options: [
+          'Showing the number of likes on a post',
+          'Allocating a unique username at sign-up',
+          'Displaying a profile picture',
+          'Listing search results',
+        ],
+        answer: 1,
+        explanation:
+          'If two people claim the same username at the same instant on different continents and both succeed, the system is wrong - that is the test. A like count or a profile picture being a second old harms nobody, so paying coordination there buys nothing.',
+      },
+      {
+        id: 'sc-8',
+        prompt:
+          'One seat is left. Two customers click Book at the same instant, and both requests run UPDATE seats SET remaining = remaining - 1 WHERE flight = 9 AND remaining > 0 on the same strongly consistent database. What happens?',
+        options: [
+          'Both succeed and remaining becomes -1',
+          'Both fail with a deadlock',
+          'Exactly one updates a row; the other updates zero rows and is told the seat is sold out',
+          'The database asks the customers to retry together',
+        ],
+        answer: 2,
+        explanation:
+          'The condition and the decrement happen as one operation on one agreed copy, so only one request can see remaining = 1. The other sees 0 and changes nothing. On an eventually consistent counter both could read 1 in different places and both succeed.',
+      },
+      {
+        id: 'sc-9',
+        prompt:
+          'In the Lab on Sync, you drag Network delay to replicas from 100 ms to 1000 ms. What happens to Write latency and Reads behind?',
+        options: [
+          'Write latency rises to over 1 s; Reads behind stays at 0%',
+          'Write latency stays at 8 ms; Reads behind rises',
+          'Both stay the same',
+          'Both rise',
+        ],
+        answer: 0,
+        explanation:
+          'Synchronous replication turns network delay into write latency: the write waits for the slowest replica, so it now takes over a second. Consistency is untouched - reads are still never behind. Async would show the opposite: fast writes, rising Reads behind.',
+      },
+      {
+        id: 'sc-10',
+        prompt:
+          'A database advertises serializable transactions. A client commits a transfer, then a second client immediately reads the balance on another connection. Does serializability alone promise the second client sees the transfer?',
+        options: [
+          'Yes - serializable means every read sees the latest commit',
+          'No - serializable only means transactions behave as if run one at a time in some order; seeing the latest commit in real time is linearizability, and both together is strict serializability',
+          'Yes, but only on the primary',
+          'No - serializable transactions are never visible to other clients',
+        ],
+        answer: 1,
+        explanation:
+          'Serializability allows an order in which the read comes before the transfer, even if it happened later in real time. Linearizability is the real-time promise about single operations. Many databases give both (strict serializability), but the words are not interchangeable, and relying on the wrong one causes subtle bugs.',
+      },
+    ],
   },
   {
     slug: 'eventual-consistency',
@@ -209,7 +375,9 @@ cost: 1+ extra round trips, unavailable to the minority during a partition`,
     tagline: 'Replicas converge - if you stop writing long enough.',
     category: 'distributed',
     difficulty: 'Intermediate',
-    keywords: ['convergence', 'conflict resolution', 'crdt', 'last write wins', 'lag'],
+    lab: 'replication',
+    labFocus: 'eventual-consistency',
+    keywords: ['convergence', 'conflict resolution', 'crdt', 'last write wins', 'lag', 'read-your-writes', 'monotonic reads'],
     what: 'Eventual consistency guarantees only that, absent new writes, all replicas eventually hold the same value. It says nothing about when, or what a reader sees in the meantime.',
     why: 'It buys availability and low latency: a replica can answer immediately without asking anyone else. For likes, view counts, feeds and presence, that is the right trade.',
     how: [
@@ -218,6 +386,11 @@ cost: 1+ extra round trips, unavailable to the minority during a partition`,
       'Client-side session guarantees (read-your-writes, monotonic reads) can hide most of the weirdness.',
     ],
     when: ['Counters, feeds, caches, cross-region reads, offline-capable clients.'],
+    advantages: [
+      'Writes and reads complete locally, without waiting for other replicas.',
+      'Every replica keeps serving during a partition.',
+      'Read capacity scales with the number of replicas.',
+    ],
     diagram: `write to replica A -> ack immediately
            A ---> B (200 ms later)
            A ---> C (2 s later, retried)
@@ -230,12 +403,161 @@ Conflict: A=x@t2, B=y@t1 -> LWW keeps x (and silently drops y)`,
         gains: ['Always writable', 'Low latency', 'Survives partitions'],
         costs: ['Stale reads', 'Lost updates under last-write-wins', 'Application must tolerate or merge conflicts'],
       },
+      {
+        approach: 'Eventual consistency plus session guarantees',
+        gains: ['Users see their own writes and never see values go backwards', 'Keeps most of the local speed'],
+        costs: ['Routing or sticky sessions to maintain', 'Other users can still see old values'],
+      },
     ],
     mistakes: [
       'Using last-write-wins for data where a lost update is unacceptable.',
       'Clock skew making "last" meaningless - use logical clocks or version vectors.',
+      'Sending each read to a random replica, so a user sees a value and then an older one.',
+      'Using eventual consistency for money or stock, where two replicas can both approve the last unit.',
     ],
-    related: ['strong-consistency', 'cap-theorem', 'replication', 'idempotency'],
+    related: ['strong-consistency', 'consistency', 'cap-theorem', 'replication', 'read-replicas', 'idempotency'],
+    quiz: [
+      {
+        id: 'ec-1',
+        prompt:
+          'The Lab opens with async replication and 1500 ms of network delay, and a large share of reads are behind. You drag Write rate to 0. What happens over the next two seconds?',
+        options: [
+          'Nothing - stale replicas stay stale until restarted',
+          'Every replica applies the writes still in flight and they all reach the same version: the copies converge',
+          'The primary rolls back to match the replicas',
+          'Reads are refused until the replicas catch up',
+        ],
+        answer: 1,
+        explanation:
+          'That is exactly the promise: if writes stop, all replicas eventually hold the same value. Behind drops to 0 on every node. Nothing is refused and nothing rolls back - the replicas simply finish applying what the primary already sent.',
+      },
+      {
+        id: 'ec-2',
+        prompt:
+          'A like counter is stored as a single number on three replicas with last-write-wins. Two replicas each accept a like at the same moment, both writing 101 over 100. After they sync, what is the count?',
+        options: [
+          '102 - both likes are kept',
+          '100 - both likes are dropped',
+          '101 - one like is silently lost; a CRDT counter that keeps a count per replica and sums them would keep both',
+          'The store reports a conflict to the user',
+        ],
+        answer: 2,
+        explanation:
+          'Last-write-wins keeps one whole value, so one of the two increments disappears without any error. A counter CRDT stores one count per replica and adds them, so concurrent increments merge instead of overwriting. The data shape decides the merge.',
+      },
+      {
+        id: 'ec-3',
+        prompt:
+          'During a 3-minute partition, a customer adds a hat to their cart in Europe and removes a scarf in the US. The cart is stored as one document with last-write-wins. What happens when the partition heals?',
+        options: [
+          'Both changes survive automatically',
+          'The cart is emptied',
+          'The user is asked to choose',
+          'One whole document replaces the other, so either the hat or the scarf removal is lost',
+        ],
+        answer: 3,
+        explanation:
+          'Last-write-wins on a whole document throws away the concurrent change in the other copy. Modelling the cart as a set that keeps adds and recorded removals (tombstones) lets both changes merge: the hat is in, the scarf is out.',
+      },
+      {
+        id: 'ec-4',
+        prompt:
+          'Two replicas use last-write-wins by wall-clock timestamp. The clock of Replica B runs 3 seconds behind. A user changes a setting on A, then 1 second later changes it again on B. Which value wins?',
+        options: [
+          'The first change, on A - its timestamp looks 2 seconds newer, so the real latest change is discarded',
+          'The second change, on B - it happened later',
+          'Both are kept',
+          'Neither - the replicas refuse the write',
+        ],
+        answer: 0,
+        explanation:
+          'Last-write-wins trusts timestamps, and the skewed clock makes the later change look older. That is why "last" is unreliable across machines, and why logical clocks or version vectors are used to detect what really happened concurrently.',
+      },
+      {
+        id: 'ec-5',
+        prompt:
+          'An online shop keeps stock counts in an eventually consistent store replicated across two regions. One unit is left and two customers in different regions buy it at the same moment. What should the design do?',
+        options: [
+          'Nothing - the replicas will converge',
+          'Show approximate stock from the fast store, but make the purchase itself a strongly consistent reservation',
+          'Use last-write-wins on the stock count',
+          'Add a third region',
+        ],
+        answer: 1,
+        explanation:
+          'Both regions can see 1 and both can sell it; converging later just discovers the oversell. Be approximate in the display and exact at the decision point: one strongly consistent check at checkout, with everything else staying eventual.',
+      },
+      {
+        id: 'ec-6',
+        prompt:
+          'In the Lab, "Own save not seen" is high: users reload right after saving and get the old value. Which change fixes that for them without making the whole system strongly consistent?',
+        options: [
+          'Switch to synchronous replication',
+          'Turn off the replicas',
+          'Turn on read-your-writes routing, so a user who just saved reads from the primary',
+          'Lower the read rate',
+        ],
+        answer: 2,
+        explanation:
+          'Read-your-writes is a session guarantee: it covers the one user who wrote, which is who notices. Everyone else still reads replicas and still sees slightly old data, which they cannot tell. Synchronous replication also fixes it, but makes every write wait for every replica.',
+      },
+      {
+        id: 'ec-7',
+        prompt:
+          'A dashboard reads from replicas. An engineer sees a count of 540, refreshes, and sees 512, then 560. Nothing was deleted. What guarantee is missing?',
+        options: [
+          'Monotonic reads - each refresh hit a different replica with a different lag; keeping the user on one replica stops values going backwards',
+          'Durability - the database lost 28 events',
+          'Strong consistency for all writes',
+          'Nothing - that is a bug in the dashboard',
+        ],
+        answer: 0,
+        explanation:
+          'Each replica is internally fine but at a different point in the stream. Pinning a session to one replica means it may lag, but it never jumps back. Nothing was lost: all replicas will reach 560 and beyond.',
+      },
+      {
+        id: 'ec-8',
+        prompt:
+          'In the Lab, async mode with a long delay, you kill the primary and "Lost writes" rises. A colleague says: "That is impossible, the system is eventually consistent." Who is right?',
+        options: [
+          'The colleague - eventual consistency means no write is ever lost',
+          'Neither - the Lab counts reads, not writes',
+          'The colleague - the writes will appear after the lag',
+          'The Lab - eventual consistency promises the copies converge, not that every acknowledged write survives; they converge on the promoted replica, which never had those writes',
+        ],
+        answer: 3,
+        explanation:
+          'Convergence is about the copies agreeing, not about which history they agree on. With async single-leader replication, writes that had not left the dead primary are gone, and every replica converges on a history without them. Waiting for the lag does not help - the source is dead.',
+      },
+      {
+        id: 'ec-9',
+        prompt:
+          'Two regions are cut off from each other for 10 minutes. An eventually consistent store keeps serving in both. What happens during and after the partition?',
+        options: [
+          'Both regions refuse writes until the link is back',
+          'Only the larger region accepts writes',
+          'Both regions keep accepting reads and writes; when the link returns they exchange changes and resolve any conflicting writes with their merge rule',
+          'The regions become two separate databases forever',
+        ],
+        answer: 2,
+        explanation:
+          'Staying available on both sides is exactly what eventual consistency buys. The bill arrives afterwards: writes to the same item on both sides are conflicts, and the merge rule - last-write-wins, version vectors or a CRDT - decides what survives. Refusing writes would be the strongly consistent choice.',
+      },
+      {
+        id: 'ec-10',
+        prompt:
+          'A shipping service receives status updates through an eventually consistent pipeline that may deliver them twice or out of order. Which update format keeps every replica correct?',
+        options: [
+          '"Add 1 to the delivered count" - simple and small',
+          '"Set status to shipped, version 7" - applied only if newer than the stored version, so duplicates and old updates are ignored',
+          '"Toggle the delivered flag"',
+          '"Set status to the next step"',
+        ],
+        answer: 1,
+        explanation:
+          'An idempotent, versioned update gives the same result however often and in whatever order it arrives. "Add 1" doubles on a duplicate, "toggle" flips back on a duplicate, and "next step" depends on order. Designing operations like this removes most of the sharp edges of eventual consistency.',
+      },
+    ],
   },
   {
     slug: 'distributed-locks',

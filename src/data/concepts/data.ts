@@ -752,13 +752,14 @@ rows inspected: ~13      time: ~4 ms`,
     category: 'data',
     difficulty: 'Intermediate',
     lab: 'replication',
-    keywords: ['primary', 'replica', 'failover', 'lag', 'synchronous', 'asynchronous'],
+    labFocus: 'replication',
+    keywords: ['primary', 'replica', 'leader', 'follower', 'failover', 'lag', 'synchronous', 'asynchronous', 'semi-synchronous'],
     what: 'Replication keeps copies of a dataset on multiple nodes. Writes go to a primary (in the common leader-based model) and are streamed to replicas that can serve reads and take over on failure.',
-    why: 'One database instance is both a capacity limit and a single point of failure. Replicas give you read capacity, a failover target, and a copy in another availability zone.',
+    why: 'One database instance is both a capacity limit and a single point of failure. Replicas give you durability, read capacity, a failover target, and a copy in another availability zone.',
     how: [
-      'The primary writes changes to a log (WAL / binlog) and streams it to replicas.',
+      'The primary writes changes to a log (WAL / binlog) and streams it to replicas, which replay it in the same order.',
       'Asynchronous replication acknowledges the client before replicas have applied the change.',
-      'Synchronous replication waits for at least one replica, trading latency for durability.',
+      'Synchronous replication waits for replicas before acknowledging - for all of them, or for one in the semi-synchronous setup - trading latency for durability.',
       'On primary failure, an orchestrator promotes the most up-to-date replica and repoints traffic.',
     ],
     when: [
@@ -790,47 +791,162 @@ Primary DOWN -> promote Replica 1 -> repoint writes`,
         costs: ['Replication lag means stale reads', 'A failover can lose recently acknowledged writes'],
       },
       {
-        approach: 'Synchronous replication',
-        gains: ['No acknowledged write is lost on failover', 'Replicas are always current'],
-        costs: ['Every write pays a network round trip', 'A slow or unreachable replica stalls writes unless quorum-based'],
+        approach: 'Semi-synchronous (wait for one replica)',
+        gains: ['An acknowledged write is on two machines, so losing one machine loses nothing', 'Only the fastest replica is awaited'],
+        costs: ['Every write pays one round trip to a replica', 'The other replicas still lag, so their reads can be stale'],
+      },
+      {
+        approach: 'Synchronous replication (wait for every replica)',
+        gains: ['No acknowledged write is lost on failover', 'Every replica holds every acknowledged write, so replica reads are current'],
+        costs: ['Every write waits for the slowest replica', 'One slow or unreachable replica stalls all writes'],
       },
     ],
     mistakes: [
       'Reading your own write from a replica immediately after writing, and showing the user stale data.',
       'Assuming failover is instant - detection, promotion and DNS/connection repointing all take time.',
       'Treating replicas as backups. A deleted row replicates in milliseconds; a backup lets you go back in time.',
+      'Adding replicas to fix a write bottleneck. Every write still lands on the one primary.',
     ],
     realWorld: [
       'Read-your-writes is commonly solved by routing a user to the primary for a short window after they write.',
       'Managed services (RDS Multi-AZ, Cloud SQL HA) automate promotion but still have a measurable failover window.',
     ],
-    related: ['read-replicas', 'sharding', 'failover', 'eventual-consistency', 'high-availability'],
+    related: ['read-replicas', 'leader-follower', 'sharding', 'failover', 'eventual-consistency', 'high-availability'],
     quiz: [
       {
         id: 'rep-1',
-        prompt: 'A user updates their profile and immediately sees the old value. Writes go to the primary, reads to replicas. What is happening?',
+        prompt:
+          'A user updates their profile and immediately sees the old value. Writes go to the primary, reads to replicas, and the primary logged the update as committed. What is happening?',
         options: [
           'The write failed silently',
-          'Replication lag - the replica has not applied the change yet',
-          'The cache is broken',
           'The primary is down',
+          'Replication lag - the replica that served the read has not applied the change yet',
+          'The browser cached the old page',
         ],
-        answer: 1,
+        answer: 2,
         explanation:
-          'With asynchronous replication the replica is slightly behind. Read-your-writes requires routing that user to the primary or waiting for the replica to catch up.',
+          'The write committed on the primary, so it did not fail; the read simply went to a copy that is a few hundred milliseconds behind. In the Lab this is the "Own save not seen" metric. The fix is read-your-writes: send that user to the primary for a short window, or return the saved object from the write.',
       },
       {
         id: 'rep-2',
-        prompt: 'Why is a replica not a backup?',
+        prompt:
+          'At 10:00 an engineer runs DELETE FROM orders without a WHERE clause on the primary. The database has three replicas, all healthy. At 10:05 the team wants the rows back. Where are they?',
         options: [
-          'Replicas are slower',
-          'Replicas faithfully copy destructive changes, including an accidental DELETE',
-          'Replicas cannot be restored',
-          'Replicas do not store all columns',
+          'On any replica - promote one',
+          'Only in a backup or point-in-time recovery - the replicas deleted them too within milliseconds',
+          'On the replica with the most lag, which has not applied the delete yet',
+          'In the primary replication log, which can be replayed onto the table',
         ],
         answer: 1,
         explanation:
-          'Replication propagates mistakes as quickly as it propagates good data. Backups and point-in-time recovery protect against logical errors.',
+          'Replication copies destructive changes as faithfully as good ones, so by 10:05 every replica has applied the DELETE. A lagging replica holds the rows for at most seconds, not minutes. Protection against mistakes comes from backups and point-in-time recovery, which is why a replica is not a backup.',
+      },
+      {
+        id: 'rep-3',
+        prompt:
+          'Asynchronous replication, lag has grown to 2 seconds during a traffic peak, and the primary host dies. Failover promotes the most up-to-date replica. What happens to the orders customers were told were saved in the last second before the crash?',
+        options: [
+          'They are lost - they never reached any replica',
+          'They are safe - failover waits for the replicas to catch up first',
+          'They are replayed from the client connection',
+          'They appear on the new primary after the lag has passed',
+        ],
+        answer: 0,
+        explanation:
+          'Async acknowledges as soon as the primary commits, so writes still in flight died with the primary. The promoted replica cannot catch up from a machine that is gone. In the Lab, kill the primary in async mode with a long delay and "Lost writes" jumps. Waiting for the lag to pass only helps if the old primary is still alive.',
+      },
+      {
+        id: 'rep-4',
+        prompt:
+          'A payments team must not lose an acknowledged payment when one machine dies, but cannot afford a cross-region round trip on every write. Which replication setup fits?',
+        options: [
+          'Fully synchronous to every replica, including the one in another region',
+          'Asynchronous to every replica, and nightly backups',
+          'Semi-synchronous: wait for one replica in the same region, stream to the distant one asynchronously',
+          'No replicas - a bigger single server',
+        ],
+        answer: 2,
+        explanation:
+          'Waiting for one nearby replica costs a millisecond or two and guarantees every acknowledged write exists on two machines, so a single failure loses nothing. Fully synchronous would also be safe, but every write would wait for the slowest, distant replica. Async plus backups still loses the in-flight window.',
+      },
+      {
+        id: 'rep-5',
+        prompt:
+          'In the Lab you choose Sync (acknowledge after every replica) and then kill Replica 2. "Writes refused" starts climbing. Why?',
+        options: [
+          'The Lab has a bug - replicas should not affect writes',
+          'The primary lost its data when Replica 2 died',
+          'Reads were routed to the dead replica',
+          'A write can only be acknowledged once every replica has it, and one replica can no longer confirm',
+        ],
+        answer: 3,
+        explanation:
+          'Waiting for every replica means one unreachable replica blocks every write - the cost of never acknowledging a write that exists on fewer than all copies. Real systems stall until a timeout or an operator removes the replica from the synchronous set. Semi-sync or a quorum avoids this by waiting for some replicas, not all.',
+      },
+      {
+        id: 'rep-6',
+        prompt:
+          'The primary is at 95% CPU, and almost all of that load is INSERTs and UPDATEs. Someone proposes adding four read replicas. What will it do for the CPU of the primary?',
+        options: [
+          'Very little - every write still runs on the primary, and it must now ship its log to four more copies',
+          'Cut it by about 80%, since the load is spread over five machines',
+          'Cut it by half',
+          'Remove the write load entirely',
+        ],
+        answer: 0,
+        explanation:
+          'Replication scales reads, durability and availability - never write capacity. Each replica replays every write too, so the total work grows. For a write-bound primary the options are removing unnecessary writes, batching, a bigger machine, or sharding.',
+      },
+      {
+        id: 'rep-7',
+        prompt:
+          'In the Lab, async mode, you drag Network delay to replicas from 400 ms to 2000 ms. What changes?',
+        options: [
+          'Write latency rises to about 2 s, and Reads behind stays the same',
+          'Nothing - the delay only matters in sync mode',
+          'Write latency stays at about 8 ms, and Reads behind rises because replicas stay behind for longer',
+          'Both write latency and Reads behind fall',
+        ],
+        answer: 2,
+        explanation:
+          'Async never waits for replicas, so the write is acknowledged at the commit time of the primary however slow the network is. What grows is the window in which a replica has not yet applied an acknowledged write, so more reads land in it. In sync mode the same slider would move write latency instead.',
+      },
+      {
+        id: 'rep-8',
+        prompt:
+          'The primary acknowledged writes up to version 1003 and then died. The replicas had applied up to 980, 1000 and 995. Automation promotes the most up-to-date replica. How many acknowledged writes are lost?',
+        options: ['0', '3', '8', '23'],
+        answer: 1,
+        explanation:
+          'The replica at 1000 is promoted, so versions 1001 to 1003 exist nowhere: 3 writes. Promoting the replica at 980 would have lost 23, which is why failover picks the most up-to-date replica. In the Lab the log reports exactly this count when you kill the primary.',
+      },
+      {
+        id: 'rep-9',
+        prompt:
+          'During a bulk import, replication lag on one replica grows to 45 seconds. Health checks say every replica is up. What should the team have in place?',
+        options: [
+          'Nothing - a replica that is up is fine to read from and to promote',
+          'Restart the lagging replica',
+          'Send all reads to that replica, since it is the least busy',
+          'An alert on lag in seconds, removal of that replica from the read pool above a threshold, and failover that will not silently promote it',
+        ],
+        answer: 3,
+        explanation:
+          'A replica can be up and 45 seconds stale. Reads from it return old data, and promoting it would lose 45 seconds of writes. Lag is the metric to alert and route on, not liveness. Restarting it only makes it fall further behind.',
+      },
+      {
+        id: 'rep-10',
+        prompt:
+          'After a network blip, the old primary comes back still believing it is the primary, while a replica has already been promoted. Both accept writes for a minute. What is the name of this problem and what prevents it?',
+        options: [
+          'Split brain - prevented by quorum-based election and fencing the old primary so it cannot write',
+          'Replication lag - prevented by synchronous replication',
+          'Read-your-writes - prevented by routing to the primary',
+          'Cache stampede - prevented by jitter',
+        ],
+        answer: 0,
+        explanation:
+          'Two primaries accepting writes means two diverging histories, and one of them will be thrown away. Synchronous replication does not help - both nodes think they are the one replicas should follow. A majority vote on who is primary, plus fencing (revoking the old primary rights or cutting it off), makes a second writer impossible.',
       },
     ],
   },
@@ -1581,15 +1697,26 @@ Denormalized:     posts.like_count  (maintained on write)
     category: 'data',
     difficulty: 'Beginner',
     lab: 'replication',
-    keywords: ['read scaling', 'lag', 'routing', 'analytics'],
-    what: 'Read replicas are copies of the primary database that serve read-only queries.',
+    labFocus: 'read-replicas',
+    keywords: ['read scaling', 'lag', 'routing', 'analytics', 'read-your-writes', 'monotonic reads'],
+    what: 'Read replicas are copies of the primary database that serve read-only queries. They follow the primary asynchronously, so each one is slightly behind it.',
     why: 'Most applications read far more than they write. Moving reads off the primary frees it for writes and gives you a warm failover target at the same time.',
     how: [
       'Point read-only queries at a replica endpoint, writes at the primary.',
-      'Route reads that must be fresh (read-your-writes) back to the primary.',
+      'Route reads that must be fresh (read-your-writes) back to the primary - for example every read of a user within 5 seconds of their last write.',
+      'Keep a user on one replica, so their reads never go back in time (monotonic reads).',
       'Watch replication lag as a first-class metric and stop routing to a lagging replica.',
     ],
-    when: ['Read-heavy workloads.', 'Reporting and analytics that would otherwise compete with production traffic.'],
+    when: [
+      'Read-heavy workloads.',
+      'Reporting and analytics that would otherwise compete with production traffic - on a replica of their own.',
+    ],
+    advantages: [
+      'Read capacity grows with each replica, with no change to the schema.',
+      'The primary keeps its headroom for writes.',
+      'Heavy reports run on their own replica, away from customer traffic.',
+      'Each replica is also a warm promotion target for failover.',
+    ],
     diagram: `app --writes--> PRIMARY --stream--> REPLICA 1 <--reads-- app
                    |                 REPLICA 2 <--reads-- analytics
                    +--stream-------->`,
@@ -1599,9 +1726,166 @@ Denormalized:     posts.like_count  (maintained on write)
         gains: ['Primary keeps headroom for writes', 'Read capacity scales with replica count'],
         costs: ['Stale reads under lag', 'Application must decide per query where it is safe to read'],
       },
+      {
+        approach: 'Read-your-writes routing (recent writers read the primary)',
+        gains: ['Users always see their own changes', 'Everyone else still reads from replicas'],
+        costs: ['Some reads come back to the primary', 'The application must remember when each user last wrote'],
+      },
+      {
+        approach: 'Every read on the primary',
+        gains: ['No stale reads at all', 'No routing logic'],
+        costs: ['No read scaling - the primary serves everything', 'A heavy report competes with every write'],
+      },
     ],
-    mistakes: ['Routing every read to replicas including the one right after a write.'],
-    related: ['replication', 'caching', 'connection-pooling'],
+    mistakes: [
+      'Routing every read to replicas, including the one right after a write.',
+      'Classifying queries by SQL text, so a SELECT inside a write transaction lands on a replica.',
+      'Running heavy analytics on the same replica that serves customer reads.',
+      'Watching only whether a replica is up, not how far behind it is.',
+    ],
+    related: ['replication', 'leader-follower', 'eventual-consistency', 'caching', 'connection-pooling'],
+    quiz: [
+      {
+        id: 'rr-1',
+        prompt:
+          'A primary runs at 85% CPU, and 90% of its queries are SELECTs that tolerate a second of staleness. You add two read replicas and route those SELECTs to them. What happens?',
+        options: [
+          'Nothing changes - replicas only help during a failover',
+          'The primary CPU drops sharply and read capacity roughly triples, while writes still all go to the primary',
+          'Write capacity triples',
+          'Reads get slower because they cross the network to a replica',
+        ],
+        answer: 1,
+        explanation:
+          'The dominant load moves off the primary, and three machines now answer reads. Write capacity does not change at all - every write still lands on the primary and is replayed by each replica. Extra network hops to a replica are the same as to the primary.',
+      },
+      {
+        id: 'rr-2',
+        prompt:
+          'The Lab opens with reads on the replicas and "Own save not seen" near 100%. Users save their profile, get redirected, and see the old name. Which change fixes it while keeping most reads on replicas?',
+        options: [
+          'Route every read to the primary',
+          'Add a fourth replica',
+          'Turn on read-your-writes routing, so a user who just saved reads from the primary',
+          'Raise the read rate',
+        ],
+        answer: 2,
+        explanation:
+          'Only the reads right after a save need the primary. Read-your-writes routing sends just those, and the crosses disappear while the other reads stay on replicas. Routing everything to the primary also fixes it, but throws away the read scaling that was the point. A fourth replica is just as behind.',
+      },
+      {
+        id: 'rr-3',
+        prompt:
+          'In the Lab you drag Network delay to replicas from 800 ms down to 100 ms, and "Own save not seen" falls to 0% - the reload comes 150 ms after the save. Is read-your-writes solved for production?',
+        options: [
+          'Yes - keep lag under 150 ms and the problem cannot come back',
+          'Yes, as long as there are at least three replicas',
+          'No - the reads must go to the primary forever',
+          'No - lag spikes during imports, migrations and peaks, so users will miss their own saves again; route recent writers explicitly',
+        ],
+        answer: 3,
+        explanation:
+          'Low lag only makes the race rare. Lag is not constant: it grows exactly under load, and then the same reload lands on a replica that has not caught up. Read-your-writes has to be a routing rule, not a hope about lag. Routing all reads to the primary would work but gives up the replicas.',
+      },
+      {
+        id: 'rr-4',
+        prompt:
+          'The nightly finance report scans a year of orders on the same replica that serves product pages. Every night at 2:00 product pages slow down. What is the fix?',
+        options: [
+          'Give analytics a replica of its own, so heavy scans cannot starve customer reads',
+          'Run the report on the primary instead',
+          'Add an index for every column in the report',
+          'Stop replication during the report',
+        ],
+        answer: 0,
+        explanation:
+          'A replica has one CPU, disk and cache; a year-long scan takes them from the customer queries sharing it. A dedicated analytics replica isolates the workload. Moving it to the primary puts the same scan next to every write, which is worse. Stopping replication makes the report data stale.',
+      },
+      {
+        id: 'rr-5',
+        prompt:
+          'A proxy routes every statement that starts with SELECT to a replica. Inside a transaction, the code runs UPDATE accounts ... and then SELECT balance FROM accounts. What goes wrong?',
+        options: [
+          'Nothing - SELECTs are always safe on a replica',
+          'The SELECT runs on a replica, outside the transaction, and does not see the uncommitted UPDATE',
+          'The UPDATE is sent to the replica too',
+          'The proxy doubles the balance',
+        ],
+        answer: 1,
+        explanation:
+          'A read inside a write transaction belongs to that transaction and must run on the primary; the replica has neither the uncommitted change nor the locks. That is why routing by intent in the application (this block writes, so it uses the primary) is more reliable than guessing from the SQL text.',
+      },
+      {
+        id: 'rr-6',
+        prompt:
+          'A user refreshes a comment thread twice. The first refresh shows a new comment; the second does not. Both reads went to replicas. What happened, and what prevents it?',
+        options: [
+          'The comment was deleted in between',
+          'The primary lost the comment in a failover',
+          'The two reads hit two replicas with different lag - keep each user on one replica so reads never go back in time',
+          'The comment is still being written',
+        ],
+        answer: 2,
+        explanation:
+          'The first replica had applied the comment, the second was further behind. Pinning a user to one replica gives monotonic reads: they may see old data, but never newer and then older. Nothing was deleted or lost - the copies just disagree for a moment.',
+      },
+      {
+        id: 'rr-7',
+        prompt:
+          'During a schema migration, one replica falls 20 seconds behind while the other two stay under 1 second. What should the read router do?',
+        options: [
+          'Keep round-robin across all three - they are all healthy',
+          'Send all reads to the lagging replica, since it has spare CPU',
+          'Restart the primary',
+          'Take the lagging replica out of the read pool until its lag is back under a threshold such as 2 seconds',
+        ],
+        answer: 3,
+        explanation:
+          'A replica can pass every health check and still return 20-second-old data. Routing on lag keeps users on fresh copies; the lagging replica rejoins once it catches up. Its spare CPU is a symptom of it replaying a backlog, not free capacity.',
+      },
+      {
+        id: 'rr-8',
+        prompt:
+          'In the Lab you switch Route reads to Primary. "Reads behind" and "Own save not seen" both drop to 0%. What did it cost?',
+        options: [
+          'The primary now serves every read as well as every write - the read scaling from the replicas is gone',
+          'Nothing - that is strictly the right setting',
+          'Writes are now lost on failover',
+          'Replication stops',
+        ],
+        answer: 0,
+        explanation:
+          'Reading from the one copy that takes the writes is always fresh, and the Reads count on the primary shows the price: all the traffic is back on one machine. The replicas still replicate and still protect against failure. It is a trade, not a free fix.',
+      },
+      {
+        id: 'rr-9',
+        prompt:
+          'The primary and three replicas each handle 5,000 reads per second. At peak you serve 18,000 reads per second from the three replicas. One replica dies. What happens?',
+        options: [
+          'Nothing - replicas share load automatically',
+          'Reads slow down by a third, but all succeed',
+          'The two remaining replicas can serve 10,000 of the 18,000 reads per second, so they overload unless reads spill to the primary or are shed',
+          'The primary is promoted twice',
+        ],
+        answer: 2,
+        explanation:
+          'Replicas add capacity, so losing one removes capacity. Two replicas x 5,000 = 10,000, far below 18,000. Plan the read pool with one spare (N+1), and decide in advance whether the primary may absorb overflow - it has headroom only for the writes it was sized for.',
+      },
+      {
+        id: 'rr-10',
+        prompt:
+          'On a PostgreSQL replica, a 40-minute analytics query keeps failing with "canceling statement due to conflict with recovery". Why?',
+        options: [
+          'The replica is out of disk',
+          'Changes streaming from the primary need to remove rows the long query is still reading, and the replica cancels the query rather than fall further behind',
+          'Replicas cannot run queries longer than a minute',
+          'The primary is down',
+        ],
+        answer: 1,
+        explanation:
+          'A replica must keep applying the log of the primary. When a long query still needs row versions the primary has already cleaned up, the replica either delays replication or cancels the query. That is a reason to give analytics its own replica with settings that favour long queries, separate from the replicas serving users.',
+      },
+    ],
   },
   {
     slug: 'connection-pooling',
