@@ -289,8 +289,8 @@ export const foundationVisuals: Record<string, VisualSpec> = {
     caption: 'Fast burn pages a human; slow burn opens a ticket. Everything else is noise.',
     nodes: [
       { id: 'signal', kind: 'monitoring', label: 'Burn rate', x: 40, y: 95, w: 160, h: 80 },
-      { id: 'page', kind: 'client', label: 'Page on-call', sub: '14x burn', x: 300, y: 20, w: 180, h: 80 },
-      { id: 'ticket', kind: 'storage', label: 'Ticket', sub: '2x burn', x: 300, y: 170, w: 180, h: 80 },
+      { id: 'page', kind: 'client', label: 'Page on-call', sub: '14.4x burn', x: 300, y: 20, w: 180, h: 80 },
+      { id: 'ticket', kind: 'storage', label: 'Ticket', sub: '1x burn', x: 300, y: 170, w: 180, h: 80 },
       { id: 'runbook', kind: 'search', label: 'Runbook', x: 570, y: 95, w: 160, h: 78 },
     ],
     edges: [
@@ -299,9 +299,9 @@ export const foundationVisuals: Record<string, VisualSpec> = {
       { from: 'page', to: 'runbook', tone: 'ok', rate: 1.2 },
     ],
     steps: [
-      { from: 'signal', to: 'page', label: 'Burn 14x: gone in 2 hours', outcome: 'failure' },
+      { from: 'signal', to: 'page', label: 'Burn 14.4x: gone in 2 days', outcome: 'failure' },
       { from: 'page', to: 'runbook', label: 'On-call opens the runbook' },
-      { from: 'signal', to: 'ticket', label: 'Burn 2x: a ticket, no page', outcome: 'warning' },
+      { from: 'signal', to: 'ticket', label: 'Burn 1x: a ticket, no page', outcome: 'warning' },
     ],
   },
 };
