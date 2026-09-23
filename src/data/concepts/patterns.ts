@@ -115,40 +115,6 @@ recommendations hangs             recs:     40 threads (exhausted)
     related: ['circuit-breaker', 'fault-tolerance', 'backpressure', 'connection-pooling'],
   },
   {
-    slug: 'circuit-breaker-pattern',
-    title: 'Circuit Breaker (Pattern)',
-    tagline: 'The state machine, viewed as a reusable structural pattern.',
-    category: 'patterns',
-    difficulty: 'Intermediate',
-    lab: 'circuit-breaker',
-    keywords: ['state machine', 'threshold', 'cooldown', 'fallback'],
-    what: 'As a pattern, the circuit breaker is a three-state machine (closed, open, half-open) wrapping any operation that can fail repeatedly.',
-    why: 'The same structure protects HTTP calls, database connections, queue consumers and third-party SDKs. Recognising it as a pattern means you configure it rather than reinvent it.',
-    how: [
-      'Count failures over a rolling window, not since process start.',
-      'Trip on failure ratio with a minimum request volume, so three calls cannot open the circuit.',
-      'Cooldown, then allow limited trial traffic; success closes, failure reopens.',
-      'Always pair with a fallback and with per-dependency isolation.',
-    ],
-    diagram: `CLOSED --(failure ratio > 50% over 20 calls)--> OPEN
-OPEN --(cooldown 30 s)--> HALF-OPEN
-HALF-OPEN --(3 successes)--> CLOSED
-HALF-OPEN --(1 failure)--> OPEN`,
-    tradeoffs: [
-      {
-        approach: 'Wrap a dependency in a circuit breaker',
-        gains: ['A failing dependency is skipped fast instead of tying up threads on timeouts', 'Gives the dependency room to recover instead of a retry storm'],
-        costs: ['Thresholds and cooldowns must be tuned, or it trips too early or too late', 'While open, callers get a fallback or an error even if the dependency has recovered'],
-      },
-      {
-        approach: 'Separate breakers per endpoint or host instead of one per dependency',
-        gains: ['One bad route or host is cut off while healthy ones keep serving', 'Fallbacks can be tailored to what each endpoint returns'],
-        costs: ['More state, thresholds and dashboards to maintain', 'Each breaker sees less traffic, so it needs longer to gather enough calls to trip reliably'],
-      },
-    ],
-    related: ['circuit-breaker', 'retry', 'bulkhead', 'fault-tolerance'],
-  },
-  {
     slug: 'saga-pattern',
     title: 'Saga Pattern',
     tagline: 'A sequence of local transactions with compensations instead of a distributed one.',
@@ -309,33 +275,5 @@ Every synchronous hop is a shared fate decision.`,
       },
     ],
     related: ['rest-apis', 'message-queues', 'circuit-breaker', 'microservices'],
-  },
-  {
-    slug: 'publish-subscribe',
-    title: 'Publish / Subscribe',
-    tagline: 'Broadcast a fact; let interested parties decide what it means.',
-    category: 'patterns',
-    difficulty: 'Beginner',
-    keywords: ['topic', 'broadcast', 'decoupling', 'fan-out'],
-    what: 'The publish/subscribe pattern delivers each message to all current subscribers of a topic, with publishers unaware of who is listening.',
-    why: 'It is how you add behaviour without modifying the source of the event - the structural core of event-driven systems.',
-    how: [
-      'Publishers emit to a topic; subscribers register independently.',
-      'Each subscriber tracks its own position and backlog.',
-      'Delivery is typically at-least-once, so handlers must be idempotent.',
-    ],
-    diagram: `publish("payment.captured")
-   |-> accounting service
-   |-> email service
-   |-> analytics
-Adding a fourth subscriber requires no change to the publisher.`,
-    tradeoffs: [
-      {
-        approach: 'Pub/sub',
-        gains: ['Extensible without touching producers', 'Independent failure and scaling'],
-        costs: ['No delivery confirmation to the publisher', 'Harder to trace end to end', 'Ordering guarantees are limited'],
-      },
-    ],
-    related: ['pub-sub', 'event-driven-architecture', 'fan-out', 'kafka'],
   },
 ];

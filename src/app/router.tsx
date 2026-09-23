@@ -1,6 +1,7 @@
 import { Suspense } from 'react';
-import { createBrowserRouter } from 'react-router-dom';
+import { Navigate, createBrowserRouter } from 'react-router-dom';
 import { AppShell } from '@/components/layout/AppShell';
+import { MERGED_CONCEPTS } from '@/data/concepts/merged';
 import { lazyWithRetry } from '@/utils/lazyWithRetry';
 import { Loader2 } from 'lucide-react';
 
@@ -36,6 +37,11 @@ export const router = createBrowserRouter([
     children: [
       { index: true, element: page(<HomePage />) },
       { path: 'concepts/:slug', element: page(<ConceptPage />) },
+      // Old links to a merged Concept land on the Concept it was merged into.
+      ...Object.entries(MERGED_CONCEPTS).map(([retired, kept]) => ({
+        path: `concepts/${retired}`,
+        element: <Navigate to={`/concepts/${kept}`} replace />,
+      })),
       { path: 'categories/:categoryId', element: page(<CategoryPage />) },
       { path: 'labs', element: page(<LabsPage />) },
       { path: 'labs/:labId', element: page(<LabRoute />) },

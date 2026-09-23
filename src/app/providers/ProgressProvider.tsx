@@ -1,6 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
 import type { CategoryId } from '@/types';
 import { CONCEPTS, CONCEPTS_BY_CATEGORY } from '@/data/concepts';
+import { MERGED_CONCEPTS } from '@/data/concepts/merged';
 import { safeLocalStorage } from '@/utils/safeStorage';
 
 const STORAGE_KEY = 'sdi:progress:v1';
@@ -64,14 +65,38 @@ function load(): ProgressState {
   try {
     const parsed: unknown = JSON.parse(raw);
     if (!isRecord(parsed)) return EMPTY;
-    return {
+    return carryMerged({
       visited: pick(parsed.visited, isFiniteNumber),
       completed: pick(parsed.completed, isTrue),
       quiz: pick(parsed.quiz, isQuizResult),
-    };
+    });
   } catch {
     return EMPTY;
   }
+}
+
+const quizRatio = (result: QuizResult) => result.correct / result.total;
+
+/**
+ * Progress saved under a merged Concept moves to the Concept it was merged
+ * into: Done wins, the best quiz score and the first visit are kept. The
+ * retired keys are dropped, so the next save no longer carries them.
+ */
+function carryMerged(state: ProgressState): ProgressState {
+  const visited = { ...state.visited };
+  const completed = { ...state.completed };
+  const quiz = { ...state.quiz };
+  for (const [retired, kept] of Object.entries(MERGED_CONCEPTS)) {
+    const firstVisit = visited[retired];
+    if (firstVisit !== undefined) visited[kept] = Math.min(firstVisit, visited[kept] ?? firstVisit);
+    if (completed[retired]) completed[kept] = true;
+    const result = quiz[retired];
+    if (result && (!quiz[kept] || quizRatio(result) > quizRatio(quiz[kept]))) quiz[kept] = result;
+    delete visited[retired];
+    delete completed[retired];
+    delete quiz[retired];
+  }
+  return { visited, completed, quiz };
 }
 
 /**

@@ -293,31 +293,4 @@ export const foundationVisuals: Record<string, VisualSpec> = {
       { from: 'signal', to: 'ticket', label: 'Burn 2x: a ticket, no page', outcome: 'warning' },
     ],
   },
-
-  'event-driven-architecture-arch': {
-    width: 760,
-    height: 290,
-    caption: 'Choreography spreads the workflow; orchestration keeps it in one place.',
-    nodes: [
-      { id: 'event', kind: 'queue', label: 'OrderPlaced', x: 40, y: 30, w: 170, h: 74 },
-      { id: 'a', kind: 'service', label: 'Payment reacts', x: 300, y: 15, w: 180, h: 72 },
-      { id: 'b', kind: 'service', label: 'Shipping reacts', x: 300, y: 100, w: 180, h: 72 },
-      { id: 'orch', kind: 'api-gateway', label: 'Workflow service', sub: 'explicit steps', x: 300, y: 195, w: 180, h: 80 },
-      { id: 'result', kind: 'client', label: 'Order completed', x: 570, y: 100, w: 170, h: 80 },
-    ],
-    edges: [
-      { from: 'event', to: 'a', tone: 'ok', rate: 1.6 },
-      { from: 'event', to: 'b', tone: 'ok', rate: 1.6 },
-      { from: 'orch', to: 'result', tone: 'brand', rate: 1.6 },
-      { from: 'a', to: 'result', tone: 'muted', rate: 1.2, dashed: true },
-      { from: 'b', to: 'result', tone: 'muted', rate: 1.2, dashed: true },
-    ],
-    steps: [
-      { from: 'event', to: 'a', label: 'Payment reacts to OrderPlaced' },
-      { from: 'event', to: 'b', label: 'Shipping reacts on its own' },
-      { from: 'a', to: 'result', label: 'Payment finishes its part' },
-      { from: 'b', to: 'result', label: 'Done, but no one owns it', outcome: 'warning' },
-      { from: 'orch', to: 'result', label: 'Orchestration: one service runs it' },
-    ],
-  },
 };

@@ -311,38 +311,4 @@ No shared database. Every cross-service call can fail.`,
     mistakes: ['Adopting it for an entire system when only one aggregate needs an audit trail.'],
     related: ['cqrs', 'event-driven-architecture', 'kafka', 'outbox-pattern'],
   },
-  {
-    slug: 'event-driven-architecture-arch',
-    title: 'Event-Driven Architecture (Architecture view)',
-    tagline: 'Choreography versus orchestration, and where the workflow actually lives.',
-    category: 'architecture',
-    difficulty: 'Advanced',
-    keywords: ['choreography', 'orchestration', 'workflow', 'coupling'],
-    what: 'At the architecture level, event-driven design is a choice about where a multi-step business process is described: distributed across reacting services (choreography), or in one coordinator (orchestration).',
-    why: 'Both use events. They differ in who knows the workflow - and therefore in how hard it is to change, debug and recover.',
-    how: [
-      'Choreography: each service reacts to events and emits its own. No central controller.',
-      'Orchestration: a workflow service issues commands and tracks progress explicitly.',
-      'Long-running workflows need compensation (sagas) and idempotent steps either way.',
-    ],
-    diagram: `CHOREOGRAPHY                  ORCHESTRATION
-OrderPlaced                   Workflow service:
- -> Payment reacts              1. reserve stock
- -> Inventory reacts            2. charge card
- -> Shipping reacts             3. schedule shipment
-workflow exists nowhere        workflow is explicit and testable`,
-    tradeoffs: [
-      {
-        approach: 'Choreography',
-        gains: ['Loosest coupling', 'Easy to add participants'],
-        costs: ['No single view of the process', 'Hard to debug and to reason about failure'],
-      },
-      {
-        approach: 'Orchestration',
-        gains: ['Explicit, testable, observable workflow', 'Clear compensation logic'],
-        costs: ['Coordinator is a coupling point and must be highly available'],
-      },
-    ],
-    related: ['event-driven-architecture', 'saga-pattern', 'microservices'],
-  },
 ];

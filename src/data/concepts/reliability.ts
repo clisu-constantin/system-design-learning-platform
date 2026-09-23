@@ -184,16 +184,21 @@ RTO ~20 s, RPO = whatever async replication had not shipped`,
     category: 'reliability',
     difficulty: 'Intermediate',
     lab: 'circuit-breaker',
-    keywords: ['closed', 'open', 'half-open', 'fail fast', 'cascading failure'],
-    what: 'A circuit breaker monitors calls to a dependency. After enough failures it opens and rejects calls immediately for a cooldown period, then lets a trial request through to test recovery.',
-    why: 'Calling a dead service wastes threads, connections and time, and the retries keep it dead. Failing fast protects the caller and gives the callee room to recover.',
+    keywords: ['closed', 'open', 'half-open', 'fail fast', 'cascading failure', 'state machine', 'threshold', 'cooldown', 'fallback'],
+    what: 'A circuit breaker monitors calls to a dependency. After enough failures it opens and rejects calls immediately for a cooldown period, then lets a trial request through to test recovery. The same three-state machine can wrap any operation that fails repeatedly - an HTTP call, a database connection, a queue publish or a third-party SDK.',
+    why: 'Calling a dead service wastes threads, connections and time, and the retries keep it dead. Failing fast protects the caller and gives the callee room to recover. Treated as one reusable pattern, it is configured per dependency instead of written again inside every client.',
     how: [
-      'CLOSED: calls pass through while failures are counted over a rolling window.',
+      'CLOSED: calls pass through while failures are counted over a rolling window, not since the process started.',
+      'Trip on a failure ratio with a minimum call volume, so three unlucky calls cannot open the circuit.',
       'OPEN: the threshold was crossed - calls fail immediately with a fallback, no network call made.',
       'HALF-OPEN: after the cooldown, a limited number of trial calls are allowed.',
       'Success closes the circuit; failure opens it again and restarts the cooldown.',
+      'Configure one policy per dependency, next to a timeout, a bounded retry and a bulkhead.',
     ],
-    when: ['Any synchronous call to a remote dependency, especially third-party APIs.'],
+    when: [
+      'Any synchronous call to a remote dependency, especially third-party APIs.',
+      'Database, cache and queue clients that hang while the other side is down.',
+    ],
     diagram: `        failures >= threshold
 CLOSED ----------------------> OPEN
    ^                             |
@@ -209,18 +214,28 @@ CLOSED ----------------------> OPEN
     ],
     tradeoffs: [
       {
-        approach: 'Circuit breaker',
-        gains: ['Fail fast', 'Protects both caller and callee', 'Automatic recovery probing'],
+        approach: 'Wrap a dependency in a circuit breaker',
+        gains: [
+          'Fail fast: a dead dependency is skipped instead of tying up threads on timeouts',
+          'Protects both caller and callee - no retry storm while it recovers',
+          'Automatic recovery probing',
+        ],
         costs: [
           'Requests fail while open even if the dependency recovered early',
-          'Thresholds need tuning per dependency',
+          'Thresholds and cooldowns need tuning per dependency, or it trips too early or too late',
           'Needs a meaningful fallback, or you have only moved the error',
         ],
+      },
+      {
+        approach: 'Separate breakers per endpoint or host instead of one per dependency',
+        gains: ['One bad route or host is cut off while healthy ones keep serving', 'Fallbacks can be tailored to what each endpoint returns'],
+        costs: ['More state, thresholds and dashboards to maintain', 'Each breaker sees less traffic, so it needs longer to gather enough calls to trip reliably'],
       },
     ],
     mistakes: [
       'One shared breaker for several dependencies, so one failure blocks unrelated calls.',
       'Thresholds so high the breaker never trips, or so low it trips on normal noise.',
+      'Wrapping the retry loop around the breaker, so retries hammer a circuit that fails instantly instead of counting toward the trip.',
       'Opening the circuit with no fallback and calling it resilience.',
     ],
     realWorld: ['Hystrix popularised the pattern; Resilience4j, Polly and service meshes implement it today.'],

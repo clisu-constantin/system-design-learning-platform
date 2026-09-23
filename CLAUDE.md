@@ -158,7 +158,7 @@ The product complaint that shaped this app was "too much text". Concept pages th
 **running diagram**, not a paragraph:
 
 - `src/data/visuals/` maps every concept slug to a `VisualSpec` (nodes, edges with a particle
-  `rate`, and `steps` - its Walkthrough). All 106 concepts have one - keep it that way.
+  `rate`, and `steps` - its Walkthrough). All 102 concepts have one - keep it that way.
 - `FlowVisual` renders a spec as a self-running Diagram. With `walkthrough` (the concept page only),
   a spec with `steps` also gets a chip row under the canvas: "Live" for the traffic, then one chip
   per step. Picking a step stops the traffic and walks one request along that hop, on the same

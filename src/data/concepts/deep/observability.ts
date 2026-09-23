@@ -171,22 +171,22 @@ USE
     ],
   },
 
-  tracing: {
+  'distributed-tracing': {
     analogy: {
-      title: 'A parcel tracking history',
+      title: 'A baton passed between runners',
       body:
-        'The parcel shows every scan: left the warehouse 09:12, arrived at the hub 13:40, out for delivery 08:02. When it is late, you do not guess - you see which leg took two days. A trace is that history for one request, with a line per hop and a duration on each.',
+        'Each runner writes their leg time on the baton and passes it on. At the finish you have the whole race broken down by leg, so when the team is slow you do not guess - you see which leg took the time. Drop the baton once - hand over without it - and every leg after that is unattributed, which is exactly what happens when context is not propagated across a queue.',
     },
     deepDive: [
       {
-        heading: 'Spans, parents and the shape of a trace',
+        heading: 'Spans, parents and the waterfall',
         paragraphs: [
           'A trace is a tree of spans. Each span represents one operation - handling an HTTP request, executing a query, calling another service - and records a start time, a duration, a parent span id and a set of attributes. The trace id ties them all together; the parent links give the tree its shape.',
           'Reading a trace is mostly reading the waterfall. Sequential bars mean work happening one after another, which is where batching or parallelism might help. A wide parent with a narrow set of children means time is being spent in the parent itself rather than in its calls. A long gap between a parent starting and its first child means queuing or slow initialisation.',
           'The classic finding is the N+1 pattern rendered visually: fifty tiny identical spans in a row. Nobody reading code notices it; in a trace it is unmistakable, and the fix - batching - is obvious from the picture.',
         ],
         code: {
-          caption: 'Reading a waterfall',
+          caption: 'Reading a waterfall, and keeping it whole across a queue',
           body: `trace 4bf92f  total 480 ms
   api.request                [============================] 480
     auth.verify              [=]                              8
@@ -197,29 +197,40 @@ USE
     render                   [==]                            30
 
 340 of 480 ms in one child, made of 40 sequential calls.
-Batch them into one and the request drops to about 170 ms.`,
+
+across a queue
+  producer:  inject(current_context, message.headers)
+  consumer:  ctx = extract(message.headers)
+             span = tracer.start("order.process", links=[ctx])
+forget either line and the consumer starts a brand-new trace`,
         },
       },
       {
-        heading: 'Instrumentation and useful attributes',
+        heading: 'Context propagation is the whole mechanism',
         paragraphs: [
-          'Most of the value comes free: OpenTelemetry auto-instrumentation covers HTTP servers and clients, database drivers and popular frameworks, giving you a full request tree without writing code. Manual spans are worth adding only around meaningful internal operations - a business step, an expensive computation, a cache lookup.',
-          'Attributes are what make traces searchable. Add the things you will want to filter by: tenant, route template, cache hit or miss, queue name, result status, retry count. Avoid unbounded identifiers as attribute keys, and never put secrets or personal data in them - traces are widely readable inside a company.',
-          'Errors deserve explicit treatment: mark the span as failed and record the exception. A trace where the failing span is visibly red saves the step of correlating with logs, and it makes error traces easy to query as a population.',
+          'Tracing works across services because every outbound call carries the trace context. For HTTP that is the W3C traceparent header, containing the trace id, the current span id and a sampled flag. The receiving service reads it, creates a child span, and passes its own context onward.',
+          'It breaks wherever something in the chain does not forward that header. A hand-rolled HTTP client, a third-party SDK, a queue publisher that does not copy the context into message metadata - each becomes a point where the trace ends and everything downstream appears unrelated.',
+          'Asynchronous hops need explicit work. The producer injects the context into message headers, the consumer extracts it and creates a span linked to the original trace. Without that, the two halves of a workflow are two disconnected traces, and the async half - where problems usually hide - becomes invisible. This is the single most common gap in real deployments.',
         ],
         bullets: [
-          'Auto-instrument first; add manual spans only where they explain something.',
-          'Attributes for filtering: tenant, route, cache result, retry count, queue.',
-          'Mark span status on failure and attach the exception.',
-          'Keep span names low cardinality - /orders/{id}, never /orders/4711.',
+          'Propagate across HTTP, gRPC, queues and scheduled work.',
+          'Inject at every publish, extract at every consume.',
+          'Propagate the sampling decision too, or you get partial traces.',
         ],
       },
       {
-        heading: 'Sampling, because keeping everything is not affordable',
+        heading: 'Instrumentation, attributes and sampling',
         paragraphs: [
-          'A busy service generates far more trace data than logs, so you keep a fraction. Head-based sampling decides at the start of the request - simple, cheap, and it discards most errors precisely because errors are rare. Tail-based sampling buffers the complete trace and decides after seeing the outcome, so you can keep every error and every slow request and 1 percent of the rest.',
-          'Tail-based sampling requires a collector that can hold traces until they are complete, which is more infrastructure. For most teams it is worth it, because the traces you actually want to look at are exactly the ones a random sample throws away.',
-          'Whatever you choose, the sampling decision must propagate. If one service decides to sample a trace and a downstream service decides independently, you get partial traces that are worse than none - the W3C traceparent header carries a sampled flag for exactly this reason.',
+          'Most of the value comes free: OpenTelemetry auto-instrumentation covers HTTP servers and clients, database drivers and popular frameworks, giving you a full request tree without writing code. Because it is vendor-neutral, that expensive instrumentation work survives a change of backend. Manual spans are worth adding only around meaningful internal operations - a business step, an expensive computation, a cache lookup.',
+          'Attributes are what make traces searchable: tenant, route template, cache hit or miss, queue name, result status, retry count. Keep span names and attribute values low cardinality, never put secrets or personal data in them, and mark failed spans with their exception so error traces are easy to query as a population.',
+          'A busy service generates far more trace data than logs, so you keep a fraction. Head-based sampling decides at the start of the request - simple and cheap, and it discards most errors precisely because errors are rare. Tail-based sampling buffers the complete trace in a collector and decides after seeing the outcome, so you keep every error, every slow request and 1 percent of the rest. The collector is also where you redact attributes and change policy without redeploying thirty services.',
+          'Finally, emit the trace id in logs and attach exemplars to metrics. Then a latency spike on a graph links to a trace of a slow request, which links to the logs of the service that caused it - and the traces themselves give you a dependency map of the calls that really happen, including the ones nobody remembered.',
+        ],
+        bullets: [
+          'Auto-instrument first; add manual spans only where they explain something.',
+          'Keep span names low cardinality - /orders/{id}, never /orders/4711.',
+          'Centralise sampling and redaction in the collector.',
+          'Emit trace ids in logs so the two link in both directions.',
         ],
       },
     ],
@@ -234,85 +245,11 @@ Batch them into one and the request drops to about 170 ms.`,
           'Nobody had noticed because each call is fast; only the accumulation is slow, and no metric showed the count per request.',
           'Fix 1: batch the calls into one request carrying 40 item ids. Pricing drops from 340 ms to 12 ms.',
           'Fix 2: add a span attribute pricing.items_count, so a future regression is visible as a distribution rather than a mystery.',
-          'Fix 3: an alert on pricing span duration, since it is now known to be the dominant contributor.',
           'p95 for the page falls from 480 ms to roughly 150 ms, without touching the database everyone was suspicious of.',
         ],
         result:
           'Tracing replaced a plausible assumption with a measurement. The accumulation of many small calls is the single most common finding when a team looks at traces for the first time.',
       },
-    ],
-    jargon: [
-      { term: 'Span', plain: 'One operation with a start, a duration and attributes.' },
-      { term: 'Trace id / parent span id', plain: 'What ties spans into one tree.' },
-      { term: 'Waterfall', plain: 'The visual timeline of spans. Reading it is the main skill.' },
-      { term: 'Head / tail sampling', plain: 'Deciding to keep a trace at the start, or after seeing the outcome.' },
-      { term: 'traceparent', plain: 'The W3C header carrying trace context between services.' },
-      { term: 'Auto-instrumentation', plain: 'Library-provided spans for HTTP, database and framework calls.' },
-    ],
-    remember: [
-      'A trace is a tree of timed spans for one request - the waterfall shows where the time went.',
-      'Sequential repeated spans are the N+1 pattern, visible instantly.',
-      'Auto-instrument first; add manual spans only where they explain something.',
-      'Tail-based sampling keeps the errors and slow traces you actually want.',
-      'Keep span names and attributes low cardinality, and never put secrets in them.',
-    ],
-  },
-
-  'distributed-tracing': {
-    analogy: {
-      title: 'A baton passed between runners',
-      body:
-        'Each runner writes their leg time on the baton and passes it on. At the finish you have the whole race broken down by leg. Drop the baton once - hand over without it - and every leg after that is unattributed, which is exactly what happens when context is not propagated across a queue.',
-    },
-    deepDive: [
-      {
-        heading: 'Context propagation is the whole mechanism',
-        paragraphs: [
-          'Distributed tracing works because every outbound call carries the trace context. For HTTP that is the W3C traceparent header, containing the trace id, the current span id and a sampled flag. The receiving service reads it, creates a child span, and passes its own context onward.',
-          'It breaks wherever something in the chain does not forward that header. A hand-rolled HTTP client, a third-party SDK, a queue publisher that does not copy the context into message metadata - each becomes a point where the trace ends and everything downstream appears unrelated.',
-          'Asynchronous hops need explicit work. The producer injects the context into message headers, the consumer extracts it and creates a span linked to the original trace. Without that, the two halves of a workflow are two disconnected traces, and the async half - where problems usually hide - becomes invisible.',
-        ],
-        code: {
-          caption: 'Carrying context across a queue',
-          body: `PRODUCER
-  span = tracer.start("order.publish")
-  headers = {}
-  inject(current_context, headers)        # traceparent + tracestate
-  queue.publish(body, headers=headers)
-
-CONSUMER
-  ctx = extract(message.headers)
-  span = tracer.start("order.process", links=[ctx])
-  # same trace id -> the async half is attached to the request that caused it
-
-Forget the inject/extract and the consumer starts a brand-new trace.
-This is the single most common gap in real deployments.`,
-        },
-      },
-      {
-        heading: 'OpenTelemetry and why vendor neutrality matters here',
-        paragraphs: [
-          'Instrumentation is the expensive part - it touches every service and every library. Doing that work against a vendor-specific SDK means redoing it if you change backend, which is why OpenTelemetry became the standard: one instrumentation API and a collector that exports to whichever backend you choose.',
-          'The collector is more useful than it first appears. It sits between your services and the backend, and it can batch, retry, redact attributes, drop noisy spans, add resource metadata, and implement tail-based sampling centrally. Changing sampling policy becomes a collector configuration change rather than a redeploy of thirty services.',
-          'The same context also links your other signals. Emitting the trace id in logs and attaching exemplars to metrics means a latency spike on a graph links directly to a trace of a slow request, which links to the logs of the service that caused it. That join is what turns three tools into one investigation.',
-        ],
-        bullets: [
-          'Instrument once with OpenTelemetry; swap backends by changing the collector.',
-          'Propagate across HTTP, gRPC, queues, and scheduled work.',
-          'Redact attributes centrally in the collector rather than in every service.',
-          'Emit trace ids in logs so the two link in both directions.',
-        ],
-      },
-      {
-        heading: 'What it lets you see that nothing else does',
-        paragraphs: [
-          'Service dependency maps are derived from real traces rather than from documentation, so they show the calls that actually happen - including the ones nobody remembered. Teams routinely discover an unexpected dependency on a legacy service this way.',
-          'Latency attribution across a request is the primary use: which of twelve services consumed the 900 ms. Related, critical path analysis shows which spans actually delay the response as opposed to running in parallel, which is where optimisation effort should go.',
-          'And error propagation becomes traceable: a failure surfacing in the checkout service can be followed to a timeout three hops down. In a system of any size, that chain is essentially impossible to reconstruct from logs alone, which is why distributed tracing stops being optional at roughly the point you have more than three services.',
-        ],
-      },
-    ],
-    examples: [
       {
         title: 'The invisible half of the workflow',
         setup:
@@ -330,19 +267,19 @@ This is the single most common gap in real deployments.`,
       },
     ],
     jargon: [
-      { term: 'Context propagation', plain: 'Carrying trace id and span id to the next hop, in headers or message metadata.' },
-      { term: 'traceparent / tracestate', plain: 'The W3C standard headers for trace context.' },
+      { term: 'Span', plain: 'One operation with a start, a duration and attributes.' },
+      { term: 'Trace id / parent span id', plain: 'What ties spans into one tree.' },
+      { term: 'Waterfall', plain: 'The visual timeline of spans. Reading it is the main skill.' },
+      { term: 'traceparent', plain: 'The W3C header carrying trace context to the next hop.' },
       { term: 'Span link', plain: 'Connecting a consumer span to the producer trace for async work.' },
-      { term: 'OpenTelemetry', plain: 'Vendor-neutral instrumentation APIs plus a collector.' },
-      { term: 'Collector', plain: 'A process between services and backend that batches, redacts and samples.' },
-      { term: 'Critical path', plain: 'The spans that actually delay the response, as opposed to parallel work.' },
+      { term: 'Head / tail sampling', plain: 'Deciding to keep a trace at the start, or after seeing the outcome.' },
     ],
     remember: [
+      'A trace is a tree of timed spans for one request - the waterfall shows where the time went.',
       'Everything depends on propagating context to the next hop.',
       'Queues are where traces break - inject and extract explicitly.',
-      'Instrument with OpenTelemetry so the work survives a change of backend.',
-      'The collector is where you centralise sampling and redaction.',
-      'Emit trace ids in logs so metrics, traces and logs link into one workflow.',
+      'Instrument with OpenTelemetry, and keep every error and slow trace with tail-based sampling.',
+      'Keep span names and attributes low cardinality, and emit trace ids in logs.',
     ],
   },
 

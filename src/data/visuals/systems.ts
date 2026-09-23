@@ -1425,27 +1425,6 @@ export const systemVisuals: Record<string, VisualSpec> = {
     ],
   },
 
-  tracing: {
-    width: 760,
-    height: 280,
-    caption: 'Spans form a tree, and the widest bar is where the time went.',
-    nodes: [
-      { id: 'gw', kind: 'api-gateway', label: 'Gateway span', x: 40, y: 100, w: 170, h: 80 },
-      { id: 'svc', kind: 'service', label: 'Service span', x: 290, y: 100, w: 170, h: 80 },
-      { id: 'db', kind: 'sql', label: 'DB span', x: 540, y: 100, w: 170, h: 80 },
-    ],
-    edges: [
-      { from: 'gw', to: 'svc', tone: 'brand', rate: 2 },
-      { from: 'svc', to: 'db', tone: 'info', rate: 2 },
-    ],
-    steps: [
-      { from: 'gw', to: 'svc', label: 'Root span passes the trace id' },
-      { from: 'svc', to: 'db', label: 'Child span links to parent' },
-      { from: 'db', to: 'svc', label: 'DB span ends, duration recorded' },
-      { from: 'svc', to: 'gw', label: 'Spans close into one tree' },
-    ],
-  },
-
   monitoring: {
     width: 760,
     height: 290,
@@ -1698,54 +1677,6 @@ export const systemVisuals: Record<string, VisualSpec> = {
       { from: 'c', to: 'd', label: 'C calls D: waits stack up', outcome: 'warning' },
       { from: 'd', to: 'c', label: 'Responses unwind hop by hop' },
       { from: 'b', to: 'a', label: 'A answers only if all succeed' },
-    ],
-  },
-
-  'publish-subscribe': {
-    width: 760,
-    height: 280,
-    caption: 'Adding a fourth subscriber requires no change to the publisher.',
-    nodes: [
-      { id: 'pub', kind: 'server', label: 'payment.captured', x: 40, y: 95, w: 190, h: 80 },
-      { id: 'topic', kind: 'queue', label: 'Topic', x: 320, y: 95, w: 140, h: 80 },
-      { id: 's1', kind: 'worker', label: 'Accounting', x: 560, y: 15, w: 160, h: 72 },
-      { id: 's2', kind: 'worker', label: 'Email', x: 560, y: 100, w: 160, h: 72 },
-      { id: 's3', kind: 'worker', label: 'Analytics', x: 560, y: 185, w: 160, h: 72 },
-    ],
-    edges: [
-      { from: 'pub', to: 'topic', tone: 'brand', rate: 2 },
-      { from: 'topic', to: 's1', tone: 'ok', rate: 2 },
-      { from: 'topic', to: 's2', tone: 'ok', rate: 2 },
-      { from: 'topic', to: 's3', tone: 'ok', rate: 2 },
-    ],
-    steps: [
-      { from: 'pub', to: 'topic', label: 'Event published once' },
-      { from: 'topic', to: 's1', label: 'Accounting gets its copy' },
-      { from: 'topic', to: 's2', label: 'Email gets the same event' },
-      { from: 'topic', to: 's3', label: 'Analytics too, publisher unaware' },
-    ],
-  },
-
-  'circuit-breaker-pattern': {
-    width: 760,
-    height: 300,
-    caption: 'The same three states wrap any call that can fail repeatedly.',
-    nodes: [
-      { id: 'closed', kind: 'service', label: 'CLOSED', sub: 'calls pass', x: 60, y: 25, w: 170, h: 80 },
-      { id: 'open', kind: 'service', label: 'OPEN', sub: 'fail fast', x: 500, y: 25, w: 170, h: 80, status: 'down' },
-      { id: 'half', kind: 'service', label: 'HALF-OPEN', sub: 'trial calls', x: 280, y: 195, w: 170, h: 80, status: 'degraded' },
-    ],
-    edges: [
-      { from: 'closed', to: 'open', tone: 'danger', rate: 1.2, outcome: 'failure', label: 'threshold' },
-      { from: 'open', to: 'half', tone: 'warn', rate: 1.2, outcome: 'warning', label: 'cooldown' },
-      { from: 'half', to: 'closed', tone: 'ok', rate: 1.2, curvature: 1.1, label: 'success' },
-    ],
-    steps: [
-      { from: 'closed', to: 'open', label: 'Failure ratio over threshold: trip', outcome: 'failure' },
-      { from: 'open', to: 'half', label: 'Cooldown over: allow trial calls', outcome: 'warning' },
-      { from: 'half', to: 'open', label: 'Trial fails: open again', outcome: 'failure' },
-      { from: 'open', to: 'half', label: 'Next cooldown, trial again', outcome: 'warning' },
-      { from: 'half', to: 'closed', label: 'Trials succeed: close' },
     ],
   },
 };

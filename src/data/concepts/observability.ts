@@ -62,19 +62,35 @@ p99 latency 4.2 s  -> 1% of users are having a terrible time`,
     related: ['monitoring', 'alerting', 'sli', 'logging'],
   },
   {
-    slug: 'tracing',
-    title: 'Tracing',
-    tagline: 'One request, every hop, with timings.',
+    slug: 'distributed-tracing',
+    title: 'Distributed Tracing',
+    tagline: 'One request, every hop, with timings - across service, queue and datastore boundaries.',
     category: 'observability',
     difficulty: 'Intermediate',
     lab: 'tracing',
-    keywords: ['span', 'trace id', 'latency breakdown', 'instrumentation'],
-    what: 'A trace records the path of a single request through the system as a tree of spans, each with a start time, duration and attributes.',
-    why: 'In a system with several services, "the request was slow" is useless on its own. A trace shows which hop consumed the time.',
+    keywords: [
+      'span',
+      'trace id',
+      'waterfall',
+      'latency breakdown',
+      'instrumentation',
+      'opentelemetry',
+      'context propagation',
+      'sampling',
+      'span attributes',
+    ],
+    what: 'A trace records the path of one request through the system as a tree of spans, each with a start time, a duration and attributes. Distributed tracing keeps that tree whole across process boundaries, by propagating context through HTTP headers, message metadata and database instrumentation.',
+    why: 'In a system with several services, "the request was slow" is useless on its own. A trace answers "where did those 900 ms go?" - which hop consumed the time, including the asynchronous ones.',
     how: [
-      'Generate a trace id at the entry point and propagate it in headers (W3C traceparent).',
-      'Each operation opens a span with the parent span id, producing a tree.',
-      'Sample: keep all errors and slow traces, sample the rest to control cost.',
+      'Generate a trace id at the entry point and propagate it on every outbound call (W3C traceparent), including into queue messages.',
+      'Each operation opens a span with its parent span id, producing a tree.',
+      'Adopt OpenTelemetry so instrumentation is vendor-neutral.',
+      'Use tail-based sampling to keep the interesting traces (errors, slow) rather than a blind percentage.',
+      'Attach useful attributes: tenant, route, cache hit/miss - not unbounded ids.',
+    ],
+    when: [
+      'A request crosses more than two or three services, queues or datastores.',
+      'A latency or error question that metrics can show but cannot attribute to one hop.',
     ],
     diagram: `trace abc123 (total 265 ms)
 API Gateway      [#######]                 40 ms
@@ -82,37 +98,15 @@ API Gateway      [#######]                 40 ms
     Payment Service    [###########]      120 ms
       Database              [###]          25 ms
 
-The bottleneck is visible instead of guessed.`,
+HTTP:   traceparent: 00-4bf92f...-00f067aa0ba902b7-01
+Queue:  message headers carry the same context
+  producer span --> [queue] --> consumer span (same trace)`,
     tradeoffs: [
       {
         approach: 'Distributed tracing',
         gains: ['Exact latency attribution', 'Shows real service dependencies'],
         costs: ['Instrumentation effort across every service', 'Storage cost drives sampling', 'Context must be propagated everywhere, including async hops'],
       },
-    ],
-    mistakes: ['Losing trace context across a queue, so the async half of the workflow is invisible.'],
-    related: ['distributed-tracing', 'logging', 'metrics'],
-  },
-  {
-    slug: 'distributed-tracing',
-    title: 'Distributed Tracing',
-    tagline: 'Tracing across service, queue and datastore boundaries.',
-    category: 'observability',
-    difficulty: 'Advanced',
-    lab: 'tracing',
-    keywords: ['opentelemetry', 'context propagation', 'sampling', 'span attributes'],
-    what: 'Distributed tracing applies tracing across process boundaries, propagating context through HTTP headers, message metadata and database instrumentation.',
-    why: 'It is the only practical way to answer "where did those 900 ms go?" in a system with a dozen services and asynchronous steps.',
-    how: [
-      'Adopt OpenTelemetry so instrumentation is vendor-neutral.',
-      'Propagate traceparent on every outbound call, including into queue messages.',
-      'Use tail-based sampling to keep the interesting traces (errors, slow) rather than a blind percentage.',
-      'Attach useful attributes: tenant, route, cache hit/miss - not unbounded ids.',
-    ],
-    diagram: `HTTP:   traceparent: 00-4bf92f...-00f067aa0ba902b7-01
-Queue:  message headers carry the same context
-  producer span --> [queue] --> consumer span (linked to the same trace)`,
-    tradeoffs: [
       {
         approach: 'Tail-based sampling',
         gains: ['Keeps every error and slow trace', 'Much better signal per stored byte'],
@@ -124,7 +118,11 @@ Queue:  message headers carry the same context
         costs: ['Rare failures are usually not sampled - exactly the traces you wanted'],
       },
     ],
-    related: ['tracing', 'microservices', 'monitoring'],
+    mistakes: [
+      'Losing trace context across a queue, so the async half of the workflow is invisible.',
+      'Naming spans with raw ids (/orders/4711), which makes traces unsearchable and expensive.',
+    ],
+    related: ['logging', 'metrics', 'microservices', 'monitoring'],
   },
   {
     slug: 'monitoring',

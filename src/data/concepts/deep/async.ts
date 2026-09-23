@@ -260,7 +260,7 @@ one publish, three queues receive a copy, producer knows none of them
     analogy: {
       title: 'Announcing on the intercom instead of phoning each department',
       body:
-        'You can phone accounting, then shipping, then support - and you must know each number, and wait for each to answer. Or you announce "order 42 has been placed" and every department that cares acts on it. Adding a new department means they start listening; the announcer never learns of their existence.',
+        'You can phone accounting, then shipping, then support - and you must know each number, and wait for each to answer. Or you announce "order 42 has been placed" and every department that cares acts on it. Adding a new department means they start listening; the announcer never learns of their existence. The catch: if the order then gets stuck, nobody holds the plan - unless you also hire a coordinator who does.',
     },
     deepDive: [
       {
@@ -287,17 +287,18 @@ EVENT-DRIVEN (order service knows nobody)
         },
       },
       {
-        heading: 'What you give up: the straight line',
+        heading: 'What you give up, and where the workflow lives',
         paragraphs: [
-          'In a synchronous call chain you can read the code and see what happens. In an event-driven system, publishing an event tells you nothing about what follows - the consumers are elsewhere, possibly owned by another team, and the full behaviour exists only at runtime. Distributed tracing and a documented event catalogue stop being nice-to-haves.',
-          'Debugging changes shape as well. A failure is not a stack trace; it is a message that did not arrive, or arrived twice, or arrived before another message it depended on. You need correlation ids threaded through every event, and consumer-side logging that says what was received and what was decided.',
-          'And there are no transactions across consumers. Once OrderPlaced is published, payment may succeed while inventory fails. There is no rollback - only compensation, which is what the saga pattern formalises. That is a genuine increase in design work, and it is the main reason not to make everything an event.',
+          'In a synchronous call chain you can read the code and see what happens. In an event-driven system, publishing an event tells you nothing about what follows - the consumers are elsewhere, possibly owned by another team, and the full behaviour exists only at runtime. A failure is not a stack trace; it is a message that did not arrive, or arrived twice, or arrived before another message it depended on. Correlation ids, distributed tracing and an event catalogue stop being nice-to-haves.',
+          'That matters most for a multi-step business process, because the workflow has to live somewhere. In choreography it is implicit: each service reacts to events and emits its own, and the process exists only as the sum of those reactions. Adding a participant is free, but to answer "what happens when an order is placed" you read six services and hope you found them all. In orchestration it is explicit: a coordinator holds the sequence, issues commands, and records progress, so the process can be read, tested and resumed - at the price of a component that knows every participant and must stay up.',
+          'And there are no transactions across consumers. Once OrderPlaced is published, payment may succeed while inventory fails. There is no rollback - only compensation, which is what the saga pattern formalises. Most real systems use both shapes and choose per process: choreography for independent reactions, orchestration for ordered steps that need compensation or that somebody will ask about. Keep the coordinator thin - it sequences steps and compensates, it does not decide prices.',
         ],
         bullets: [
+          'Fan-out with independent reactions -> choreography.',
+          'Ordered steps with compensation, or "where is order 4711 right now?" -> orchestration.',
+          'More than about four chained reactions -> orchestrate before it becomes unfollowable.',
           'Correlation id on every event, propagated by every consumer.',
-          'A schema registry or event catalogue, or the contract exists only in tribal memory.',
-          'Version events additively; consumers must ignore fields they do not know.',
-          'Expect out-of-order and duplicate delivery - design consumers accordingly.',
+          'Version events additively; expect out-of-order and duplicate delivery.',
         ],
       },
       {
@@ -325,21 +326,36 @@ EVENT-DRIVEN (order service knows nobody)
         result:
           'Two features shipped without touching the critical service, at the price of needing tracing, a schema discipline and idempotent consumers. That is the event-driven bargain, stated honestly.',
       },
+      {
+        title: 'Rewriting an unfollowable checkout flow',
+        setup:
+          'Checkout is choreographed across 7 services. A customer reports an order stuck for 3 days, and nobody can say which step it is on.',
+        walkthrough: [
+          'Investigation requires reading logs in 7 services with no shared identifier. It takes 2 engineers most of a day to find that payment succeeded and inventory never received the event.',
+          'Worse, there is no compensation: the card was charged 89 EUR, 0 items were reserved, and nothing in the system knows the order is inconsistent.',
+          'Fix 1 (immediate): a correlation id on every message and distributed tracing, so 1 query shows every step of an order.',
+          'Fix 2 (structural): replace the choreographed core with an orchestrated workflow of 3 steps - reserve stock, charge card, schedule shipment - each with an explicit compensation.',
+          'The workflow state is persisted, so the current step of any order is a single query, and a stuck workflow is visible on a dashboard rather than discovered by a customer 3 days later.',
+          'What stays choreographed: the 3 reactions to OrderConfirmed - notifications, analytics and recommendation updates. They are independent, need no ordering and need no compensation.',
+        ],
+        result:
+          'The failure was not events - it was that a process with compensation requirements had no owner. Orchestrate the process that has a lifecycle; choreograph the reactions that do not.',
+      },
     ],
     jargon: [
       { term: 'Event vs command', plain: 'A fact that happened versus an instruction to do something.' },
-      { term: 'Producer / consumer', plain: 'The service that publishes an event, and those that react to it.' },
+      { term: 'Choreography / orchestration', plain: 'Services react on their own and the workflow is implicit, versus a coordinator drives the steps and the workflow is explicit.' },
+      { term: 'Compensation', plain: 'An action that undoes the business effect of a completed step, since there is no rollback.' },
       { term: 'Outbox pattern', plain: 'Writing the event to your own database in the same transaction, then relaying it.' },
       { term: 'Correlation id', plain: 'An identifier carried through every event so one flow can be traced.' },
-      { term: 'Schema registry', plain: 'A shared, versioned definition of event shapes so producers and consumers agree.' },
       { term: 'Eventual consistency', plain: 'The state of the system converges after consumers catch up - inherent here.' },
     ],
     remember: [
       'Events are past-tense facts; if it reads like an instruction, it is a command.',
       'Adding consumers costs nothing - that is the entire point.',
-      'You lose the readable call chain, so tracing and an event catalogue become mandatory.',
+      'Choreograph independent reactions; orchestrate ordered steps that need compensation.',
+      'You lose the readable call chain, so correlation ids and tracing become mandatory.',
       'Dual writes are broken; use the outbox pattern.',
-      'No transactions across consumers - compensate with sagas instead of rolling back.',
     ],
   },
 
@@ -347,14 +363,14 @@ EVENT-DRIVEN (order service knows nobody)
     analogy: {
       title: 'A magazine subscription',
       body:
-        'The publisher prints one issue and has no idea who receives it. Subscribers sign up and copies arrive; cancel and they stop. Nobody on either side knows the other, which is exactly why a new subscriber costs the publisher nothing at all.',
+        'The publisher prints one issue and has no idea who receives it. Subscribers sign up and copies arrive; cancel and they stop. Nobody on either side knows the other, which is exactly why a new subscriber costs the publisher nothing at all - and also why the publisher never learns whether anyone read it.',
     },
     deepDive: [
       {
         heading: 'One message, many independent copies',
         paragraphs: [
           'The defining property is fan-out: a single published message is delivered to every subscriber, each with its own copy and its own progress. Contrast with a work queue, where a message is delivered to exactly one consumer because the point is to divide work rather than to broadcast news.',
-          'The publisher is decoupled in three ways at once: it does not know the identity of subscribers, does not know how many there are, and does not wait for them. Subscribers can appear and disappear without any change on the publishing side.',
+          'The publisher is decoupled in three ways at once: it does not know the identity of subscribers, does not know how many there are, and does not wait for them. That inverts the dependency direction. In request-response the caller must know every callee, so adding a fourth one changes the caller. In pub/sub the subscriber knows the event and the publisher knows nobody, so a new subscriber is a deployment, not a change request against another team service.',
           'That is also the limitation to be honest about. The publisher gets no feedback, so it cannot know whether anything was processed successfully. If you need a result, pub/sub is the wrong shape - use request-response, or publish an event and subscribe to a resulting event.',
         ],
         code: {
@@ -371,25 +387,26 @@ In Kafka both exist: different consumer GROUPS get their own copy
         },
       },
       {
-        heading: 'Durable or ephemeral - decide before you build on it',
+        heading: 'Delivery guarantees - decide before you build on them',
         paragraphs: [
-          'Redis pub/sub is ephemeral: messages are delivered to whoever is connected right now and are gone forever. A subscriber that was restarting misses everything sent in that window. It is excellent for cache invalidation and live notifications, and completely unsuitable for anything that must not be missed.',
-          'Durable pub/sub - Kafka, Google Pub/Sub, SNS with SQS subscriptions, NATS JetStream - persists messages and tracks per-subscriber progress, so a subscriber that was down catches up when it returns. That durability is what makes pub/sub usable as an integration backbone.',
-          'The mistake to avoid is assuming durability that is not there. Plenty of production incidents come from a team using Redis pub/sub for business events, then discovering during a deploy that a few minutes of events simply never existed. Check the guarantee explicitly for the technology you are using.',
+          'Redis pub/sub is ephemeral: messages are delivered to whoever is connected right now and are gone forever. A subscriber that was restarting misses everything sent in that window. It is excellent for cache invalidation and live notifications, and completely unsuitable for anything that must not be missed. Durable pub/sub - Kafka, Google Pub/Sub, SNS with SQS subscriptions, NATS JetStream - persists messages and tracks per-subscriber progress, so a subscriber that was down catches up when it returns.',
+          'Durable delivery is normally at-least-once, so a subscriber will occasionally receive the same message twice - a redelivery after a crash, a lost acknowledgement, a rebalance. Every handler must be idempotent, and the cheapest way is a deduplication key or a unique constraint on whatever it writes. Ordering is limited too: within a partition or key most brokers preserve it, across a topic they do not, so design handlers to tolerate reordering.',
+          'Independent progress is the other half. Each subscriber tracks its own position, so a slow or failing subscriber falls behind without affecting the others. That isolation is valuable, and it means you must monitor lag per subscriber - a healthy topic says nothing about healthy consumption.',
         ],
         bullets: [
           'Ephemeral (Redis pub/sub) - cache invalidation, presence, live UI hints.',
           'Durable (Kafka, Pub/Sub, SNS+SQS) - business events, integration, anything replayable.',
-          'Per-subscriber progress is what lets a slow consumer lag without affecting others.',
-          'A slow subscriber must not block publishing - check how your broker handles backpressure.',
+          'At-least-once delivery: every handler idempotent, no exceptions.',
+          'Order only within a partition or key - design for reordering across them.',
+          'Monitor lag per subscriber, and check that a slow one cannot block publishing.',
         ],
       },
       {
-        heading: 'Designing topics and messages that age well',
+        heading: 'Designing topics and events that age well',
         paragraphs: [
-          'Topic granularity is a real design decision. One topic per event type gives subscribers exactly what they want and produces many topics to manage. One topic per domain (all order events together) keeps ordering across related events and forces subscribers to filter. A common compromise is one topic per aggregate with the event type as an attribute, so filtering is cheap and ordering is preserved per entity.',
-          'Message content matters too. A thin event ("order 42 changed") forces every subscriber to call back for details, which recreates the coupling you were removing and multiplies load on the publisher. A fat event carrying the relevant state lets subscribers act independently, at the cost of a larger payload and versioning discipline.',
-          'Version additively and never remove a field that somebody might read. Publish a schema, and treat a breaking change as a new topic or a new event version rather than a silent modification - because with pub/sub you genuinely do not know who is listening.',
+          'Topic granularity is a real design decision. One topic per event type gives subscribers exactly what they want and produces many topics to manage. One topic per domain keeps ordering across related events and forces subscribers to filter. A common compromise is one topic per aggregate with the event type as an attribute, so filtering is cheap and ordering is preserved per entity.',
+          'Message content matters too. A thin event ("order 42 changed") forces every subscriber to call back for details, which recreates the coupling you were removing and multiplies load on the publisher. A fat event carrying the relevant state lets subscribers act independently, at the cost of a larger payload and versioning discipline. Name events as past-tense facts - PaymentCaptured - never as commands such as SendWelcomeEmail, which would mean the publisher decides what the subscriber does.',
+          'Version additively and never remove a field that somebody might read, because with pub/sub you genuinely do not know who is listening; a schema registry turns that rule into a check at publish time. And since no single place describes what happens after an event, carry a correlation id on every message and keep an event catalogue generated from code, so one query can still show the whole flow.',
         ],
       },
     ],
@@ -408,21 +425,36 @@ In Kafka both exist: different consumer GROUPS get their own copy
         result:
           'Propagation went from up to 60 seconds to a few milliseconds, using an ephemeral channel backed by a durable TTL. Matching the durability guarantee to the consequence of a lost message is the whole decision.',
       },
+      {
+        title: 'One event, four subscribers, and one that fell behind',
+        setup:
+          'PaymentCaptured is published by the payment service on a durable topic. Four teams subscribe: accounting, email, analytics and fraud.',
+        walkthrough: [
+          'Adding the fraud subscriber a year after launch required 0 changes to the payment service - it subscribed and deployed.',
+          'The analytics subscriber falls 6 hours behind during a traffic peak because its warehouse writes are slow. The other 3 are unaffected, because each tracks its own position.',
+          'Nobody notices for 2 days, because there was no per-subscriber lag alert - only a topic dashboard showing healthy publish rates.',
+          'Fix 1: alert on lag per subscriber group - analytics may lag 30 minutes, accounting not more than 1 minute.',
+          'A separate incident: a rebalance redelivers 1,200 messages and the email subscriber sends 1,200 duplicate receipts.',
+          'Fix 2: idempotency by (payment_id, template), so a redelivery is recognised and skipped.',
+        ],
+        result:
+          'Extensibility worked exactly as promised, and the two problems were the two the pattern always brings: per-subscriber lag and duplicate delivery. Both have standard solutions that belong in place from the start.',
+      },
     ],
     jargon: [
       { term: 'Topic', plain: 'The named channel publishers write to and subscribers listen on.' },
       { term: 'Fan-out', plain: 'One message delivered to many subscribers, each with its own copy.' },
-      { term: 'Subscription', plain: 'One subscriber registration, usually with its own progress marker.' },
+      { term: 'Subscriber group', plain: 'A set of consumers sharing one position in the stream - one copy per group.' },
+      { term: 'Consumer lag', plain: 'How far behind a subscriber is. Monitor it per subscriber.' },
       { term: 'Ephemeral vs durable', plain: 'Messages vanish if nobody is listening, versus stored until consumed.' },
-      { term: 'Fat vs thin event', plain: 'Carrying the data versus carrying only an id subscribers must look up.' },
-      { term: 'Backpressure', plain: 'What happens when a subscriber cannot keep up. Check whether it blocks the publisher.' },
+      { term: 'Idempotent handler', plain: 'One that produces the same result when the message arrives twice.' },
     ],
     remember: [
       'Pub/sub broadcasts; a work queue divides. Know which one you need.',
-      'The publisher learns nothing about subscribers - including whether they succeeded.',
+      'New behaviour is added by subscribing - and the publisher learns nothing, not even whether anyone succeeded.',
       'Check whether your pub/sub is ephemeral or durable before trusting it with business events.',
-      'Fat events reduce callbacks and coupling; thin events reduce payload and increase load.',
-      'Additive versioning only - you do not know who is listening.',
+      'At-least-once delivery means idempotent handlers; monitor lag per subscriber.',
+      'Past-tense facts and additive versioning only - you do not know who is listening.',
     ],
   },
 

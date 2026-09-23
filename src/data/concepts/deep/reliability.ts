@@ -427,51 +427,52 @@ slowest: DNS with a long TTL plus client libraries caching resolution`,
     analogy: {
       title: 'The trip switch in a fuse box',
       body:
-        'When a circuit is faulty, the breaker trips and stays open. It does not keep reconnecting into a short - that would burn the house down. After a while somebody flips it back to test: if the fault is gone, power returns; if not, it trips again immediately. Three states, and the middle one is the clever part.',
+        'When a circuit is faulty, the breaker trips and stays open. It does not keep reconnecting into a short - that would burn the house down. After a while somebody flips it back to test: if the fault is gone, power returns; if not, it trips again immediately. Three states, and the middle one is the clever part. And the same standard switch protects the kitchen, the workshop and the garage - you fit the part and set its rating per room.',
     },
     deepDive: [
       {
         heading: 'Three states, and why the half-open one matters',
         paragraphs: [
-          'Closed is normal: calls pass through and failures are counted. When the failure rate crosses a threshold within a window, the breaker opens. Open means calls fail immediately without being attempted - no waiting, no threads consumed, an instant fallback for the caller.',
+          'Closed is normal: calls pass through and failures are counted over a rolling window of recent calls. When the failure rate crosses a threshold within that window, the breaker opens. Open means calls fail immediately without being attempted - no waiting, no threads consumed, an instant fallback for the caller.',
           'After a cooldown the breaker moves to half-open and allows a small number of trial calls. If they succeed, it closes and normal service resumes. If any fails, it opens again for another cooldown. Without that middle state you either hammer a recovering service the moment the timer expires, or you need a human to reset it.',
           'The key insight is what the breaker converts: a slow failure into a fast one. A dependency that times out after 10 seconds consumes a thread for 10 seconds on every request; an open breaker consumes nothing and answers in microseconds. That difference is what stops a cascade.',
+          'Stripped of context, this is a reusable structure: a wrapper, a window, a threshold, a cooldown and a probe. So you do not write it into each client - you wrap every dependency in the same machine and give each one its own policy. The numbers become configuration, visible in one place and comparable across the system.',
         ],
         code: {
-          caption: 'The state machine, with realistic settings',
-          body: `CLOSED --failure rate > 50% over 20 calls--> OPEN
-OPEN   --after 30 s cooldown-------------->  HALF-OPEN
-HALF-OPEN --3 trial calls succeed-------->   CLOSED
-HALF-OPEN --any trial call fails--------->   OPEN (cooldown again)
+          caption: 'One state machine, one policy per dependency',
+          body: `CLOSED    --failure rate > 50% over 20 calls-->  OPEN
+OPEN      --after 30 s cooldown--------------->  HALF-OPEN
+HALF-OPEN --3 trial calls succeed------------->  CLOSED
+HALF-OPEN --any trial call fails-------------->  OPEN (cooldown again)
 
-thresholds that work in practice
-  minimum calls before evaluating   20   (avoid tripping on 1 of 2)
-  failure rate threshold            50%
-  cooldown                          30 s
-  half-open trial calls             3
-  count timeouts as failures        yes - they are the expensive case`,
+                  min calls  trip at  cooldown  trials  fallback
+payments                 50      60%      60 s       5  reject
+recommendations          20      40%      15 s       3  empty list
+search                   30      50%      30 s       3  cached results
+
+count timeouts as failures - they are the expensive case`,
         },
       },
       {
-        heading: 'What to trip on, and what not to',
+        heading: 'What to wrap, and what to trip on',
         paragraphs: [
+          'Nothing about the pattern is specific to HTTP. A database that refuses connections during a failover eats pool slots and threads for nothing; an open breaker fails those requests at once so the application can serve from cache. A queue publish to an unreachable broker blocks; a breaker turns the hang into a decision - buffer, drop or reject. And a third-party SDK often hides its own retry loops and generous timeouts, so wrapping it is frequently the only way to bound a vendor outage.',
           'Count timeouts, connection errors and 5xx responses as failures. Do not count 4xx: a 404 or a 400 means your request was wrong, not that the service is unhealthy, and tripping the breaker on client errors takes down a perfectly working dependency for everybody.',
-          'Scope the breaker per dependency, and often per endpoint. One breaker for an entire service means a slow reporting endpoint trips the breaker for the fast lookup endpoint that was fine. Per-endpoint breakers keep the blast radius of a trip proportional to the actual fault.',
-          'And put the breaker on the client side, in the caller, not in the service being called. The point is to protect the caller resources; a breaker inside the failing service cannot help a caller whose threads are already blocked waiting on it.',
+          'Scope the breaker per dependency, and often per endpoint. One breaker for an entire service means a slow reporting endpoint trips the breaker for the fast lookup endpoint that was fine. And put it on the client side, in the caller: the point is to protect the caller resources, and a breaker inside the failing service cannot help a caller whose threads are already blocked waiting on it.',
         ],
         bullets: [
+          'Wrap HTTP calls, database and cache clients, queue publishes and third-party SDKs.',
           'Trip on timeouts, connection failures and 5xx. Never on 4xx.',
-          'One breaker per dependency per operation, not one per service.',
-          'Always pair with a timeout - the breaker measures failures, the timeout bounds the wait.',
-          'Always have a fallback, or an open breaker just fails faster.',
+          'One breaker per dependency per operation, on the caller side.',
+          'Require a minimum call count, so a quiet minute cannot trip it on noise.',
         ],
       },
       {
-        heading: 'Making the open state useful',
+        heading: 'Composing it, and making the open state useful',
         paragraphs: [
-          'An open breaker that returns an error is better than a hang, but it is not a good experience. The value comes from what you do instead: serve a cached value, return a sensible default, omit the section, queue the work for later, or degrade to a simpler behaviour. The breaker is the trigger for graceful degradation.',
-          'Observability matters as much as the mechanism. Breaker state changes should be logged and emitted as metrics, because an open breaker is a precise, high-signal statement that a specific dependency is unhealthy - often a better alert than the monitoring of the underlying service.',
-          'Be careful with distributed effects. If every one of fifty instances has its own breaker, the dependency still receives fifty trial calls per cooldown, which may be enough to keep a fragile service down. For that case, combine the breaker with a low concurrency limit or a shared rate limit so recovery is genuinely gentle.',
+          'The full protective stack around one dependency is: a timeout bounding each attempt, a bounded retry with backoff for transient failures, the circuit breaker to stop calling something that is clearly down, a bulkhead limiting how much capacity this dependency may occupy, and a fallback. Order matters. Retries go inside the breaker, so repeated failures count toward tripping it; if the breaker is inside the retry, you retry a call that fails instantly and achieve nothing. The bulkhead sits outside both.',
+          'An open breaker that returns an error answers in a millisecond instead of hanging for 30 seconds, but an error is still what the user sees. The value comes from what you do instead: serve a cached value, return a sensible default, omit the section, or queue the work for later. Critical dependencies such as payments usually fail closed with a clear error; optional ones such as recommendations fail open with an empty or cached result.',
+          'Breaker state changes should be logged and emitted as metrics, because an open breaker is a precise statement that a specific dependency is unhealthy - often a better alert than the monitoring of that dependency. And watch the distributed effect: fifty instances each sending three trial calls per cooldown may be enough to keep a fragile service down, so cap the probes with a low concurrency limit or a shared rate limit.',
         ],
       },
     ],
@@ -492,21 +493,37 @@ thresholds that work in practice
         result:
           'Both failure modes were configuration, not concept. A breaker with no minimum call count trips on noise; one with a long cooldown and fleet-wide probes turns recovery into a second outage.',
       },
+      {
+        title: 'One policy definition, twelve dependencies',
+        setup:
+          'A service calls 12 downstream systems. Each client has its own hand-written error handling, accumulated over three years. Behaviour during outages is inconsistent and unpredictable.',
+        walkthrough: [
+          'Audit: 4 clients retry infinitely, 3 have no timeout at all, 2 have a breaker with different thresholds, and 3 have no protection.',
+          'Introduce 1 resilience library and 1 configuration file with 12 named policies, one per dependency.',
+          'Classify each dependency: 2 critical (payments, inventory) versus 10 optional (recommendations, reviews, analytics and the rest).',
+          'Critical policies: 60-second cooldown, 60 percent threshold, fail closed with a clear user-facing error.',
+          'Optional policies: trip at 40 percent, 15-second cooldown, fail open with an empty or cached result.',
+          'The library emits the same 3 metrics for all 12: state changes, trip counts and fallback usage - a dashboard that did not previously exist.',
+          'During the next vendor outage the breaker opened in 8 seconds, the fallback served cached data, and the metric named the dependency at once instead of requiring an investigation.',
+        ],
+        result:
+          'Twelve bespoke implementations became one policy file. Treating resilience as a configured pattern rather than per-client code is what makes behaviour predictable during an incident.',
+      },
     ],
     jargon: [
       { term: 'Closed / open / half-open', plain: 'Calls pass, calls fail instantly, and a few trial calls test recovery.' },
       { term: 'Trip', plain: 'The transition to open when the failure threshold is crossed.' },
+      { term: 'Rolling window', plain: 'Counting outcomes over recent calls or seconds, not since the process started.' },
       { term: 'Cooldown', plain: 'How long the breaker stays open before testing again.' },
       { term: 'Fallback', plain: 'What you return while the breaker is open. Without one, the breaker only fails faster.' },
-      { term: 'Bulkhead', plain: 'A companion pattern: cap the resources one dependency may consume.' },
-      { term: 'Fail fast', plain: 'Returning an error immediately instead of waiting on something known to be broken.' },
+      { term: 'Fail open / fail closed', plain: 'Serving a degraded result, versus refusing, when the breaker is open.' },
     ],
     remember: [
       'A breaker converts a slow failure into a fast one - that is what stops cascades.',
       'Half-open is what lets recovery be automatic and gentle.',
-      'Trip on timeouts and 5xx, never on 4xx.',
-      'Scope per dependency and per operation, on the caller side.',
-      'Pair it with a timeout and a real fallback, or it buys you little.',
+      'Trip on timeouts and 5xx over a rolling window with a minimum call count, never on 4xx.',
+      'Wrap any fallible call with one policy per dependency: retries inside the breaker, the bulkhead outside.',
+      'Pair it with a timeout and a real fallback - critical calls fail closed, optional ones fail open.',
     ],
   },
 

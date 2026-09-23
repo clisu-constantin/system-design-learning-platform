@@ -96,7 +96,7 @@ Other scripts:
 - **Design Scenarios** — eight full walkthroughs (URL shortener, Instagram, WhatsApp, YouTube, Uber,
   notification system, Netflix, e-commerce), each covering requirements, capacity, high-level
   design, database choice, API, scaling, caching, reliability, bottlenecks and trade-offs.
-- **106 concept pages**, each one led by a **live animated diagram** (traffic flowing from users to
+- **102 concept pages**, each one led by a **live animated diagram** (traffic flowing from users to
   the load balancer to the servers, replication streams, cache hits and misses) with a Walkthrough
   of the same diagram one hop at a time, trade-off chips and a quiz - the prose sits in a single collapsed tab.
 - A searchable glossary, global search (`Ctrl`/`Cmd` + `K`), difficulty
@@ -137,7 +137,7 @@ src/
 │   ├── learning/            LabShell, MetricsPanel, QuizCard, TradeOffTable, RequestInspector
 │   └── ui/                  Button, Slider, Toggle, Select, Tabs, Meter, Stat, ErrorBoundary...
 ├── data/
-│   ├── concepts/            One file per category - all 106 concepts
+│   ├── concepts/            One file per category - all 102 concepts
 │   ├── scenarios/           End-to-end design walkthroughs
 │   ├── categories.ts        Navigation groups
 │   └── glossary.ts          Searchable terms, linked to concepts
@@ -273,7 +273,7 @@ global search.
   is rarely a universally correct architecture — the right one depends on requirements and
   constraints.
 - **Visualization first.** A concept page opens with a running diagram, not a paragraph. Every one
-  of the 106 concepts has an animated `VisualSpec` in `src/data/visuals/`, and the full prose lives
+  of the 102 concepts has an animated `VisualSpec` in `src/data/visuals/`, and the full prose lives
   in one collapsed tab.
 - **Animation must explain.** Particles show routing and latency, marching edges show active paths,
   and nodes spring in when you scale out. Nothing moves for decoration.
