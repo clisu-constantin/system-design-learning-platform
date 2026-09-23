@@ -18,7 +18,7 @@ export const securityDepth: DepthMap = {
         bullets: [
           'Something you know, have, or are - MFA means two different kinds.',
           'SMS is better than nothing and worse than an app; passkeys beat both.',
-          'Account recovery is an authentication path too, and usually the weakest one.',
+          'Account recovery is an authentication path too, and usually the weakest one - secure it as carefully as login.',
           'Rate limit and monitor login attempts; credential stuffing is automated and constant.',
         ],
       },
@@ -31,15 +31,18 @@ export const securityDepth: DepthMap = {
         ],
         code: {
           caption: 'Why the algorithm choice is not a detail',
-          body: `attacker with one modern GPU, guessing a leaked hash
+          body: `attacker with one RTX 4090, guessing a leaked hash
+(hashcat benchmark figures)
 
-SHA-256 (fast, wrong tool)   ~10,000,000,000 guesses/sec
-bcrypt cost 12               ~     10,000 guesses/sec
-Argon2id (64 MB, t=3)        ~      1,000 guesses/sec
+SHA-256 (fast, wrong tool)   ~22,000,000,000 guesses/sec
+bcrypt cost 12               ~         1,400 guesses/sec
 
-an 8-char password from a common wordlist:
-  SHA-256   cracked in seconds
-  Argon2id  cracked in months
+a list of 1,000,000,000 likely passwords, one user:
+  SHA-256       under 0.1 seconds
+  bcrypt 12     about 8 days
+
+Argon2id is slower still on a GPU: every guess needs
+its own block of memory (19 MiB or more).
 
 same password, same leak, different storage decision.`,
         },
@@ -49,7 +52,8 @@ same password, same leak, different storage decision.`,
         paragraphs: [
           'After a successful login you must remember the user across requests. A server-side session stores state in Redis or a database and gives the browser an opaque id in a cookie. Revocation is instant - delete the row - and the cookie carries no information. The cost is a lookup per request and a dependency on that store.',
           'A stateless token (typically a JWT) puts the claims in the token itself, signed. No lookup and no shared store, which is attractive at scale, but revoking before expiry is not possible without adding a denylist - and once you add one you have reintroduced the lookup for the cases that matter.',
-          'Whichever you use, the cookie settings do most of the security work: HttpOnly so JavaScript cannot read it, Secure so it is never sent over plain HTTP, SameSite=Lax or Strict to blunt CSRF, and a sensible expiry. For sensitive actions, re-authenticate rather than trusting a session issued hours ago.',
+          'Whichever you use, the cookie settings do most of the security work: HttpOnly so JavaScript cannot read it, Secure so it is never sent over plain HTTP, SameSite=Lax or Strict to blunt CSRF, and a sensible expiry - OWASP suggests an idle timeout of 15-30 minutes for low-risk applications. For sensitive actions, re-authenticate rather than trusting a session issued hours ago.',
+          'When a request arrives with no credential, or one that is expired, unknown or revoked, the answer is 401 Unauthorized, with a WWW-Authenticate header saying how to authenticate. It means "we do not know who you are - prove it and try again". That is a different answer from 403 Forbidden, which means "we know who you are, and you may not", and mixing them up sends clients to a login screen that cannot help, or keeps them away from one that would.',
         ],
       },
     ],
@@ -59,13 +63,13 @@ same password, same leak, different storage decision.`,
         setup:
           'An attacker has 5 million email and password pairs from an unrelated breach and tries them against your login endpoint.',
         walkthrough: [
-          'Without defences: a few percent of users reuse passwords, so thousands of accounts are taken over within hours, and the logins look completely legitimate.',
-          'Defence 1 - rate limiting per IP: attackers distribute across thousands of IPs, so this helps but is not sufficient on its own.',
-          'Defence 2 - rate limiting per account: after 5 failures for one email, add increasing delays. This caps the attack on any single account regardless of source IP.',
-          'Defence 3 - breached-password checks at registration and at login: if the password appears in a known breach corpus, force a change. This removes most of the reused credentials the attack depends on.',
-          'Defence 4 - MFA: even a correct password is no longer sufficient. This is the control that actually ends the attack class.',
-          'Defence 5 - anomaly detection: a login from a new device, country or user agent triggers a verification email rather than a silent success.',
-          'Defence 6 - identical error messages and timing for "no such user" and "wrong password", so the endpoint cannot be used to enumerate which emails exist.',
+          'Without defences: if only 0.2% of the 5,000,000 pairs match a user here, that is 10,000 accounts taken over, and every one of those logins looks completely legitimate.',
+          'Defence 1 - rate limiting per IP at 10 attempts a minute: spread over 10,000 IPs the attacker still makes 100,000 attempts a minute. It slows the attack; it does not stop it.',
+          'Defence 2 - rate limiting per account: after 5 failures on one email, add increasing delays. That stops guessing many passwords for one account, but stuffing tries each email only once or twice, so it barely touches this attack.',
+          'Defence 3 - breached-password checks at registration and at login (NIST SP 800-63B requires a blocklist check): a password found in a known breach corpus must be changed. Most of the 10,000 reused passwords are exactly those, so the fuel runs out.',
+          'Defence 4 - MFA: the 10,000 correct passwords now each need a second factor the attacker does not have - zero takeovers from a password alone. This is the control that ends the attack class.',
+          'Defence 5 - anomaly detection: a login from a new device and a new country triggers a verification email. For the attacker that is nearly 100% of logins; for a real user it is a rare trip abroad.',
+          'Defence 6 - one error message and similar timing for "no such user" and "wrong password", so the 5,000,000 emails cannot be sorted into accounts that exist and accounts that do not.',
         ],
         result:
           'Rate limiting slows the attack, breach checking removes its fuel, and MFA removes its value. Layered controls matter because each one alone is bypassable.',
@@ -84,7 +88,7 @@ same password, same leak, different storage decision.`,
       'Hash with Argon2id or bcrypt, salted, tuned to hundreds of milliseconds.',
       'MFA is the single highest-impact control; passkeys are the strongest common form.',
       'HttpOnly, Secure and SameSite carry most of the session security.',
-      'Account recovery is an authentication path - secure it as carefully as login.',
+      '401 means "prove who you are"; 403 means "known, and not allowed".',
     ],
   },
 
@@ -127,6 +131,7 @@ start with RBAC; move to ReBAC when sharing and hierarchy appear.`,
           'Enforce on the server. Hiding a button is a UI nicety, not a control.',
           'Re-check on every request; a permission may have been revoked since login.',
           'Test authorisation explicitly: for each endpoint, assert that another user gets 403 or 404.',
+          'Answer 403 to a known caller who lacks permission, never 401 - a 401 asks for a login that cannot help.',
         ],
       },
       {
@@ -149,7 +154,7 @@ start with RBAC; move to ReBAC when sharing and hierarchy appear.`,
           'Weak fix: load the invoice, compare invoice.account_id with the caller, return 403 otherwise. Correct, but it relies on every future handler remembering.',
           'Better fix: query scoped to the caller - SELECT ... WHERE id = ? AND account_id = ?. A wrong id simply returns nothing, and the handler returns 404.',
           'Structural fix: a repository layer that requires an account scope for every query, so an unscoped query does not compile or fails a lint rule.',
-          'Return 404 rather than 403 for objects the caller may not see - a 403 confirms the object exists, which itself leaks information.',
+          'Return 404 rather than 403 for objects the caller may not see - a 403 confirms the object exists, which itself leaks information. RFC 9110 explicitly allows a server to answer 404 to hide a forbidden resource.',
           'Regression test: for each resource endpoint, a test asserts that user B receives 404 for user A object. This is cheap and catches the class permanently.',
         ],
         result:
@@ -458,7 +463,7 @@ so the check-and-decrement is atomic across all app instances.`,
         paragraphs: [
           'Generate from a cryptographically secure random source with at least 128 bits of entropy, and give the key a visible prefix identifying its type and environment - sk_live_, pk_test_. Prefixes make accidental leaks detectable by secret scanners and stop people pasting a production key into a staging config.',
           'Store only a hash, exactly as you would a password. A database dump should not hand an attacker working credentials. Because keys are high-entropy random strings rather than guessable passwords, a fast hash such as SHA-256 is acceptable here - the brute-force argument that requires bcrypt for passwords does not apply.',
-          'Show the full key exactly once, at creation. Afterwards display only the prefix and last four characters, enough to identify which key is which in a list. If a user loses it, they rotate rather than retrieve - which is the same model every major API provider uses, because it is the only one that survives a database compromise.',
+          'Show the full key exactly once, at creation. Afterwards display only the prefix and last four characters, enough to identify which key is which in a list. If a user loses it, they rotate rather than retrieve - the model Stripe uses for the secret keys you create, because it is the only one that survives a database compromise.',
         ],
         code: {
           caption: 'The lifecycle worth implementing',
@@ -479,7 +484,7 @@ audit    alert on keys unused for 90 days and on first use from a new IP`,
         heading: 'Leaks are the normal failure, so plan for them',
         paragraphs: [
           'Keys end up in git repositories, CI logs, error reports, screenshots and support tickets. Assume it will happen and build for fast detection and fast rotation: secret scanning on your repositories, alerting on use from an unexpected IP or country, and a rotation procedure that does not require downtime.',
-          'Supporting two active keys per integration is what makes rotation painless - create the new one, deploy it, verify traffic has moved, then revoke the old one. Without that, rotation means a coordinated outage, which is why so many teams never rotate at all.',
+          'Supporting two active keys per integration is what makes rotation painless - create the new one, deploy it, verify traffic has moved, then revoke the old one. Stripe, for example, keeps a rotated key working for up to 7 days for exactly this. Without an overlap, revoking a leaked key cuts off the legitimate client in the same moment as the attacker, which is why so many teams never rotate at all.',
           'Add expiry dates even when it feels inconvenient. A key that expires in a year is a key that cannot still be valid in a repository five years later. And log usage per key so that when a leak is suspected, you can see exactly what that key did.',
         ],
       },
@@ -491,11 +496,11 @@ audit    alert on keys unused for 90 days and on first use from a new IP`,
           'A mobile app calls a third-party maps API directly using a key compiled into the binary. Within weeks the monthly bill triples.',
         walkthrough: [
           'Anyone can extract the key from the app package in minutes; there is no way to hide a string that the app itself must send.',
-          'The key was scraped and reused by other applications, all billed to your account.',
-          'Mitigation 1 (partial): restrict the key at the provider to your app bundle id and signing certificate. This helps, and is bypassable by a determined attacker.',
-          'Mitigation 2 (partial): restrict by referrer or platform, and set a hard spending cap so the blast radius is bounded.',
+          'The key was scraped and reused by other applications: monthly calls went from 2 million to 6 million, all billed to your account.',
+          'Mitigation 1 (partial): restrict the key at the provider to your app bundle id and signing certificate. This helps, and is bypassable by a determined attacker who replays those 2 identifiers.',
+          'Mitigation 2 (partial): set a hard quota - say 100,000 calls a day - so the worst month is bounded at about 3 million calls instead of open-ended.',
           'Proper fix: the app calls your backend, and your backend calls the maps API with a key that never leaves your servers. You authenticate your own users, apply your own rate limits, and can cache responses.',
-          'Added benefit: you can now switch providers, cache aggressively and see per-user usage - none of which was possible when the app called the third party directly.',
+          'Added benefit: if 40% of lookups repeat, a cache in your backend cuts the 2 million billed calls to about 1.2 million, and you can switch providers and see per-user usage.',
         ],
         result:
           'A secret that ships to a client is not a secret. Proxying through your own backend is the only structural fix, and it usually brings caching and observability benefits that justify it on their own.',

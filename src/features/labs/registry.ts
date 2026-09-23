@@ -377,7 +377,7 @@ export const LABS: LabDefinition[] = [
   {
     id: 'auth',
     title: 'Auth Lab',
-    blurb: 'Who are you, and what may you do: sessions, tokens, API keys and roles.',
+    blurb: 'Send a request as different callers and see where 401 and 403 come from: sessions, API keys, roles and a leaked key.',
     category: 'security',
     difficulty: 'Beginner',
     concept: 'authentication',
