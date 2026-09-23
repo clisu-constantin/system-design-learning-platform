@@ -159,6 +159,7 @@ errors 8%             errors 0%`,
     category: 'scaling',
     difficulty: 'Beginner',
     lab: 'stateless',
+    labFocus: 'stateless-applications',
     keywords: ['session', 'jwt', 'sticky sessions', 'shared state'],
     what: 'A stateless service keeps no per-user data in its own memory between requests. Everything needed to handle a request either arrives with it or is fetched from shared storage.',
     why: 'Statelessness is the precondition for horizontal scaling. If server 2 cannot serve a user that server 1 was talking to, adding servers creates bugs instead of capacity.',
@@ -169,6 +170,10 @@ errors 8%             errors 0%`,
       'Never write user files to local disk - use object storage.',
     ],
     when: ['Any service that runs behind a load balancer.', 'Anything you want to autoscale or deploy with rolling restarts.'],
+    advantages: [
+      'Instances become disposable: kill one, replace it in a deploy or scale in, and no user is logged out.',
+      'The load balancer can send any request anywhere, so load spreads evenly and new instances help at once.',
+    ],
     diagram: `LOCAL SESSIONS (breaks)       SHARED SESSIONS (scales)
 
  Server 1  [USER A]              Server 1     Server 2
@@ -211,7 +216,147 @@ errors 8%             errors 0%`,
         ],
         answer: 1,
         explanation:
-          'Round robin sends consecutive requests to different servers. Only the server that created the session knows about it, so roughly two out of three requests find no session.',
+          'Round robin sends consecutive requests to different servers. Only the server that created the session knows about it, so roughly two out of three requests find no session - the Local sessions mode of the Lab shows about 33% success. A load balancer forwards requests; it never copies server memory.',
+      },
+      {
+        id: 'sl-2',
+        prompt:
+          'In the Lab on Shared store, you kill Server 2 while traffic runs. What happens to the users whose last request Server 2 served?',
+        options: [
+          'They are logged out and must log in again on another server',
+          'Their requests wait in the load balancer until Server 2 restarts',
+          'Nothing they notice: the next request goes to Server 1 or 3, which loads the same session from Redis',
+          'The load balancer copies their sessions from Server 2 to the surviving servers',
+        ],
+        answer: 2,
+        explanation:
+          'Server 2 held nothing, so losing it loses nothing but the requests it was working on at that instant. Being logged out is what happens in the Local and Sticky modes, where the session lived inside the dead process - that is the whole difference.',
+      },
+      {
+        id: 'sl-3',
+        prompt:
+          'Still on Shared store, you click Kill Redis. What does the Lab show, and what does it teach?',
+        options: [
+          'Every request fails, because every server needs Redis to find the session - so the store needs its own replicas and failover',
+          'Only a third of requests fail, the ones whose session was on the dead Redis node',
+          'The servers fall back to their local memory and keep working',
+          'Nothing changes, because the sessions are also in the cookie',
+        ],
+        answer: 0,
+        explanation:
+          'Making the app tier stateless moved the state into Redis, it did not remove it. All three servers depend on that one store, so it is now critical infrastructure. The servers have no local copy to fall back to - that was the point of taking the sessions out.',
+      },
+      {
+        id: 'sl-4',
+        prompt:
+          'An API keeps sessions in Redis but loads each user permissions into a module-level map at login and never refreshes it. An admin removes a permission from a user. What happens?',
+        options: [
+          'The change applies everywhere on the next request, because sessions are in Redis',
+          'The user is logged out on every server',
+          'The permission disappears after the Redis TTL expires',
+          'Servers that loaded the old map keep granting the permission until they restart, so the answer depends on which server the request lands on',
+        ],
+        answer: 3,
+        explanation:
+          'The session being shared does not make the service stateless: the permission map is state inside the process. Each instance holds its own stale copy, so the result depends on routing. Either read permissions from shared storage per request, or cache them with a short TTL you can accept.',
+      },
+      {
+        id: 'sl-5',
+        prompt:
+          'Profile photos are written to /var/app/uploads on the instance that received the upload. After a rolling deploy replaces all 4 instances, what do users see?',
+        options: [
+          'Every photo uploaded before the deploy is gone, because it lived on disks that were thrown away',
+          'Photos load slowly for a while as the new instances copy them',
+          'Nothing - a rolling deploy keeps the old disks',
+          'Only one photo in four is missing',
+        ],
+        answer: 0,
+        explanation:
+          'Local disk is one of the four places state hides. Even before the deploy, a photo was missing whenever the request landed on a different instance. Store the file in object storage and keep only its key in the database, so any instance can serve it and none can lose it.',
+      },
+      {
+        id: 'sl-6',
+        prompt:
+          'A scheduler inside the app process sends a daily digest email at 08:00. The service is scaled from 1 to 4 instances. What happens the next morning?',
+        options: [
+          'The load balancer picks one instance to send it',
+          'Every user gets the digest 4 times, once per instance',
+          'The digest is split so each instance emails a quarter of the users',
+          'Nobody gets it, because the instances cancel each other out',
+        ],
+        answer: 1,
+        explanation:
+          'A load balancer only routes incoming requests - it knows nothing about work an instance starts by itself. Anything that must happen exactly once needs a single scheduler, a queue or a lock outside the app instances.',
+      },
+      {
+        id: 'sl-7',
+        prompt:
+          'Sessions are in memory and the release is today, so the team turns on sticky sessions instead of moving sessions to Redis. What still goes wrong?',
+        options: [
+          'Nothing - sticky sessions make the service stateless',
+          'Every request now pays a network hop to find its session',
+          'Users are pinned to whichever server they first reached, so the lab shows 33% success',
+          'A crash or deploy of one server logs out every user pinned to it, and load stays uneven because users cannot be moved',
+        ],
+        answer: 3,
+        explanation:
+          'Sticky sessions hide the state, they do not remove it. In the Sticky sessions mode of the Lab, killing one server sends its users to another server that has never seen them. The network hop is the cost of a shared store, not of stickiness.',
+      },
+      {
+        id: 'sl-8',
+        prompt:
+          'Each instance keeps an in-memory cache of rendered product pages for 60 seconds, and different instances may hold different copies. Is the service still stateless?',
+        options: [
+          'Yes, as long as the cache is a pure optimisation: losing it only costs a rebuild, and 60 seconds of possible staleness is acceptable',
+          'No - any data in process memory makes a service stateful',
+          'Only if every instance holds the same copy',
+          'Only if the cache is written to local disk as well',
+        ],
+        answer: 0,
+        explanation:
+          'The test is whether anything is lost or done twice when the instance vanishes. A cache that can be rebuilt from the database passes. The tempting "any memory is state" answer would forbid every local cache, and that is not what stateless means.',
+      },
+      {
+        id: 'sl-9',
+        prompt:
+          'After a fraud alert, a bank must log a user out on all 20 servers within seconds. Which place for the session does this with the least extra machinery?',
+        options: [
+          'Signed JWTs with a 24-hour lifetime',
+          'Sticky sessions on the load balancer',
+          'A shared session store: delete one key and every server rejects the session on the next request',
+          'Sessions in each server memory, cleared by a broadcast',
+        ],
+        answer: 2,
+        explanation:
+          'Server-side revocation is where a shared store shines - the Lab shows Revoke user A rejected at once in Shared store mode. A JWT stays valid until it expires unless you add a denylist, which is a shared store again.',
+      },
+      {
+        id: 'sl-10',
+        prompt:
+          'A chat app runs 3 instances. User X holds a WebSocket on instance 1, and a message for X arrives on instance 2. What must the design include?',
+        options: [
+          'Nothing - instance 2 can push down any open WebSocket',
+          'A pub/sub channel (for example Redis pub/sub) so instance 2 can hand the message to the instance holding the connection of X',
+          'Sticky sessions, so every sender lands on instance 1',
+          'A shared session store, which also shares the sockets',
+        ],
+        answer: 1,
+        explanation:
+          'A long-lived connection is state pinned to one process, the fourth hiding place. A session store shares data, not sockets, and stickiness cannot put two different users on the same instance. The instances need a pub/sub layer to reach the connections held by other instances.',
+      },
+      {
+        id: 'sl-11',
+        prompt:
+          'You review a service with one question: if this instance died right now, would anything be lost or done twice? Which item fails that test?',
+        options: [
+          'A temp file created and deleted inside one request',
+          'Config read from environment variables at start-up',
+          'An in-memory LRU cache of database rows, refilled on a miss',
+          'An in-memory counter of how many free exports each user has used this month',
+        ],
+        answer: 3,
+        explanation:
+          'The counter is data a later request depends on: kill the instance and every user gets their free exports back, and each instance counts separately anyway. The other three are rebuilt or re-read with nothing lost, so they are fine inside a stateless service.',
       },
     ],
   },
@@ -222,8 +367,9 @@ errors 8%             errors 0%`,
     category: 'scaling',
     difficulty: 'Intermediate',
     lab: 'stateless',
-    keywords: ['state', 'sticky', 'websocket', 'database'],
-    what: 'A stateful component keeps data that must survive between requests and cannot simply be recreated: databases, caches, message brokers, and services holding long-lived connections.',
+    labFocus: 'stateful-applications',
+    keywords: ['state', 'sticky', 'websocket', 'database', 'statefulset', 'failover'],
+    what: 'A stateful component keeps data that must survive between requests and cannot simply be recreated: databases, caches, message brokers, and services holding long-lived connections. An app server that keeps login sessions in its own memory is stateful too - usually by accident.',
     why: 'Every system has state somewhere. The design question is not "how do I avoid state?" but "where do I concentrate it, and how do I make that part reliable?".',
     how: [
       'Push state down into a small number of purpose-built stateful systems.',
@@ -231,7 +377,15 @@ errors 8%             errors 0%`,
       'For connection-oriented services (WebSockets), route by connection and plan for reconnects.',
       'Use consistent hashing or partitioning when one stateful node is not enough.',
     ],
-    when: ['Databases, caches, brokers, real-time gateways, stream processors.'],
+    when: [
+      'Databases, caches, brokers, real-time gateways, stream processors.',
+      'Wherever the data must outlive the process that wrote it.',
+    ],
+    advantages: [
+      'Purpose-built stateful systems bring replication, backups and failover you do not have to write.',
+      'Concentrating state keeps every other tier disposable and easy to scale.',
+      'Local state is fast: data already in memory or on local disk needs no network hop.',
+    ],
     diagram: `Stateless tier    ->    scale by adding copies
 Stateful tier     ->    scale by partitioning + replication
 
@@ -243,12 +397,189 @@ Stateful tier     ->    scale by partitioning + replication
         gains: ['App tier stays trivially scalable', 'Backups and failover handled in one place'],
         costs: ['That store becomes the critical dependency', 'Its limits become your limits'],
       },
+      {
+        approach: 'State inside app instances (sticky sessions)',
+        gains: ['No extra system to run', 'No network hop to read the state'],
+        costs: [
+          'A crash or deploy of one instance loses the state of every user pinned to it',
+          'Load cannot be rebalanced while users stay pinned',
+          'Autoscaling in removes data along with the instance',
+        ],
+      },
+      {
+        approach: 'Partition a stateful store (sharding)',
+        gains: ['Write capacity grows with the number of shards', 'Each node holds a smaller data set'],
+        costs: [
+          'Moving data between nodes is slow and must be planned',
+          'Queries across shards get harder',
+          'Very hard to reverse once the application depends on it',
+        ],
+      },
     ],
     mistakes: [
       'Spreading small pieces of state across every service, so there is no single place to back up.',
       'Treating a stateful component like a stateless one during deploys and losing data.',
+      'Keeping login sessions or carts in app memory, so every restart logs users out.',
+      'Counting replication as a backup - a bad delete is copied to every replica within seconds.',
+      'Pointing clients at a fixed database address that stops being the primary after a failover.',
     ],
     related: ['stateless-applications', 'replication', 'sharding', 'websockets'],
+    quiz: [
+      {
+        id: 'sf-1',
+        prompt:
+          'In the Lab on Sticky sessions, Server 1 holds the sessions of users A and D. You kill Server 1. What happens?',
+        options: [
+          'Every user is logged out, because the load balancer resets all sticky routes',
+          'A and D are re-pinned to another server, find no session there and must log in again; the other users notice nothing',
+          'Nothing - the load balancer moves A and D sessions to Server 2',
+          'A and D requests fail until Server 1 restarts',
+        ],
+        answer: 1,
+        explanation:
+          'The sessions lived in the memory of Server 1, so they died with it. Stickiness only affects routing: the other users stay pinned to healthy servers and keep their sessions, and A and D are routed on, not held back. No load balancer copies application memory.',
+      },
+      {
+        id: 'sf-2',
+        prompt:
+          'Shopping carts live in app memory on 3 instances with sticky sessions. A rolling deploy restarts the instances one at a time. What do shoppers see?',
+        options: [
+          'Nothing - a rolling deploy keeps capacity up, so no one is affected',
+          'Only the shoppers on the last instance lose their cart',
+          'Every active shopper loses their cart once during the deploy, a third at each restart',
+          'Carts are saved to disk automatically before each restart',
+        ],
+        answer: 2,
+        explanation:
+          'A rolling deploy protects capacity, not in-memory state. Each restart wipes the carts of the users pinned to that instance, and by the end every instance has restarted. Moving carts to Redis with a TTL makes the deploy touch nothing a customer owns.',
+      },
+      {
+        id: 'sf-3',
+        prompt:
+          'With sticky sessions, one server runs at 90% CPU while two others sit at 30%. You add a fourth server. Why does the hot server stay hot?',
+        options: [
+          'The users already pinned to it stay pinned; only new sessions reach the new server',
+          'The load balancer needs a restart to see the new server',
+          'The new server must first copy the sessions of the hot one',
+          'CPU does not depend on the number of users',
+        ],
+        answer: 0,
+        explanation:
+          'Stickiness overrides the balancing decision for every existing user. The new server helps only as new sessions arrive. Moving those users would log them out, because their state is in the hot server memory.',
+      },
+      {
+        id: 'sf-4',
+        prompt:
+          'A PostgreSQL primary dies. A replica exists and failover is automated. What do writing clients see?',
+        options: [
+          'Nothing - the replica takes over with zero impact',
+          'All data since the last nightly backup is lost',
+          'Reads fail but writes continue',
+          'Writes are rejected for the failover window - detect, promote, redirect, often tens of seconds - then resume on the new primary',
+        ],
+        answer: 3,
+        explanation:
+          'Failover takes time: the failure must be detected, a replica promoted and clients redirected. Automation shrinks that window, it does not make it zero. With asynchronous replication a few of the last writes can also be lost, but not everything since a backup.',
+      },
+      {
+        id: 'sf-5',
+        prompt:
+          'A migration drops the wrong column on a primary with 2 streaming replicas. Can the replicas restore the data?',
+        options: [
+          'Yes - promote a replica, it still has the column',
+          'No - replication copied the drop to both replicas within seconds; you need a backup or point-in-time recovery',
+          'Yes, if you stop replication within an hour',
+          'Only the second replica, because it lags',
+        ],
+        answer: 1,
+        explanation:
+          'Replication protects against losing a node, not against a bad command - it faithfully copies the mistake. Only a backup, ideally with point-in-time recovery, can bring back data from before the drop.',
+      },
+      {
+        id: 'sf-6',
+        prompt:
+          'The app reads the database primary IP address once at start-up. A failover promotes a replica on a different IP. What happens?',
+        options: [
+          'The app keeps sending writes to the old, dead primary until it is restarted or reconfigured',
+          'The app finds the new primary automatically',
+          'The replica takes over the old IP address in every case',
+          'Only reads fail',
+        ],
+        answer: 0,
+        explanation:
+          'An address cached forever is the classic surprise in an untested failover. Point clients at a name that follows the primary (a DNS name, a proxy, or a driver that discovers the primary), and test the failover before you need it.',
+      },
+      {
+        id: 'sf-7',
+        prompt:
+          'A single PostgreSQL primary is at 90% of its write capacity. A teammate proposes adding three read replicas. What happens to write capacity?',
+        options: [
+          'It roughly quadruples',
+          'It grows by the capacity of one replica',
+          'It does not grow: every write still goes to the one primary, and the replicas must apply every write too',
+          'It drops to zero during replica creation',
+        ],
+        answer: 2,
+        explanation:
+          'Replicas scale reads. Write capacity needs a larger primary or partitioning (sharding), which changes how the application reaches its data and is hard to reverse - the asymmetry that makes sharding a last resort.',
+      },
+      {
+        id: 'sf-8',
+        prompt:
+          'A 3-node database cluster runs on Kubernetes as a plain Deployment with the data on the pod filesystem. One pod restarts. What happens?',
+        options: [
+          'Nothing - Kubernetes keeps pod data across restarts',
+          'The pod comes back with the same name and the same data',
+          'The data moves to another pod',
+          'The new pod gets a new name and an empty disk, so that node has lost its data and identity',
+        ],
+        answer: 3,
+        explanation:
+          'Stateful nodes need stable identity and storage that outlives the pod. That is what a StatefulSet with persistent volumes gives: the same name, the same volume, on every restart. A Deployment treats pods as interchangeable, which is right only for stateless ones.',
+      },
+      {
+        id: 'sf-9',
+        prompt:
+          'A 2 TB database replica dies. A new replica copies data at about 200 MB/s. A stateless app instance also dies. Which comes back first, and why?',
+        options: [
+          'The replica, because databases get priority',
+          'The app instance in about half a minute; the replica needs about 3 hours to copy 2 TB before it can serve, and the cluster has less redundancy all that time',
+          'Both in about 30 seconds',
+          'Neither comes back without a manual rebuild',
+        ],
+        answer: 1,
+        explanation:
+          '2,000,000 MB at 200 MB/s is 10,000 seconds, close to 3 hours. The stateless instance holds nothing, so it just boots and joins. That gap is why stateful nodes are replaced slowly and with care.',
+      },
+      {
+        id: 'sf-10',
+        prompt:
+          'Each of 12 microservices keeps a little SQLite file on its local disk. What is the main cost?',
+        options: [
+          'SQLite is too slow for production',
+          'Nothing - small state is harmless',
+          'Twelve places to back up, replicate and fail over, and data that vanishes when an instance disk is replaced',
+          'The services can no longer be deployed',
+        ],
+        answer: 2,
+        explanation:
+          'Every stateful component multiplies backup jobs, failover drills and upgrade windows forever. Concentrating the state in one well-run store keeps the services disposable. Speed is not the problem here - ownership is.',
+      },
+      {
+        id: 'sf-11',
+        prompt:
+          'A WebSocket gateway node holds 50,000 open connections. You deploy a new version to it. What should the design plan for?',
+        options: [
+          'Nothing - WebSockets survive a server restart',
+          'All 50,000 clients disconnect, so drain the node gradually and have clients reconnect with jittered backoff to other nodes',
+          'The load balancer moves the open connections to another node',
+          'Only idle connections are lost',
+        ],
+        answer: 1,
+        explanation:
+          'An open connection is state inside one process. Restarting the process closes it, and 50,000 clients reconnecting at the same instant can knock over the rest of the fleet. A load balancer cannot move a live TCP connection between servers.',
+      },
+    ],
   },
   {
     slug: 'load-balancing',
