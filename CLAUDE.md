@@ -18,7 +18,7 @@ npm run dev      # dev server on http://localhost:5173
 npm run build    # check:visuals + check:content + tsc -b + vite build + check:bundle  (must pass)
 npm run lint     # ESLint (typescript-eslint + react-hooks); CI fails on any finding
 npm run check:visuals   # diagram geometry + wiring: overlap, overflow, truncated labels, replica consistency
-npm run check:content   # every concept has its long-form lesson, a Lab and a 10-question Quiz (or is on the pending list), and sits in its category file
+npm run check:content   # every concept has its long-form lesson, a Lab and a 10-question Quiz, and sits in its category file
 npm run check:bundle    # initial JS (entry + modulepreloads) stays under the gzip budget
 npm run preview  # serve the production build
 npx tsc --noEmit -p tsconfig.app.json   # fast typecheck of src/ only
@@ -134,14 +134,6 @@ on the labs index — no other wiring.
 
 The Lab must render a `DiagramCanvas` - in its own file, or through a component it imports
 (`FlowVisual` counts). `check:content` reads the source and fails the build on a Lab that does not.
-
-#### The Concept standard pending list
-
-`scripts/concept-standard-pending.json` lists the Concepts and Labs that do not meet the standard
-above yet. `check:content` skips them, and requires everything else to pass. The list only shrinks:
-the check fails on a slug or Lab id that no longer exists, and on an entry that already passes. So
-the work that brings a Concept or Lab up to the standard removes its entry as its last step. Never
-add to the list. When it is empty, delete it and the skip logic in `scripts/check-content.mjs`.
 
 #### A Lab focus for a shared lab
 

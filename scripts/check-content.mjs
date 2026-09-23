@@ -7,8 +7,7 @@
  * and that the payload is not a stub. Run with `npm run check:content`.
  *
  * It also holds the Concept standard: every Concept hosts a registered Lab and a Quiz of at
- * least ten questions, and every Lab renders a DiagramCanvas. What misses it today is listed
- * in scripts/concept-standard-pending.json; see checkConceptStandard below.
+ * least ten questions, and every Lab renders a DiagramCanvas; see checkConceptStandard below.
  */
 import { build } from 'esbuild';
 import { pathToFileURL } from 'node:url';
@@ -28,7 +27,6 @@ const MIN_REMEMBER_LINES = 3;
 const MIN_QUIZ_QUESTIONS = 10;
 
 const REGISTRY = 'src/features/labs/registry.ts';
-const PENDING = 'scripts/concept-standard-pending.json';
 
 /** Lab rows of the registry as { id, file }, read from source - it imports React, so it is not run. */
 function registeredLabs(problems) {
@@ -107,53 +105,21 @@ function rendersDiagram(file, seen = new Set()) {
   return false;
 }
 
-/**
- * The Concept standard, with its pending list. A Concept or Lab on the list is skipped; one
- * not on it must pass. The list may only shrink: a listed slug that is gone, or a listed
- * Concept or Lab that already passes, fails the check, so the list cannot go stale.
- */
+/** The Concept standard: every Concept hosts a registered Lab and a Quiz, and every Lab draws its system. */
 function checkConceptStandard(concepts, problems) {
   const labs = registeredLabs(problems);
   const labIds = new Set(labs.map((lab) => lab.id));
-  const pending = JSON.parse(readFileSync(PENDING, 'utf8'));
-  const keys = Object.keys(pending).sort().join(',');
-  if (keys !== 'concepts,labs' || !Array.isArray(pending.concepts) || !Array.isArray(pending.labs))
-    problems.push(`${PENDING}: expected exactly { "concepts": [...], "labs": [...] }, got keys '${keys}'`);
-  for (const list of [pending.concepts ?? [], pending.labs ?? []])
-    for (const entry of new Set(list.filter((entry, index) => list.indexOf(entry) !== index)))
-      problems.push(`${PENDING}: '${entry}' is listed twice`);
-  const pendingConcepts = new Set(pending.concepts);
-  const pendingLabs = new Set(pending.labs);
-
-  const conceptMisses = (concept) => {
-    const misses = [];
-    if (!concept.lab) misses.push('hosts no Lab - set `lab` to a registered LabId');
-    else if (!labIds.has(concept.lab)) misses.push(`lab '${concept.lab}' is not in ${REGISTRY}`);
-    const questions = (concept.quiz ?? []).length;
-    if (questions < MIN_QUIZ_QUESTIONS) misses.push(`${questions} quiz question(s), expected at least ${MIN_QUIZ_QUESTIONS}`);
-    return misses;
-  };
-  const labMisses = (lab) =>
-    rendersDiagram(lab.file) ? [] : [`does not render a DiagramCanvas (checked ${lab.file ?? 'an unresolved import'})`];
-
-  const slugs = new Set(concepts.map((concept) => concept.slug));
-  for (const slug of pendingConcepts)
-    if (!slugs.has(slug)) problems.push(`${PENDING}: '${slug}' is not a Concept - remove it from the list`);
-  for (const id of pendingLabs)
-    if (!labIds.has(id)) problems.push(`${PENDING}: '${id}' is not a registered Lab - remove it from the list`);
 
   for (const concept of concepts) {
-    const misses = conceptMisses(concept);
-    if (pendingConcepts.has(concept.slug)) {
-      if (!misses.length) problems.push(`${PENDING}: Concept '${concept.slug}' meets the standard - remove it from the list`);
-    } else for (const miss of misses) problems.push(`${concept.slug}: ${miss}`);
+    if (!concept.lab) problems.push(`${concept.slug}: hosts no Lab - set \`lab\` to a registered LabId`);
+    else if (!labIds.has(concept.lab)) problems.push(`${concept.slug}: lab '${concept.lab}' is not in ${REGISTRY}`);
+    const questions = (concept.quiz ?? []).length;
+    if (questions < MIN_QUIZ_QUESTIONS)
+      problems.push(`${concept.slug}: ${questions} quiz question(s), expected at least ${MIN_QUIZ_QUESTIONS}`);
   }
-  for (const lab of labs) {
-    const misses = labMisses(lab);
-    if (pendingLabs.has(lab.id)) {
-      if (!misses.length) problems.push(`${PENDING}: Lab '${lab.id}' renders a DiagramCanvas - remove it from the list`);
-    } else for (const miss of misses) problems.push(`Lab ${lab.id}: ${miss}`);
-  }
+  for (const lab of labs)
+    if (!rendersDiagram(lab.file))
+      problems.push(`Lab ${lab.id}: does not render a DiagramCanvas (checked ${lab.file ?? 'an unresolved import'})`);
 }
 
 try {
@@ -276,7 +242,7 @@ try {
     process.exit(1);
   }
 
-  console.log(`${CONCEPTS.length} concepts checked - lesson content present, Concept standard met or pending`);
+  console.log(`${CONCEPTS.length} concepts checked - lesson content present, Concept standard met`);
 } finally {
   rmSync(dir, { recursive: true, force: true });
 }
