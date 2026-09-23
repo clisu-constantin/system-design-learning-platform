@@ -57,10 +57,10 @@ export const gettingStartedConcepts: Concept[] = [
         id: 'wsd-1',
         prompt: 'A team proposes microservices, Kafka and a global multi-region database for an internal tool with 300 daily users. What is the most useful first question?',
         options: [
-          'Which cloud provider will be cheapest?',
-          'What requirement makes this complexity necessary?',
-          'How many Kafka partitions should we use?',
-          'Should we use gRPC or REST between services?',
+          'Which cloud provider offers the cheapest managed Kafka and database?',
+          'Which requirement makes any of this complexity necessary?',
+          'How many Kafka partitions do we need so consumers never fall behind?',
+          'Should the services talk over gRPC or REST, given the latency budget?',
         ],
         answer: 1,
         explanation:
@@ -70,10 +70,10 @@ export const gettingStartedConcepts: Concept[] = [
         id: 'wsd-2',
         prompt: 'In the Requirements Lab you tick only "Send messages", at 99% availability and 1k daily users. The diagram shows Users, one App server and one Database. A teammate says the design is too simple to be real. What is the right response?',
         options: [
-          'Add a cache and a queue now so the design looks complete',
-          'Add a second region so the design is ready for growth',
-          'It meets these requirements; add a part only when a requirement or a measured bottleneck forces it',
-          'Replace the database with a NoSQL store, because messaging apps use NoSQL',
+          'Add a cache and a queue now, so later growth does not force a rewrite of the design',
+          'Add a second region now, because moving to multi-region later means a painful migration',
+          'It meets these requirements; add a part only when a requirement or a bottleneck forces it',
+          'Replace the database with a NoSQL store, because messaging apps at scale all use NoSQL',
         ],
         answer: 2,
         explanation:
@@ -84,9 +84,9 @@ export const gettingStartedConcepts: Concept[] = [
         prompt: 'A URL shortener is estimated at about 1,160 redirects per second and 12 new links per second, running on one Postgres instance. Which single component is the most useful to add first?',
         options: [
           'A cache in front of the database, keyed by short code',
-          'Sharding the database across four machines',
-          'A message queue in front of the writes',
-          'Splitting the app into microservices',
+          'Sharding the database across four machines to spread the load',
+          'A message queue in front of the writes to absorb the spikes',
+          'Splitting redirect and create into two microservices',
         ],
         answer: 0,
         explanation:
@@ -96,10 +96,10 @@ export const gettingStartedConcepts: Concept[] = [
         id: 'wsd-4',
         prompt: 'You just added a cache in front of the database and the read latency dropped. According to the design loop, what is the step people most often skip?',
         options: [
-          'Adding a second cache for redundancy',
-          'Naming the new problem it creates - for example a deleted link that still resolves until its cache entry expires',
-          'Sharding the database while you are at it',
-          'Nothing - the bottleneck is fixed, so the design is finished',
+          'Adding a second cache node so the cache is not a new single point of failure',
+          'Naming the new problem it creates, such as a deleted link that still resolves',
+          'Sharding the database now, while the team is already changing the data path',
+          'Nothing - the measured bottleneck is fixed, so this part of the design is done',
         ],
         answer: 1,
         explanation:
@@ -109,10 +109,10 @@ export const gettingStartedConcepts: Concept[] = [
         id: 'wsd-5',
         prompt: 'Two teams build products with the same feature list. One must reach 99.9% availability, the other 99.999%. What should you expect of their architectures?',
         options: [
-          'They will be the same, because the features are the same',
-          'The 99.999% team only needs faster servers',
-          'They will differ only in their monitoring dashboards',
-          'They will differ: the stricter target forces extra copies, automated failover and more than one region',
+          'They will be the same, because the architecture follows the feature list',
+          'The 99.999% team only needs faster, more expensive servers with better hardware',
+          'They will differ only in monitoring, so the stricter team gets paged sooner',
+          'They will differ: 99.999% forces extra copies, automated failover and several regions',
         ],
         answer: 3,
         explanation:
@@ -122,10 +122,10 @@ export const gettingStartedConcepts: Concept[] = [
         id: 'wsd-6',
         prompt: 'In an interview you are asked "SQL or NoSQL for this service?" and you do not know the access pattern yet. What is the most useful answer?',
         options: [
-          'Name what the choice depends on - the access pattern, the write rate, whether ad-hoc joins are needed - and pick once those are known',
-          'NoSQL, because it scales',
-          'SQL, because it is always the safe choice',
-          'Both, so either kind of query is covered',
+          'Name what it depends on - access pattern, write rate, joins - and choose once known',
+          'NoSQL, because it scales horizontally and SQL databases hit a ceiling at scale',
+          'SQL, because it is always the safe default and can be migrated away from later',
+          'Both - SQL for the joins and NoSQL for the writes, so either kind of query is covered',
         ],
         answer: 0,
         explanation:
@@ -135,10 +135,10 @@ export const gettingStartedConcepts: Concept[] = [
         id: 'wsd-7',
         prompt: 'In the Requirements Lab (Design WhatsApp) you tick "Send images". Object storage, a CDN and a Queue + workers box appear on the diagram. What does that show?',
         options: [
-          'Every chat app needs a CDN from day one',
-          'Images made the database the bottleneck',
+          'Every chat app needs a CDN and a queue from day one, whatever it sends',
+          'Images made the database the bottleneck, so work moved off it',
           'A new requirement brings in the parts its own traffic needs',
-          'A quality target was raised',
+          'A quality target was raised, so the design added capacity',
         ],
         answer: 2,
         explanation:
@@ -148,9 +148,9 @@ export const gettingStartedConcepts: Concept[] = [
         id: 'wsd-8',
         prompt: 'Your team decides to evolve the design as usage grows instead of designing everything up front. Which decision still deserves careful thought now?',
         options: [
-          'The number of app servers',
-          'The cache expiry time',
-          'The log format',
+          'The number of app servers, since each one adds cost every month',
+          'The cache expiry time, because a wrong value serves stale data',
+          'The log format, because every dashboard is built on it',
           'The data model and the partitioning key',
         ],
         answer: 3,
@@ -161,10 +161,10 @@ export const gettingStartedConcepts: Concept[] = [
         id: 'wsd-9',
         prompt: 'An engineer adds Kafka to a design "in case we need it later". No requirement or estimate mentions streaming or high write rates. What is the real cost?',
         options: [
-          'None - an unused component costs nothing',
-          'A part that must be deployed, monitored, upgraded and paged for, with no requirement paying for it',
-          'Only the licence fee',
-          'It makes the design more reliable, so there is no cost',
+          'None - an unused component sits idle, so it costs nothing until traffic arrives',
+          'A part to deploy, monitor, upgrade and be paged for, that no requirement pays for',
+          'Only the licence fee for the Kafka cluster, which grows with each broker',
+          'No net cost - an extra buffer makes the design more reliable, which pays for it',
         ],
         answer: 1,
         explanation:
@@ -174,10 +174,10 @@ export const gettingStartedConcepts: Concept[] = [
         id: 'wsd-10',
         prompt: 'A design review shows one database box that everything depends on. The target is 99.99% availability, and nobody has asked what happens when that box dies. What should you do next?',
         options: [
-          'Ask what happens when it fails: 99.99% leaves about 52 minutes a year, so the database needs a standby with automated failover',
-          'Approve it - databases rarely fail',
-          'Add more CPU to the database',
-          'Add a cache so the database is used less',
+          'Ask what happens when it dies: 99.99% needs a standby with automated failover',
+          'Approve it - managed databases rarely fail, and the nightly backups cover the rare case',
+          'Add more CPU and memory to the database so it is less likely to fall over',
+          'Add a cache so the database is used less and matters less when it is down',
         ],
         answer: 0,
         explanation:
@@ -187,10 +187,10 @@ export const gettingStartedConcepts: Concept[] = [
         id: 'wsd-11',
         prompt: 'A service passes every unit test, yet the product goes down for 20 minutes whenever its only machine reboots for a kernel update. What does this show?',
         options: [
-          'The unit tests were wrong',
-          'The code needs better error handling',
-          'Correct code is not enough: the design decides what happens when a machine disappears',
-          'Kernel updates should never be installed',
+          'The unit tests were wrong, because they never covered the reboot path',
+          'The code needs better error handling so it survives a sudden restart',
+          'Correct code is not enough: the design decides what a reboot does',
+          'Kernel updates should be skipped on the machine that runs production',
         ],
         answer: 2,
         explanation:
@@ -249,7 +249,7 @@ export const gettingStartedConcepts: Concept[] = [
         id: 'fr-1',
         prompt: 'You are sorting a product brief for a social app into two lists before designing. Which line belongs on the functional requirements list?',
         options: [
-          'The feed loads in under 200 ms at p95',
+          'The feed p95 is under 200 ms',
           'A user can follow another user',
           'The service is available 99.99% of the time',
           'Data is replicated to three availability zones',
@@ -263,9 +263,9 @@ export const gettingStartedConcepts: Concept[] = [
         prompt: 'An interviewer opens with "Design Twitter" and waits. What is the best first move?',
         options: [
           'Draw the load balancer, app servers and database straight away',
-          'Ask which database Twitter uses in production',
-          'Estimate the storage needed for ten years of tweets',
-          'Propose a scope - post a tweet, follow a user, read the home timeline - and say that DMs, ads and search are out unless wanted',
+          'Ask which database Twitter uses in production, so the design matches reality',
+          'Estimate the storage for ten years of tweets, since that sizes everything else',
+          'Propose a scope - post, follow, home timeline - and say what is out, such as DMs',
         ],
         answer: 3,
         explanation:
@@ -275,10 +275,10 @@ export const gettingStartedConcepts: Concept[] = [
         id: 'fr-3',
         prompt: 'A requirements list for a photo app contains the line "Photos are stored in S3". What is wrong with it?',
         options: [
-          'Nothing - S3 is a good choice for photos',
-          'It is a solution written as a requirement; rewrite it as "a user can upload a photo up to 25 MB and see it on their profile"',
-          'It should say "Photos are stored in a CDN" instead',
-          'It is a non-functional requirement and belongs in the other list',
+          'Nothing - S3 is durable and cheap, so naming it early saves a debate later',
+          'It is a solution written as a requirement; state the user behaviour instead',
+          'It should say "Photos are served from a CDN", since users read far more than they write',
+          'It is a non-functional requirement about storage and belongs in the other list',
         ],
         answer: 1,
         explanation:
@@ -288,10 +288,10 @@ export const gettingStartedConcepts: Concept[] = [
         id: 'fr-4',
         prompt: 'A stakeholder adds "The app must be fast" to the functional requirements. What should you do with it?',
         options: [
-          'Move it to the non-functional list and give it a number, for example "the feed loads in under 200 ms at p95"',
-          'Keep it - speed is a feature users notice',
-          'Delete it - speed cannot be designed for',
-          'Replace it with "use a cache"',
+          'Move it to the non-functional list with a number, such as feed p95 under 200 ms',
+          'Keep it on the functional list - speed is a feature users notice and ask for by name',
+          'Delete it - "fast" is too vague to design for, so it only adds noise',
+          'Replace it with "use a cache", since caching is what makes an app fast',
         ],
         answer: 0,
         explanation:
@@ -301,10 +301,10 @@ export const gettingStartedConcepts: Concept[] = [
         id: 'fr-5',
         prompt: 'In the Requirements Lab (Design Instagram) you tick "Search users and tags". A Search index appears, fed by the Queue + workers box. Why does one checkbox add these parts?',
         options: [
-          'Search is a quality target, so it adds infrastructure',
-          'The database cannot store user names',
-          'Searching needs its own index, kept in step with the database by background work - the feature pulls in the parts its traffic needs',
-          'Every Instagram design must have a search index',
+          'Search is a quality target, like latency, so ticking it adds infrastructure',
+          'The main database cannot store user names or tags, so they are moved to a separate store',
+          'Search needs its own index, kept in step with the database by background workers',
+          'Every Instagram-style design must have a search index from the start',
         ],
         answer: 2,
         explanation:
@@ -314,10 +314,10 @@ export const gettingStartedConcepts: Concept[] = [
         id: 'fr-6',
         prompt: 'You have the requirement "A user can see a feed of posts from people they follow". Which question about it shapes the architecture most?',
         options: [
-          'Which framework will render the feed',
-          'What colour the feed cards are',
-          'Whether posts need an edit history',
-          'What it reads and writes and how often - here a feed read far more often than posts are written',
+          'Which frontend framework will render the feed, since it sets the page load time',
+          'What colour and size the feed cards are, since that drives engagement',
+          'Whether posts need an edit history, since that changes the data model',
+          'What it reads and writes, and how often - feeds are read far more than written',
         ],
         answer: 3,
         explanation:
@@ -327,10 +327,10 @@ export const gettingStartedConcepts: Concept[] = [
         id: 'fr-7',
         prompt: 'A team listed only post, follow and view feed. A year later a legal request arrives: "a user can delete their account and all their data". Why is this now painful?',
         options: [
-          'Deleting touches every table, every cache, the CDN copies and the object storage, and the data model was never designed for it',
-          'Deletes are slower than inserts in every database',
-          'Legal requests always need a new database',
-          'It is not painful - a single DELETE statement handles it',
+          'Copies sit in tables, caches, the CDN and object storage, and the model never planned for it',
+          'Deletes are slower than inserts in every database, so removing years of data takes weeks',
+          'Legal requests always need a separate, audited database, and the team does not have one yet',
+          'It is not painful - one DELETE statement with a WHERE on user id handles it everywhere',
         ],
         answer: 0,
         explanation:
@@ -340,10 +340,10 @@ export const gettingStartedConcepts: Concept[] = [
         id: 'fr-8',
         prompt: 'In the Requirements Lab (Design WhatsApp) you tick "Voice and video calls". Media servers appear and "Beyond core" goes up. The product manager says it is just one more checkbox. What is the honest answer?',
         options: [
-          'Agree - the app servers can relay the audio',
-          'Calls are a separate system (media relays and call signalling); keep them out of scope, or plan them as a subsystem with their own budget',
-          'Add it, because it does not change the diagram much',
-          'Replace WebSockets with calls',
+          'Agree - the app servers already hold a WebSocket to each phone and can relay audio',
+          'Calls are a separate system (media relays, signalling): scope them out or plan a subsystem',
+          'Add it, because the diagram barely changes and the media servers are only one extra box',
+          'Replace WebSockets with calls, since a call connection can carry chat messages as well',
         ],
         answer: 1,
         explanation:
@@ -353,10 +353,10 @@ export const gettingStartedConcepts: Concept[] = [
         id: 'fr-9',
         prompt: 'You design posting, following and the feed without mentioning direct messages. Near the end the interviewer asks "and where do DMs fit?". What would have prevented this?',
         options: [
-          'Designing for every possible feature from the start',
-          'Adding a message queue in advance',
+          'Designing for every feature Twitter has from the start, so nothing can surprise you',
+          'Adding a message queue in advance, since DMs are just messages on a queue anyway',
           'Saying at the start that DMs are out of scope, so the exclusion was agreed',
-          'Nothing - interviewers always add features at the end',
+          'Nothing - interviewers always add a feature at the end to test adaptability',
         ],
         answer: 2,
         explanation:
@@ -366,10 +366,10 @@ export const gettingStartedConcepts: Concept[] = [
         id: 'fr-10',
         prompt: 'You have nine candidate features for a photo app. Which ones should drive the architecture?',
         options: [
-          'All nine equally, so nothing is missed',
-          'The ones that are hardest to build',
-          'The ones the team has built before',
-          'The two or three core flows that carry most of the traffic, such as viewing the home feed',
+          'All nine, weighted equally, so nothing is missed and no feature forces a redesign',
+          'The ones that are hardest to build, since they carry the most technical risk',
+          'The ones the team has built before, so the estimates are reliable',
+          'The two or three core flows that carry most traffic, like the home feed',
         ],
         answer: 3,
         explanation:
@@ -379,10 +379,10 @@ export const gettingStartedConcepts: Concept[] = [
         id: 'fr-11',
         prompt: 'A team designs for fifteen features although only three are planned this year, "so we will not have to redesign later". What do they pay for it?',
         options: [
-          'Nothing - a broad design is always cheaper in the long run',
+          'Nothing - a broad design is always cheaper than redesigning under load later',
           'More components to build, run and explain now, paid for features that may never ship',
-          'Only a slightly longer design document',
-          'Lower availability, because fifteen features cannot run on one server',
+          'Only a slightly longer design document, since nothing extra is built yet',
+          'Lower availability, because fifteen features cannot fit on one server and must be split',
         ],
         answer: 1,
         explanation:
@@ -443,10 +443,10 @@ export const gettingStartedConcepts: Concept[] = [
         id: 'nfr-1',
         prompt: 'A product owner asks for 99.999% availability on a service that runs as a single instance with a single database. What is the honest response?',
         options: [
-          'Add more CPU to the instance',
-          'That target implies redundancy, automated failover and multi-zone deployment - it changes the architecture and the budget',
-          'Set a monitoring alert so we know when it is down',
-          'Enable database backups',
+          'Add more CPU and memory to the instance so it never becomes the bottleneck',
+          'It forces redundancy, automated failover and several zones - a new design and budget',
+          'Set a monitoring alert that pages on-call within a minute of a failure',
+          'Enable database backups every 15 minutes, so a failure loses almost nothing',
         ],
         answer: 1,
         explanation:
@@ -456,10 +456,10 @@ export const gettingStartedConcepts: Concept[] = [
         id: 'nfr-2',
         prompt: 'The dashboard shows an average latency of 99 ms, yet users complain the app is slow. Out of 100 requests, 99 take 50 ms and one takes 5 seconds. How should the latency target be stated?',
         options: [
-          'As the average - 99 ms is well under any sensible limit',
-          'As the median, because it ignores outliers',
+          'As the average - 99 ms is well under any sensible limit, so the complaints are noise',
+          'As the median, because it ignores the rare outliers that distort the numbers',
           'As a percentile such as p99, which shows the slow tail the average hides',
-          'As the fastest request, to show what the system can do',
+          'As the fastest request, to show the latency the system reaches on a good path',
         ],
         answer: 2,
         explanation:
@@ -482,10 +482,10 @@ export const gettingStartedConcepts: Concept[] = [
         id: 'nfr-4',
         prompt: 'In the Requirements Lab you move Availability from 99.9% to 99.99%. What changes on the diagram, and why?',
         options: [
-          'Nothing - availability is a monitoring setting',
-          'A second region appears, because four nines always needs two regions',
-          'Only the load balancer gets bigger',
-          'The system spreads over 3 zones and the database keeps a standby that is promoted automatically, because 52 minutes a year leaves no time for manual recovery or a zone outage',
+          'Nothing - availability is a monitoring setting, so only the alert thresholds change',
+          'A second region appears, because four nines always needs two regions that can each serve everything',
+          'Only the load balancer gets bigger, since it absorbs the failures for the servers',
+          'Three zones and an auto-promoted database standby: 52 minutes a year allows no manual fix',
         ],
         answer: 3,
         explanation:
@@ -496,9 +496,9 @@ export const gettingStartedConcepts: Concept[] = [
         prompt: 'A social app has like counters and in-app payments. How should its consistency requirement be written?',
         options: [
           'Per operation: a like count may be a few seconds stale, a payment balance must never be',
-          'Strong consistency everywhere, to be safe',
-          'Eventual consistency everywhere, for speed',
-          'Consistency does not need to be specified',
+          'Strong consistency everywhere, to be safe, since a stale like and a stale balance are both bugs',
+          'Eventual consistency everywhere, for speed, with payments reconciled nightly',
+          'Consistency does not need to be specified; the database default handles it',
         ],
         answer: 0,
         explanation:
@@ -508,10 +508,10 @@ export const gettingStartedConcepts: Concept[] = [
         id: 'nfr-6',
         prompt: 'A global app asks for strong consistency on every write across two regions, and a p95 write latency of 20 ms. What happens?',
         options: [
-          'Both targets can be met with faster databases',
-          'Both targets can be met with a cache in front of the writes',
-          'The targets conflict: a strongly consistent write waits for the other region, and a round trip between regions far apart often takes 50-100 ms or more',
-          'Strong consistency makes writes faster, so 20 ms is easy',
+          'Both targets can be met with faster databases on NVMe disks in each region',
+          'Both targets can be met with a write-through cache in front of the databases',
+          'They conflict: a strong write waits on the other region, often 50-100 ms away',
+          'Strong consistency makes writes faster by skipping conflict resolution, so 20 ms is easy',
         ],
         answer: 2,
         explanation:
@@ -521,23 +521,23 @@ export const gettingStartedConcepts: Concept[] = [
         id: 'nfr-7',
         prompt: 'A service targets 99.99%. Each deploy restarts it for about 45 seconds, and the team deploys 12 times a month. What does that mean?',
         options: [
-          'Nothing - planned downtime does not count',
-          'Deploys alone take about 108 minutes a year, twice the 52-minute budget, so deploys must be zero-downtime with at least two instances behind a load balancer',
-          'The team should deploy less often and keep the single instance',
-          'The budget is fine - 45 seconds is short',
+          'Nothing - planned downtime announced in advance does not count',
+          'Deploys alone use about 108 minutes a year, twice the budget: they must be zero-downtime',
+          'The team should deploy less often, say monthly, and keep the single instance',
+          'The budget is fine - 45 seconds is short, and users just retry during a restart',
         ],
         answer: 1,
         explanation:
-          '12 deploys x 12 months x 45 seconds is 108 minutes, and 99.99% allows about 52 minutes a year for everything. Users do not care whether downtime was planned. Deploying less often still leaves every restart as an outage and slows the team down.',
+          '12 deploys x 12 months x 45 seconds is 108 minutes, and 99.99% allows about 52 minutes a year for everything. Users do not care whether downtime was planned. Deploying less often still leaves every restart as an outage and slows the team down. Zero-downtime deploys need at least two instances behind a load balancer.',
       },
       {
         id: 'nfr-8',
         prompt: 'A product owner writes "The system must be reliable" in the requirements. What is the most useful thing to do with it?',
         options: [
-          'Accept it as written',
-          'Replace it with "use Kubernetes"',
-          'Delete it, because reliability cannot be measured',
-          'Turn it into numbers, for example 99.9% monthly availability and no acknowledged write lost when one node fails',
+          'Accept it as written, since the whole team already agrees on what reliable means',
+          'Replace it with "use Kubernetes", since Kubernetes restarts failed containers automatically',
+          'Delete it, because reliability cannot be measured until the system is in production',
+          'Turn it into numbers, such as 99.9% monthly availability and no lost acknowledged write',
         ],
         answer: 3,
         explanation:
@@ -547,10 +547,10 @@ export const gettingStartedConcepts: Concept[] = [
         id: 'nfr-9',
         prompt: 'The payments database must lose no acknowledged payment if the machine holding it dies. Which design meets that target?',
         options: [
-          'Synchronous replication - a write is confirmed only after a second copy has it - plus backups that are restored in tests',
-          'Asynchronous replication to a replica',
-          'Nightly backups only',
-          'A bigger disk on the one machine',
+          'Synchronous replication to a second copy, plus backups that are restored in tests',
+          'Asynchronous replication to a replica in another zone, promoted when the primary dies',
+          'Nightly backups copied to object storage in another region',
+          'A bigger RAID disk array on the one machine, so no single disk failure loses data',
         ],
         answer: 0,
         explanation:
@@ -560,10 +560,10 @@ export const gettingStartedConcepts: Concept[] = [
         id: 'nfr-10',
         prompt: 'A team copies Netflix multi-region architecture for an internal HR tool used by 200 people in one office. What is the problem?',
         options: [
-          'Netflix uses technologies that are not available to others',
-          'Nothing - copying a proven architecture removes risk',
-          'That architecture answers the Netflix spec sheet; the HR tool has far lower targets, so the team pays for redundancy no requirement asks for',
-          'Multi-region is not possible for internal tools',
+          'Netflix uses in-house technologies that are not available to other companies',
+          'Nothing - copying a proven architecture removes risk, since Netflix debugged it',
+          'It answers the Netflix numbers; 200 users pay for redundancy no requirement asks for',
+          'Multi-region is not possible for internal tools that sit behind a corporate VPN',
         ],
         answer: 2,
         explanation:
@@ -573,10 +573,10 @@ export const gettingStartedConcepts: Concept[] = [
         id: 'nfr-11',
         prompt: 'In the Requirements Lab you keep the features and move Daily active users from 100k to 10M. Which change do you see, and why?',
         options: [
-          'The database splits into shards, a cache and background workers appear, and the app tier grows to about a dozen servers - because peak traffic rises about 100x',
-          'Only the number of app servers changes',
-          'A second region appears',
-          'Nothing changes - users are a functional requirement',
+          'The database shards, a cache and workers appear, and the app tier grows - peak rises 100x',
+          'Only the number of app servers changes, because each app server handles a fixed number of users',
+          'A second region appears, because 10M users are spread across continents',
+          'Nothing changes - user count is a functional requirement, not a quality target',
         ],
         answer: 0,
         explanation:
@@ -654,9 +654,9 @@ Writes 10% -> ~230 writes/sec average, ~1,160 at peak
         prompt:
           'A team sized its fleet for the average of 2,000 req/sec, with no headroom. Most traffic arrives in the evening and the peak factor is 5x. What happens every evening?',
         options: [
-          'Nothing - capacity plans are always based on the average',
-          'Only the database slows down; app servers are fine',
-          'The fleet sees about 10,000 req/sec, five times what it was sized for, so queues build and latency and errors climb',
+          'Nothing - capacity plans are always based on the average, and servers can burst',
+          'Only the database slows down, since app servers are stateless and handle bursts',
+          'The fleet sees 10,000 req/sec, five times its capacity, so queues and errors build',
           'Traffic is spread over the day automatically, so the peak never reaches the servers',
         ],
         answer: 2,
@@ -668,9 +668,9 @@ Writes 10% -> ~230 writes/sec average, ~1,160 at peak
         prompt:
           'In the Lab you double Daily active users from 10M to 20M and change nothing else. What happens to the estimates?',
         options: [
-          'Requests per second, storage growth and bandwidth all double; the read:write ratio stays the same',
+          'Requests, storage growth and bandwidth all double; the read:write ratio stays put',
           'Only requests per second doubles; storage depends on the object size, not on users',
-          'Everything quadruples, because users and requests both grow',
+          'Everything quadruples, because users double and each user also sends more requests',
           'Only the App tier grows; the database and object storage are sized separately',
         ],
         answer: 0,
@@ -683,9 +683,9 @@ Writes 10% -> ~230 writes/sec average, ~1,160 at peak
           'The estimate says 10,400 peak reads/sec and 1,160 peak writes/sec. The database primary is struggling, and a teammate adds three read replicas. What does that change?',
         options: [
           'Writes spread across all four machines, so the primary does a quarter of the work',
-          'Reads can move to the replicas; the primary still takes every one of the 1,160 writes',
+          'Reads can move to the replicas; the primary still takes all 1,160 writes/sec',
           'Nothing - replicas exist only for durability, never for load',
-          'Both reads and writes halve',
+          'Both reads and writes roughly halve, since the load now has more machines to use',
         ],
         answer: 1,
         explanation:
@@ -696,10 +696,10 @@ Writes 10% -> ~230 writes/sec average, ~1,160 at peak
         prompt:
           'In the Lab you raise the write share and the Database card turns to "Partition the writes": peak writes are 40,000/sec against a planning limit of about 10,000 for one primary. What does the estimate tell you to plan?',
         options: [
-          'More app servers, since they send the writes',
-          'More read replicas',
-          'A higher peak factor, to be safe',
-          'Partitioning (sharding) the data, so the writes spread across several primaries',
+          'More app servers, since the writes queue up in them waiting for the database',
+          'More read replicas, so the primary spends less time serving reads',
+          'A higher peak factor, so the fleet is sized for spikes above 40,000/sec',
+          'Partitioning (sharding) the data, so writes spread across primaries',
         ],
         answer: 3,
         explanation:
@@ -711,9 +711,9 @@ Writes 10% -> ~230 writes/sec average, ~1,160 at peak
           'Peak is 5,000 req/sec and every response is a 1 MB image. Can one server with a 1 Gbit/sec network card serve it?',
         options: [
           'Yes - 1 Gbit/sec is 1,000 MB/sec, so 5,000 MB/sec needs five such servers at most',
-          'Yes, if the images are compressed',
-          'No - 5,000 x 1 MB is 5 GB/sec, about 40 Gbit/sec, 40 times one link; serve the images from object storage through a CDN',
-          'Only at average load, not at peak',
+          'Yes, if the images are compressed with gzip before they leave the server',
+          'No - 5,000 x 1 MB is about 40 Gbit/sec, 40 times one link; use a CDN',
+          'Only at the average load of about 1,000 req/sec, not at the evening peak',
         ],
         answer: 2,
         explanation:
@@ -733,10 +733,10 @@ Writes 10% -> ~230 writes/sec average, ~1,160 at peak
         prompt:
           'An internal tool has 2,000 users making 50 requests a day each. The team plans a message queue, a sharded database and twelve microservices. What does the estimate say?',
         options: [
-          'Build it all - the traffic will grow into it',
-          'Shard now, because migrating later is expensive',
-          'Put the API behind a CDN first',
-          'About 100,000 requests a day is around 1 req/sec on average and maybe 10 at peak - one machine and a spare handle it; spend the complexity elsewhere',
+          'Build it all - the traffic will grow into it, and rebuilding under load later costs more',
+          'Shard now, because migrating a live database later is slow and risky',
+          'Put the API behind a CDN first, so repeated requests never reach the servers',
+          'About 1 req/sec on average, maybe 10 at peak - one machine and a spare handle it',
         ],
         answer: 3,
         explanation:
@@ -747,10 +747,10 @@ Writes 10% -> ~230 writes/sec average, ~1,160 at peak
         prompt:
           'The peak is 7,200 req/sec and one app server handles about 1,000. The Lab shows 8 servers needed at peak and 12 with headroom. Why provision 12 rather than 8?',
         options: [
-          'Eight covers the peak with no margin; headroom absorbs a spike above the estimate or a lost server, and keeps servers out of the utilisation where latency climbs',
-          'Twelve is a safety habit with no real reason - eight is enough',
-          'Because each server can only use half of its CPU',
-          'Because read replicas need their own app servers',
+          'Eight has no margin: headroom absorbs a spike or a lost server and keeps latency low',
+          'Twelve is a safety habit with no real reason - eight servers already cover the 7,200 peak',
+          'Because each server can only use half of its CPU before the OS starts throttling it',
+          'Because the read replicas need their own dedicated app servers in front of them',
         ],
         answer: 0,
         explanation:
@@ -761,23 +761,23 @@ Writes 10% -> ~230 writes/sec average, ~1,160 at peak
         prompt:
           'A product owner says the app will have "somewhere between 1 million and 5 million" daily active users. What should you do with the estimate?',
         options: [
-          'Wait until the exact number is known',
-          'Average them to 3 million and use only that',
-          'Run the estimate at both ends: if both land in the same category the design does not depend on the exact number; if not, that uncertainty is what to resolve',
-          'Multiply 5 million by 10 to be safe',
+          'Wait until the exact number is known, since a wrong input makes the whole estimate useless',
+          'Average them to 3 million and use only that, since the errors cancel out',
+          'Run it at both ends: if both land in one category, the exact number does not matter',
+          'Multiply 5 million by 10 to be safe, so any launch spike is covered',
         ],
         answer: 2,
         explanation:
-          'Estimates pick a category, so an input range is fine: compute both ends. A single averaged number hides whether the range crosses a boundary (one machine, a fleet, a partitioned fleet). An arbitrary 10x on top only pays for idle capacity.',
+          'Estimates pick a category, so an input range is fine: compute both ends. If they land in different categories, that uncertainty is what to resolve first. A single averaged number hides whether the range crosses a boundary (one machine, a fleet, a partitioned fleet). An arbitrary 10x on top only pays for idle capacity.',
       },
       {
         id: 'cap-est-12',
         prompt:
           'Tickets for a concert go on sale at 10:00 sharp. Which peak factor fits the estimate?',
         options: [
-          '1x - the average is what matters',
-          '2x, like a global service spread across time zones',
-          '3x, like a normal evening peak',
+          '1x - sales are spread over the weeks before the concert, so the average holds',
+          '2x, like a global service, since fans buy from many different time zones',
+          '3x, like a normal evening peak, since most fans buy after they finish work',
           '10x or more - a scheduled event squeezes the traffic of hours into minutes',
         ],
         answer: 3,
@@ -847,9 +847,9 @@ Round trip California -> Netherlands ~150 ms
         prompt:
           'A request makes 50 random reads, one after another, and must answer within 100 ms. The data sits on SSDs. Does the design fit, and would it fit on spinning disks?',
         options: [
-          'It fits on neither: 50 reads of any storage take seconds',
-          'SSD: about 5 ms, fits. Spinning disk: 50 seeks of ~10 ms is about 500 ms, five times over budget',
-          'It fits on both, since both take microseconds',
+          'It fits on neither: 50 storage reads in a row always add up to seconds',
+          'SSD: about 5 ms, fits. Spinning disk: 50 x 10 ms seeks = 500 ms, too slow',
+          'It fits on both, since each read takes microseconds on either kind of disk',
           'SSD: about 500 ms, too slow; spinning disk is fine because reads are sequential',
         ],
         answer: 1,
@@ -861,24 +861,24 @@ Round trip California -> Netherlands ~150 ms
         prompt:
           'A checkout page in Europe calls a pricing service in the US once per cart item, one call after another. Carts hold 30 items and the page budget is 500 ms. What do you tell the team?',
         options: [
-          'Fine - network calls take microseconds',
-          'Make the pricing service code faster',
-          'About 30 x 150 ms = 4.5 s, nine times over budget: batch the 30 items into one call, or cache prices near the page',
-          'Add more pricing servers so each call is shorter',
+          'Fine - inside a modern cloud, network calls take well under a millisecond each',
+          'Make the pricing service code faster, since each call spends its time there',
+          'About 30 x 150 ms = 4.5 s: batch the items into one call or cache prices nearby',
+          'Add more pricing servers so each call waits less in the queue',
         ],
         answer: 2,
         explanation:
-          'A transatlantic round trip is about 150 ms, set by distance, not by server speed. Faster code or more servers do not shorten the trip. Removing round trips (one batched call) or shortening the distance (a local cache) is the only fix.',
+          'A transatlantic round trip is about 150 ms, set by distance, not by server speed, so 30 calls take 4.5 s - nine times the budget. Faster code or more servers do not shorten the trip. Removing round trips (one batched call) or shortening the distance (a local cache) is the only fix.',
       },
       {
         id: 'botec-3',
         prompt:
           'In the Lab with rounding on, 12M users x 8 requests becomes 10^7 x 10. The rough peak is 5,000 req/sec and the exact one is 5,556. What does the "1.1x" in the Rough against exact table mean for the design?',
         options: [
-          'The rough answer is wrong and must be thrown away',
-          'Both land in the same category, a fleet behind a load balancer, so the rough answer leads to the same design',
-          'The rough answer always underestimates, so add 10% to everything',
-          'The design needs 10% more categories',
+          'The rough answer is 10% off, so it must be redone with exact numbers before any design',
+          'Both land in one category, a fleet behind a load balancer, so the design is the same',
+          'The rough answer always underestimates, so add 10% to every number it produces',
+          'The gap is 1.1 orders of magnitude, so the design moves up one category',
         ],
         answer: 1,
         explanation:
@@ -889,10 +889,10 @@ Round trip California -> Netherlands ~150 ms
         prompt:
           'A teammate objects that dividing by 10^5 seconds instead of 86,400 is "wrong". How big is that error, and does it matter?',
         options: [
-          'About 14% low on the rate - far smaller than the uncertainty in a DAU guess, so it changes no decision',
-          'About 10x - it must never be done',
-          'No error at all, the two are equal',
-          'About 50% - acceptable only in interviews',
+          'About 14% low - far inside the error of a DAU guess, so it changes no decision',
+          'About 10x, because 10^5 has one more digit than 86,400, so it must never be done',
+          'No error at all - a day is 100,000 seconds once you round the hours',
+          'About 50% - acceptable in interviews, but never in a real capacity plan',
         ],
         answer: 0,
         explanation:
@@ -903,10 +903,10 @@ Round trip California -> Netherlands ~150 ms
         prompt:
           'In the Lab on the default setup with rounding on, 20 requests per user rounds to 10 and 2 KB rounds to 1 KB. Rough storage comes out about 4x below exact. Why?',
         options: [
-          'Rounding to powers of ten is always 4x off',
-          'The replication factor is ignored in rough mode',
-          'Rough mode uses 1,024 bytes per KB',
-          'Both inputs rounded down, so their errors multiplied (2x times 2x) instead of cancelling',
+          'Rounding to powers of ten is always about 4x off, whatever the inputs are',
+          'The replication factor of 3 is ignored in rough mode, which removes most of the total',
+          'Rough mode uses 1,024 bytes per KB, and that difference compounds over a year of data',
+          'Both inputs rounded down, so their 2x errors multiplied instead of cancelling',
         ],
         answer: 3,
         explanation:
@@ -917,10 +917,10 @@ Round trip California -> Netherlands ~150 ms
         prompt:
           'The rough estimate says 800 peak req/sec, which would mean one machine and a spare. The exact sum says 1,300, which means a fleet. What should you do?',
         options: [
-          'Trust the rough number - that is the point of rounding',
-          'Trust whichever number is cheaper',
-          'Treat it as a boundary case: do the exact arithmetic and firm up the inputs, since the decision depends on them',
-          'Average them to 1,050 and pick the fleet',
+          'Trust the rough number - that is the point of rounding, and it is usually close',
+          'Trust whichever number is cheaper, and scale up later if traffic proves it wrong',
+          'Treat it as a boundary case: firm up the inputs and do the exact arithmetic',
+          'Average them to 1,050 and pick the fleet, to split the difference',
         ],
         answer: 2,
         explanation:
@@ -929,20 +929,25 @@ Round trip California -> Netherlands ~150 ms
       {
         id: 'botec-7',
         prompt: 'A backup job must copy 500 MB every second over 1 Gbit/sec links. How many links does it need, at minimum?',
-        options: ['One - 1 Gbit/sec is 1,000 MB/sec', 'About four - each link moves about 125 MB/sec', 'Forty', 'Half a link'],
+        options: [
+          'One, with room to spare - a 1 Gbit/sec link moves 1,000 MB/sec',
+          'About four - each 1 Gbit/sec link moves about 125 MB/sec',
+          'Forty, since 500 MB/sec is about 40 Gbit/sec once you convert',
+          'Half a link - a gigabit link carries about a gigabyte a second',
+        ],
         answer: 1,
         explanation:
-          'Divide bits by 8: 1 Gbit/sec is about 125 MB/sec, so 500 MB/sec needs about four links, more with protocol overhead. Reading Gbit as GB is the classic 8x mistake.',
+          'Divide bits by 8: 1 Gbit/sec is about 125 MB/sec, so 500 MB/sec (4 Gbit/sec, not 40) needs about four links, more with protocol overhead. Reading Gbit as GB is the classic 8x mistake.',
       },
       {
         id: 'botec-8',
         prompt:
           'A write must be stored in Europe and in the US before the user sees "saved". The servers are fast and idle. Roughly what is the lowest possible time for that write?',
         options: [
-          'About 1 ms - fast servers make it local',
-          'About 10 ms, the cost of a disk seek',
-          'About 1 second',
-          'At least one transatlantic round trip, roughly 70-150 ms - distance sets the floor, not the servers',
+          'About 1 ms - fast, idle servers answer at once, and light in fibre is nearly instant',
+          'About 10 ms, the cost of one disk seek on each side of the ocean',
+          'About 1 second, since two regions must agree before confirming',
+          'At least one transatlantic round trip, roughly 70-150 ms',
         ],
         answer: 3,
         explanation:
@@ -953,10 +958,10 @@ Round trip California -> Netherlands ~150 ms
         prompt:
           'A page loads a list of 200 items, then runs one database query per item. The database is in the same datacenter. What does the arithmetic say?',
         options: [
-          'About 200 x 0.5 ms = 100 ms spent just on round trips; one batched query makes it one round trip',
-          'Nothing to worry about - in the same datacenter round trips are free',
-          'About 200 ns, since memory is involved',
-          'About 30 seconds',
+          'About 200 x 0.5 ms = 100 ms of round trips; batch them into one query',
+          'Nothing to worry about - in the same datacenter round trips are effectively free',
+          'About 200 ns, since the database serves these rows from memory, not disk',
+          'About 30 seconds, since each query pays a full connection and login setup',
         ],
         answer: 0,
         explanation:
@@ -967,10 +972,10 @@ Round trip California -> Netherlands ~150 ms
         prompt:
           'A cache answers 90% of reads from memory (~100 ns) and the rest go to SSD (~100 us). Which part dominates the average read time?',
         options: [
-          'The hits, because there are nine times more of them',
-          'Both contribute equally',
-          'The misses: 10% x 100 us = 10 us, against about 0.09 us for all the hits together',
-          'Neither - the average is simply 100 ns',
+          'The hits, because there are nine times more of them in every batch of reads',
+          'Both contribute equally, since the hit rate offsets the misses',
+          'The misses: 10% x 100 us = 10 us, against 0.09 us for all the hits',
+          'Neither - the average is simply 100 ns, because the cache hides the SSD',
         ],
         answer: 2,
         explanation:
@@ -981,10 +986,10 @@ Round trip California -> Netherlands ~150 ms
         prompt:
           'A manager says: "We will get a million requests a day - surely we need a cluster?" What does a ten-second estimate say?',
         options: [
-          'Yes - a million is a lot for one server',
-          'About 10 req/sec on average (10^6 / 10^5), maybe 100 at peak - one machine handles it, with a spare for failures',
-          'About 1 million req/sec, so a large cluster',
-          'It cannot be known without a load test',
+          'Yes - a million requests a day is more than one server can reliably take',
+          'About 10 req/sec on average, 100 at peak - one machine and a spare handle it',
+          'About 1 million req/sec at peak, so a large cluster behind a load balancer',
+          'It cannot be known without a load test on production-sized hardware and data',
         ],
         answer: 1,
         explanation:
@@ -1046,9 +1051,9 @@ Round trip California -> Netherlands ~150 ms
         prompt:
           'A user opens your page and waits 400 ms. A few seconds later they click a link to another page on the same site, and it takes 150 ms. Same server, same code. What explains most of the difference?',
         options: [
-          'The server was still starting up during the first request',
-          'The second page is smaller',
-          'The first request paid for a DNS lookup and the TCP and TLS handshakes; the second reused the open connection',
+          'The server was still warming up its caches during the first request',
+          'The second page is smaller, so it had fewer bytes to send over the wire',
+          'The first paid for DNS, TCP and TLS setup; the second reused the open connection',
           'The browser rendered the second page from its cache without asking the server',
         ],
         answer: 2,
@@ -1060,10 +1065,10 @@ Round trip California -> Netherlands ~150 ms
         prompt:
           'Your only origin is in Virginia. Users in Singapore see slow first loads, although the handler takes 30 ms. Which change cuts their time the most?',
         options: [
-          'Put a CDN in front, so the TCP and TLS handshakes end at an edge near them and static files are served there',
-          'Add a database index',
-          'Double the number of app servers',
-          'Move from TLS 1.3 back to TLS 1.2',
+          'Put a CDN in front, so handshakes and static files are served from a nearby edge',
+          'Add a database index on the hottest query, since the database is usually the slow part',
+          'Double the number of app servers so each request waits less in the queue',
+          'Move from TLS 1.3 back to TLS 1.2, which older phones in the region handle faster',
         ],
         answer: 0,
         explanation:
@@ -1074,24 +1079,24 @@ Round trip California -> Netherlands ~150 ms
         prompt:
           'A cold page load takes 1.2 s. Profiling shows your server code runs for 40 ms. The team plans a sprint to make the handler twice as fast. What should you say?',
         options: [
-          'Good plan - the handler is the only part you control',
-          'Make the database faster first, it is always the slowest part',
-          'Buy bigger servers instead, it is quicker',
-          'It saves 20 ms of 1,200. Look at the handshakes, the transfer and the rendering first - that is where the time is',
+          'Good plan - the handler is the only part of the load the team actually controls',
+          'Make the database faster first, since it is always the slowest part of a request',
+          'Buy bigger servers instead, it is quicker than a sprint',
+          'It saves 20 ms of 1,200; the handshakes, transfer and rendering hold the time',
         ],
         answer: 3,
         explanation:
-          'The worked example in the Lesson is exactly this: 40 ms of server time in about 1.19 s. Halving the handler saves under 2 percent, while a CDN and a smaller JavaScript bundle save more than half. "It is the only part we control" is wrong - you control connection reuse, the CDN, cache headers and the bundle too.',
+          'The worked example in the Lesson is exactly this: 40 ms of server time in about 1.19 s. Halving the handler saves under 2 percent, while a CDN and a smaller JavaScript bundle save more than half. "The handler is the only part we control" is wrong - you control connection reuse, the CDN, cache headers and the bundle too.',
       },
       {
         id: 'url-4',
         prompt:
           'After a deploy the cache hit rate drops from 95% to 50%. What does the path of a request that misses look like now?',
         options: [
-          'Load balancer, app server, then an error, because the cache failed',
-          'Load balancer, app server, cache (miss), database, then the result is stored in the cache and the response goes back',
-          'Load balancer straight to the database, skipping the app server',
-          'CDN edge, then the database',
+          'Load balancer, app server, then an error, because the cache had nothing to return',
+          'Load balancer, app server, cache miss, database, then the cache is filled',
+          'Load balancer straight to the database, skipping the app server and its cache',
+          'CDN edge, then the database directly',
         ],
         answer: 1,
         explanation:
@@ -1102,10 +1107,10 @@ Round trip California -> Netherlands ~150 ms
         prompt:
           'A page loads fonts, scripts and images from eight different domains. Every one of those servers answers in under 10 ms, yet the page is slow on a first visit. Why?',
         options: [
-          'Browsers can only download one file at a time',
-          'The servers must be overloaded',
-          'Each new domain needs its own DNS lookup, TCP handshake and TLS handshake before its first file arrives',
-          'Images are always slower than HTML',
+          'Browsers can only download one file at a time, so the eight domains wait in line',
+          'The servers must be overloaded at peak, even if their idle answers are fast',
+          'Each new domain needs its own DNS lookup and TCP and TLS handshakes first',
+          'Images are always slower than HTML, since they are far larger files to decode',
         ],
         answer: 2,
         explanation:
@@ -1116,10 +1121,10 @@ Round trip California -> Netherlands ~150 ms
         prompt:
           'A user on cafe Wi-Fi types example.com without https:// for the first time. Your site redirects HTTP to HTTPS. What is the risk, and what closes it?',
         options: [
-          'The first request goes out as plain HTTP and can be intercepted before the redirect; HSTS, and the HSTS preload list for first visits, make the browser use HTTPS from the start',
-          'There is no risk, because the redirect happens before any data is sent',
-          'The risk is DNS, and a shorter TTL closes it',
-          'The risk is the CDN, and turning it off closes it',
+          'The first request is plain HTTP and can be intercepted; HSTS with preload closes it',
+          'There is no risk, because the redirect happens before any form data or cookies are sent',
+          'The risk is DNS spoofing on the Wi-Fi, and a shorter TTL on the record closes it',
+          'The risk is the CDN reading traffic, and turning the CDN off closes it',
         ],
         answer: 0,
         explanation:
@@ -1130,10 +1135,10 @@ Round trip California -> Netherlands ~150 ms
         prompt:
           'A CDN sits in front of your site. Which requests does the edge answer on its own, without contacting your origin?',
         options: [
-          'Every request, because that is what a CDN is for',
-          'None - a CDN only speeds up the network, it never answers',
-          'Only POST requests',
-          'Cacheable files it already holds, such as images, scripts and styles; a page built for each user is forwarded to the origin',
+          'Every request, because the edge keeps a full copy of the site',
+          'None - a CDN only speeds up the network path, it never answers on its own',
+          'Only POST requests, since they can be accepted and queued at the edge',
+          'Cacheable files it already holds; pages built per user go to the origin',
         ],
         answer: 3,
         explanation:
@@ -1144,10 +1149,10 @@ Round trip California -> Netherlands ~150 ms
         prompt:
           'You moved the site to a new server and updated the A record an hour ago. Some users still reach the old server. At which stage of the journey does that happen?',
         options: [
-          'The TLS handshake, because the old certificate is still valid',
-          'DNS resolution: resolvers and browsers still hold the old answer until its TTL runs out',
-          'The load balancer, because it has not been restarted',
-          'Rendering, because the browser cached the old page',
+          'The TLS handshake, because the old certificate is still valid and pins the old server',
+          'DNS resolution: resolvers still hold the old answer until its TTL runs out',
+          'The load balancer, because it still routes to the old server until it is restarted',
+          'Rendering, because the browser cached the old page and shows it without asking',
         ],
         answer: 1,
         explanation:
@@ -1158,10 +1163,10 @@ Round trip California -> Netherlands ~150 ms
         prompt:
           'A user reports that your site does not load and their browser says the name could not be resolved. From your office, the site works. Which part of the journey failed for them?',
         options: [
-          'DNS resolution - their browser never got an IP address, so it never even contacted your servers',
-          'The TLS handshake',
-          'The database',
-          'Rendering',
+          'DNS resolution - their browser never got an IP address to connect to',
+          'The TLS handshake, because their network blocks your certificate authority',
+          'The database, since it rejects queries coming from their country or region',
+          'Rendering, because their browser cannot run your large JavaScript bundle',
         ],
         answer: 0,
         explanation:
@@ -1171,10 +1176,10 @@ Round trip California -> Netherlands ~150 ms
         id: 'url-10',
         prompt: 'In the Lab, with the CDN on, where does the TLS connection of the browser end?',
         options: [
-          'At the app server',
-          'At the database',
-          'At the load balancer, always',
-          'At the CDN edge, which holds a certificate for your domain and opens its own connection to the origin',
+          'At the app server, since only the app server holds the private key',
+          'At the database, so the data stays encrypted all the way end to end',
+          'At the load balancer, always, since it terminates TLS for the site',
+          'At the CDN edge, which holds a certificate for your domain',
         ],
         answer: 3,
         explanation:
