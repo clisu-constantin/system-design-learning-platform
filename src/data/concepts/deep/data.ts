@@ -669,7 +669,7 @@ NORMALISED
       'The key, the whole key, and nothing but the key.',
       'Historical values are separate facts - copying them is correct, not duplication.',
       'Normalise first, measure, then denormalise the specific paths that need it.',
-      'Materialised views and covering indexes give read speed without a second copy of the truth.',
+      'Materialised views and covering indexes give read speed without a second source of truth.',
     ],
   },
 
