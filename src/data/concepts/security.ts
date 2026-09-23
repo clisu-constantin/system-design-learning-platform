@@ -82,7 +82,7 @@ GET /invoices/4711   (no cookie)
           'Alice has been idle for 45 minutes and the session idle timeout is 30 minutes. Her next request gets a 401. What should the web client do?',
         options: [
           'Show "you do not have permission" and stop',
-          'Retry the same request with exponential backoff',
+          'Retry the same request with exponential backoff until it passes',
           'Send her to log in again, then repeat the request',
           'Ask an admin to grant her a role',
         ],
@@ -95,8 +95,8 @@ GET /invoices/4711   (no cookie)
         prompt:
           'An attacker tries 5 million email and password pairs leaked from another site, spread over 10,000 IP addresses. You already rate limit per IP. Which added control ends this attack?',
         options: [
-          'Multi-factor authentication, so a correct password alone does not log in',
-          'Stricter per-IP limits',
+          'Multi-factor authentication on every login',
+          'Stricter per-IP limits, down to 3 login attempts per hour',
           'Requiring a digit and a symbol in every password',
           'Forcing every user to change password every 90 days',
         ],
@@ -110,9 +110,9 @@ GET /invoices/4711   (no cookie)
           'Your user table leaks. The attacker has one RTX 4090 and a list of 1 billion likely passwords. What does storing bcrypt at cost 12 instead of unsalted SHA-256 change?',
         options: [
           'Nothing - a leaked hash is a leaked password',
-          'Only that rainbow tables stop working; the speed is the same',
-          'bcrypt can be decrypted with the server key, SHA-256 cannot',
-          'Each guess costs about 15 million times more: the list takes about 8 days per hash instead of under a second',
+          'Only that precomputed rainbow tables stop working; each guess runs at the same GPU speed',
+          'bcrypt hashes can be decrypted with the server key, SHA-256 hashes cannot',
+          'Each guess costs about 15 million times more: about 8 days per hash, not under a second',
         ],
         answer: 3,
         explanation:
@@ -123,9 +123,9 @@ GET /invoices/4711   (no cookie)
         prompt:
           'A requirement says: "an admin must be able to log a stolen account out everywhere, immediately". You are choosing between server-side sessions and 24-hour JWTs with no denylist. What follows?',
         options: [
-          'JWTs, because they are verified without a lookup',
-          'Server-side sessions: deleting the session row makes the next request a 401',
-          'Either one - both can be revoked instantly',
+          'JWTs, because every server verifies them locally without a store lookup',
+          'Server-side sessions: delete the row and the next request is a 401',
+          'Either one - both can be revoked instantly by the admin',
           'Neither - revocation is impossible over HTTP',
         ],
         answer: 1,
@@ -137,24 +137,24 @@ GET /invoices/4711   (no cookie)
         prompt:
           'Your login endpoint answers "No account with this email" or "Wrong password", depending on the case. What is the problem?',
         options: [
-          'None - clear errors help users',
-          'It is slower than a single message',
-          'An attacker can test millions of emails and learn which ones have accounts here',
-          'It breaks password managers',
+          'None - specific errors help real users fix a mistyped email faster',
+          'It adds a second database lookup, so every login gets slower',
+          'An attacker can use it to find which emails have accounts here',
+          'It breaks password managers, which expect one error message',
         ],
         answer: 2,
         explanation:
-          'Two different answers turn the login form into an account-lookup service, which feeds targeted phishing and credential stuffing. Use one message and similar timing for both cases. The "helps users" option is the tempting one, but a password reset link can help the real user without telling a stranger anything.',
+          'Two different answers turn the login form into an account-lookup service, which feeds targeted phishing and credential stuffing. Use one message and similar timing for both cases. The "help real users" option is the tempting one, but a password reset link can help the real user without telling a stranger anything.',
       },
       {
         id: 'authn-7',
         prompt:
           'A pen test finds a cross-site scripting bug on your site. The session cookie was set without HttpOnly. What would HttpOnly have changed?',
         options: [
-          'The injected script could not read the cookie from document.cookie, so it could not send the session away',
-          'The XSS bug would not run at all',
-          'The cookie would only be sent over HTTPS',
-          'The cookie would not be sent on cross-site requests',
+          'The injected script could not read the cookie from document.cookie to send it away',
+          'The XSS bug would be blocked by the browser before it runs',
+          'The cookie would only be sent over HTTPS, never over plain HTTP',
+          'The browser would stop sending the cookie on requests triggered by other sites',
         ],
         answer: 0,
         explanation:
@@ -166,8 +166,8 @@ GET /invoices/4711   (no cookie)
           'Your API answers 403 Forbidden when a request has no Authorization header at all. Mobile clients never show their login screen. What is the fix?',
         options: [
           'Answer 500 so clients retry',
-          'Answer 404 so the endpoint stays hidden',
-          'Keep 403 and add a message in the body',
+          'Answer 404 so the endpoint stays hidden from unauthenticated callers',
+          'Keep 403 and add a "please log in" message in the body',
           'Answer 401 Unauthorized with a WWW-Authenticate header',
         ],
         answer: 3,
@@ -179,23 +179,23 @@ GET /invoices/4711   (no cookie)
         prompt:
           'Users receive one-time codes by SMS as a second factor, and a phishing site that relays codes in real time is taking over accounts. Which second factor stops this?',
         options: [
-          'Longer SMS codes',
-          'Passkeys (WebAuthn), which are bound to the real site origin',
-          'Codes from an authenticator app',
+          'SMS codes with 8 digits instead of 6',
+          'Passkeys (WebAuthn)',
+          'TOTP codes from an authenticator app',
           'A security question as the second step',
         ],
         answer: 1,
         explanation:
-          'A passkey signs a challenge for the real origin only, so a look-alike domain gets nothing it can reuse - NIST lists this as phishing resistance. App codes are stronger than SMS but can still be typed into a phishing page and relayed. A security question is a second thing you know, so it is not a second factor at all.',
+          'A passkey is bound to the origin of the real site: it signs a challenge for that origin only, so a look-alike domain gets nothing it can reuse - NIST lists this as phishing resistance. Longer SMS codes and app codes are stronger than 6-digit SMS but can still be typed into a phishing page and relayed. A security question is a second thing you know, so it is not a second factor at all.',
       },
       {
         id: 'authn-10',
         prompt:
           'Alice is logged in with a valid session. She changes the URL from /invoices/4711 to /invoices/9182, which belongs to another company. The gateway accepts her session. What stops the leak?',
         options: [
-          'Nothing more is needed - she is authenticated',
+          'Nothing more is needed - a valid session already proves she may read it',
           'Making her log in again',
-          'An authorization check in the invoices service that compares the tenant of the invoice with hers',
+          'A tenant check in the invoices service against the invoice row',
           'A shorter session timeout',
         ],
         answer: 2,
@@ -207,14 +207,14 @@ GET /invoices/4711   (no cookie)
         prompt:
           'Your password reset email contains a link that never expires and can be used many times. Why is that an authentication problem?',
         options: [
-          'The link is a credential: anyone who finds the email later can take over the account, so make it single-use and short-lived',
-          'It is not - reset links are not part of login',
-          'It only matters if the password is weak',
-          'The link should instead contain the new password',
+          'The link is a credential: whoever finds the email later owns the account',
+          'It is not - reset links are not part of login, only of recovery',
+          'It only matters if the new password chosen through it is weak',
+          'The link should carry the new password itself, so no login step is needed',
         ],
         answer: 0,
         explanation:
-          'Account recovery is another way to prove identity, and often the weakest one. A link that works forever turns every old email, forwarded message or leaked mailbox into a login. The tempting "it is not part of login" is exactly how recovery ends up less protected than the login form.',
+          'Account recovery is another way to prove identity, and often the weakest one. A link that works forever turns every old email, forwarded message or leaked mailbox into a login, so make it single-use and short-lived. The tempting "it is not part of login" is exactly how recovery ends up less protected than the login form.',
       },
     ],
   },
@@ -291,9 +291,9 @@ Missing that check = IDOR / BOLA, number one in the OWASP API Top 10.`,
         prompt:
           'In the Auth Lab, Alice (tenant 3) with a valid session sends GET /invoices/9182, which belongs to tenant 7. Where is the request stopped, and with what?',
         options: [
-          'At the gateway, with 401, because the session is wrong',
+          'At the gateway, with 401, because her session is for another tenant',
           'At the database, which refuses the query',
-          'At the invoices service, with 403, after the gateway accepted her identity',
+          'At the invoices service, with 403, after the gateway passed her',
           'Nowhere - it returns 200',
         ],
         answer: 2,
@@ -304,28 +304,28 @@ Missing that check = IDOR / BOLA, number one in the OWASP API Top 10.`,
         id: 'authz-2',
         prompt: 'In the same Lab setup you turn the Ownership check off. What happens, and what is it called?',
         options: [
-          'Alice gets the invoice of tenant 7 with 200 OK - an IDOR, broken object level authorization',
-          'Alice now gets 401, because the service cannot verify her',
-          'The gateway starts checking ownership instead',
-          'Nothing changes; roles still protect the invoice',
+          'Alice gets the tenant 7 invoice with 200 OK - an IDOR',
+          'Alice now gets 401, because the service can no longer verify who she is',
+          'The gateway takes over the ownership check, so she still gets 403',
+          'Nothing changes; her member role still protects the invoice',
         ],
         answer: 0,
         explanation:
-          'With only the role checked, any member may read any invoice, so the service returns data of another tenant with a success status - the Lab counts it as "200 to the wrong caller". Roles do not help: Alice may read invoices in general, just not this one.',
+          'That is an IDOR, or broken object level authorization. With only the role checked, any member may read any invoice, so the service returns data of another tenant with a success status - the Lab counts it as "200 to the wrong caller". Roles do not help: Alice may read invoices in general, just not this one. The gateway never sees the invoice row, so it cannot take over the check.',
       },
       {
         id: 'authz-3',
         prompt:
           'You have an API gateway in front of a documents service. Where should the rule "user 42 may edit document 881 only if they own it" be enforced?',
         options: [
-          'Only at the gateway, so the service stays simple',
+          'Only at the gateway, which already verifies every token, so the service stays simple',
           'In the browser, by hiding the Edit button',
           'In the database, with one account per user',
-          'In the documents service, which has the document and its owner; the gateway can still do coarse checks',
+          'In the documents service, which has the document and its owner',
         ],
         answer: 3,
         explanation:
-          'The gateway sees a token and a URL, not who owns document 881. The owner is in the data, so the check belongs where the data is. In the Lab the gateway can refuse a DELETE by key scope on its own, but the tenant check has to wait for the invoice row in the service.',
+          'The gateway sees a token and a URL, not who owns document 881. The owner is in the data, so the check belongs where the data is; the gateway can still do coarse checks in front of it. In the Lab the gateway can refuse a DELETE by key scope on its own, but the tenant check has to wait for the invoice row in the service.',
       },
       {
         id: 'authz-4',
@@ -346,10 +346,10 @@ Missing that check = IDOR / BOLA, number one in the OWASP API Top 10.`,
         prompt:
           'A handler runs SELECT * FROM invoices WHERE id = ?, then compares invoice.tenant_id with the caller. It works, but new handlers keep forgetting the compare. What structural change fixes the class?',
         options: [
-          'Add a code review checklist item',
+          'Add a checklist item so reviewers look for the tenant compare in every handler',
           'Log every invoice read',
-          'Query scoped to the caller: WHERE id = ? AND tenant_id = ?, enforced in a shared data-access layer',
-          'Use random UUIDs instead of numeric ids',
+          'A shared data layer that adds AND tenant_id = ? to every query',
+          'Switch to random UUIDs so ids of other tenants cannot be guessed',
         ],
         answer: 2,
         explanation:
@@ -360,9 +360,9 @@ Missing that check = IDOR / BOLA, number one in the OWASP API Top 10.`,
         prompt:
           'The API reads tenant_id from the JSON body of each request and uses it to scope queries. What is wrong?',
         options: [
-          'The tenant must come from the authenticated identity on the server, not from input the client controls',
-          'Nothing, as long as the request is over HTTPS',
-          'It should be in a header instead of the body',
+          'The tenant must come from the server-side identity, not client input',
+          'Nothing, as long as HTTPS protects the body and the token is verified',
+          'It should be in an X-Tenant-Id header instead of the body',
           'It should be in the URL instead',
         ],
         answer: 0,
@@ -376,8 +376,8 @@ Missing that check = IDOR / BOLA, number one in the OWASP API Top 10.`,
         options: [
           'Nothing useful - 403 already refuses',
           'The attacker learns the invoice contents',
-          'Which user owns each invoice; fix it with rate limiting',
-          'Which invoice ids exist, and roughly how many invoices each tenant has; answer 404 for both cases',
+          'Which user owns each invoice id; fix it with a rate limit of 10 reads per minute',
+          'Which ids exist and how many invoices each tenant has; answer 404 for both',
         ],
         answer: 3,
         explanation:
@@ -388,10 +388,10 @@ Missing that check = IDOR / BOLA, number one in the OWASP API Top 10.`,
         prompt:
           'Alice logged in at 09:00 with an 8-hour session. At 10:00 her admin role is removed. The service reads her role from the session, where it was copied at login. What happens?',
         options: [
-          'She loses admin rights at 10:00',
-          'She keeps admin rights until 17:00, unless permissions are re-checked on each request or the copy is invalidated',
+          'She loses admin rights at 10:00, as soon as the database row changes',
+          'She keeps admin rights until 17:00, unless each request re-checks them',
           'She is logged out at 10:00',
-          'She loses admin rights at the next login only if she changes her password',
+          'She loses admin rights at her next login, but only if she changes her password',
         ],
         answer: 1,
         explanation:
@@ -402,24 +402,24 @@ Missing that check = IDOR / BOLA, number one in the OWASP API Top 10.`,
         prompt:
           'Your product adds document sharing: a user may edit a document if they own it, or belong to a group that edits a folder that contains it. RBAC now needs a role per folder. Which model fits?',
         options: [
-          'Keep RBAC and create a role per folder',
+          'Keep RBAC and create an editor role per folder, assigned by admins',
           'Give everyone the editor role',
-          'Relationship-based access control (ReBAC), as in Google Zanzibar',
-          'Check permissions only in the UI',
+          'Relationship-based access control (ReBAC)',
+          'Check permissions only in the UI, where the folder tree is known',
         ],
         answer: 2,
         explanation:
-          'Ownership, groups and folder inheritance are relationships, and ReBAC answers "is this user related to this object in a way that grants edit". A role per folder explodes in number and is hard to audit. RBAC stays the right start; it is the sharing and hierarchy that push you past it.',
+          'Ownership, groups and folder inheritance are relationships, and ReBAC (as in Google Zanzibar) answers "is this user related to this object in a way that grants edit". A role per folder explodes in number and is hard to audit. RBAC stays the right start; it is the sharing and hierarchy that push you past it.',
       },
       {
         id: 'authz-10',
         prompt:
           'A central policy service decides every check. A listing page shows 50 documents and asks the policy service once per document, adding 50 network calls. What is the usual fix?',
         options: [
-          'Skip the check for listings',
+          'Skip the check for listings, since each document is checked again when opened',
           'Move the check into the browser',
           'Check only the first document',
-          'Batch the check ("which of these 50 may this user read") or evaluate the shared policy as a library in the service',
+          'Batch the check for all 50, or run the policy as a library in the service',
         ],
         answer: 3,
         explanation:
@@ -502,7 +502,7 @@ Consequence: a stolen token is valid until it expires.`,
         options: [
           'Rejected at once, because every server learns about the logout',
           'Rejected by the server that issued the token, accepted by the others',
-          'Accepted by every server until the exp claim passes, about 15 minutes later, then rejected',
+          'Accepted by every server until exp passes, about 15 minutes later',
           'Accepted forever, because a JWT never expires',
         ],
         answer: 2,
@@ -527,42 +527,42 @@ Consequence: a stolen token is valid until it expires.`,
         prompt:
           'A code review finds that the JWT payload carries the home address of the user and a password-reset code. What is wrong?',
         options: [
-          'Nothing - the signature keeps the payload secret',
-          'The token is now too long to sign',
+          'Nothing - the signature keeps the payload secret from anyone without the key',
+          'The token is now too long to sign, so the library truncates it',
           'Only the reset code is a problem, the address is harmless',
-          'The payload is only base64url-encoded, so anyone who holds the token can read both',
+          'Anyone holding the token can decode and read both',
         ],
         answer: 3,
         explanation:
-          'A signature proves who made the token and that it was not changed; it does not hide anything. Paste any JWT into a decoder and the claims are plain JSON. Keep payloads to identifiers and scopes, or use an encrypted token (JWE).',
+          'A signature proves who made the token and that it was not changed; it does not hide anything. The payload is only base64url-encoded: paste any JWT into a decoder and the claims are plain JSON. Keep payloads to identifiers and scopes, or use an encrypted token (JWE).',
       },
       {
         id: 'jwt-4',
         prompt:
           'A verifier reads the algorithm from the token header. An attacker sends a token with alg: none and no signature. What happens?',
         options: [
-          'The library rejects it, because every JWT has a signature',
-          'It may be accepted as valid with no signature at all - so pin the expected algorithm in the verifier',
+          'The library rejects it, because a token with an empty signature part cannot be parsed',
+          'It may be accepted with no signature at all - pin the algorithm in the verifier',
           'It is accepted only for read-only scopes',
           'The token is re-signed automatically',
         ],
         answer: 1,
         explanation:
-          'The header is attacker-controlled. Trusting it enables alg: none and HS/RS confusion attacks, both described in the JWT best current practice (RFC 8725). The verifier, not the token, must decide which algorithm is allowed.',
+          'The header is attacker-controlled. An unsecured token with an empty signature part is valid JWT syntax, so parsing does not stop it. Trusting the header enables alg: none and HS/RS confusion attacks, both described in the JWT best current practice (RFC 8725). The verifier, not the token, must decide which algorithm is allowed.',
       },
       {
         id: 'jwt-5',
         prompt:
           'The billing API and the reports API trust the same identity provider. A token issued for the reports API is replayed against the billing API. Which check stops it?',
         options: [
-          'The exp check',
-          'The signature check',
-          'The aud (audience) check: the token says it was issued for reports, not billing',
-          'Nothing can stop it',
+          'The exp check, which rejects tokens older than their lifetime',
+          'The signature check, since billing expects its own signing key',
+          'The aud (audience) check',
+          'Nothing can stop it once the same provider has signed it',
         ],
         answer: 2,
         explanation:
-          'The signature is valid - the same provider signed it - and it may not have expired. Only aud says who the token is for, so a service must reject a token whose audience is not itself.',
+          'The signature is valid - the same provider signed it with the same key - and it may not have expired. Only aud says who the token is for: this one says reports, not billing, so a service must reject a token whose audience is not itself.',
       },
       {
         id: 'jwt-6',
@@ -570,9 +570,9 @@ Consequence: a stolen token is valid until it expires.`,
           'Access tokens live 60 minutes, and an abusive user must be cut off now. Which change does that, and at what cost?',
         options: [
           'Delete the token from the localStorage of the user - no cost',
-          'Rotate the signing key - it logs out only that user',
+          'Rotate the signing key - it logs out only that user, since only their token used it',
           'Shorten new tokens to 5 minutes - the current token dies at once',
-          'Add the token id to a denylist that every server checks - at the cost of a lookup on every request',
+          'Denylist the token id on every server - at the cost of a lookup per request',
         ],
         answer: 3,
         explanation:
@@ -583,14 +583,14 @@ Consequence: a stolen token is valid until it expires.`,
         prompt:
           'Users complain that 10-minute access tokens force them to log in every 10 minutes. What keeps the short lifetime without the logins?',
         options: [
-          'A refresh token: long-lived, stored server-side and revocable, used to get new access tokens silently',
+          'A refresh token: long-lived, revocable, used to get new access tokens',
           'Raise the access token lifetime to 30 days',
-          'Store the password in the browser and log in automatically',
+          'Store the password in the browser and log in again automatically every 10 minutes',
           'Turn off the exp check',
         ],
         answer: 0,
         explanation:
-          'The access token stays short, so a stolen one is useful for at most 10 minutes. Revoking the refresh token stops new access tokens from being minted. A 30-day access token removes the logins but makes every leak last a month.',
+          'The access token stays short, so a stolen one is useful for at most 10 minutes. The refresh token is stored server-side, and revoking it stops new access tokens from being minted. A 30-day access token removes the logins but makes every leak last a month, and a stored password is the worst secret to leave in a browser.',
       },
       {
         id: 'jwt-8',
@@ -598,13 +598,13 @@ Consequence: a stolen token is valid until it expires.`,
           'One identity provider issues tokens and 30 microservices verify them. The team is choosing between HS256 (shared secret) and RS256 (key pair). What does RS256 change?',
         options: [
           'Tokens become encrypted',
-          'The services hold only the public key, which can verify but not create tokens - so one compromised service cannot forge tokens for all',
-          'Verification needs a call to the identity provider',
+          'Services hold only the public key, which verifies but cannot create tokens',
+          'Verification needs a call to the identity provider, which holds the private key',
           'Nothing, the two are interchangeable',
         ],
         answer: 1,
         explanation:
-          'With HS256 the same secret signs and verifies, so all 30 services could mint tokens. With RS256 only the provider holds the private key. Neither encrypts the payload, and both verify locally.',
+          'With HS256 the same secret signs and verifies, so all 30 services could mint tokens, and one compromised service can forge tokens for all. With RS256 only the provider holds the private key. Neither encrypts the payload, and both verify locally.',
       },
       {
         id: 'jwt-9',
@@ -613,21 +613,21 @@ Consequence: a stolen token is valid until it expires.`,
         options: [
           'Nothing - localStorage is sandboxed per script',
           'Only change the page layout',
-          'Read the token and send it anywhere; an HttpOnly cookie keeps it out of JavaScript, paired with SameSite and a CSRF token',
-          'Read the token, but it is useless outside the original browser',
+          'Read the token and send it anywhere; an HttpOnly cookie keeps it from script',
+          'Read the token, but it is useless outside the original browser and its IP address',
         ],
         answer: 2,
         explanation:
-          'Any script on the origin can read localStorage. A bearer token works from any machine that holds it - there is no binding to the browser. Cookies cannot be read by script when HttpOnly, but they are sent automatically, so CSRF defence comes with them.',
+          'Any script on the origin can read localStorage. A bearer token works from any machine that holds it - there is no binding to the browser or its IP. Cookies cannot be read by script when HttpOnly, but they are sent automatically, so pair them with SameSite and a CSRF token.',
       },
       {
         id: 'jwt-10',
         prompt:
           'You publish a new signing key and remove the old one from the JWKS at the same moment. Access tokens live 15 minutes. What happens?',
         options: [
-          'For up to 15 minutes, every token still signed with the old key fails verification and those users get errors',
+          'For up to 15 minutes, tokens signed with the old key fail verification',
           'Nothing - verifiers switch keys smoothly',
-          'Old tokens keep working until they expire',
+          'Old tokens keep working until they expire, since they were valid when issued',
           'Every token is re-signed with the new key',
         ],
         answer: 0,
@@ -641,8 +641,8 @@ Consequence: a stolen token is valid until it expires.`,
         options: [
           'Nothing - JWT does not need Redis',
           'Only revoked tokens fail',
-          'Servers skip the denylist and accept everything',
-          'Every request fails, because the servers fail closed when they cannot check the denylist - JWT is now as dependent on a store as a session was',
+          'Servers skip the denylist and accept every token until Redis returns',
+          'Every request fails: the servers fail closed without the denylist',
         ],
         answer: 3,
         explanation:
@@ -741,7 +741,7 @@ client app -> resource server         Bearer access token, scope checked`,
           'A photo-printing app wants to read the photos a user keeps at PhotoHub. The first design asks the user to type their PhotoHub password into the print app. What does OAuth change?',
         options: [
           'The print app stores the password encrypted instead of in plain text',
-          'The user types the password only at the PhotoHub authorization server, and the print app receives a scoped token the user can revoke',
+          'The password is typed only at PhotoHub, and the print app gets a revocable scoped token',
           'The print app sends the password to PhotoHub once and keeps the session cookie it gets back',
           'Nothing - OAuth only standardises how PhotoHub hashes the password',
         ],
@@ -756,7 +756,7 @@ client app -> resource server         Bearer access token, scope checked`,
         options: [
           'Tokens are issued, because the state value matched',
           'Tokens are issued, but only with the photos.read scope',
-          'The server answers invalid_grant: the attacker has no code_verifier that hashes to the stored code_challenge',
+          'invalid_grant: the attacker has no verifier that hashes to the stored challenge',
           'The tokens are issued, and the resource server refuses them later because they went to another device',
         ],
         answer: 2,
@@ -768,14 +768,14 @@ client app -> resource server         Bearer access token, scope checked`,
         prompt:
           'A team says: we have PKCE, so we can relax redirect URI matching to a prefix check. An attacker then sends victims a real /authorize link for your client_id with redirect_uri=https://app.example.attacker.test/cb. What happens?',
         options: [
-          'The code is sent to the attacker, who redeems it with its own verifier - the attacker built the link, so it made the challenge',
+          'The code reaches the attacker, who redeems it with the verifier it made itself',
           'PKCE blocks it, because the attacker does not know the code_verifier',
           'The state check blocks it, because the attacker does not know the state',
           'Nothing, because the consent screen shows the attacker domain and every user will notice',
         ],
         answer: 0,
         explanation:
-          'PKCE proves that whoever redeems the code started the flow - and here the attacker started it, with its own verifier and challenge. Only the authorization server comparing redirect_uri exactly with the registered value stops the code from being sent away. The Lab shows this: Tampered redirect_uri gets through with PKCE on until you turn on exact matching.',
+          'PKCE proves that whoever redeems the code started the flow - and here the attacker built the link, so it made the challenge and holds the matching verifier. Only the authorization server comparing redirect_uri exactly with the registered value stops the code from being sent away. The Lab shows this: Tampered redirect_uri gets through with PKCE on until you turn on exact matching.',
       },
       {
         id: 'oauth-4',
@@ -783,13 +783,13 @@ client app -> resource server         Bearer access token, scope checked`,
           'Your callback does not check state and you have not added PKCE. An attacker gets a code for an account the attacker controls and makes the browser of a victim open https://app.example/cb?code=<that code>. What is the risk?',
         options: [
           'None - the code belongs to the attacker, so the victim loses nothing',
-          'The attacker receives the tokens of the victim',
+          'The attacker receives the tokens of the victim when the app redeems the code',
           'The authorization server locks the account of the victim',
-          'The victim is signed in to the account of the attacker, so what the victim saves there the attacker can read',
+          'The victim ends up in the attacker account, which the attacker can read',
         ],
         answer: 3,
         explanation:
-          'This is CSRF on the callback: the app redeems a code it never asked for and links the victim session to the attacker account. The attacker does not get the victim tokens - the tokens are for the attacker account - which is why the harm is easy to miss. A state check, or PKCE, makes the app refuse a callback its own browser never started.',
+          'This is CSRF on the callback: the app redeems a code it never asked for and links the victim session to the attacker account, so what the victim saves there the attacker can read. The attacker does not get the victim tokens - the tokens are for the attacker account - which is why the harm is easy to miss. A state check, or PKCE, makes the app refuse a callback its own browser never started.',
       },
       {
         id: 'oauth-5',
@@ -797,7 +797,7 @@ client app -> resource server         Bearer access token, scope checked`,
           'The user granted only photos.read. The app calls DELETE /photos/7 with a valid, unexpired access token. What should the resource server do?',
         options: [
           'Allow it, because the token signature and expiry are valid',
-          'Refuse with 403 and error="insufficient_scope" - the token is valid, but not for this action',
+          'Refuse with 403 insufficient_scope',
           'Refuse with 401 and ask the user to type their password again',
           'Forward the request to the authorization server to ask the user',
         ],
@@ -810,9 +810,9 @@ client app -> resource server         Bearer access token, scope checked`,
         prompt:
           'Your backend logs a user in whenever the browser presents any valid Google access token for them. What is the problem?',
         options: [
-          'None - a valid access token always proves the user is present in your app',
+          'None - Google only issues an access token after the user signs in, so presence is proven',
           'Access tokens expire too quickly to be used for login',
-          'An access token is for calling an API and is not bound to your app - a token issued to another app for that user could be replayed to log in as them',
+          'An access token is not bound to your app; one issued to another app can be replayed',
           'Only Google can check an access token, so your backend cannot verify it at all',
         ],
         answer: 2,
@@ -824,7 +824,7 @@ client app -> resource server         Bearer access token, scope checked`,
         prompt:
           'A nightly billing job must call your internal invoices API. No user is involved. Which grant fits?',
         options: [
-          'Client credentials: the job authenticates as itself and gets a token for its own access',
+          'Client credentials: the job authenticates as itself',
           'Authorization code with PKCE, with an engineer clicking consent every night',
           'The implicit grant, because it has the fewest steps',
           'The password grant with a shared service account password',
@@ -838,14 +838,14 @@ client app -> resource server         Bearer access token, scope checked`,
         prompt:
           'A smart TV app needs access to the video library of the user. Typing a password with a remote is painful, and the TV has no good browser. Which approach fits?',
         options: [
-          'Ask for the password on the TV once and store it',
+          'Ask for the password on the TV once and store it encrypted on the device',
           'The implicit grant in the TV built-in browser',
           'Client credentials, with the TV as the client',
-          'The device authorization grant: the TV shows a short code and a URL, the user approves on a phone, and the TV polls for the token',
+          'The device authorization grant: approve on a phone with a short code',
         ],
         answer: 3,
         explanation:
-          'The device grant (RFC 8628) moves sign-in and consent to a device with a proper browser, while the TV only polls the token endpoint. Client credentials would give the TV its own access, not access to the library of the user. Asking for the password on the TV is the anti-pattern OAuth removes.',
+          'The device grant (RFC 8628) moves sign-in and consent to a device with a proper browser: the TV shows a short code and a URL, the user approves on a phone, and the TV polls the token endpoint. Client credentials would give the TV its own access, not access to the library of the user. Asking for the password on the TV, encrypted or not, is the anti-pattern OAuth removes.',
       },
       {
         id: 'oauth-9',
@@ -853,13 +853,13 @@ client app -> resource server         Bearer access token, scope checked`,
           'A security review flags an old single-page app that uses the implicit grant: the access token comes back in the URL fragment. What should you do?',
         options: [
           'Keep it, but shorten the token lifetime to 5 minutes',
-          'Move to the authorization code flow with PKCE, so only a one-time code crosses the URL and the token comes from a direct call',
+          'Move to the authorization code flow with PKCE',
           'Move the token from the fragment into a query parameter so the server can log it',
           'Switch to the password grant so no redirect is needed',
         ],
         answer: 1,
         explanation:
-          'Tokens in a URL leak through browser history, logs and Referer headers, and nothing binds them to the app that asked. Code + PKCE is what current guidance (RFC 9700) points single-page apps to. A shorter lifetime narrows the window but leaves the leak; the password grant hands the password to the app, which is worse.',
+          'Tokens in a URL leak through browser history, logs and Referer headers, and nothing binds them to the app that asked. With code + PKCE only a one-time code crosses the URL and the token comes from a direct call - what current guidance (RFC 9700) points single-page apps to. A shorter lifetime narrows the window but leaves the leak; the password grant hands the password to the app, which is worse.',
       },
       {
         id: 'oauth-10',
@@ -868,12 +868,12 @@ client app -> resource server         Bearer access token, scope checked`,
         options: [
           'Every token stops working at that instant, everywhere',
           'Nothing changes until the user also changes their password',
-          'The refresh token is revoked, so no new access tokens; the current access token can keep working until it expires, unless the API checks revocation',
-          'The app keeps access forever, because OAuth tokens cannot be revoked',
+          'The refresh token is revoked; the access token may work up to 50 more minutes',
+          'The app keeps access forever, because a signed OAuth token cannot be recalled once issued',
         ],
         answer: 2,
         explanation:
-          'Revocation reaches the authorization server at once, so the refresh token is dead. An API that only checks the signature and expiry of a self-contained token cannot know about the revocation until the token expires - which is why access tokens are kept short. Changing the password is not needed: the grant is what was revoked.',
+          'Revocation reaches the authorization server at once, so the refresh token is dead and no new access tokens are issued. An API that only checks the signature and expiry of a self-contained token cannot know about the revocation until the token expires, unless it checks revocation - which is why access tokens are kept short. Changing the password is not needed: the grant is what was revoked.',
       },
       {
         id: 'oauth-11',
@@ -881,9 +881,9 @@ client app -> resource server         Bearer access token, scope checked`,
           'In the Lab, you turn PKCE off, keep the state check on, and replay Stolen authorization code. Does the state check stop the attack?',
         options: [
           'Yes - the attacker does not know the state value',
-          'Yes - the token endpoint compares the state before issuing tokens',
+          'Yes - the token endpoint compares the state with the stored one before issuing tokens',
           'Only if the state value is long enough',
-          'No - the state came in the same stolen URL, and the attacker goes straight to /token, where state is not checked',
+          'No - state came in the same stolen URL, and /token never checks it',
         ],
         answer: 3,
         explanation:
@@ -894,7 +894,7 @@ client app -> resource server         Bearer access token, scope checked`,
         prompt:
           'A calendar-sync app asks for full access to the Google account of the user in case a future feature needs it. Consent rates drop. What should the team do?',
         options: [
-          'Request only the calendar read scope now, and ask for more scopes later when a feature needs them',
+          'Request only calendar read now, and ask for more when a feature needs it',
           'Keep the broad scope, because asking twice annoys users',
           'Ask for the Google password instead, so no consent screen is shown',
           'Request no scopes, and let the resource server decide what the token may do',
@@ -1007,7 +1007,7 @@ FIXED WINDOW boundary problem (limit 100 per minute), for example:
         prompt:
           'A mobile app sends 30 requests in one second when it opens, then about one request a minute. You want to allow that start-up burst but keep the sustained rate at 5 per second. Which algorithm fits?',
         options: [
-          'A leaky bucket draining at 5 per second',
+          'A leaky bucket that queues up to 30 requests and drains them at 5 per second',
           'A fixed window of 5 requests per second',
           'A token bucket refilling at 5 per second with a capacity of 30 or more',
           'No limit at all, because the average is low',
@@ -1022,7 +1022,7 @@ FIXED WINDOW boundary problem (limit 100 per minute), for example:
           'A legacy billing system falls over above 50 requests per second, even for a moment. Clients are bursty, and callers can accept a few seconds of extra latency. What should sit in front of it?',
         options: [
           'A leaky bucket that queues requests and releases them at 50 per second',
-          'A token bucket with a rate of 50 per second and a capacity of 500',
+          'A token bucket with a rate of 50 per second and a capacity of 500 for bursts',
           'A fixed window of 50 requests per second',
           'A cache in front of the billing writes',
         ],
@@ -1050,23 +1050,23 @@ FIXED WINDOW boundary problem (limit 100 per minute), for example:
           'Your instances now share a counter in Redis. Each one runs GET count, checks count < 100, then SET count + 1. Under load, some keys end up with 104 allowed requests in a window. Why, and what fixes it?',
         options: [
           'Redis loses writes under load; add a replica',
-          'Two instances read 99 at the same moment and both allow a request; do the check and the increment atomically, with INCR or a Lua script',
+          'A read-then-write race; do the check and increment atomically with INCR or Lua',
           'The window is too long; shorten it to one second',
-          'Clock skew between instances; synchronise them with NTP',
+          'Clock skew puts instances in different windows; synchronise them with NTP',
         ],
         answer: 1,
         explanation:
-          'A read followed by a separate write is a race: several instances can read the same value before any of them writes back. INCR returns the new value atomically, and a Lua script runs the whole check-and-decrement of a token bucket as one step on Redis. A replica or a shorter window leaves the race in place, and the count does not depend on the clocks of the instances.',
+          'A read followed by a separate write is a race: two instances can read 99 at the same moment and both allow a request before either writes back. INCR returns the new value atomically, and a Lua script runs the whole check-and-decrement of a token bucket as one step on Redis. A replica or a shorter window leaves the race in place, and the count does not depend on the clocks of the instances.',
       },
       {
         id: 'rl-6',
         prompt:
           'An office of 300 people reaches your API through one NAT address. After you add a limit of 1,000 requests per minute per IP, their normal work starts failing with 429. The API requires login. What should you change?',
         options: [
-          'Raise the per-IP limit to 100,000 for everyone',
+          'Raise the per-IP limit to 100,000 for everyone so large offices fit',
           'Remove rate limiting for authenticated requests',
-          'Block the NAT address, since it looks like abuse',
-          'Limit authenticated requests per user or API key, and keep per-IP limits only for anonymous traffic',
+          'Block the NAT address, since 300 users at 1,000 per minute looks like abuse',
+          'Limit logged-in traffic per user or API key; keep per-IP for anonymous',
         ],
         answer: 3,
         explanation:
@@ -1078,13 +1078,13 @@ FIXED WINDOW boundary problem (limit 100 per minute), for example:
           'An attacker tries leaked passwords from 5,000 different IPs, each making 3 login attempts a minute - well under your limit of 20 per minute per IP. What limit actually stops the attack?',
         options: [
           'A lower per-IP limit of 2 per minute',
-          'A per-account limit on login attempts, such as 5 per 15 minutes, whatever the source IP',
+          'A per-account limit, such as 5 attempts per 15 minutes',
           'A global limit of 1,000 requests per minute on the whole API',
           'A leaky bucket in front of the login endpoint',
         ],
         answer: 1,
         explanation:
-          'Credential stuffing spreads across IPs, so any per-IP limit can be stayed under by adding more IPs. Counting failed attempts per targeted account caps what the attacker gets per victim, however many addresses they use. A global limit would throttle every real user along with the attacker, and a leaky bucket only delays the attempts.',
+          'Credential stuffing spreads across IPs, so any per-IP limit can be stayed under by adding more IPs. Counting failed attempts per targeted account, whatever the source IP, caps what the attacker gets per victim. A global limit would throttle every real user along with the attacker, and a leaky bucket only delays the attempts.',
       },
       {
         id: 'rl-8',
@@ -1092,8 +1092,8 @@ FIXED WINDOW boundary problem (limit 100 per minute), for example:
           'Clients that hit your limit get a bare 429 with no other headers. Your logs show them retrying immediately, in a tight loop, so the rejected traffic is larger than the allowed traffic. What should the server send?',
         options: [
           '500, so clients treat it as a server error',
-          '200 with an empty body, so clients stop retrying',
-          '429 with Retry-After saying how many seconds to wait, plus headers showing the remaining allowance',
+          '200 with an empty body, so clients think it worked and stop retrying',
+          '429 with Retry-After and remaining-allowance headers',
           '403, so clients give up for good',
         ],
         answer: 2,
@@ -1105,7 +1105,7 @@ FIXED WINDOW boundary problem (limit 100 per minute), for example:
         prompt:
           'The Redis cluster that holds your rate limit counters becomes unreachable for two minutes. What should the limiter do on the product catalogue endpoint, and on the login endpoint?',
         options: [
-          'Fail open on the catalogue (serve the request) and fail closed on login (reject), because the risks differ',
+          'Fail open on the catalogue and fail closed on login',
           'Fail closed on both, because unlimited traffic is always dangerous',
           'Fail open on both, because the limiter must never cause an outage',
           'Queue every request until Redis is back',
@@ -1120,7 +1120,7 @@ FIXED WINDOW boundary problem (limit 100 per minute), for example:
           'Your API allows 1,000 requests per minute per key. A customer sends 1,000 CSV export requests in a minute - within the limit - and each export scans a million rows. The database saturates. What change addresses it?',
         options: [
           'Lower the limit to 100 requests per minute for all endpoints',
-          'Give endpoints a cost: an export spends 50 tokens, a read spends 1',
+          'Weight endpoints: an export costs 50 tokens, a read costs 1',
           'Add a read replica and keep the limit as it is',
           'Switch the limiter from a fixed window to a sliding window',
         ],
@@ -1136,7 +1136,7 @@ FIXED WINDOW boundary problem (limit 100 per minute), for example:
           'All 20 allowed, because the average rate is only 1 per second',
           'All 20 rejected, because the burst is larger than the limit',
           'All 20 queued, and released at 10 per second',
-          'About 10 allowed and about 10 rejected with 429, and the bucket empties',
+          'About 10 allowed and 10 rejected with 429',
         ],
         answer: 3,
         explanation:
@@ -1148,8 +1148,8 @@ FIXED WINDOW boundary problem (limit 100 per minute), for example:
           'In the Lab, with a limit of 10 per 1 s and a client rate of 1 req/sec, "Burst across a window edge" lets about 19 of 20 through on Fixed Window. You switch to Sliding Window and press it again. What changes?',
         options: [
           'Nothing, because both algorithms count per window',
-          'About 10 get through: the previous window still counts, fading out, so the burst just after the edge is mostly rejected',
-          'None get through, because the sliding window blocks all bursts',
+          'About 10 get through: the previous window still counts, fading out',
+          'None get through, because a sliding window rejects any burst above the rate',
           'All 20 get through, because the window slides past both halves',
         ],
         answer: 1,
@@ -1162,8 +1162,8 @@ FIXED WINDOW boundary problem (limit 100 per minute), for example:
           'In the Lab, you choose Leaky Bucket with a limit of 10 per 1 s, lower the client rate to 1 req/sec, and press "Send a burst of 20". The 429 counter does not move. What did the burst cost instead?',
         options: [
           'Nothing - a leaky bucket serves bursts for free',
-          'The API received all 20 at once, and may fall over',
-          'Latency: the 20 requests wait in the queue and reach the API at 10 per second, so the last one waits about 2 seconds',
+          'The API received all 20 at once, since the bucket only counts, and may fall over',
+          'Latency: the last request waits about 2 seconds in the queue',
           'The requests were dropped silently',
         ],
         answer: 2,
@@ -1178,7 +1178,7 @@ FIXED WINDOW boundary problem (limit 100 per minute), for example:
           'Nothing needs to change, because every client is within its limit',
           'Lower every per-client limit to one tenth',
           'Switch every limiter to a leaky bucket',
-          'Load shedding: drop or defer low-priority work when the service itself is saturated, whoever sent it',
+          'Load shedding when the service itself is saturated',
         ],
         answer: 3,
         explanation:
@@ -1256,7 +1256,7 @@ leaked?  whoever holds the string IS Integration A
           'In the Auth Lab, an attacker sends GET /invoices/4711 with the leaked key sk_live_9f2c while the key is still active. What happens?',
         options: [
           'The gateway spots the attacker by IP and answers 401',
-          'The gateway believes it is Integration A and the request gets 200 OK',
+          'The gateway takes it as Integration A and answers 200 OK',
           'The service answers 403, because the attacker has no role',
           'The key store refuses because the key is hashed',
         ],
@@ -1272,34 +1272,34 @@ leaked?  whoever holds the string IS Integration A
           '200 OK - revocation only affects the attacker',
           '403 Forbidden until an admin grants a role',
           '429 Too Many Requests',
-          '401 Unauthorized, the same as the attacker; rotating (new key first, then revoke) would have avoided the outage',
+          '401 - rotation would have avoided it',
         ],
         answer: 3,
         explanation:
-          'Both hold the same string, so revoking it cuts off both. Rotation issues a second key to Integration A, moves its traffic, and only then revokes the old key - set the key to Rotated in the Lab and only the attacker is left with 401. It is a 401, not a 403, because the key no longer proves any identity.',
+          'Both hold the same string, so revoking it cuts off both: Integration A gets 401 Unauthorized, the same as the attacker. Rotation issues a second key to Integration A, moves its traffic, and only then revokes the old key - set the key to Rotated in the Lab and only the attacker is left with 401. It is a 401, not a 403, because the key no longer proves any identity.',
       },
       {
         id: 'key-3',
         prompt:
           'The leaked key has scope invoices:read. The attacker sends DELETE /invoices/4711 with it. What happens in the Lab, and why does it matter?',
         options: [
-          '403 Forbidden at the gateway: the scope does not include invoices:write, so the leak is limited to reading',
+          '403 at the gateway: the scope lacks invoices:write',
           '200 OK: a valid key may do anything',
-          '401 Unauthorized, because DELETE needs a password',
+          '401 Unauthorized, because a DELETE needs a fresh password login',
           '404 Not Found, to hide the invoice',
         ],
         answer: 0,
         explanation:
-          'The identity check passes, but the gateway refuses the action by scope - it needs no invoice data for that, so it answers 403 itself. Scoping is what keeps a leaked key from becoming a full-account incident. 401 is the tempting pick, but the key did prove an identity; it just is not allowed to delete.',
+          'The identity check passes, but the gateway refuses the action by scope - it needs no invoice data for that, so it answers 403 itself. Scoping is what keeps a leaked key from becoming a full-account incident: this leak is limited to reading. 401 is the tempting pick, but the key did prove an identity; it just is not allowed to delete.',
       },
       {
         id: 'key-4',
         prompt:
           'Your mobile app calls a paid maps API directly, with the key compiled into the app. The monthly bill triples. What is the structural fix?',
         options: [
-          'Obfuscate the key in the binary',
+          'Obfuscate the key in the binary so a strings dump does not show it',
           'Rotate the key every month',
-          'Have the app call your backend, which calls the maps API with a key that never leaves your servers',
+          'Proxy the calls through your backend, which holds the key',
           'Move the key into the app settings screen',
         ],
         answer: 2,
@@ -1312,8 +1312,8 @@ leaked?  whoever holds the string IS Integration A
           'A database dump leaks the api_keys table, which stores SHA-256 hashes of keys made from 32 random bytes. How worried should you be about the attacker recovering keys?',
         options: [
           'Very - SHA-256 is fast, so the keys fall like passwords would',
-          'Not much for the keys themselves: 256 random bits cannot be brute-forced, however fast the hash',
-          'Not at all, because SHA-256 cannot be reversed or guessed in any case',
+          'Not much: 256 random bits cannot be brute-forced, however fast the hash',
+          'Not at all, because SHA-256 cannot be reversed or guessed, whatever went into it',
           'Only if the keys have a prefix',
         ],
         answer: 1,
@@ -1327,8 +1327,8 @@ leaked?  whoever holds the string IS Integration A
         options: [
           'Nothing - the commit is gone',
           'Make the repository private',
-          'Ask GitHub to purge the cache, then carry on',
-          'Treat the key as compromised: rotate it now and check the usage log of that key',
+          'Ask GitHub to purge the cached commit, then carry on as before',
+          'Treat it as compromised: rotate it and check its usage log',
         ],
         answer: 3,
         explanation:
@@ -1338,49 +1338,49 @@ leaked?  whoever holds the string IS Integration A
         id: 'key-7',
         prompt: 'A customer lost their API key and asks support to show it to them again. What should your system allow?',
         options: [
-          'Nothing to show: only a hash is stored, so the customer creates a new key and revokes the lost one',
-          'Support decrypts the key from the database',
+          'Nothing to show: only a hash is stored, so they create a new key',
+          'Support decrypts the key from the database after verifying the customer',
           'Support emails the key to the account owner',
           'The dashboard shows the full key on request',
         ],
         answer: 0,
         explanation:
-          'If you store only hashes you cannot recover a key - and that is the point: a database dump then hands no working credentials to anyone. Show a key once at creation, and identify it later by prefix and last four characters. Emailing it adds another place for it to leak.',
+          'If you store only hashes you cannot recover or decrypt a key - and that is the point: a database dump then hands no working credentials to anyone. The customer creates a new key and revokes the lost one. Show a key once at creation, and identify it later by prefix and last four characters. Emailing it adds another place for it to leak.',
       },
       {
         id: 'key-8',
         prompt:
           'A B2B customer wants to know which of their employees made each change through your API. Their integration uses one API key. What do you recommend?',
         options: [
-          'Issue one API key per employee and ask them to share nothing',
-          'Put the employee name in a request header next to the key',
-          'Keep the key for the integration, and let employees sign in with sessions or OAuth so each call carries a user identity',
+          'Issue one API key per employee and ask them to never share it',
+          'Put the employee name in an X-User header sent next to the key',
+          'Keep the key and add user sign-in (sessions or OAuth)',
           'Log the IP address of each request',
         ],
         answer: 2,
         explanation:
-          'An API key identifies an application, not a person. A user identity comes from authenticating the user - a session or an OAuth token issued for that user. A header with a name is just a claim anyone can type, and per-employee keys spread long-lived secrets across laptops.',
+          'An API key identifies an application, not a person. Keep it for the integration; a user identity comes from authenticating the user - a session or an OAuth token issued for that user - so each call carries one. A header with a name is just a claim anyone can type, and per-employee keys spread long-lived secrets across laptops.',
       },
       {
         id: 'key-9',
         prompt: 'An API takes its key as a query parameter: GET /reports?api_key=sk_live_9f2c... Why is that a problem?',
         options: [
-          'Query parameters are not encrypted by HTTPS',
-          'Full URLs are written to access logs, proxy logs and browser history, so the key spreads to places nobody guards',
+          'Query parameters are sent unencrypted, since HTTPS only protects the body',
+          'The URL lands in logs and browser history, and the key with it',
           'Query parameters are limited to 64 characters',
           'Servers cannot read query parameters on GET',
         ],
         answer: 1,
         explanation:
-          'HTTPS does encrypt the query string on the wire - that is the tempting wrong answer. The leak happens at the ends: every log line and history entry that records the URL now holds a working key. Send it in the Authorization header instead.',
+          'HTTPS does encrypt the query string on the wire - that is the tempting wrong answer. The leak happens at the ends: every access log, proxy log and history entry that records the URL now holds a working key, in places nobody guards. Send it in the Authorization header instead.',
       },
       {
         id: 'key-10',
         prompt:
           'Two partner integrations share one API key. One of them goes rogue and floods the API. What can you do, and what should you have done?',
         options: [
-          'You can only revoke the shared key, which cuts off both partners; give each integration its own key',
-          'Rate limit the rogue partner by key - it works fine',
+          'Revoke the shared key, cutting off both; give each its own key',
+          'Rate limit the rogue partner by key - that throttles only the one flooding',
           'Revoke the key for the rogue partner only',
           'Nothing, because keys cannot be revoked',
         ],
@@ -1393,8 +1393,8 @@ leaked?  whoever holds the string IS Integration A
         prompt: 'Why do providers put a readable prefix such as sk_live_ or sk_test_ on their keys?',
         options: [
           'It makes the key harder to guess',
-          'It encodes the permissions of the key',
-          'Secret scanners can find leaked keys in code and logs, and a live key pasted into a test config is obvious',
+          'It encodes the scopes of the key, so the gateway can skip the store lookup',
+          'So secret scanners can spot leaked keys, and live versus test is obvious',
           'It is required by the HTTP standard',
         ],
         answer: 2,
@@ -1464,8 +1464,8 @@ Client --TLS--> CDN --TLS--> Load Balancer --?--> services
         prompt:
           'The certificate of your payment API expires at 03:00 on a Sunday. It was renewed by hand a year ago by an engineer who has left. What stops this from happening again?',
         options: [
-          'A calendar reminder for next year',
-          'Automated renewal (ACME) well before expiry, plus an external monitor that alerts on the certificate expiry date itself',
+          'A shared team calendar reminder a month before next expiry',
+          'Automated ACME renewal plus an external expiry monitor',
           'A certificate valid for ten years',
           'Turning off certificate checks in the clients',
         ],
@@ -1478,23 +1478,23 @@ Client --TLS--> CDN --TLS--> Load Balancer --?--> services
         prompt:
           'After a certificate change, your site works in Chrome, but curl and your Android app fail with "unable to verify the certificate". What is the most likely cause?',
         options: [
-          'The certificate has expired',
+          'The certificate expired and Chrome is showing a cached page',
           'The domain name is wrong',
           'curl and Android do not support TLS',
-          'The server sends its certificate without the intermediate, so clients that do not already have it cannot build a chain to a trusted root',
+          'The server no longer sends the intermediate certificate',
         ],
         answer: 3,
         explanation:
-          'Browsers often have the intermediate cached or fetch it, which hides the mistake; other clients need the server to send the full chain. An expired or wrong-name certificate would fail in Chrome too. Always test with an external checker after a change.',
+          'Without the intermediate, clients that do not already have it cannot build a chain to a trusted root. Browsers often have the intermediate cached or fetch it, which hides the mistake; other clients need the server to send the full chain. An expired or wrong-name certificate would fail in Chrome too. Always test with an external checker after a change.',
       },
       {
         id: 'tls-3',
         prompt:
           'Your origin is 100 ms away and has no CDN. You move from TLS 1.2 to TLS 1.3. What changes for a new visitor?',
         options: [
-          'The handshake drops from two round trips to one, saving about 100 ms on each new connection',
+          'The handshake drops from two round trips to one: about 100 ms saved',
           'Nothing measurable',
-          'Every request gets 100 ms faster, even on a reused connection',
+          'Every request gets 100 ms faster, even on a reused keep-alive connection',
           'The page becomes slower, because 1.3 uses stronger encryption',
         ],
         answer: 0,
@@ -1508,20 +1508,20 @@ Client --TLS--> CDN --TLS--> Load Balancer --?--> services
         options: [
           'Yes - the private key decrypts everything ever sent to the server',
           'Only the traffic from the last 90 days',
-          'No - TLS 1.3 uses fresh (ephemeral) key exchange for every session, so the private key only proves identity and cannot recreate old session keys',
+          'No - every TLS 1.3 session uses a fresh ephemeral key exchange',
           'Yes, if they also have the certificate',
         ],
         answer: 2,
         explanation:
-          'That property is forward secrecy, and TLS 1.3 makes it mandatory. The stolen key lets them impersonate the server from now on - so revoke and replace it - but recorded sessions stay safe. The certificate is public anyway, so having it adds nothing.',
+          'That property is forward secrecy, and TLS 1.3 makes it mandatory: the private key only proves identity and cannot recreate old session keys. The stolen key lets them impersonate the server from now on - so revoke and replace it - but recorded sessions stay safe. The certificate is public anyway, so having it adds nothing.',
       },
       {
         id: 'tls-5',
         prompt:
           'TLS ends at your load balancer and traffic to the backends is plain HTTP on the internal network. An auditor says the data is regulated. What do you change?',
         options: [
-          'Nothing - the internal network is private',
-          'Encrypt the internal hop too: re-encrypt from the load balancer to the backends, or use mTLS between services',
+          'Nothing - the internal network is private and behind the firewall',
+          'Encrypt the internal hop too, by re-encryption or mTLS',
           'Move TLS termination to the browser',
           'Use a longer certificate',
         ],
@@ -1535,9 +1535,9 @@ Client --TLS--> CDN --TLS--> Load Balancer --?--> services
           'Service A calls service B inside a mesh. B must be sure the caller really is A, not just any process on the network. What fits?',
         options: [
           'Plain TLS with a certificate on B only',
-          'An IP allow-list',
+          'An IP allow-list on B with the addresses of the A pods',
           'A longer session timeout',
-          'Mutual TLS: both sides present certificates, so B verifies A just as A verifies B',
+          'Mutual TLS, so B verifies the certificate of A',
         ],
         answer: 3,
         explanation:
@@ -1548,14 +1548,14 @@ Client --TLS--> CDN --TLS--> Load Balancer --?--> services
         prompt:
           'A first-time visitor on hotel Wi-Fi types yourbank.com without https://. Your server redirects HTTP to HTTPS. What can an attacker on that Wi-Fi do, and what prevents it?',
         options: [
-          'Answer the first plain HTTP request themselves and never redirect (SSL stripping); HSTS, and the HSTS preload list for first visits, stop the browser from trying plain HTTP',
-          'Nothing - the redirect protects the visitor',
+          'Keep the visitor on plain HTTP (SSL stripping); HSTS with preload stops it',
+          'Nothing - the redirect sends them to HTTPS before any data is typed',
           'Read the TLS session keys',
           'Only slow down the redirect',
         ],
         answer: 0,
         explanation:
-          'The redirect is itself sent over plain HTTP, so an attacker can replace it and keep the visitor on HTTP. HSTS makes the browser go straight to HTTPS for that domain, and preloading covers the very first visit. The session keys are never sent on the wire, so they cannot be read.',
+          'The redirect is itself sent over plain HTTP, so an attacker can answer the first request themselves, never redirect, and keep the visitor on HTTP. HSTS makes the browser go straight to HTTPS for that domain, and the HSTS preload list covers the very first visit. The session keys are never sent on the wire, so they cannot be read.',
       },
       {
         id: 'tls-8',
@@ -1563,13 +1563,13 @@ Client --TLS--> CDN --TLS--> Load Balancer --?--> services
           'A phishing page at paypa1-login.com shows a padlock and a valid certificate. What does the padlock actually prove?',
         options: [
           'The site is owned by PayPal',
-          'The site is safe to enter a password into',
-          'The connection is encrypted and the server controls the domain paypa1-login.com - nothing about who runs it or whether it is honest',
-          'The site has passed a security audit',
+          'The site is safe to enter a password into, since the CA vetted it',
+          'Encryption, and control of the domain paypa1-login.com',
+          'The site has passed the security audit a CA needs before issuing',
         ],
         answer: 2,
         explanation:
-          'A domain-validated certificate only proves control of the domain name in the address bar. The channel to the wrong site is perfectly private. That is why the Lesson says the padlock protects the channel, not the trustworthiness of the site.',
+          'A domain-validated certificate only proves the connection is encrypted and the server controls the domain name in the address bar - nothing about who runs it or whether it is honest. The channel to the wrong site is perfectly private. That is why the Lesson says the padlock protects the channel, not the trustworthiness of the site.',
       },
       {
         id: 'tls-9',
@@ -1577,13 +1577,13 @@ Client --TLS--> CDN --TLS--> Load Balancer --?--> services
           'In the Lab, with the origin 80 ms away, the TLS handshake takes 80 ms without a CDN and 10 ms with one. Why?',
         options: [
           'The CDN uses weaker encryption',
-          'The browser handshakes with the CDN edge nearby, which holds a certificate for the domain; the edge keeps its own connection to the origin open',
+          'The handshake ends at a nearby CDN edge, not at the origin',
           'The CDN skips certificate checks',
-          'The CDN caches the TLS handshake of other users',
+          'The CDN caches the TLS handshake of other users and replays it',
         ],
         answer: 1,
         explanation:
-          'A handshake costs round trips to whatever ends the connection, and the edge is 10 ms away instead of 80. Encryption strength and certificate checks are the same. That is why ending TLS at the edge speeds up even pages the edge must fetch from the origin.',
+          'A handshake costs round trips to whatever ends the connection, and the edge is 10 ms away instead of 80: it holds a certificate for the domain and keeps its own connection to the origin open. Encryption strength and certificate checks are the same, and a handshake cannot be reused across users. That is why ending TLS at the edge speeds up even pages the edge must fetch from the origin.',
       },
       {
         id: 'tls-10',
@@ -1591,21 +1591,21 @@ Client --TLS--> CDN --TLS--> Load Balancer --?--> services
           'A page served over HTTPS loads a script from http://cdn.example.net/app.js. Users report that a feature stopped working. What happened?',
         options: [
           'The certificate expired',
-          'HTTPS pages cannot load scripts',
-          'The script was too big',
-          'The browser blocked the script as mixed content - a plain HTTP script could be changed on the path and would control the secure page; load it over HTTPS',
+          'HTTPS pages cannot load scripts from another domain',
+          'The script was too big for the browser cache and timed out',
+          'The browser blocked it as mixed content',
         ],
         answer: 3,
         explanation:
-          'A script loaded over plain HTTP could be rewritten by anyone on the path, which would undo the protection of the whole page, so browsers block it. Loading it over https:// fixes it. An expired certificate would break the whole page, not one feature.',
+          'A script loaded over plain HTTP could be rewritten by anyone on the path and would control the secure page, so browsers block it as mixed content. Loading it over https:// fixes it - scripts from other domains are fine over HTTPS. An expired certificate would break the whole page, not one feature.',
       },
       {
         id: 'tls-11',
         prompt:
           'With TLS 1.3 resumption, a returning client can send a request in the very first flight (0-RTT). Which requests should your server accept that way?',
         options: [
-          'Only idempotent requests such as GET - 0-RTT data can be replayed by an attacker, so it must be safe to process twice',
-          'All requests - 0-RTT is as safe as a full handshake',
+          'Only idempotent requests such as GET, since 0-RTT can be replayed',
+          'All requests - 0-RTT data is encrypted, so it is as safe as a full handshake',
           'Only POST requests, because they carry a body',
           'None - 0-RTT disables encryption',
         ],
@@ -1708,14 +1708,14 @@ lease ends: Vault drops the user. No static password in repo or image.`,
         prompt:
           'A developer pushes a cloud access key to a public repository, notices 4 minutes later and pushes a commit that deletes it. What should happen first?',
         options: [
-          'Rewrite history to remove the key and force push',
-          'Revoke the key and issue a new one, then clean history if still wanted',
-          'Make the repository private',
-          'Nothing - the delete commit removed it',
+          'Rewrite history to remove the key and force push before anyone clones',
+          'Revoke the key and issue a new one',
+          'Make the repository private so nobody else can see the commit',
+          'Nothing - the delete commit removed it from the repository',
         ],
         answer: 1,
         explanation:
-          'The old commit is still in history, in every clone and in any fork, and scanners find public keys within minutes. Only revoking the key makes those copies useless. Rewriting history is tempting, but it cannot reach clones and forks, so a history rewrite without rotation leaves a working key in the wild. Making the repository private has the same gap.',
+          'The old commit is still in history, in every clone and in any fork, and scanners find public keys within minutes. Only revoking the key makes those copies useless; clean history afterwards if you still want to. Rewriting history is tempting, but it cannot reach clones and forks, so a history rewrite without rotation leaves a working key in the wild. Making the repository private has the same gap.',
       },
       {
         id: 'sec-2',
@@ -1724,19 +1724,19 @@ lease ends: Vault drops the user. No static password in repo or image.`,
         options: [
           'Only the Orders API breaks, because its key leaked',
           'Nothing breaks, because the new password is committed with the rotation',
-          'All three services break, and each one recovers only when its redeploy lands - the last after about 18 s',
+          'All three break, each recovering only when its redeploy lands',
           'The services keep working, but the attacker keeps access until the last redeploy',
         ],
         answer: 2,
         explanation:
-          'All three share one password. Setting the new one ends the old one at once, but each service still runs the image built with the old value until it is rebuilt and redeployed, one after another. The last option describes the dual-key window: that is what you get with the toggle on, not off.',
+          'All three share one password. Setting the new one ends the old one at once, but each service still runs the image built with the old value until it is rebuilt and redeployed, one after another - the last after about 18 s. The last option describes the dual-key window: that is what you get with the toggle on, not off.',
       },
       {
         id: 'sec-3',
         prompt: 'You repeat the same rotation in the Lab with Dual-key window on. What changes?',
         options: [
-          'No service goes down, but the leaked password keeps working until the last service is redeployed',
-          'The rotation finishes much sooner',
+          'No outage, but the leaked password works until the last redeploy',
+          'The rotation finishes much sooner, since services switch without a redeploy',
           'The services still go down, but the attacker is locked out sooner',
           'Only the Orders API has to be redeployed',
         ],
@@ -1764,13 +1764,13 @@ lease ends: Vault drops the user. No static password in repo or image.`,
           'A service gets a dynamic database credential at 09:40 with a lease whose maximum is 1 hour. An attacker copies it from a log line at 10:00 and nobody notices. When does it stop working?',
         options: [
           'Never, until someone rotates it',
-          'At 10:40 at the latest, when the lease reaches its 1-hour maximum',
+          'At 10:40 at the latest',
           'At 11:00, one hour after it was stolen',
           'Right away, because the vault sees a new address',
         ],
         answer: 1,
         explanation:
-          'The lease is counted from when the credential was issued, not from when it was stolen, and when it ends the vault drops the database user. That is the point of dynamic credentials: a leak nobody noticed still expires. A vault does not watch client addresses, so it does not cut the attacker off by itself.',
+          'The lease is counted from when the credential was issued, not from when it was stolen, so it reaches its 1-hour maximum at 10:40 and the vault drops the database user. That is the point of dynamic credentials: a leak nobody noticed still expires. A vault does not watch client addresses, so it does not cut the attacker off by itself.',
       },
       {
         id: 'sec-6',
@@ -1779,26 +1779,26 @@ lease ends: Vault drops the user. No static password in repo or image.`,
         options: [
           'Nothing - once it is out of git the problem is solved',
           'The .env file is encrypted by the operating system, so only rotation remains',
-          'The password is static and shared, lives in 40 files and their backups, and rotating it means editing and restarting 40 hosts',
+          'It is still one static shared password in 40 files, rotated by hand',
           'Environment variables cannot be read by anything but the service',
         ],
         answer: 2,
         explanation:
-          'Moving it out of git removes the worst exposure, but the secret is still a long-lived value with 40 copies at rest, and it cannot be traced to one host or rotated without touching all of them. A .env file is plain text, and environment variables can end up in logs, crash dumps and child processes.',
+          'Moving it out of git removes the worst exposure, but the secret is still a long-lived value with 40 copies at rest and in their backups, and it cannot be traced to one host or rotated without editing and restarting all 40. A .env file is plain text, and environment variables can end up in logs, crash dumps and child processes.',
       },
       {
         id: 'sec-7',
         prompt:
           'Your services will read their secrets from a vault. How does a service log in to the vault without putting a vault token in its image?',
         options: [
-          'Workload identity: the platform (a Kubernetes service account, a cloud instance role) vouches for the service',
+          'Workload identity vouched for by the platform',
           'A vault token in a .env file on each host',
           'A token hardcoded in the code, but obfuscated',
           'The vault answers anonymous reads from inside the network',
         ],
         answer: 0,
         explanation:
-          'The platform already knows which workload is running and can sign a statement about it, which the vault checks. No secret is provisioned by hand. A token in a .env file or in the code just moves the original problem one step back, and anonymous reads throw away access control and auditing.',
+          'The platform (a Kubernetes service account, a cloud instance role) already knows which workload is running and can sign a statement about it, which the vault checks. No secret is provisioned by hand. A token in a .env file or in the code just moves the original problem one step back, and anonymous reads throw away access control and auditing.',
       },
       {
         id: 'sec-8',
@@ -1808,7 +1808,7 @@ lease ends: Vault drops the user. No static password in repo or image.`,
           'Nothing - services keep their credentials until the vault is back',
           'Every service fails at the moment the vault goes down',
           'The database refuses all logins until the vault is back',
-          'Services keep working until their current lease ends, then fail to log in until the vault is back',
+          'They work until their current lease ends, then fail to log in',
         ],
         answer: 3,
         explanation:
@@ -1821,12 +1821,12 @@ lease ends: Vault drops the user. No static password in repo or image.`,
         options: [
           'Faster queries for the attacker to be spotted by',
           'Nothing, until the attacker is blocked at the network',
-          'The username names the one service whose credential leaked, so you rotate only that one',
+          'The username names the one service whose credential leaked',
           'The leaked credential cannot be used from another address',
         ],
         answer: 2,
         explanation:
-          'With a shared app_user the log says only that one of many holders leaked, so everything must be rotated and nobody knows where to look. With a user per service the login names its source, and the vault audit log shows who read it. It does not stop the login itself - a credential works from any address.',
+          'With a shared app_user the log says only that one of many holders leaked, so everything must be rotated and nobody knows where to look. With a user per service the login names its source, so you rotate only that one, and the vault audit log shows who read it. It does not stop the login itself - a credential works from any address.',
       },
       {
         id: 'sec-10',
@@ -1834,20 +1834,20 @@ lease ends: Vault drops the user. No static password in repo or image.`,
           'Database passwords are meant to rotate every 90 days, but in two years it never happened, because each attempt caused an outage. What change makes rotation happen?',
         options: [
           'Rotate once a year instead',
-          'Allow two valid credentials at once: create the new one, move every holder, check traffic, revoke the old one',
+          'Allow two valid credentials at once during the switch',
           'Keep the old password valid forever as a fallback',
           'Rotate only during a night maintenance window with downtime',
         ],
         answer: 1,
         explanation:
-          'Rotation without overlap is a coordinated outage, so it is postponed. With two valid credentials, each holder can move at its own pace and the old one is revoked when nobody uses it. Rotating less often only makes the next outage rarer, and a fallback that is never revoked means the rotation achieved nothing.',
+          'Rotation without overlap is a coordinated outage, so it is postponed. With two valid credentials you create the new one, move every holder at its own pace, check traffic, and revoke the old one when nobody uses it. Rotating less often only makes the next outage rarer, and a fallback that is never revoked means the rotation achieved nothing.',
       },
       {
         id: 'sec-11',
         prompt:
           'A single-page app calls a payment API with a secret key read from the build variable VITE_PAYMENT_KEY. What is wrong?',
         options: [
-          'The value is compiled into the JavaScript every browser downloads, so it is public; the call must go through a backend',
+          'The key is compiled into the public JavaScript bundle',
           'Nothing - build variables are never shipped',
           'It only leaks if the repository is public',
           'It is fine as long as the key is rotated every 90 days',
@@ -1864,7 +1864,7 @@ lease ends: Vault drops the user. No static password in repo or image.`,
           'None - only the running container can see its environment',
           'Removing the ENV line in the next build fixes it',
           'Only people with shell access to the hosts can read it',
-          'Anyone who can pull the image can read the password from its configuration; rotate it and inject it at runtime instead',
+          'Anyone who can pull the image can read the password',
         ],
         answer: 3,
         explanation:
@@ -1955,7 +1955,7 @@ Not visible to any rule:
         options: [
           'Attacks missed falls to zero and nothing else changes',
           'Nothing changes, because the level only affects the log',
-          'Attacks missed grows more slowly, and Real users blocked rises as support tickets with SQL-looking text get a 403',
+          'Fewer attacks slip through, and more real users get a 403',
           'Real users blocked falls, because stricter rules understand the request better',
         ],
         answer: 2,
@@ -1967,7 +1967,7 @@ Not visible to any rule:
         prompt:
           'You are about to put a managed rule set in front of a busy checkout that has never had a WAF. What is the safest way to switch it on?',
         options: [
-          'Run it in detection-only (count) mode for a week or two, review what it would have blocked, tune, then switch to blocking',
+          'Detection-only mode first, tune, then switch to blocking',
           'Switch it on in blocking mode at the highest strictness, then relax it when customers complain',
           'Switch it on in blocking mode only at night, when traffic is low',
           'Skip the managed rules and write your own from scratch',
@@ -1996,7 +1996,7 @@ Not visible to any rule:
           'In the Lab you turn on the exclusion for /support text. Real users blocked stops rising. What new thing should you watch?',
         options: [
           'Nothing - an exclusion has no cost',
-          'SQL injection and XSS placed in the /support message field now reach the app uninspected, so that code path must be safe on its own',
+          'Attacks placed in the /support message field now go uninspected',
           'Every bad bot now passes, because exclusions switch off bot rules',
           'Normal page requests start getting 403',
         ],
@@ -2011,7 +2011,7 @@ Not visible to any rule:
         options: [
           'The level was too low; level 5 would catch it',
           'The WAF was in detection-only mode; blocking would stop it',
-          'The request is well-formed and matches no attack pattern; only an ownership check in the application stops it',
+          'It matches no attack pattern; only an ownership check stops it',
           'The attacker used HTTPS; the WAF cannot read encrypted requests',
         ],
         answer: 2,
@@ -2023,7 +2023,7 @@ Not visible to any rule:
         prompt:
           'A reports endpoint still builds SQL by concatenating strings. A colleague says it can wait, because the WAF blocks SQL injection. What is the problem with that reasoning?',
         options: [
-          'Pattern rules miss encoded and reshaped variants, so some injection still reaches the query; parameterised queries make injection structurally impossible',
+          'Rules miss reshaped payloads; only parameterised queries remove the flaw',
           'None - the WAF blocks all SQL injection, so the code is safe',
           'The WAF only inspects GET requests, so POST bodies are never checked',
           'SQL injection is a network attack, so the WAF is the right place to fix it',
@@ -2038,7 +2038,7 @@ Not visible to any rule:
           'A remote code execution flaw is disclosed on Friday in a logging library all your services use. The patched version needs three days of testing. What do you do in the first hour?',
         options: [
           'Nothing until the patched version is tested',
-          'Add a WAF rule for the exploit pattern in blocking mode now, and still upgrade the library through the normal pipeline',
+          'Add a blocking WAF rule now and still upgrade the library',
           'Add the WAF rule and cancel the upgrade, since the rule covers it',
           'Put the WAF into detection-only mode to watch the attacks',
         ],
@@ -2054,7 +2054,7 @@ Not visible to any rule:
           'Turning the WAF off until the complaints stop',
           'Raising the paranoia level so the WAF is more precise',
           'Asking customers to try another browser',
-          'A WAF log with the rule id and request id for every match, and the request id shown on the 403 page so support can look it up',
+          'Rule ids in the WAF log, and a request id on the 403 page',
         ],
         answer: 3,
         explanation:
@@ -2067,7 +2067,7 @@ Not visible to any rule:
         options: [
           'Yes - a WAF that logs an attack also stops it',
           'Yes - detection-only mode should block attacks and allow users',
-          'No - detection-only (count) mode logs every match but forwards every request, so it measures false positives without protecting anything',
+          'No - count mode logs every match but blocks nothing',
           'No - detection-only mode switches the application to vulnerable code',
         ],
         answer: 2,
@@ -2080,7 +2080,7 @@ Not visible to any rule:
           'A scraper copies your prices through ordinary-looking GET requests with a real browser User-Agent, from many addresses. The WAF at level 4 misses most of it, and fixing the app code does not help. What does?',
         options: [
           'Parameterised queries in the price endpoint',
-          'Bot detection and rate-based rules at the same edge layer - behaviour, challenges and request rates, not payload patterns',
+          'Bot detection and rate-based rules at the edge',
           'A stricter SQL injection rule',
           'Moving the WAF behind the application',
         ],
@@ -2093,28 +2093,28 @@ Not visible to any rule:
         prompt:
           'You put a WAF appliance on the network in front of an HTTPS API, passing traffic through without touching TLS. Weeks later it has never matched a single rule. Why?',
         options: [
-          'It only sees encrypted bytes; it must terminate TLS (or sit behind the TLS terminator) to read the HTTP request',
+          'It only sees encrypted bytes, since it does not terminate TLS',
           'There have been no attacks',
           'Managed rules only work for HTTP, and the API uses JSON',
           'The paranoia level was set too low to match anything',
         ],
         answer: 0,
         explanation:
-          'Rules inspect the path, headers, query string and body - none of which is readable inside a TLS stream. That is why WAFs run at the CDN, load balancer or reverse proxy that terminates TLS. Public APIs receive scanner traffic constantly, so zero matches points at the placement, not at an absence of attacks.',
+          'Rules inspect the path, headers, query string and body - none of which is readable inside a TLS stream. That is why WAFs run at the CDN, load balancer or reverse proxy that terminates TLS, or sit behind it. Public APIs receive scanner traffic constantly, so zero matches points at the placement, not at an absence of attacks.',
       },
       {
         id: 'waf-12',
         prompt:
           'A flood of 200 Gbps of UDP packets saturates the network link of your data centre. Your WAF has strict rules and rate-based rules. What happens?',
         options: [
-          'The WAF drops the packets because they match no rule',
-          'The rate-based rules block the flood per IP',
-          'The WAF absorbs it, because it runs at the edge',
-          'The WAF does not help: it inspects HTTP requests, and this flood fills the link before any request exists; it needs network-layer DDoS protection',
+          'The WAF drops the packets because they match no allow rule',
+          'The rate-based rules block the flood per source IP address',
+          'The WAF absorbs it, because it runs at the edge of the network',
+          'Nothing - the link fills before the WAF sees a request',
         ],
         answer: 3,
         explanation:
-          'A WAF works on HTTP requests. Its rate-based rules help against floods of HTTP requests, but a network-layer flood never becomes a request - it is stopped by provider-scale DDoS protection that absorbs traffic before your link. Expecting the WAF to handle every kind of flood is the tempting mistake.',
+          'A WAF works on HTTP requests. Its rate-based rules help against floods of HTTP requests, but a network-layer flood fills the link and never becomes a request - it needs provider-scale DDoS protection that absorbs traffic before your link. Expecting the WAF to handle every kind of flood is the tempting mistake.',
       },
     ],
   },
