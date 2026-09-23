@@ -441,7 +441,7 @@ WITH CDN, cache miss
         paragraphs: [
           'An edge decides what it is holding by a cache key, normally the URL plus a few chosen headers. Getting the key wrong is the classic CDN bug in both directions: include too much (say, the full cookie header) and every user gets their own copy, so the hit rate collapses to nearly zero; include too little (ignore Accept-Language or the auth header) and you serve the private content of one user to another.',
           'TTL decides how long an edge may answer without asking the origin. Long TTLs give great hit rates and slow updates. The industry solution is to avoid the conflict entirely with content-addressed filenames: app.4f2a1c.js can be cached for a year because a change produces a different name, so nothing ever needs invalidating.',
-          'When you do need invalidation, know that a purge is a request to hundreds of locations and takes seconds to minutes to complete globally. Designs that depend on instant global purge are fragile; designs that depend on immutable URLs are not.',
+          'When you do need invalidation, know that a purge is a request to hundreds of locations. The large vendors now finish one in seconds, but the locations never drop their copies at the same instant, and a purge never reaches the copies already in browsers. Designs that depend on instant global purge are fragile; designs that depend on immutable URLs are not.',
         ],
         bullets: [
           'Hashed filenames + max-age=31536000, immutable - never purge anything.',
@@ -482,7 +482,7 @@ WITH CDN, cache miss
       { term: 'Origin', plain: 'Your servers - where the edge fetches from on a miss.' },
       { term: 'Cache key', plain: 'What the edge uses to decide whether two requests are the same. Usually URL plus selected headers.' },
       { term: 'Hit rate', plain: 'The share of requests answered at the edge. The single number that says if the CDN is working.' },
-      { term: 'Purge / invalidation', plain: 'Telling edges to drop a cached object. Takes seconds to minutes globally.' },
+      { term: 'Purge / invalidation', plain: 'Telling edges to drop a cached object. Takes seconds, arrives at each location at a different moment, and never clears browser caches.' },
       { term: 'stale-while-revalidate', plain: 'Serve the old copy immediately and refresh in the background. Great for perceived speed.' },
     ],
     remember: [

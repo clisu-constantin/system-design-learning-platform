@@ -65,7 +65,7 @@ export function ApiGatewayLab() {
       ? { id: 'limit', label: 'Rate limit check', detail: 'Disabled - one client can consume all backend capacity', status: 'skipped' }
       : overQuota
         ? { id: 'limit', label: 'Rate limit check', detail: `Quota ${quotaUsed}/${quota} exhausted -> 429 Too Many Requests`, status: 'reject' }
-        : { id: 'limit', label: 'Rate limit check', detail: `Token bucket: request ${quotaUsed + 1} of ${quota} in this window`, status: 'pass' };
+        : { id: 'limit', label: 'Rate limit check', detail: `Fixed window: request ${quotaUsed + 1} of ${quota} in this window`, status: 'pass' };
 
     const target = ROUTES[endpoint];
     const routeStage: Stage = target
@@ -75,7 +75,7 @@ export function ApiGatewayLab() {
     const transformStage: Stage = {
       id: 'transform',
       label: 'Request transformation',
-      detail: 'Adds X-Request-Id, X-User-Id and traceparent; strips the Authorization header',
+      detail: 'Adds X-Request-Id, X-User-Id and traceparent; keeps the token so the service can verify it too',
       status: 'pass',
     };
 
@@ -165,6 +165,10 @@ export function ApiGatewayLab() {
       title="API Gateway Lab"
       description="One request, one pipeline. Toggle auth and rate limiting and watch where a request is rejected - before it costs backend capacity."
       onReset={() => {
+        setEndpoint('/api/orders/123');
+        setValidToken(true);
+        setAuthEnabled(true);
+        setRateLimitEnabled(true);
         setQuotaUsed(0);
         setSent(0);
         setRejected(0);
@@ -210,7 +214,7 @@ export function ApiGatewayLab() {
                 label: 'Quota used',
                 value: `${quotaUsed}/${quota}`,
                 tone: quotaUsed >= quota ? 'danger' : 'ok',
-                hint: 'Token bucket for this client in the current window.',
+                hint: 'Requests this client made in the current fixed window. A real gateway resets the window on a timer; here the Reset quota window button does it.',
               },
               {
                 key: 'route',
@@ -316,7 +320,7 @@ Authorization: Bearer ${validToken ? 'eyJhbGciOiJIUzI1NiIs...' : 'tampered.token
         <ArchNode kind="client" title="Client" subtitle={endpoint} placed={LAYOUT.client} compact />
         <ArchNode
           kind="api-gateway"
-          title="API Gateway"
+          title="API Gateway x2"
           subtitle="auth - limits - routing"
           placed={LAYOUT.gateway}
           status={rejectedStage && stageIndex >= 0 ? 'degraded' : 'healthy'}
