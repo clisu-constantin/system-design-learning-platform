@@ -34,7 +34,7 @@ A GET with side effects will eventually be replayed by a proxy or a prefetcher.`
         paragraphs: [
           'Use the codes as specified: 200 for a successful read, 201 with a Location header for a creation, 204 for a successful action with no body, 400 for malformed input, 401 for not authenticated, 403 for authenticated but not allowed, 404 for absent, 409 for a conflict, 422 for semantically invalid, 429 for rate limited, 5xx for your failures.',
           'The 4xx/5xx split is operationally important. 4xx means the client should change something and should generally not retry unchanged; 5xx means the server failed and a retry may work. Monitoring, alerting and client retry logic all key off this, so returning 500 for a validation error creates false pages and makes clients retry something that can never succeed.',
-          'Give errors a consistent machine-readable body - a stable error code, a human message, and where relevant a field-level breakdown. Clients need to branch on something that does not change when you improve the wording, and RFC 7807 (problem+json) is a perfectly good shape to adopt rather than invent.',
+          'Give errors a consistent machine-readable body - a stable error code, a human message, and where relevant a field-level breakdown. Clients need to branch on something that does not change when you improve the wording, and RFC 9457 (problem+json, which replaced RFC 7807) is a perfectly good shape to adopt rather than invent.',
         ],
         bullets: [
           '201 Created + Location for creation; 202 Accepted when the work is asynchronous.',
@@ -48,7 +48,7 @@ A GET with side effects will eventually be replayed by a proxy or a prefetcher.`
         paragraphs: [
           'Versioning is unavoidable once external clients exist. URL versioning (/v1/orders) is the most visible and easiest to route; header versioning is cleaner in theory and harder to debug. Either way, the real discipline is to make additive changes wherever possible - new optional fields break nobody - and reserve version bumps for genuine breaking changes.',
           'Pagination should be cursor-based for anything large or live. Offset pagination (?page=5) re-scans rows and skips or duplicates items when the underlying data changes between pages; a cursor encoding the last seen sorted key is stable and stays fast at any depth.',
-          'Chattiness is the structural weakness. A mobile screen needing five resources makes five round trips, which on a mobile network is most of the perceived latency. The REST-native answers are sparse fieldsets (?fields=), embedding related resources (?include=), and a purpose-built aggregate endpoint for the screen - which is exactly the pressure that produced GraphQL and BFFs.',
+          'Chattiness is the structural weakness. A screen needing related resources makes one call per resource, and the calls come in waves: the items can only be requested once the orders have arrived with their ids. Each wave costs a full round trip, which on a mobile network is most of the perceived latency. The REST-native answers are sparse fieldsets (?fields=), embedding related resources (?include=), and a purpose-built aggregate endpoint for the screen - which is exactly the pressure that produced GraphQL and BFFs.',
         ],
       },
     ],
@@ -114,7 +114,8 @@ A GET with side effects will eventually be replayed by a proxy or a prefetcher.`
 
 REST equivalent: GET /users/42, GET /users/42/orders?limit=3,
 then GET /orders/{id}/items per order, then GET /products/{id} per item.
-Mobile: 1 round trip instead of 8+.`,
+Mobile: 1 request instead of 8+, and 1 round trip
+instead of 3 in a row.`,
         },
       },
       {
@@ -134,7 +135,7 @@ Mobile: 1 round trip instead of 8+.`,
       {
         heading: 'What it costs you compared with REST',
         paragraphs: [
-          'HTTP caching largely goes away. Queries are POSTs to a single URL, so CDNs and browser caches cannot help by default. You get it back with persisted queries (send a hash instead of the query text, allowing GET and edge caching) or with a client-side normalised cache, but both are extra machinery that REST gets for free.',
+          'HTTP caching largely goes away. Most clients send queries as POSTs to a single URL, and CDNs and browser caches do not cache POSTs. The GraphQL over HTTP spec allows GET for queries, and persisted queries (send a short id instead of the query text) make that practical for edge caching; a client-side normalised cache is the other answer. Both are extra machinery that REST gets for free.',
           'Security and cost control need explicit work. A public GraphQL endpoint lets a client request an arbitrarily expensive query, so you need depth limits, complexity scoring, query allow-lists in production, and per-field authorisation - because authorising at the endpoint level no longer means anything when there is one endpoint.',
           'And observability changes shape. Every request is a 200 POST /graphql, so your standard per-endpoint dashboards go blind. You need instrumentation by operation name and by resolver, plus error tracking that understands the partial-success model where a response can carry both data and errors.',
         ],
@@ -146,14 +147,14 @@ Mobile: 1 round trip instead of 8+.`,
         setup:
           'A dashboard shows a user, their last 3 orders, the items in each, and the product name for each item. Mobile round trip is 80 ms.',
         walkthrough: [
-          'REST: 1 call for the user, 1 for orders, 3 for items, roughly 9 for products. About 14 round trips, over 1 second even with parallelism, and the responses contain many fields the screen never displays.',
+          'REST: 1 call for the user, 1 for orders, 3 for items, roughly 9 for products - about 14 requests. Sent in parallel wherever the ids allow, they still need 3 round trips in a row (about 240 ms), because items need order ids and products need item data; sent one by one they take over 1 second. And the responses contain many fields the screen never displays.',
           'GraphQL: one query describing the exact tree. One round trip, about 80 ms plus server time, and the payload is roughly a third of the size because unused fields are absent.',
-          'Naive server implementation: that one query triggers 1 + 3 + 9 = 13 database queries, and the server is now the bottleneck instead of the network.',
-          'With DataLoader: orders batch into one query by user id, items into one query by order ids, products into one query by product ids. Three database queries in total.',
+          'Naive server implementation: that one query triggers 1 + 1 + 3 + 9 = 14 database queries - one for the user, one for the orders, one per order for items, one per item for products - and the server is now the bottleneck instead of the network.',
+          'With DataLoader: the user is one query, orders one query by user id, items one query by order ids, products one query by product ids. Four database queries in total, one per level.',
           'Guardrails added before going public: max depth 8, complexity budget per request, and persisted queries so only known operations are accepted in production.',
         ],
         result:
-          'Round trips fell from 14 to 1 and database queries from 13 to 3 - but only after batching was added. GraphQL moves work from the network to the server, and the server has to be built for it.',
+          'Requests fell from 14 to 1, round trips from 3 in a row to 1, and database queries from 14 to 4 - but only after batching was added. GraphQL moves work from the network to the server, and the server has to be built for it.',
       },
     ],
     jargon: [
@@ -184,8 +185,9 @@ Mobile: 1 round trip instead of 8+.`,
         heading: 'Contract first, binary on the wire',
         paragraphs: [
           'You write a .proto file declaring services, methods and message types, and a code generator produces client and server code in every supported language. The contract exists before the code and is shared, so an incompatible call fails at compile time in the client rather than at runtime in production.',
-          'On the wire, messages are Protocol Buffers: a compact binary encoding where field names are replaced by numbers. Payloads are typically 3 to 10 times smaller than the equivalent JSON, and parsing is much cheaper because there is no text to scan. Over HTTP/2, many calls multiplex on one connection with header compression.',
-          'The result is the natural choice for internal service-to-service traffic: low latency, low CPU, strongly typed, with generated clients that remove a whole category of integration bug. Its weakness is the browser - gRPC needs full HTTP/2 framing that browsers do not expose, so web clients require grpc-web plus a proxy.',
+          'On the wire, messages are Protocol Buffers: a compact binary encoding where field names are replaced by numbers. Payloads are often several times smaller than the same data as JSON - numbers and field names shrink the most, long strings hardly at all - and parsing is much cheaper because there is no text to scan. Over HTTP/2, many calls multiplex on one connection with header compression.',
+          'The result is the natural choice for internal service-to-service traffic: low latency, low CPU, strongly typed, with generated clients that remove a whole category of integration bug. Its weakness is the browser - gRPC needs HTTP/2 framing and trailers that browsers do not expose to page code, so web clients require grpc-web plus a proxy such as Envoy, and get only unary and server-streaming calls.',
+          'What protobuf does not change is which fields travel. A method returns its whole response message, so a GetProduct that returns 30 fields sends 30 fields, however compactly. Over-fetching is fixed the same way as anywhere else: design methods around what callers need, or let the caller send a FieldMask listing the fields it wants.',
         ],
         code: {
           caption: 'The contract is the source of truth',
@@ -209,14 +211,14 @@ Changing a number or a type is a breaking change for every client.`,
         paragraphs: [
           'Unary is the familiar request-response. Server streaming sends many messages back for one request - a live feed, a large result set delivered incrementally. Client streaming sends many messages up, useful for uploads or telemetry. Bidirectional streaming keeps both directions open over the same connection.',
           'Streaming is where gRPC pulls clearly ahead of plain REST for internal traffic. A paginated REST endpoint requires the client to loop and the server to re-execute queries; a server stream sends results as they are produced, with backpressure handled by the transport.',
-          'Deadlines are also built in rather than bolted on. A client sets a deadline, and it propagates through the call chain, so a downstream service knows how long it has left and can abandon work that can no longer be used. That single feature prevents a large class of cascading timeout problems.',
+          'Deadlines are also built in rather than bolted on. A client sets a deadline, and gRPC can propagate it through the call chain (on by default in Java and Go, opt-in in C++), so a downstream service knows how long it has left and can abandon work that can no longer be used. That single feature prevents a large class of cascading timeout problems.',
         ],
         bullets: [
           'Unary - normal RPC.',
           'Server streaming - feeds, large results, progress updates.',
           'Client streaming - uploads, batched telemetry.',
           'Bidirectional - chat-like protocols, long-lived coordination.',
-          'Deadlines propagate automatically; use them everywhere.',
+          'Deadlines can propagate down the call chain; set one on every call.',
         ],
       },
       {
@@ -242,7 +244,7 @@ Changing a number or a type is a breaking change for every client.`,
           'The public API stays REST+JSON. Browsers and third parties keep the readable interface; only the internal hop changed.',
         ],
         result:
-          'Three times less bandwidth, three times lower p99 and 30 percent less CPU on an internal path - with a new load balancing requirement as the cost. The usual right answer is gRPC inside, REST outside.',
+          'About five times less bandwidth (4 KB to 700 bytes), three times lower p99 (28 ms to 9 ms) and 30 percent less CPU on an internal path - with a new load balancing requirement as the cost. The usual answer is gRPC inside, REST outside.',
       },
     ],
     jargon: [
