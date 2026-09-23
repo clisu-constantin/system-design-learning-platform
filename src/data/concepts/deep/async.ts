@@ -202,7 +202,7 @@ one publish, three queues receive a copy, producer knows none of them
       {
         heading: 'Reliability: acknowledgements, durability and prefetch',
         paragraphs: [
-          'Three settings decide whether a message can be lost. The queue must be durable so it survives a broker restart, the message must be persistent so it is written to disk, and the consumer must acknowledge manually after the work is done rather than on delivery. Miss any one and a crash loses messages - and the defaults are not all on the safe side.',
+          'Three settings decide whether a message can be lost. The queue must be durable so it survives a broker restart, the message must be persistent so it is written to disk, and the consumer must acknowledge manually after the work is done rather than on delivery. Miss any one and a crash loses messages - and the defaults are not all on the safe side. Durable is about broker restarts; whether a queue outlives its consumer is a separate choice. An exclusive or auto-delete queue disappears when its consumer goes, and nothing routed while it is gone is kept for it.',
           'Publisher confirms close the last gap on the producer side: without them, a publish that the broker never persisted still looks successful to the application. With them, the broker confirms asynchronously and the producer can retry what was not confirmed.',
           'Prefetch (QoS) is the setting people most often get wrong. The default sends as many messages as a consumer will take, so one consumer can grab a thousand messages and leave the others idle - and if it dies, all thousand are redelivered. Set prefetch to a small number, often 1 to 10 for slow tasks, so work is spread and redelivery is bounded.',
         ],
@@ -228,10 +228,10 @@ one publish, three queues receive a copy, producer knows none of them
         setup:
           'A payment consumer fails on transient provider errors. The team wants three retries at 1, 5 and 25 minutes, then a dead letter - without writing a scheduler.',
         walkthrough: [
-          'Main queue payments has a dead letter exchange set to retry-exchange. On a nack, the message is routed there rather than lost.',
-          'Three retry queues (retry.1m, retry.5m, retry.25m) each have a message TTL and their own dead letter exchange pointing back at the main exchange.',
+          'On a failure, the consumer republishes the message to retry-exchange with a retry count header of 1, then acks the original - the message is moved, not lost.',
+          'Three retry queues (retry.1m, retry.5m, retry.25m) each have a message TTL, plus a dead letter exchange and dead letter routing key that point back at the main payments queue.',
           'A failed message lands in retry.1m and simply sits there. After 60 seconds the TTL expires, and RabbitMQ dead-letters it back onto the main queue - which is a delayed retry with no scheduler anywhere.',
-          'A retry count in a header decides which retry queue is used next, so attempts escalate 1 -> 5 -> 25 minutes.',
+          'The retry count picks the routing key - retry.1m for 1, retry.5m for 2, retry.25m for 3 - so attempts escalate 1 -> 5 -> 25 minutes.',
           'After the third failure the message is routed to a genuine dead letter queue, which is monitored and alerted on.',
           'Consumers remain idempotent regardless, because a message can be redelivered even when processing actually succeeded and the ack was lost.',
         ],
@@ -272,7 +272,7 @@ one publish, three queues receive a copy, producer knows none of them
         ],
         code: {
           caption: 'The coupling, before and after',
-          body: `ORCHESTRATED (order service knows everyone)
+          body: `DIRECT CALLS (order service knows everyone)
   order -> POST /payments
         -> POST /inventory
         -> POST /emails
@@ -319,7 +319,7 @@ EVENT-DRIVEN (order service knows nobody)
           'Today four consumers subscribe: payments, inventory, notifications, analytics. The order service knows about none of them.',
           'Marketing feature: a new consumer subscribes to OrderPlaced, checks whether this is the first order for the customer, and sends the email. Deployed independently in an afternoon.',
           'Legal feature: another consumer writes every event to an append-only audit store. Again, zero changes to the order service.',
-          'Contrast with the orchestrated version: both features would require modifying, testing and redeploying the order service - the most critical service in the system - for functionality that has nothing to do with orders.',
+          'Contrast with the direct-call version: both features would require modifying, testing and redeploying the order service - the most critical service in the system - for functionality that has nothing to do with orders.',
           'The cost appears during an incident: a customer complains they got no email. The investigation spans the broker, the consumer group lag, and the consumer logs, rather than one stack trace. A correlation id per order makes that tractable.',
           'The other cost: when the order service adds a field to the event, all six consumers must tolerate it. Additive-only changes and a schema registry keep that from becoming a coordination meeting.',
         ],
@@ -369,7 +369,7 @@ EVENT-DRIVEN (order service knows nobody)
       {
         heading: 'One message, many independent copies',
         paragraphs: [
-          'The defining property is fan-out: a single published message is delivered to every subscriber, each with its own copy and its own progress. Contrast with a work queue, where a message is delivered to exactly one consumer because the point is to divide work rather than to broadcast news.',
+          'The defining property is fan-out: a single published message is delivered to every subscriber, each with its own copy and its own progress. Contrast with a work queue, where a message is delivered to exactly one consumer because the point is to divide work rather than to broadcast news. In RabbitMQ the pub/sub shape is a fanout (or topic) exchange with one queue per subscriber - two different services reading one queue would split the messages between them instead.',
           'The publisher is decoupled in three ways at once: it does not know the identity of subscribers, does not know how many there are, and does not wait for them. That inverts the dependency direction. In request-response the caller must know every callee, so adding a fourth one changes the caller. In pub/sub the subscriber knows the event and the publisher knows nobody, so a new subscriber is a deployment, not a change request against another team service.',
           'That is also the limitation to be honest about. The publisher gets no feedback, so it cannot know whether anything was processed successfully. If you need a result, pub/sub is the wrong shape - use request-response, or publish an event and subscribe to a resulting event.',
         ],

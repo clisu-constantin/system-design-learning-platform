@@ -350,7 +350,7 @@ export const LABS: LabDefinition[] = [
   {
     id: 'broker-routing',
     title: 'Broker Routing Lab',
-    blurb: 'Exchanges, bindings and queues that route each event to its subscribers.',
+    blurb: 'Pick direct, fanout or topic routing, change bindings, and take subscribers down to see who gets each event.',
     category: 'async',
     difficulty: 'Intermediate',
     concept: 'pub-sub',
