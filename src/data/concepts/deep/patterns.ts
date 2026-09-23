@@ -368,7 +368,7 @@ rules
         paragraphs: [
           'A service that must save state and publish an event has two systems to update, and no way to commit both atomically. If it writes the database and then crashes, the event is never published and every downstream consumer is unaware. If it publishes first and the database write fails, consumers act on something that did not happen.',
           'Both failure modes are silent and both produce inconsistency that is discovered much later, usually by a customer. And they are not rare: any crash, deploy, timeout or network blip between the two operations produces one of them, which at any real volume means several per week.',
-          'Two-phase commit would solve it and is generally unavailable - message brokers do not participate in database transactions, and where distributed transactions exist they are slow and operationally painful. The outbox pattern is the practical alternative.',
+          'Two-phase commit would solve it and is generally unavailable - most message brokers, Kafka among them, do not join a database transaction out of the box, and where distributed transactions exist they are slow, and participants block while a failed coordinator is down. The outbox pattern is the practical alternative.',
         ],
         code: {
           caption: 'One transaction, two effects',
@@ -391,8 +391,8 @@ crash after publish, before marking -> published twice
         heading: 'Polling relay or change data capture',
         paragraphs: [
           'The simplest relay polls the outbox table for unsent rows every second, publishes them, and marks them sent. It needs no extra infrastructure, and it costs a query per interval plus some latency. Use SELECT ... FOR UPDATE SKIP LOCKED so several relay instances can run without publishing the same row twice.',
-          'Change data capture reads the database write-ahead log directly - Debezium is the common implementation - and publishes changes as they are committed. No polling, lower latency, no load on the database from queries, and considerably more infrastructure to run and understand.',
-          'Both preserve order per aggregate if you are careful: process outbox rows in insertion order and partition the published messages by aggregate id, so all events for one order stay in sequence even when overall throughput is parallel.',
+          'Change data capture reads the database write-ahead log directly - Debezium is the common implementation - and publishes changes as they are committed. No polling, lower latency, no load on the database from queries, and considerably more infrastructure to run and understand. Because the insert is already in the log, the outbox row can be deleted soon after it is written.',
+          'Both preserve order per aggregate if you are careful: process outbox rows in insertion order and partition the published messages by aggregate id, so all events for one order stay in sequence even when overall throughput is parallel. With several polling relay instances, rows of one aggregate can be claimed by two instances at once, so either route one aggregate to one instance or accept a single active relay.',
         ],
         bullets: [
           'Polling relay: simple, no new systems, about a second of latency.',

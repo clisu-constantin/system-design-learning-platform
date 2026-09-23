@@ -1647,25 +1647,29 @@ export const systemVisuals: Record<string, VisualSpec> = {
   },
 
   'outbox-pattern': {
-    width: 760,
+    width: 860,
     height: 280,
-    caption: 'One transaction writes both rows, so an event can never be lost or invented.',
+    caption: 'One transaction writes both rows, so no event is lost or invented. The relay publishes at least once.',
     nodes: [
-      { id: 'app', kind: 'server', label: 'One transaction', x: 40, y: 95, w: 170, h: 84 },
-      { id: 'db', kind: 'sql', label: 'orders + outbox', sub: 'committed together', x: 280, y: 90, w: 190, h: 92 },
-      { id: 'relay', kind: 'worker', label: 'Relay', x: 540, y: 15, w: 150, h: 74 },
-      { id: 'broker', kind: 'queue', label: 'Kafka', x: 540, y: 180, w: 150, h: 74 },
+      { id: 'app', kind: 'service', label: 'Order service', sub: 'one transaction', x: 30, y: 98, w: 170, h: 84 },
+      { id: 'db', kind: 'sql', label: 'orders + outbox', sub: 'committed together', x: 250, y: 94, w: 190, h: 92 },
+      { id: 'relay', kind: 'worker', label: 'Relay', sub: 'polls unsent rows', x: 490, y: 15, w: 160, h: 74 },
+      { id: 'broker', kind: 'queue', label: 'Kafka', sub: 'order-events', x: 490, y: 190, w: 160, h: 74 },
+      { id: 'consumer', kind: 'worker', label: 'Fulfilment', sub: 'dedupes by event id', x: 690, y: 190, w: 160, h: 74 },
     ],
     edges: [
       { from: 'app', to: 'db', tone: 'brand', rate: 2 },
       { from: 'db', to: 'relay', tone: 'ok', rate: 1.6 },
       { from: 'relay', to: 'broker', tone: 'warn', rate: 1.6 },
+      { from: 'broker', to: 'consumer', tone: 'brand', rate: 1.6 },
     ],
     steps: [
       { from: 'app', to: 'db', label: 'Order row plus outbox row' },
-      { from: 'db', to: 'relay', label: 'Relay reads unpublished rows' },
-      { from: 'relay', to: 'broker', label: 'Published to Kafka, at least once' },
-      { from: 'relay', to: 'db', label: 'Row marked as published' },
+      { from: 'app', to: 'db', label: 'Crash before COMMIT: both roll back', outcome: 'failure' },
+      { from: 'db', to: 'relay', label: 'Relay reads unsent rows' },
+      { from: 'relay', to: 'broker', label: 'Published, at least once' },
+      { from: 'relay', to: 'db', label: 'Row marked as sent' },
+      { from: 'broker', to: 'consumer', label: 'Repeated event id is skipped', outcome: 'cache-hit' },
     ],
   },
 
