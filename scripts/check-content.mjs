@@ -5,12 +5,16 @@
  * A concept missing its entry renders as three short cards, which is the failure
  * this app exists to avoid. This asserts every concept carries the full teaching payload,
  * and that the payload is not a stub. Run with `npm run check:content`.
+ *
+ * It also holds the Concept standard: every Concept hosts a registered Lab and a Quiz of at
+ * least ten questions, and every Lab renders a DiagramCanvas. What misses it today is listed
+ * in scripts/concept-standard-pending.json; see checkConceptStandard below.
  */
 import { build } from 'esbuild';
 import { pathToFileURL } from 'node:url';
-import { mkdtempSync, readdirSync, rmSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 
 const dir = mkdtempSync(join(tmpdir(), 'sdi-content-'));
 
@@ -21,6 +25,136 @@ const MIN_SECTION_CHARS = 200;
 const MIN_WALKTHROUGH_STEPS = 3;
 const MIN_JARGON_TERMS = 4;
 const MIN_REMEMBER_LINES = 3;
+const MIN_QUIZ_QUESTIONS = 10;
+
+const REGISTRY = 'src/features/labs/registry.ts';
+const PENDING = 'scripts/concept-standard-pending.json';
+
+/** Lab rows of the registry as { id, file }, read from source - it imports React, so it is not run. */
+function registeredLabs(problems) {
+  const source = readFileSync(REGISTRY, 'utf8');
+  const labs = [];
+  for (const [, id, from] of source.matchAll(/\bid:\s*'([^']+)'[\s\S]*?import\('([^']+)'\)/g))
+    labs.push({ id, file: resolveModule(from, REGISTRY) });
+  // Each row pairs its id with the next lazy import, so a row without one would steal a file.
+  const rows = source.match(/lazyWithRetry\(\(\) => import\(/g)?.length ?? 0;
+  if (rows !== labs.length) problems.push(`${REGISTRY}: read ${labs.length} Lab ids but ${rows} lazy imports - update registeredLabs`);
+  return labs;
+}
+
+/** A module specifier as a source file path, or undefined for a package. */
+function resolveModule(from, importer) {
+  let base;
+  if (from.startsWith('@/')) base = join('src', from.slice(2));
+  else if (from.startsWith('.')) base = join(dirname(importer), from);
+  else return undefined;
+  return ['', '.tsx', '.ts', '/index.tsx', '/index.ts'].map((ext) => base + ext).find((file) => existsSync(file) && statSync(file).isFile());
+}
+
+/** Local name -> { from, name } for every value import of a file. */
+function importsOf(file, source) {
+  const names = new Map();
+  for (const [, clause, from] of source.matchAll(/^import\s+(?!type\s)([^'";]*?)\s+from\s+'([^']+)'/gm)) {
+    const resolved = resolveModule(from, file);
+    if (!resolved || clause.includes('*')) continue;
+    const named = clause.match(/\{([\s\S]*)\}/);
+    const defaultName = clause.replace(/\{[\s\S]*\}/, '').replace(/,/g, '').trim();
+    if (defaultName) names.set(defaultName, { from: resolved, name: 'default' });
+    for (const part of named ? named[1].split(',') : []) {
+      const [imported, local = imported] = part.trim().replace(/^type\s+/, '').split(/\s+as\s+/);
+      if (imported && !part.trim().startsWith('type ')) names.set(local, { from: resolved, name: imported });
+    }
+  }
+  return names;
+}
+
+/** The file that defines `name` when it is imported from `file`, following barrel re-exports. */
+function definingFile(file, name, seen = new Set()) {
+  if (!file || seen.has(file)) return undefined;
+  seen.add(file);
+  const source = readFileSync(file, 'utf8');
+  const defines = name === 'default' ? /^export\s+default\b/m : new RegExp(`\\b(function|const|class)\\s+${name}\\b`);
+  if (defines.test(source)) return file;
+  for (const [, list, from] of source.matchAll(/^export\s+\{([^}]*)\}\s+from\s+'([^']+)'/gm)) {
+    const hit = list
+      .split(',')
+      .map((part) => part.trim().split(/\s+as\s+/))
+      .find(([imported, exported = imported]) => exported === name);
+    if (hit) return definingFile(resolveModule(from, file), hit[0], seen);
+  }
+  for (const [, from] of source.matchAll(/^export\s+\*\s+from\s+'([^']+)'/gm)) {
+    const found = definingFile(resolveModule(from, file), name, seen);
+    if (found) return found;
+  }
+  return undefined;
+}
+
+/**
+ * Whether a file renders a DiagramCanvas: it writes `<DiagramCanvas` itself, or it renders a
+ * component imported from a file that does (FlowVisual, for one). A static read, not a render -
+ * enough to catch a Lab built without the shared diagram.
+ */
+function rendersDiagram(file, seen = new Set()) {
+  if (!file || seen.has(file)) return false;
+  seen.add(file);
+  const source = readFileSync(file, 'utf8');
+  if (/<DiagramCanvas\b/.test(source)) return true;
+  const imports = importsOf(file, source);
+  for (const [, tag] of source.matchAll(/<([A-Z]\w*)/g)) {
+    const imported = imports.get(tag);
+    if (imported && rendersDiagram(definingFile(imported.from, imported.name), seen)) return true;
+  }
+  return false;
+}
+
+/**
+ * The Concept standard, with its pending list. A Concept or Lab on the list is skipped; one
+ * not on it must pass. The list may only shrink: a listed slug that is gone, or a listed
+ * Concept or Lab that already passes, fails the check, so the list cannot go stale.
+ */
+function checkConceptStandard(concepts, problems) {
+  const labs = registeredLabs(problems);
+  const labIds = new Set(labs.map((lab) => lab.id));
+  const pending = JSON.parse(readFileSync(PENDING, 'utf8'));
+  const keys = Object.keys(pending).sort().join(',');
+  if (keys !== 'concepts,labs' || !Array.isArray(pending.concepts) || !Array.isArray(pending.labs))
+    problems.push(`${PENDING}: expected exactly { "concepts": [...], "labs": [...] }, got keys '${keys}'`);
+  for (const list of [pending.concepts ?? [], pending.labs ?? []])
+    for (const entry of new Set(list.filter((entry, index) => list.indexOf(entry) !== index)))
+      problems.push(`${PENDING}: '${entry}' is listed twice`);
+  const pendingConcepts = new Set(pending.concepts);
+  const pendingLabs = new Set(pending.labs);
+
+  const conceptMisses = (concept) => {
+    const misses = [];
+    if (!concept.lab) misses.push('hosts no Lab - set `lab` to a registered LabId');
+    else if (!labIds.has(concept.lab)) misses.push(`lab '${concept.lab}' is not in ${REGISTRY}`);
+    const questions = (concept.quiz ?? []).length;
+    if (questions < MIN_QUIZ_QUESTIONS) misses.push(`${questions} quiz question(s), expected at least ${MIN_QUIZ_QUESTIONS}`);
+    return misses;
+  };
+  const labMisses = (lab) =>
+    rendersDiagram(lab.file) ? [] : [`does not render a DiagramCanvas (checked ${lab.file ?? 'an unresolved import'})`];
+
+  const slugs = new Set(concepts.map((concept) => concept.slug));
+  for (const slug of pendingConcepts)
+    if (!slugs.has(slug)) problems.push(`${PENDING}: '${slug}' is not a Concept - remove it from the list`);
+  for (const id of pendingLabs)
+    if (!labIds.has(id)) problems.push(`${PENDING}: '${id}' is not a registered Lab - remove it from the list`);
+
+  for (const concept of concepts) {
+    const misses = conceptMisses(concept);
+    if (pendingConcepts.has(concept.slug)) {
+      if (!misses.length) problems.push(`${PENDING}: Concept '${concept.slug}' meets the standard - remove it from the list`);
+    } else for (const miss of misses) problems.push(`${concept.slug}: ${miss}`);
+  }
+  for (const lab of labs) {
+    const misses = labMisses(lab);
+    if (pendingLabs.has(lab.id)) {
+      if (!misses.length) problems.push(`${PENDING}: Lab '${lab.id}' renders a DiagramCanvas - remove it from the list`);
+    } else for (const miss of misses) problems.push(`Lab ${lab.id}: ${miss}`);
+  }
+}
 
 try {
   // One entry per category lesson file, so the check can see which file holds which concept.
@@ -98,6 +232,8 @@ try {
     }
   }
 
+  checkConceptStandard(CONCEPTS, problems);
+
   for (const concept of CONCEPTS) {
     const at = (message) => problems.push(`${concept.slug}: ${message}`);
     const depth = await loadDepth(concept.category, concept.slug);
@@ -140,7 +276,7 @@ try {
     process.exit(1);
   }
 
-  console.log(`${CONCEPTS.length} concepts checked - lesson content present`);
+  console.log(`${CONCEPTS.length} concepts checked - lesson content present, Concept standard met or pending`);
 } finally {
   rmSync(dir, { recursive: true, force: true });
 }

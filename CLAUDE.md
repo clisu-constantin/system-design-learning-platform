@@ -18,7 +18,7 @@ npm run dev      # dev server on http://localhost:5173
 npm run build    # check:visuals + check:content + tsc -b + vite build + check:bundle  (must pass)
 npm run lint     # ESLint (typescript-eslint + react-hooks); CI fails on any finding
 npm run check:visuals   # diagram geometry + wiring: overlap, overflow, truncated labels, replica consistency
-npm run check:content   # every concept has its long-form lesson, and sits in its category file
+npm run check:content   # every concept has its long-form lesson, a Lab and a 10-question Quiz (or is on the pending list), and sits in its category file
 npm run check:bundle    # initial JS (entry + modulepreloads) stays under the gzip budget
 npm run preview  # serve the production build
 npx tsc --noEmit -p tsconfig.app.json   # fast typecheck of src/ only
@@ -91,13 +91,16 @@ useTicker(running, (dt) => { /* mutate state.current */ rerender(); });
    page leads with its diagram; the prose is secondary and collapsed.
 3. Add a `ConceptDepth` entry to `src/data/concepts/deep/<category>.ts`, keyed by slug. This is the
    Lesson under the Diagram and `check:content` fails the build without it. See below.
-4. That is it — the sidebar, search, glossary links, category page and progress tracking all read
+4. Give it a Lab and a Quiz: set `lab` to a registered `LabId` (a new Lab, or a shared one with a
+   Lab focus - see below), and write `quiz` with at least 10 scenario questions. `check:content`
+   fails the build on a Concept with no Lab or with fewer than 10 questions.
+5. That is it — the sidebar, search, glossary links, category page and progress tracking all read
    from `CONCEPTS`. That export (`@/data/concepts`) is a light `ConceptSummary` index generated at
    build time by `scripts/vite-plugin-concept-index.ts`; the lesson body is fetched with
    `loadConcept(category, slug)`. Never import `concepts/all.ts`, `concepts/summaries.ts` or a
    category file from shell code - that puts every lesson back into the main bundle. A lab, being
    its own lazy chunk, may import its category file directly (see `CacheStrategiesLab`).
-5. `related` slugs are resolved defensively (`resolveRelated`), so a typo degrades instead of
+6. `related` slugs are resolved defensively (`resolveRelated`), so a typo degrades instead of
    crashing — but fix typos anyway.
 
 ### The long-form lesson (`src/data/concepts/deep/`)
@@ -128,6 +131,17 @@ caller") rather than escaping them.
 
 The lab then appears on the concept page's "Interactive lab" tab, at `/labs/<id>`, in search, and
 on the labs index — no other wiring.
+
+The Lab must render a `DiagramCanvas` - in its own file, or through a component it imports
+(`FlowVisual` counts). `check:content` reads the source and fails the build on a Lab that does not.
+
+#### The Concept standard pending list
+
+`scripts/concept-standard-pending.json` lists the Concepts and Labs that do not meet the standard
+above yet. `check:content` skips them, and requires everything else to pass. The list only shrinks:
+the check fails on a slug or Lab id that no longer exists, and on an entry that already passes. So
+the work that brings a Concept or Lab up to the standard removes its entry as its last step. Never
+add to the list. When it is empty, delete it and the skip logic in `scripts/check-content.mjs`.
 
 #### A Lab focus for a shared lab
 
