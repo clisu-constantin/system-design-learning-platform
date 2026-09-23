@@ -29,7 +29,7 @@ export const LABS: LabDefinition[] = [
   {
     id: 'requirements',
     title: 'Requirements Lab',
-    blurb: 'Pick what a system must do, set how well it must do it, and see the architecture that follows.',
+    blurb: 'Pick what a system must do, set how well it must do it, and watch each choice add the parts it forces.',
     category: 'getting-started',
     difficulty: 'Beginner',
     concept: 'functional-requirements',

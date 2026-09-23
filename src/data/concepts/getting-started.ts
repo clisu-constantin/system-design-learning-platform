@@ -7,6 +7,8 @@ export const gettingStartedConcepts: Concept[] = [
     tagline: 'Choosing a structure that satisfies requirements you can actually name.',
     category: 'getting-started',
     difficulty: 'Beginner',
+    lab: 'requirements',
+    labFocus: 'what-is-system-design',
     keywords: ['introduction', 'architecture', 'trade-offs'],
     what: 'System design is the activity of deciding which components a system is made of, how they communicate, and where state lives - so that the result meets its functional and non-functional requirements at an acceptable cost.',
     why: 'Code tells you what a single process does. Design tells you what happens when a million users arrive at once, when a disk fails, or when two services disagree about the truth. Those questions cannot be answered by reading a function body.',
@@ -62,7 +64,137 @@ export const gettingStartedConcepts: Concept[] = [
         ],
         answer: 1,
         explanation:
-          'Architecture is justified by requirements. With 300 users, none of that machinery is paid for by a real constraint, and every piece of it adds operational cost.',
+          'Architecture is justified by requirements. With 300 users, none of that machinery is paid for by a real constraint, and every piece of it adds operational cost. Picking a cloud or a partition count first skips the question of whether the parts are needed at all.',
+      },
+      {
+        id: 'wsd-2',
+        prompt: 'In the Requirements Lab you tick only "Send messages", at 99% availability and 1k daily users. The diagram shows Users, one App server and one Database. A teammate says the design is too simple to be real. What is the right response?',
+        options: [
+          'Add a cache and a queue now so the design looks complete',
+          'Add a second region so the design is ready for growth',
+          'It meets these requirements; add a part only when a requirement or a measured bottleneck forces it',
+          'Replace the database with a NoSQL store, because messaging apps use NoSQL',
+        ],
+        answer: 2,
+        explanation:
+          'A design is right relative to its requirements. At 1k users and 99%, one server and one database meet every stated number. A cache or a second region would be parts no requirement pays for - they cost money and operations every day. The Lab shows the same thing: nothing else appears until you raise a target or tick a feature.',
+      },
+      {
+        id: 'wsd-3',
+        prompt: 'A URL shortener is estimated at about 1,160 redirects per second and 12 new links per second, running on one Postgres instance. Which single component is the most useful to add first?',
+        options: [
+          'A cache in front of the database, keyed by short code',
+          'Sharding the database across four machines',
+          'A message queue in front of the writes',
+          'Splitting the app into microservices',
+        ],
+        answer: 0,
+        explanation:
+          'Reads outnumber writes about 100 to 1, so the first thing to saturate is the read path, and a cache relieves exactly that. Sharding solves a storage or write problem the estimate does not show (about 0.5 GB a day fits one machine for years), and a queue in front of 12 writes per second fixes nothing.',
+      },
+      {
+        id: 'wsd-4',
+        prompt: 'You just added a cache in front of the database and the read latency dropped. According to the design loop, what is the step people most often skip?',
+        options: [
+          'Adding a second cache for redundancy',
+          'Naming the new problem it creates - for example a deleted link that still resolves until its cache entry expires',
+          'Sharding the database while you are at it',
+          'Nothing - the bottleneck is fixed, so the design is finished',
+        ],
+        answer: 1,
+        explanation:
+          'Every component solves one problem and brings a new one. A cache brings stale data; saying so out loud is what lets you decide whether an expiry time or an invalidation is needed. Declaring the design finished hides that cost, and adding more parts before naming it repeats the mistake.',
+      },
+      {
+        id: 'wsd-5',
+        prompt: 'Two teams build products with the same feature list. One must reach 99.9% availability, the other 99.999%. What should you expect of their architectures?',
+        options: [
+          'They will be the same, because the features are the same',
+          'The 99.999% team only needs faster servers',
+          'They will differ only in their monitoring dashboards',
+          'They will differ: the stricter target forces extra copies, automated failover and more than one region',
+        ],
+        answer: 3,
+        explanation:
+          'Features decide what the system does; the quality targets decide how it must be built. 99.999% allows about 5 minutes of downtime a year - no human can react in time - so it forces redundancy everywhere and automated failover across regions. Faster servers do not survive a machine or a region failing.',
+      },
+      {
+        id: 'wsd-6',
+        prompt: 'In an interview you are asked "SQL or NoSQL for this service?" and you do not know the access pattern yet. What is the most useful answer?',
+        options: [
+          'Name what the choice depends on - the access pattern, the write rate, whether ad-hoc joins are needed - and pick once those are known',
+          'NoSQL, because it scales',
+          'SQL, because it is always the safe choice',
+          'Both, so either kind of query is covered',
+        ],
+        answer: 0,
+        explanation:
+          '"It depends" is only useful when you say what it depends on. One known key at 50k writes per second points to a key-value store; ad-hoc joins across five entities point to a relational database. A blanket answer ignores the inputs, and "both" doubles the parts to operate without a requirement asking for it.',
+      },
+      {
+        id: 'wsd-7',
+        prompt: 'In the Requirements Lab (Design WhatsApp) you tick "Send images". Object storage, a CDN and a Queue + workers box appear on the diagram. What does that show?',
+        options: [
+          'Every chat app needs a CDN from day one',
+          'Images made the database the bottleneck',
+          'A new requirement brings in the parts its own traffic needs',
+          'A quality target was raised',
+        ],
+        answer: 2,
+        explanation:
+          'Each box names the requirement that forced it: images need somewhere to keep large files, a way to process them off the request path, and a CDN to serve them close to users. No slider moved, so no quality target changed, and the database is not on the image path at all.',
+      },
+      {
+        id: 'wsd-8',
+        prompt: 'Your team decides to evolve the design as usage grows instead of designing everything up front. Which decision still deserves careful thought now?',
+        options: [
+          'The number of app servers',
+          'The cache expiry time',
+          'The log format',
+          'The data model and the partitioning key',
+        ],
+        answer: 3,
+        explanation:
+          'Evolving the design ships sooner, but some choices are expensive to reverse: changing the data model or the partitioning key means migrating data under load. Server counts, cache expiry times and log formats can change any day with little risk.',
+      },
+      {
+        id: 'wsd-9',
+        prompt: 'An engineer adds Kafka to a design "in case we need it later". No requirement or estimate mentions streaming or high write rates. What is the real cost?',
+        options: [
+          'None - an unused component costs nothing',
+          'A part that must be deployed, monitored, upgraded and paged for, with no requirement paying for it',
+          'Only the licence fee',
+          'It makes the design more reliable, so there is no cost',
+        ],
+        answer: 1,
+        explanation:
+          'Over-engineering is complexity no requirement pays for. Every component can fail, needs on-call knowledge and adds a hop, so it lowers reliability rather than raising it. Kafka is open source, so the cost is not a licence - it is the operations.',
+      },
+      {
+        id: 'wsd-10',
+        prompt: 'A design review shows one database box that everything depends on. The target is 99.99% availability, and nobody has asked what happens when that box dies. What should you do next?',
+        options: [
+          'Ask what happens when it fails: 99.99% leaves about 52 minutes a year, so the database needs a standby with automated failover',
+          'Approve it - databases rarely fail',
+          'Add more CPU to the database',
+          'Add a cache so the database is used less',
+        ],
+        answer: 0,
+        explanation:
+          'A diagram is not finished until every box has been asked "what if this dies?". A recovery done by hand takes a large part of the 52-minute yearly budget, so 99.99% forces a standby with automatic promotion - which is what the Lab adds when you move Availability to 99.99%. More CPU or a cache do nothing when the machine is gone.',
+      },
+      {
+        id: 'wsd-11',
+        prompt: 'A service passes every unit test, yet the product goes down for 20 minutes whenever its only machine reboots for a kernel update. What does this show?',
+        options: [
+          'The unit tests were wrong',
+          'The code needs better error handling',
+          'Correct code is not enough: the design decides what happens when a machine disappears',
+          'Kernel updates should never be installed',
+        ],
+        answer: 2,
+        explanation:
+          'Code answers "is the output correct for this input?". Design answers "does it keep working at scale, with a dead node, during a partition?". The tests can be perfect and the function correct; with one machine, its reboot is an outage. Skipping security updates just trades this outage for a worse one.',
       },
     ],
   },
@@ -73,6 +205,7 @@ export const gettingStartedConcepts: Concept[] = [
     category: 'getting-started',
     difficulty: 'Beginner',
     lab: 'requirements',
+    labFocus: 'functional-requirements',
     keywords: ['requirements', 'scope', 'features'],
     what: 'Functional requirements describe the features and behaviours of a system: what a user can do, and what the system produces in response.',
     why: 'They define scope. Without an explicit list, every design discussion silently assumes a different product, and the architecture ends up sized for features nobody agreed to build.',
@@ -114,7 +247,7 @@ export const gettingStartedConcepts: Concept[] = [
     quiz: [
       {
         id: 'fr-1',
-        prompt: 'Which of these is a functional requirement?',
+        prompt: 'You are sorting a product brief for a social app into two lists before designing. Which line belongs on the functional requirements list?',
         options: [
           'The feed loads in under 200 ms at p95',
           'A user can follow another user',
@@ -123,7 +256,137 @@ export const gettingStartedConcepts: Concept[] = [
         ],
         answer: 1,
         explanation:
-          'Following a user is observable behaviour. Latency, availability and replication describe how well the system behaves, not what it does.',
+          'Following a user is behaviour a user can observe. Latency and availability describe how well the system behaves - they go on the non-functional list - and replication across zones is not a requirement at all but a design decision made to meet one.',
+      },
+      {
+        id: 'fr-2',
+        prompt: 'An interviewer opens with "Design Twitter" and waits. What is the best first move?',
+        options: [
+          'Draw the load balancer, app servers and database straight away',
+          'Ask which database Twitter uses in production',
+          'Estimate the storage needed for ten years of tweets',
+          'Propose a scope - post a tweet, follow a user, read the home timeline - and say that DMs, ads and search are out unless wanted',
+        ],
+        answer: 3,
+        explanation:
+          '"Design Twitter" is a brand name, not a set of requirements. Thirty seconds of agreed scope decides what every later box is for. Drawing or estimating first sizes the design for a product nobody agreed on, and the real Twitter database says nothing about your requirements.',
+      },
+      {
+        id: 'fr-3',
+        prompt: 'A requirements list for a photo app contains the line "Photos are stored in S3". What is wrong with it?',
+        options: [
+          'Nothing - S3 is a good choice for photos',
+          'It is a solution written as a requirement; rewrite it as "a user can upload a photo up to 25 MB and see it on their profile"',
+          'It should say "Photos are stored in a CDN" instead',
+          'It is a non-functional requirement and belongs in the other list',
+        ],
+        answer: 1,
+        explanation:
+          'A technology name in the requirements smuggles a decision in without debate. Stated as user behaviour, the requirement leaves the storage choice open until the design, where it can be argued. It is not non-functional either - it names no quality target, only an implementation.',
+      },
+      {
+        id: 'fr-4',
+        prompt: 'A stakeholder adds "The app must be fast" to the functional requirements. What should you do with it?',
+        options: [
+          'Move it to the non-functional list and give it a number, for example "the feed loads in under 200 ms at p95"',
+          'Keep it - speed is a feature users notice',
+          'Delete it - speed cannot be designed for',
+          'Replace it with "use a cache"',
+        ],
+        answer: 0,
+        explanation:
+          'It describes how well, not what, so it is non-functional - and without a number nobody can tell when it is met. Deleting it loses a real expectation, and "use a cache" is a solution that may or may not be what meets the number.',
+      },
+      {
+        id: 'fr-5',
+        prompt: 'In the Requirements Lab (Design Instagram) you tick "Search users and tags". A Search index appears, fed by the Queue + workers box. Why does one checkbox add these parts?',
+        options: [
+          'Search is a quality target, so it adds infrastructure',
+          'The database cannot store user names',
+          'Searching needs its own index, kept in step with the database by background work - the feature pulls in the parts its traffic needs',
+          'Every Instagram design must have a search index',
+        ],
+        answer: 2,
+        explanation:
+          'Full-text and prefix search over names and tags is served by a separate index, and something must copy every change into it - here, workers reading events from a queue. Search is a feature, not a quality target, and the diagram only has an index while that feature is ticked.',
+      },
+      {
+        id: 'fr-6',
+        prompt: 'You have the requirement "A user can see a feed of posts from people they follow". Which question about it shapes the architecture most?',
+        options: [
+          'Which framework will render the feed',
+          'What colour the feed cards are',
+          'Whether posts need an edit history',
+          'What it reads and writes and how often - here a feed read far more often than posts are written',
+        ],
+        answer: 3,
+        explanation:
+          'Reads, writes and their rate are what components are built to serve. A read-heavy feed points to caching and precomputed timelines. The framework and the card colour do not change a single box, and edit history is a separate requirement.',
+      },
+      {
+        id: 'fr-7',
+        prompt: 'A team listed only post, follow and view feed. A year later a legal request arrives: "a user can delete their account and all their data". Why is this now painful?',
+        options: [
+          'Deleting touches every table, every cache, the CDN copies and the object storage, and the data model was never designed for it',
+          'Deletes are slower than inserts in every database',
+          'Legal requests always need a new database',
+          'It is not painful - a single DELETE statement handles it',
+        ],
+        answer: 0,
+        explanation:
+          'The unglamorous requirements - delete, export, search, edit - shape the data model. Missing one at the start means reworking storage later. One DELETE on one table leaves copies in caches, feeds, the CDN and object storage.',
+      },
+      {
+        id: 'fr-8',
+        prompt: 'In the Requirements Lab (Design WhatsApp) you tick "Voice and video calls". Media servers appear and "Beyond core" goes up. The product manager says it is just one more checkbox. What is the honest answer?',
+        options: [
+          'Agree - the app servers can relay the audio',
+          'Calls are a separate system (media relays and call signalling); keep them out of scope, or plan them as a subsystem with their own budget',
+          'Add it, because it does not change the diagram much',
+          'Replace WebSockets with calls',
+        ],
+        answer: 1,
+        explanation:
+          'Real-time audio and video need media relays built for it, with their own scaling and bandwidth costs - the Lab marks the feature as extra for that reason. App servers built for small messages are the wrong place to relay media, and the WebSocket tier is still needed to ring the other phone.',
+      },
+      {
+        id: 'fr-9',
+        prompt: 'You design posting, following and the feed without mentioning direct messages. Near the end the interviewer asks "and where do DMs fit?". What would have prevented this?',
+        options: [
+          'Designing for every possible feature from the start',
+          'Adding a message queue in advance',
+          'Saying at the start that DMs are out of scope, so the exclusion was agreed',
+          'Nothing - interviewers always add features at the end',
+        ],
+        answer: 2,
+        explanation:
+          'An unlisted feature is an assumed feature: the other person was holding it in their head. Naming exclusions makes them negotiable at the start instead of a surprise at the end. Designing for everything, or adding parts in advance, pays for features that may never be asked for.',
+      },
+      {
+        id: 'fr-10',
+        prompt: 'You have nine candidate features for a photo app. Which ones should drive the architecture?',
+        options: [
+          'All nine equally, so nothing is missed',
+          'The ones that are hardest to build',
+          'The ones the team has built before',
+          'The two or three core flows that carry most of the traffic, such as viewing the home feed',
+        ],
+        answer: 3,
+        explanation:
+          'A few core flows create nearly all the load and so all the architectural pressure; everything else rides on the same infrastructure. Weighting all nine equally sizes the system for rare features, and difficulty or familiarity say nothing about load.',
+      },
+      {
+        id: 'fr-11',
+        prompt: 'A team designs for fifteen features although only three are planned this year, "so we will not have to redesign later". What do they pay for it?',
+        options: [
+          'Nothing - a broad design is always cheaper in the long run',
+          'More components to build, run and explain now, paid for features that may never ship',
+          'Only a slightly longer design document',
+          'Lower availability, because fifteen features cannot run on one server',
+        ],
+        answer: 1,
+        explanation:
+          'Designing broad up front gains fewer surprises later but costs complexity today, much of it for features that may be cut. Pinning a short list costs some rework when a real need appears late. Neither is free - that is the trade-off.',
       },
     ],
   },
@@ -134,6 +397,7 @@ export const gettingStartedConcepts: Concept[] = [
     category: 'getting-started',
     difficulty: 'Beginner',
     lab: 'requirements',
+    labFocus: 'non-functional-requirements',
     keywords: ['availability', 'latency', 'consistency', 'durability', 'slo'],
     what: 'Non-functional requirements (NFRs) are the quality attributes of a system: availability, latency, throughput, consistency, durability, cost, security and operability.',
     why: 'NFRs, not features, are what force architecture. Two products with identical feature lists but different availability targets end up with completely different infrastructure.',
@@ -160,7 +424,7 @@ export const gettingStartedConcepts: Concept[] = [
       {
         approach: 'Very high availability (99.99%+)',
         gains: ['Survives zone loss', 'Failover without human involvement'],
-        costs: ['Multi-zone redundancy costs 2-3x', 'More moving parts to operate', 'Usually forces weaker consistency'],
+        costs: ['Copies in 2-3 zones cost roughly 2-3x', 'More moving parts to operate', 'Going multi-region usually forces weaker consistency'],
       },
       {
         approach: 'Strong consistency everywhere',
@@ -186,7 +450,137 @@ export const gettingStartedConcepts: Concept[] = [
         ],
         answer: 1,
         explanation:
-          '99.999% allows about five minutes of downtime per year - less than a single manual restart. The number is an architecture decision, not a configuration flag.',
+          '99.999% allows about 5 minutes of downtime per year - less than it takes to page a human, let them log in and restart anything. The number is an architecture decision, not a configuration flag. More CPU, an alert or backups all leave the single instance as the thing that takes everything down.',
+      },
+      {
+        id: 'nfr-2',
+        prompt: 'The dashboard shows an average latency of 99 ms, yet users complain the app is slow. Out of 100 requests, 99 take 50 ms and one takes 5 seconds. How should the latency target be stated?',
+        options: [
+          'As the average - 99 ms is well under any sensible limit',
+          'As the median, because it ignores outliers',
+          'As a percentile such as p99, which shows the slow tail the average hides',
+          'As the fastest request, to show what the system can do',
+        ],
+        answer: 2,
+        explanation:
+          'The average mixes one 5-second wait into 99 fast requests and looks fine. p99 reports what the slowest 1 in 100 requests experience - exactly the users complaining. The median ignores them by design, which is the opposite of what you need here.',
+      },
+      {
+        id: 'nfr-3',
+        prompt: 'A page makes 20 backend calls. Each call has a p99 latency of 1 second. Roughly what share of page loads waits for at least one 1-second call?',
+        options: [
+          'About 1%',
+          'About 18%',
+          'About 50%',
+          'About 99%',
+        ],
+        answer: 1,
+        explanation:
+          'The chance that all 20 calls are fast is 0.99^20, about 0.82, so about 18% of page loads hit at least one slow call. 1% would be true for a single call; the tail grows with every call a page makes, which is why tail latency matters more at scale.',
+      },
+      {
+        id: 'nfr-4',
+        prompt: 'In the Requirements Lab you move Availability from 99.9% to 99.99%. What changes on the diagram, and why?',
+        options: [
+          'Nothing - availability is a monitoring setting',
+          'A second region appears, because four nines always needs two regions',
+          'Only the load balancer gets bigger',
+          'The system spreads over 3 zones and the database keeps a standby that is promoted automatically, because 52 minutes a year leaves no time for manual recovery or a zone outage',
+        ],
+        answer: 3,
+        explanation:
+          'At 99.99% a manual database recovery or one lost zone would use up the yearly budget, so the database gets a standby that is promoted automatically and the app servers spread across zones. A second region is what the Lab adds at 99.999%, where even a region outage must be survived.',
+      },
+      {
+        id: 'nfr-5',
+        prompt: 'A social app has like counters and in-app payments. How should its consistency requirement be written?',
+        options: [
+          'Per operation: a like count may be a few seconds stale, a payment balance must never be',
+          'Strong consistency everywhere, to be safe',
+          'Eventual consistency everywhere, for speed',
+          'Consistency does not need to be specified',
+        ],
+        answer: 0,
+        explanation:
+          'Almost every real product has both kinds of data. Strong everywhere makes likes pay for guarantees nobody needs; eventual everywhere lets a balance be wrong. Leaving it unspecified means each engineer picks a different answer.',
+      },
+      {
+        id: 'nfr-6',
+        prompt: 'A global app asks for strong consistency on every write across two regions, and a p95 write latency of 20 ms. What happens?',
+        options: [
+          'Both targets can be met with faster databases',
+          'Both targets can be met with a cache in front of the writes',
+          'The targets conflict: a strongly consistent write waits for the other region, and a round trip between regions far apart often takes 50-100 ms or more',
+          'Strong consistency makes writes faster, so 20 ms is easy',
+        ],
+        answer: 2,
+        explanation:
+          'Strong consistency across regions means a write is not confirmed until the other region has it, so every write pays a cross-region round trip - a limit set by distance, not by hardware. One target has to give way. A cache does not help writes that must be confirmed in two places.',
+      },
+      {
+        id: 'nfr-7',
+        prompt: 'A service targets 99.99%. Each deploy restarts it for about 45 seconds, and the team deploys 12 times a month. What does that mean?',
+        options: [
+          'Nothing - planned downtime does not count',
+          'Deploys alone take about 108 minutes a year, twice the 52-minute budget, so deploys must be zero-downtime with at least two instances behind a load balancer',
+          'The team should deploy less often and keep the single instance',
+          'The budget is fine - 45 seconds is short',
+        ],
+        answer: 1,
+        explanation:
+          '12 deploys x 12 months x 45 seconds is 108 minutes, and 99.99% allows about 52 minutes a year for everything. Users do not care whether downtime was planned. Deploying less often still leaves every restart as an outage and slows the team down.',
+      },
+      {
+        id: 'nfr-8',
+        prompt: 'A product owner writes "The system must be reliable" in the requirements. What is the most useful thing to do with it?',
+        options: [
+          'Accept it as written',
+          'Replace it with "use Kubernetes"',
+          'Delete it, because reliability cannot be measured',
+          'Turn it into numbers, for example 99.9% monthly availability and no acknowledged write lost when one node fails',
+        ],
+        answer: 3,
+        explanation:
+          'A requirement without a number has no stopping rule: nobody can tell when it is met or what it costs. With numbers it can be priced and designed for. Naming a tool is a solution, not a target, and reliability is measured all the time.',
+      },
+      {
+        id: 'nfr-9',
+        prompt: 'The payments database must lose no acknowledged payment if the machine holding it dies. Which design meets that target?',
+        options: [
+          'Synchronous replication - a write is confirmed only after a second copy has it - plus backups that are restored in tests',
+          'Asynchronous replication to a replica',
+          'Nightly backups only',
+          'A bigger disk on the one machine',
+        ],
+        answer: 0,
+        explanation:
+          'With asynchronous replication the primary confirms before the copy arrives, so the last moments of writes can vanish with the machine. Nightly backups lose up to a day, and a bigger disk dies with its machine. Only a copy confirmed before the acknowledgement meets "no acknowledged write lost" - the Critical durability level in the Lab.',
+      },
+      {
+        id: 'nfr-10',
+        prompt: 'A team copies Netflix multi-region architecture for an internal HR tool used by 200 people in one office. What is the problem?',
+        options: [
+          'Netflix uses technologies that are not available to others',
+          'Nothing - copying a proven architecture removes risk',
+          'That architecture answers the Netflix spec sheet; the HR tool has far lower targets, so the team pays for redundancy no requirement asks for',
+          'Multi-region is not possible for internal tools',
+        ],
+        answer: 2,
+        explanation:
+          'An architecture is the answer to a set of numbers. Netflix built for hundreds of millions of streams and region failures; 200 users in one office need neither. Copying it adds cost and operations with nothing in return - the risk goes up, not down.',
+      },
+      {
+        id: 'nfr-11',
+        prompt: 'In the Requirements Lab you keep the features and move Daily active users from 100k to 10M. Which change do you see, and why?',
+        options: [
+          'The database splits into shards, a cache and background workers appear, and the app tier grows to about a dozen servers - because peak traffic rises about 100x',
+          'Only the number of app servers changes',
+          'A second region appears',
+          'Nothing changes - users are a functional requirement',
+        ],
+        answer: 0,
+        explanation:
+          'At 10M users a single database and uncached reads no longer hold, and slow work has to leave the request path. The Lab model puts peak traffic near 11,600 requests per second (20 requests a user, 5x peak), so the app tier grows too. A second region only appears at 100M users or 99.999%.',
       },
     ],
   },

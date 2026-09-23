@@ -1,8 +1,5 @@
 {
   "concepts": [
-    "what-is-system-design",
-    "functional-requirements",
-    "non-functional-requirements",
     "capacity-estimation",
     "back-of-the-envelope",
     "what-happens-when-you-type-a-url",
@@ -92,7 +89,6 @@
     "request-response"
   ],
   "labs": [
-    "requirements",
     "capacity",
     "url-journey",
     "indexing",
