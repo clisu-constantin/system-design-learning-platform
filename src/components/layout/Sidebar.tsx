@@ -45,7 +45,10 @@ export function Sidebar({ difficulty, folded = false, onUnfold, onNavigate }: Si
     const id = revealRef.current;
     if (folded || !id) return;
     revealRef.current = null;
-    navRef.current?.querySelector(`[data-category="${id}"]`)?.scrollIntoView({ block: 'nearest' });
+    // The strip icon that was clicked is gone, so focus moves to the category row it opened.
+    const row = navRef.current?.querySelector<HTMLElement>(`[data-category="${id}"]`);
+    row?.scrollIntoView({ block: 'nearest' });
+    row?.querySelector('button')?.focus({ preventScroll: true });
   }, [folded]);
 
   const openAt = (id: CategoryId) => {
@@ -54,11 +57,9 @@ export function Sidebar({ difficulty, folded = false, onUnfold, onNavigate }: Si
     onUnfold?.();
   };
 
-  const visibleCategories = CATEGORIES.filter((category) =>
-    (CONCEPTS_BY_CATEGORY[category.id] ?? []).some(
-      (concept) => difficulty === 'all' || concept.difficulty === difficulty,
-    ),
-  );
+  const conceptsIn = (id: CategoryId) =>
+    (CONCEPTS_BY_CATEGORY[id] ?? []).filter((concept) => difficulty === 'all' || concept.difficulty === difficulty);
+  const visibleCategories = CATEGORIES.filter((category) => conceptsIn(category.id).length > 0);
 
   if (folded) return <SidebarStrip categories={visibleCategories} onOpenCategory={openAt} />;
 
@@ -86,9 +87,7 @@ export function Sidebar({ difficulty, folded = false, onUnfold, onNavigate }: Si
       <div className="my-2 h-px bg-line" />
 
       {visibleCategories.map((category) => {
-        const concepts = (CONCEPTS_BY_CATEGORY[category.id] ?? []).filter(
-          (concept) => difficulty === 'all' || concept.difficulty === difficulty,
-        );
+        const concepts = conceptsIn(category.id);
         const isOpen = open[category.id] ?? false;
         const progress = categoryProgress(category.id);
 
@@ -159,10 +158,10 @@ interface TipState {
   left: number;
 }
 
-const ITEM =
+const STRIP_ITEM =
   'relative flex h-9 w-9 shrink-0 items-center justify-center rounded-lg transition-colors outline-none focus-visible:ring-2 focus-visible:ring-brand';
 /** Current-page marker: a bar on the left edge as well as the tint, so it does not rely on color alone. */
-const ACTIVE = 'bg-brand/10 text-brand before:absolute before:-left-2.5 before:h-5 before:w-1 before:rounded-r before:bg-brand';
+const STRIP_ACTIVE = 'bg-brand/10 text-brand before:absolute before:-left-2.5 before:h-5 before:w-1 before:rounded-r before:bg-brand';
 
 /**
  * The folded sidebar: one icon per tool and per category. Each icon names
@@ -202,7 +201,7 @@ function SidebarStrip({
           aria-label={label}
           {...tipProps(label)}
           className={({ isActive }) =>
-            cn(ITEM, isActive ? ACTIVE : 'text-muted hover:bg-elevated hover:text-ink')
+            cn(STRIP_ITEM, isActive ? STRIP_ACTIVE : 'text-muted hover:bg-elevated hover:text-ink')
           }
         >
           <Icon className="h-4 w-4" />
@@ -222,7 +221,7 @@ function SidebarStrip({
             aria-current={isActive ? 'page' : undefined}
             {...tipProps(`${category.title} ${progress.done}/${progress.total}`)}
             onClick={() => onOpenCategory(category.id)}
-            className={cn(ITEM, isActive ? ACTIVE : 'text-faint hover:bg-elevated hover:text-ink')}
+            className={cn(STRIP_ITEM, isActive ? STRIP_ACTIVE : 'text-faint hover:bg-elevated hover:text-ink')}
           >
             <CategoryIcon name={category.icon} className="h-4 w-4" />
           </button>

@@ -147,8 +147,11 @@ function ConceptBody({ concept }: { concept: Concept }) {
   const hideButton = useRef<HTMLButtonElement>(null);
   const showTab = useRef<HTMLButtonElement>(null);
   const moveFocus = useRef(false);
+  // Fade the column in only when the learner reopens it, not on every page load.
+  const reopened = useRef(false);
   const foldAside = (folded: boolean) => {
     moveFocus.current = true;
+    reopened.current = !folded;
     setAsideFolded(folded);
   };
   useEffect(() => {
@@ -245,7 +248,10 @@ function ConceptBody({ concept }: { concept: Concept }) {
   return (
     <div className="px-5 py-5 lg:px-8">
       <div
-        className={cn('mx-auto grid max-w-[1600px] gap-4', !asideFolded && 'xl:grid-cols-[minmax(0,1fr)_320px]')}
+        className={cn(
+          'mx-auto grid max-w-[1600px] gap-4',
+          asideFolded ? 'xl:grid-cols-[minmax(0,1fr)_auto]' : 'xl:grid-cols-[minmax(0,1fr)_320px]',
+        )}
       >
         {/* Diagram first - it is the content, not an illustration */}
         <div className="min-w-0">
@@ -256,7 +262,8 @@ function ConceptBody({ concept }: { concept: Concept }) {
         <aside
           id={ASIDE_ID}
           className={cn(
-            'space-y-3 xl:sticky xl:top-[4.5rem] xl:self-start xl:animate-fade-in',
+            'space-y-3 xl:sticky xl:top-[4.5rem] xl:self-start',
+            reopened.current && 'xl:animate-fade-in',
             asideFolded && 'hidden',
           )}
         >
@@ -358,21 +365,22 @@ function ConceptBody({ concept }: { concept: Concept }) {
             </div>
           ) : null}
         </aside>
-      </div>
 
-      {asideFolded ? (
-        <button
-          type="button"
-          ref={showTab}
-          onClick={() => foldAside(false)}
-          aria-controls={ASIDE_ID}
-          aria-expanded={false}
-          className="fixed right-0 top-[4.5rem] z-20 flex animate-fade-in flex-col items-center gap-2 rounded-l-lg border border-r-0 border-line bg-surface px-1.5 py-3 text-xs font-medium text-muted shadow-card transition-colors hover:bg-elevated hover:text-ink"
-        >
-          <PanelRightOpen className="h-3.5 w-3.5" />
-          <span className="[writing-mode:vertical-rl]">Show notes</span>
-        </button>
-      ) : null}
+        {/* Its own narrow grid column, so the reopen tab never covers the content (a lab's controls, say). */}
+        {asideFolded ? (
+          <button
+            type="button"
+            ref={showTab}
+            onClick={() => foldAside(false)}
+            aria-controls={ASIDE_ID}
+            aria-expanded={false}
+            className="sticky top-[4.5rem] flex animate-fade-in flex-col items-center gap-2 self-start rounded-lg border border-line bg-surface px-1.5 py-3 text-xs font-medium text-muted shadow-card transition-colors hover:bg-elevated hover:text-ink"
+          >
+            <PanelRightOpen className="h-3.5 w-3.5" />
+            <span className="[writing-mode:vertical-rl]">Show notes</span>
+          </button>
+        ) : null}
+      </div>
     </div>
   );
 }

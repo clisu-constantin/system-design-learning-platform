@@ -37,7 +37,7 @@ render where you can, and only suppress it with a comment saying what external t
 
 ```
 src/
-├── app/            App, router, providers (theme, progress)
+├── app/            App, router, providers (theme, progress, layout)
 ├── components/
 │   ├── architecture/   DiagramCanvas, ArchNode, geometry, node kinds  <- shared visual language
 │   ├── charts/         LiveChart (plain SVG, no chart library), DistributionBar
@@ -47,7 +47,7 @@ src/
 ├── data/           concepts/ (per category), scenarios/, glossary, categories  <- all content
 │   └── concepts/deep/  long-form lesson per concept, code-split per category
 ├── features/       one folder per domain; labs and pages live here
-├── hooks/          useRerender
+├── hooks/          useRerender, useMediaQuery, useFitScale, ...
 ├── simulations/
 │   ├── engine/     useTicker, MetricWindow, RateCounter, useSeries, useEventLog, particles
 │   └── models/     computeLoad (queueing model), machine tiers
@@ -228,7 +228,8 @@ These are editorial rules, not style preferences. They are the reason the app is
   clips its label or overlaps the node below. `npm run check:visuals` catches both; it runs as part
   of `npm run build`. Minimum height is 62 + 12 (subtitle) + 16 (stat row); minimum width is
   52 + the per-letter title width table in `scripts/check-visuals.mjs` (about 7px a letter).
-- Everything persists to `localStorage` only (`sdi:theme`, `sdi:progress:v1`). No backend, no auth,
+- Everything persists to `localStorage` only (`sdi:theme`, `sdi:progress:v1`, `sdi:layout` - which
+  side panels the learner folded). No backend, no auth,
   no network calls at runtime — keep it that way.
 
 ## Agent skills

@@ -31,7 +31,7 @@ export function TopBar({ onOpenSearch, onToggleSidebar, sidebarExpanded, difficu
         size="icon"
         variant="ghost"
         onClick={onToggleSidebar}
-        aria-label="Navigation"
+        aria-label="Toggle navigation"
         aria-expanded={sidebarExpanded}
         title={sidebarExpanded ? 'Fold navigation' : 'Open navigation'}
       >
