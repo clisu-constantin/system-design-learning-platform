@@ -14,13 +14,27 @@ import type { LabFocus, LabProps, RequestOutcome } from '@/types';
  * service asks "may you do this to this invoice?" (authorization, 403 - or 404
  * when the service hides that the invoice exists).
  *
+ * The gateway knows three kinds of credential: a session cookie (looked up in
+ * the session store), an API key (its hash looked up in the key store) and a
+ * bearer access token - a JWT the gateway verifies on its own with the public
+ * key of the issuer, fetched once and cached, so no lookup runs per request.
+ *
  * Simplified model: a fixed cast of callers, one gateway, one service and two
- * invoices. The 30 minute idle timeout, the key names and the rules are
- * illustrative. The counters count the simulated requests on this canvas - they
+ * invoices. The 30 minute idle timeout, the 15 minute token life, the key names
+ * and the rules are illustrative. The counters count the simulated requests on this canvas - they
  * are not measurements.
  */
 
-type CallerId = 'anonymous' | 'alice' | 'alice-expired' | 'guessed' | 'bob' | 'integration' | 'attacker';
+type CallerId =
+  | 'anonymous'
+  | 'alice'
+  | 'alice-expired'
+  | 'guessed'
+  | 'bob'
+  | 'alice-token'
+  | 'alice-token-expired'
+  | 'integration'
+  | 'attacker';
 type RequestId = 'read-own' | 'read-other' | 'delete-own';
 type KeyState = 'active' | 'revoked' | 'rotated';
 type Checkpoint = 'gateway' | 'service';
@@ -30,7 +44,7 @@ interface Caller {
   label: string;
   /** Title on the client node. */
   title: string;
-  credential: 'none' | 'session' | 'key';
+  credential: 'none' | 'session' | 'key' | 'token';
   /** Who the caller really is, for the insight - the gateway may believe otherwise. */
   tenant: number;
   role: 'member' | 'admin' | null;
@@ -51,6 +65,22 @@ const CALLERS: Record<CallerId, Caller> = {
   },
   guessed: { label: 'Guessed session id', title: 'Guesser', credential: 'session', tenant: 0, role: null, identity: '' },
   bob: { label: 'Bob - admin, valid session', title: 'Bob', credential: 'session', tenant: 3, role: 'admin', identity: 'Bob (user 7)' },
+  'alice-token': {
+    label: 'Alice app - access token (JWT)',
+    title: 'Alice',
+    credential: 'token',
+    tenant: 3,
+    role: 'member',
+    identity: 'Alice (user 42)',
+  },
+  'alice-token-expired': {
+    label: 'Alice app - access token expired',
+    title: 'Alice',
+    credential: 'token',
+    tenant: 3,
+    role: 'member',
+    identity: 'Alice (user 42)',
+  },
   integration: { label: 'Integration A - API key', title: 'Integration A', credential: 'key', tenant: 3, role: null, identity: 'Integration A' },
   attacker: {
     label: 'Attacker - leaked key of Integration A',
@@ -62,7 +92,17 @@ const CALLERS: Record<CallerId, Caller> = {
   },
 };
 
-const CALLER_ORDER: CallerId[] = ['anonymous', 'alice', 'alice-expired', 'guessed', 'bob', 'integration', 'attacker'];
+const CALLER_ORDER: CallerId[] = [
+  'anonymous',
+  'alice',
+  'alice-expired',
+  'guessed',
+  'bob',
+  'alice-token',
+  'alice-token-expired',
+  'integration',
+  'attacker',
+];
 
 interface InvoiceRequest {
   label: string;
@@ -84,6 +124,10 @@ const REQUEST_ORDER: RequestId[] = ['read-own', 'read-other', 'delete-own'];
 const OLD_KEY = 'sk_live_9f2c';
 /** The key issued by a rotation. Only Integration A has it. */
 const NEW_KEY = 'sk_live_77e1';
+/** Illustrative access token life. Real issuers pick their own, usually minutes to an hour. */
+const TOKEN_LIFE_MIN = 15;
+/** The scope the token of the Alice app carries. The role and the tenant are claims in the token too. */
+const TOKEN_SCOPE = 'invoices:read invoices:write';
 
 interface Setup {
   caller: CallerId;
@@ -157,7 +201,15 @@ function evaluate(setup: Setup): Decision {
   const checks: Check[] = [];
   const keyUsed = setup.caller === 'integration' && setup.keyState === 'rotated' ? NEW_KEY : OLD_KEY;
   const credentialText =
-    caller.credential === 'none' ? 'no credential' : caller.credential === 'key' ? `key ${keyUsed}` : setup.caller === 'guessed' ? 'cookie sid=0000...' : 'cookie sid=7f3a...';
+    caller.credential === 'none'
+      ? 'no credential'
+      : caller.credential === 'key'
+        ? `key ${keyUsed}`
+        : caller.credential === 'token'
+          ? 'Bearer eyJhbGci...'
+          : setup.caller === 'guessed'
+            ? 'cookie sid=0000...'
+            : 'cookie sid=7f3a...';
   const base = { credentialText, checks };
 
   // Checkpoint 1, at the gateway: is there a credential at all?
@@ -168,9 +220,12 @@ function evaluate(setup: Setup): Decision {
   checks.push({ label: 'Credential sent', at: 'gateway', result: 'pass', detail: credentialText });
 
   // Checkpoint 1, at the gateway: does the credential prove an identity?
-  const store = caller.credential === 'session' ? 'sessions' : 'keys';
+  // A token is verified locally with the cached public key of the issuer: no store lookup.
+  const store = caller.credential === 'session' ? 'sessions' : caller.credential === 'key' ? 'keys' : null;
   let invalid: string | null = null;
   if (setup.caller === 'alice-expired') invalid = 'Session found, but idle 45 min - past the 30 min timeout.';
+  else if (setup.caller === 'alice-token-expired')
+    invalid = 'Signature checks out with the issuer public key, but the exp claim passed 5 min ago.';
   else if (setup.caller === 'guessed') invalid = 'No session with this id in the store.';
   else if (caller.credential === 'key' && keyUsed === OLD_KEY && setup.keyState !== 'active')
     invalid = `The hash of ${OLD_KEY} matches a key that was ${setup.keyState === 'rotated' ? 'rotated out' : 'revoked'}.`;
@@ -182,7 +237,12 @@ function evaluate(setup: Setup): Decision {
     label: 'Credential valid',
     at: 'gateway',
     result: 'pass',
-    detail: caller.credential === 'key' ? `Hash of ${keyUsed} matches ${caller.identity}.` : `Session found: ${caller.identity}.`,
+    detail:
+      caller.credential === 'key'
+        ? `Hash of ${keyUsed} matches ${caller.identity}.`
+        : caller.credential === 'token'
+          ? `Signature verified with the cached issuer public key, exp in ${TOKEN_LIFE_MIN - 3} min: sub 42, ${caller.identity}. No call to the issuer.`
+          : `Session found: ${caller.identity}.`,
   });
   const identity = caller.identity;
   // The gateway cannot tell who holds a key: possession is the whole credential.
@@ -201,21 +261,29 @@ function evaluate(setup: Setup): Decision {
   // Checkpoint 2 starts at the gateway for keys: a coarse scope check needs no data.
   if (caller.credential === 'key') {
     if (request.method === 'DELETE') {
-      checks.push({ label: 'Key scope allows it', at: 'gateway', result: 'fail', detail: 'Scope is invoices:read - DELETE needs invoices:write.' });
+      checks.push({ label: 'Scope allows it', at: 'gateway', result: 'fail', detail: 'Key scope is invoices:read - DELETE needs invoices:write.' });
       return failAt(403, 'gateway', false);
     }
-    checks.push({ label: 'Key scope allows it', at: 'gateway', result: 'pass', detail: 'Scope invoices:read allows GET.' });
+    checks.push({ label: 'Scope allows it', at: 'gateway', result: 'pass', detail: 'Key scope invoices:read allows GET.' });
+  } else if (caller.credential === 'token') {
+    checks.push({ label: 'Scope allows it', at: 'gateway', result: 'pass', detail: `Token scope ${TOKEN_SCOPE} allows ${request.method}.` });
   } else {
-    checks.push({ label: 'Key scope allows it', at: 'gateway', result: 'skip', detail: 'A session has no key scope - the service checks the role.' });
+    checks.push({ label: 'Scope allows it', at: 'gateway', result: 'skip', detail: 'A session has no scope - the service checks the role.' });
   }
 
   // Checkpoint 2, in the service: does the role allow this action?
-  if (caller.credential === 'session') {
+  // A session keeps the role in the store; a token carries it as a signed claim.
+  if (caller.credential === 'session' || caller.credential === 'token') {
     if (request.method === 'DELETE' && caller.role !== 'admin') {
       checks.push({ label: 'Role allows it', at: 'service', result: 'fail', detail: 'A member may read invoices; only an admin may delete.' });
       return failAt(403, 'service', false);
     }
-    checks.push({ label: 'Role allows it', at: 'service', result: 'pass', detail: `Role ${caller.role} may ${request.method === 'GET' ? 'read' : 'delete'}.` });
+    checks.push({
+      label: 'Role allows it',
+      at: 'service',
+      result: 'pass',
+      detail: `Role ${caller.role}${caller.credential === 'token' ? ' (a claim in the token)' : ''} may ${request.method === 'GET' ? 'read' : 'delete'}.`,
+    });
   } else {
     checks.push({ label: 'Role allows it', at: 'service', result: 'skip', detail: 'A key has scopes, not roles - checked at the gateway.' });
   }
@@ -287,13 +355,15 @@ const createState = (): SimState => ({
   counts: { ok: 0, leaked: 0, unauthorized: 0, forbidden: 0 },
 });
 
+// The three identity sources sit under the gateway, so each wire leaves its bottom edge.
 const LAYOUT: Layout = {
   client: { x: 20, y: 130, w: 190, h: 110 },
   gateway: { x: 270, y: 105, w: 220, h: 160 },
   service: { x: 550, y: 105, w: 220, h: 160 },
   db: { x: 810, y: 130, w: 140, h: 110 },
-  sessions: { x: 150, y: 335, w: 210, h: 110 },
-  keys: { x: 400, y: 335, w: 210, h: 110 },
+  sessions: { x: 80, y: 360, w: 190, h: 110 },
+  keys: { x: 285, y: 360, w: 190, h: 110 },
+  issuer: { x: 490, y: 360, w: 190, h: 110 },
 };
 
 export function AuthLab({ focus }: LabProps<'auth'>) {
@@ -388,8 +458,18 @@ export function AuthLab({ focus }: LabProps<'auth'>) {
   // Wires the current request does not use fade, so the path it takes stands out.
   const edges: DiagramEdge[] = [
     { from: 'client', to: 'gateway', tone: 'brand', width: 2 },
-    { from: 'gateway', to: 'sessions', tone: 'violet', faded: decision.store !== 'sessions', label: 'session lookup' },
+    { from: 'gateway', to: 'sessions', tone: 'violet', faded: decision.store !== 'sessions', label: 'session lookup', labelT: 0.65 },
     { from: 'gateway', to: 'keys', tone: 'violet', faded: decision.store !== 'keys', label: 'key hash lookup' },
+    // Dashed: the public key was fetched once and cached. No request travels this wire.
+    {
+      from: 'gateway',
+      to: 'issuer',
+      tone: 'violet',
+      dashed: true,
+      faded: caller.credential !== 'token',
+      label: 'public key, cached',
+      labelT: 0.65,
+    },
     { from: 'gateway', to: 'service', tone: 'brand', faded: !decision.reachesService },
     { from: 'service', to: 'db', tone: 'default', faded: !decision.reachesDb },
   ];
@@ -404,7 +484,7 @@ export function AuthLab({ focus }: LabProps<'auth'>) {
   return (
     <LabShell
       title="Auth Lab"
-      description="One request, two checkpoints. The gateway asks who is calling (401 when it cannot tell); the service asks whether that caller may do this to this invoice (403 when not)."
+      description="One request, two checkpoints. The gateway asks who is calling - by session, API key or access token - and answers 401 when it cannot tell; the service asks whether that caller may do this to this invoice (403 when not)."
       running={running}
       onToggleRun={() => setRunning((value) => !value)}
       onReset={reset}
@@ -433,7 +513,7 @@ export function AuthLab({ focus }: LabProps<'auth'>) {
                 label: 'Gateway believes',
                 value: decision.identity ?? 'unknown',
                 tone: setup.caller === 'attacker' && decision.identity ? 'danger' : 'neutral',
-                hint: 'The identity the credential proved. A key proves only that the caller holds the key.',
+                hint: 'The identity the credential proved. A key or a bearer token proves only that the caller holds it.',
               },
               { key: 'ok', label: '200 to the right caller', value: formatNumber(counts.ok), tone: 'ok', simulated: true },
               { key: 'unauthorized', label: '401 sent', value: formatNumber(counts.unauthorized), tone: counts.unauthorized ? 'warn' : 'neutral', simulated: true },
@@ -485,7 +565,8 @@ export function AuthLab({ focus }: LabProps<'auth'>) {
             </ol>
             <p className="mt-3 text-xs text-faint">
               Simplified model, not a measurement: a fixed cast of callers, one gateway, one service and two invoices. The
-              30 min idle timeout and the key names are illustrative, and the counters count the requests on this canvas.
+              30 min idle timeout, the {TOKEN_LIFE_MIN} min token life and the key names are illustrative, and the counters
+              count the requests on this canvas.
             </p>
           </div>
         </>
@@ -541,7 +622,7 @@ export function AuthLab({ focus }: LabProps<'auth'>) {
         </>
       }
     >
-      <DiagramCanvas layout={LAYOUT} edges={edges} particles={particleViews} height={465} className="bg-canvas">
+      <DiagramCanvas layout={LAYOUT} edges={edges} particles={particleViews} height={485} className="bg-canvas">
         <ArchNode kind="client" title={caller.title} subtitle={decision.credentialText} placed={LAYOUT.client}>
           <NodeStatRow label="Sends" value={`${request.method} ${request.invoice}`} />
         </ArchNode>
@@ -557,6 +638,7 @@ export function AuthLab({ focus }: LabProps<'auth'>) {
             value={decision.identity ?? 'unknown'}
             tone={decision.identity ? (setup.caller === 'attacker' ? 'text-danger' : 'text-ok') : 'text-danger'}
           />
+          <NodeStatRow label="Checked with" value={CHECKED_WITH[caller.credential]} />
           <NodeStatRow label="401 sent" value={formatNumber(counts.unauthorized)} tone={counts.unauthorized ? 'text-warn' : 'text-ink'} />
           <NodeStatRow label="Answer" value={decision.at === 'gateway' ? String(decision.status) : 'passes on'} />
         </ArchNode>
@@ -591,10 +673,22 @@ export function AuthLab({ focus }: LabProps<'auth'>) {
             />
           ))}
         </ArchNode>
+        <ArchNode kind="service" title="Token issuer" subtitle="signed the token at login" placed={LAYOUT.issuer}>
+          <NodeStatRow label="Signs with" value="private key" />
+          <NodeStatRow label="Token life" value={`${TOKEN_LIFE_MIN} min`} />
+        </ArchNode>
       </DiagramCanvas>
     </LabShell>
   );
 }
+
+/** What the gateway checks the credential against - the identity wire that lights up. */
+const CHECKED_WITH: Record<Caller['credential'], string> = {
+  none: 'nothing',
+  session: 'session store',
+  key: 'key store',
+  token: 'public key',
+};
 
 /** What to notice for the current setup, in the words of the Concept it teaches. */
 function insightFor(setup: Setup, decision: Decision) {
@@ -602,6 +696,8 @@ function insightFor(setup: Setup, decision: Decision) {
   if (decision.status === 401) {
     if (caller.credential === 'none')
       return 'The gateway answers 401 Unauthorized before any business code runs: there is no credential, so there is no identity to check permissions for. A 401 means "we do not know who you are" - pick a caller with a valid session or key and the same request goes through. Nothing reached the service or the database.';
+    if (caller.credential === 'token')
+      return 'The signature is fine - the issuer really did sign this token for Alice - but its exp claim is in the past, so the gateway answers 401 Unauthorized with error="invalid_token". The app does not ask Alice for her password again: it sends its refresh token to the issuer, gets a new access token and retries. The gateway decided alone, with the cached public key; the issuer was not called.';
     if (caller.credential === 'key')
       return setup.caller === 'integration'
         ? 'Revoking cut off the attacker - and Integration A with it, because both hold the same string. Switch the key to Rotated: Integration A gets a second key first, then the old one is revoked, so only the holder of the leaked key is left with a 401.'
@@ -626,6 +722,8 @@ function insightFor(setup: Setup, decision: Decision) {
     return 'The ownership check is off, so the service checked only the role and returned the invoice of another tenant with 200 OK. This is broken object level authorization (IDOR) - number one in the OWASP API Security Top 10. Nothing in the logs looks wrong, which is why it is found by attackers rather than by alerts.';
   if (decision.leak === 'stolen-key')
     return 'The gateway sees a valid key and believes this is Integration A - it cannot tell otherwise, because possession of an API key is the whole credential. The attacker reads invoices of tenant 3 with 200 OK. Revoke or rotate the key to cut it off; note the attacker still cannot DELETE, because the key is scoped to invoices:read.';
+  if (caller.credential === 'token' && decision.status === 200)
+    return 'The gateway verified the signature of the access token with the public key of the issuer, which it fetched once and cached, then read the claims: who (sub 42), until when (exp) and what (scope, role, tenant). No store lookup on the request path - the dashed wire carries no traffic. The cost: the gateway cannot see a revocation until the token expires, which is why access tokens live minutes, not days. Pick the expired token to see the 401.';
   return `${caller.title} proved an identity at the gateway (401 avoided) and had permission in the service (403 avoided), so the answer is 200 OK. Two separate questions, asked at two places on the path. Now change the caller or the invoice and watch which checkpoint says no.`;
 }
 
