@@ -29,8 +29,6 @@
     "partition-tolerance",
     "strong-consistency",
     "eventual-consistency",
-    "leader-election",
-    "consensus",
     "message-queues",
     "kafka",
     "background-workers",

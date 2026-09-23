@@ -618,27 +618,239 @@ Worker 1 wakes and writes with token 41 -> storage rejects it (41 < 42)`,
     tagline: 'Agreeing on exactly one coordinator, and noticing when it dies.',
     category: 'distributed',
     difficulty: 'Advanced',
-    keywords: ['raft', 'lease', 'heartbeat', 'split brain', 'failover'],
+    lab: 'consensus',
+    labFocus: 'leader-election',
+    keywords: ['raft', 'lease', 'heartbeat', 'split brain', 'failover', 'term', 'split vote'],
     what: 'Leader election is the process by which a cluster agrees on a single node to coordinate work: accept writes, assign partitions, or run a scheduled job.',
     why: 'A single leader removes coordination from the common path - only the leader decides. The hard part is detecting leader failure without two nodes both believing they won.',
     how: [
-      'Nodes compete for a lease in a consensus store (etcd, ZooKeeper) or run a protocol like Raft.',
-      'The leader renews its lease with heartbeats; missed heartbeats trigger a new election.',
-      'A majority quorum is required to elect, which prevents two leaders during a partition.',
+      'Followers expect a heartbeat from the leader. One that hears nothing for its election timeout becomes a candidate.',
+      'The candidate raises the term number, votes for itself and asks every other node for its vote.',
+      'Each node grants one vote per term, and only to a candidate whose log is at least as up to date as its own.',
+      'A majority of votes makes it leader, so two leaders can never win the same term. A leader that sees a higher term steps down.',
+      'Election timeouts are randomised per node (150-300 ms in the Raft paper), so one candidate usually stands alone and wins in one round.',
+      'Without writing a protocol: take a lease in etcd, ZooKeeper or a Kubernetes Lease. The holder renews it; when renewals stop, another node takes it after it expires.',
     ],
-    diagram: `term 7: node B is leader, heartbeats every 150 ms
-heartbeat missed for 500 ms -> candidates start term 8
-node C gets votes from a majority -> leader for term 8
-node B (if alive) sees a higher term and steps down`,
+    when: [
+      'One writer must order all changes: a database primary, a partition leader, a replicated log.',
+      'Exactly one instance must run a job: a scheduler, a compaction, a Kubernetes controller.',
+      'Work must be split without overlap: assigning partitions or shards to workers.',
+    ],
+    advantages: [
+      'One node decides, so writes need no conflict resolution.',
+      'A majority vote rules out two leaders in the same term, even during a partition.',
+      'Failover is automatic: no human has to pick the new leader.',
+    ],
+    diagram: `5 nodes, majority = 3
+term 7: Node A leads, heartbeat every 100 ms
+Node A crashes -> heartbeats stop
+Node B times out first (random 150-300 ms)
+  -> term 8, votes for itself, asks A, C, D, E
+C and D vote yes -> 3 of 5 -> B leads term 8
+A restarts, sees term 8 and stays a follower`,
     tradeoffs: [
       {
         approach: 'Single leader',
         gains: ['Simple ordering of writes', 'No write conflicts'],
-        costs: ['Leader is a throughput ceiling', 'Unavailable during election windows'],
+        costs: ['Leader is a throughput ceiling', 'Writes pause during detection plus election'],
+      },
+      {
+        approach: 'Short election timeout',
+        gains: ['A crashed leader is replaced quickly', 'Short write pause after a real failure'],
+        costs: ['A GC pause or network hiccup triggers a needless election', 'Every needless election is a brief write outage'],
+      },
+      {
+        approach: 'Long election timeout',
+        gains: ['Stable leadership under load and pauses', 'Fewer elections to reason about'],
+        costs: ['Longer write pause after a real crash', 'Slow to notice a leader that is gone'],
+      },
+      {
+        approach: 'Lease from a coordination service (etcd, ZooKeeper, Kubernetes Lease)',
+        gains: ['No election protocol to write or debug', 'Proven implementations'],
+        costs: ['A dependency that must itself stay up', 'A paused holder can outlive its lease - the work needs a fencing token or must be idempotent'],
       },
     ],
-    mistakes: ['Electing on a timeout without quorum, which produces two leaders during a partition.'],
-    related: ['consensus', 'partition-tolerance', 'failover', 'distributed-locks'],
+    mistakes: [
+      'Electing on a timeout without a majority, which produces two leaders during a partition.',
+      'An election timeout below the worst GC pause, so a healthy leader keeps getting replaced.',
+      'The same timeout on every node, which invites split votes.',
+      'Assuming the old leader knows it was replaced - a paused or cut-off leader keeps acting until it sees a higher term.',
+      'Writing your own election protocol instead of using etcd, ZooKeeper or the lease your platform provides.',
+    ],
+    realWorld: [
+      'etcd and Consul run Raft; Kubernetes controllers pick one active instance through a Lease object.',
+      'MongoDB replica sets elect their primary with a Raft-based protocol.',
+      'Kafka has one leader replica per partition; since Kafka 4.0 its controllers agree on who leads with KRaft, a Raft variant.',
+    ],
+    related: ['consensus', 'partition-tolerance', 'failover', 'distributed-locks', 'leader-follower'],
+    quiz: [
+      {
+        id: 'le-1',
+        prompt:
+          'A 5-node cluster loses its leader. Node B times out first and asks for votes. Nodes C and D vote for B; Node E has not answered yet. What happens?',
+        options: [
+          'B waits for E, because every live node must vote',
+          'B becomes leader: its own vote plus C and D make 3 of 5, a majority',
+          'B becomes leader only after the old leader confirms it is dead',
+          'C and D must also stand as candidates to break the tie',
+        ],
+        answer: 1,
+        explanation:
+          'A majority is all it takes: 3 of 5, and the candidate counts its own vote. Waiting for every node is tempting but wrong - one crashed node would then block every election forever.',
+      },
+      {
+        id: 'le-2',
+        prompt:
+          'A partition splits a 5-node cluster into {A, B} and {C, D, E}. A was the leader. In the Lab this is "Cut off the leader". What happens?',
+        options: [
+          'A keeps leading and the majority side waits for it',
+          'Both sides elect a leader, accept writes and merge them after the partition heals',
+          'C, D and E elect a new leader in a higher term; A still believes it leads, but can commit nothing',
+          'The whole cluster stops until the partition heals',
+        ],
+        answer: 2,
+        explanation:
+          'The side with 3 of 5 can hold an election, so it does. A is not told it lost - it keeps acting as leader for its old term, but no entry of its reaches 3 copies. Two sides both accepting writes is exactly what the majority rule prevents.',
+      },
+      {
+        id: 'le-3',
+        prompt:
+          'In the Lab you turn off "Randomised timeouts" and kill the leader. The Elections counter climbs and no leader appears for a long time. Why?',
+        options: [
+          'Every follower times out at almost the same moment, votes for itself, and nobody reaches a majority - a split vote, repeated',
+          'The election timeout is too long for the cluster to recover',
+          'The crashed leader still holds the votes of the others',
+          'Five nodes cannot elect a new leader without the old one',
+        ],
+        answer: 0,
+        explanation:
+          'With equal timeouts the followers stand together, and each spends its one vote on itself. Randomised timeouts make one node usually stand alone and win before the others wake up. A longer timeout only delays the same tie.',
+      },
+      {
+        id: 'le-4',
+        prompt:
+          'The leader freezes for 4 s in a garbage-collection pause; the election timeout is 1 s. The others elect a new leader for term 8. Then the old leader wakes up and sends heartbeats for term 7. What happens?',
+        options: [
+          'The followers accept them, and the cluster now has two working leaders',
+          'The new leader steps down, because the old one was elected first',
+          'The followers ignore it and it keeps sending heartbeats forever',
+          'The followers reject them with term 8; the old leader sees the higher term and steps down',
+        ],
+        answer: 3,
+        explanation:
+          'The term number is a fence: any message from an older term is rejected, and the reply carries the newer term, which makes the old leader step down. Try "Pause the leader" in the Lab to watch it. Being first does not matter; the higher term wins.',
+      },
+      {
+        id: 'le-5',
+        prompt:
+          'Your cluster re-elects its leader several times an hour, yet no node crashed. Logs show garbage-collection pauses of up to 800 ms, and the election timeout is 300 ms. What do you change?',
+        options: [
+          'Lower the timeout to 150 ms so failures are detected faster',
+          'Add two more nodes to the cluster',
+          'Raise the election timeout above the worst pause (and reduce the pauses), accepting a slower failover',
+          'Turn heartbeats off during garbage collection',
+        ],
+        answer: 2,
+        explanation:
+          'A follower cannot tell a paused leader from a dead one, so a timeout shorter than your pauses replaces healthy leaders - each time a short write outage. A lower timeout makes it worse, and more nodes do not change the timing.',
+      },
+      {
+        id: 'le-6',
+        prompt: 'You run leader election on 4 nodes, and a partition splits them 2 and 2. What happens?',
+        options: [
+          'Neither side can collect 3 of 4 votes, so no leader is elected and writes stop',
+          'Each side elects its own leader',
+          'The side that holds the old leader keeps it and carries on',
+          'The side with the lower node ids wins',
+        ],
+        answer: 0,
+        explanation:
+          'A majority of 4 is 3, and neither half has 3. That is why even sizes are avoided: 4 nodes tolerate one failure, like 3, and a clean 2-2 split leaves nobody in charge.',
+      },
+      {
+        id: 'le-7',
+        prompt:
+          'Node C was slow and missed the last 20 committed log entries. The leader dies and C happens to time out first. Will C become leader?',
+        options: [
+          'Yes - the first node to time out always wins',
+          'Yes, and it removes the 20 entries from every other node',
+          'Only after it copies the missing entries from the dead leader',
+          'No - voters with newer logs refuse it, so a node holding every committed entry wins instead',
+        ],
+        answer: 3,
+        explanation:
+          'Raft only grants a vote to a candidate whose log is at least as up to date as the voter log. Every committed entry sits on a majority, so C cannot collect a majority, and committed entries are never lost in a failover.',
+      },
+      {
+        id: 'le-8',
+        prompt:
+          'Twelve replicas of a service each run an hourly report job, so the customer gets 12 reports. How do you make it run once, and keep running when a pod dies?',
+        options: [
+          'Run the job on replica 1 only',
+          'Replicas compete for a Lease (etcd, ZooKeeper or Kubernetes); only the holder runs the job, and the report is keyed by hour so a rare overlap is harmless',
+          'Let all 12 run and delete the duplicates by hand',
+          'Add a random sleep before each run',
+        ],
+        answer: 1,
+        explanation:
+          'A fixed replica 1 is a single point of failure. The lease moves to another replica when the holder dies, and the unique key covers the moment when an old holder has not yet noticed it lost the lease.',
+      },
+      {
+        id: 'le-9',
+        prompt:
+          'A worker holds a 15 s leader lease, pauses for 20 s, and wakes up still believing it leads - while another worker has taken the lease. What prevents damage?',
+        options: [
+          'Nothing is needed - a lease guarantees a single holder',
+          'A longer lease',
+          'A fencing token (such as the term or lease revision) that the storage checks, or writes that are idempotent',
+          'Renewing the lease more often',
+        ],
+        answer: 2,
+        explanation:
+          'A lease only says who should lead; it cannot stop a paused process from acting on old beliefs. The storage rejecting a stale token is what makes the late write harmless. Longer or more frequent renewals shrink the window but never close it.',
+      },
+      {
+        id: 'le-10',
+        prompt:
+          'Election timeouts are randomised between 1 and 2 s, and an election round takes about 50 ms. The leader crashes. Roughly how long can writes stall?',
+        options: [
+          'About 1 to 2 s: the time to notice (the timeout) plus the election',
+          'About 50 ms: only the election itself',
+          '0 ms: the followers take over at once',
+          'Until an operator restarts the old leader',
+        ],
+        answer: 0,
+        explanation:
+          'Nobody can know the leader is gone until a timeout expires, so detection dominates the gap. The Lab shows it as "Time without a leader" after you kill the leader. The election itself is the short part.',
+      },
+      {
+        id: 'le-11',
+        prompt: 'A 3-node cluster loses 2 nodes. The survivor times out and stands for election. What happens?',
+        options: [
+          'It becomes leader with its own vote',
+          'It becomes leader, but for reads only',
+          'It waits one more timeout, then wins by default',
+          'It never reaches 2 votes, so there is no leader and no writes until another node returns',
+        ],
+        answer: 3,
+        explanation:
+          'A majority of 3 is 2, whether or not the other nodes are dead: the survivor cannot tell a crash from a partition, and electing itself would risk two leaders. The cluster chooses to stop rather than split.',
+      },
+      {
+        id: 'le-12',
+        prompt:
+          'During a partition a client keeps sending writes to the old leader on the minority side. What does the client see?',
+        options: [
+          'Success - the writes are merged when the partition heals',
+          'Timeouts: the old leader appends the writes but never gets a majority to store them, so it never acknowledges them',
+          'An instant error naming the new leader',
+          'Success for small writes and errors for large ones',
+        ],
+        answer: 1,
+        explanation:
+          'The old leader does not know it was replaced, so it accepts the write - but commit needs a majority, which it cannot reach. In the Lab these entries stay dashed and "Writes timed out" climbs until the client finds the new leader.',
+      },
+    ],
   },
   {
     slug: 'consensus',
@@ -646,30 +858,239 @@ node B (if alive) sees a higher term and steps down`,
     tagline: 'Getting a majority of nodes to agree on the same sequence of decisions.',
     category: 'distributed',
     difficulty: 'Advanced',
-    keywords: ['raft', 'paxos', 'quorum', 'replicated log', 'etcd'],
+    lab: 'consensus',
+    labFocus: 'consensus',
+    keywords: ['raft', 'paxos', 'quorum', 'replicated log', 'etcd', 'majority', 'zab'],
     what: 'Consensus algorithms (Paxos, Raft, Zab) let a group of nodes agree on an ordered log of operations, even though some of them may crash or be unreachable.',
     why: 'It is the foundation under leader election, configuration stores, and strongly consistent databases. Agreement on order is what makes a replicated system behave like a single one.',
     how: [
-      'A leader proposes entries; followers acknowledge; an entry commits once a majority stores it.',
-      'A quorum of N/2+1 guarantees any two quorums overlap, so committed entries are never lost.',
-      'Committed entries are applied to a state machine in the same order on every node.',
+      'Clients send writes to the leader, which appends each one to its log.',
+      'The leader copies new entries to every follower; an entry commits once a majority stores it.',
+      'A majority is floor(N/2) + 1 (2 of 3, 3 of 5), and any two majorities overlap, so a committed entry is never lost or contradicted.',
+      'Every node applies committed entries in log order to its state machine, so all replicas end in the same state.',
+      'If the leader fails, a new one is elected; the vote rule makes sure it already holds every committed entry.',
     ],
-    diagram: `5 nodes, quorum = 3
-proposal -> A,B,C acknowledge -> committed
+    when: [
+      'Small, critical state that must never diverge: configuration, membership, locks, leader leases.',
+      'The metadata core of a larger system: Kubernetes keeps its state in etcd, Kafka in its KRaft controllers.',
+      'A strongly consistent database, where each shard or range runs its own consensus group.',
+    ],
+    advantages: [
+      'Survives the loss of a minority of nodes without losing a committed write.',
+      'No split brain: a minority can never commit anything.',
+      'Every replica applies the same writes in the same order.',
+    ],
+    diagram: `5 nodes, majority = 3
+leader appends entry 42 -> copies it to 4 followers
+  2 followers store it -> 3 of 5 with the leader -> committed
 partition {A,B,C} | {D,E}
-  majority side keeps committing; minority cannot -> no divergence`,
+  {A,B,C}: 3 of 5 -> keeps committing
+  {D,E}:   2 of 5 -> cannot commit, so nothing diverges`,
     tradeoffs: [
       {
         approach: 'Consensus-backed state',
-        gains: ['Linearizable, survives minority failures', 'No split brain'],
+        gains: ['Committed writes survive minority failures', 'No split brain'],
         costs: ['Every write pays a majority round trip', 'Throughput bound by the leader', 'Operationally sensitive (odd node counts, disk latency)'],
+      },
+      {
+        approach: '3 nodes',
+        gains: ['Each write waits for only 1 follower', 'Fewest machines'],
+        costs: ['Tolerates 1 failure - a node down for maintenance leaves no margin'],
+      },
+      {
+        approach: '5 nodes',
+        gains: ['Tolerates 2 failures, or 1 during maintenance'],
+        costs: ['Each write waits for 2 followers', 'More machines and more messages'],
+      },
+      {
+        approach: 'Quorum spread across regions',
+        gains: ['Survives losing a whole region'],
+        costs: ['Every write pays an inter-region round trip, tens to hundreds of ms', 'Election timeouts must grow with that latency'],
+      },
+      {
+        approach: 'No consensus (asynchronous replication)',
+        gains: ['Lowest write latency', 'Stays writable during a partition'],
+        costs: ['Replicas can diverge and conflicts must be merged', 'An acknowledged write can be lost on failover'],
       },
     ],
     mistakes: [
       'Running consensus across regions and being surprised by write latency.',
       'Using an even number of nodes, which adds cost without improving fault tolerance.',
+      'Storing bulk data (events, user content) in a consensus store built for small metadata.',
+      'Reading a client timeout as "the write failed" - it may still commit, so retry with a request id.',
+      'Expecting Raft or Paxos to survive nodes that lie: they tolerate crashes, not Byzantine faults.',
     ],
-    related: ['leader-election', 'strong-consistency', 'partition-tolerance', 'cap-theorem'],
+    realWorld: [
+      'etcd (under Kubernetes) and Consul run Raft; ZooKeeper runs Zab.',
+      'CockroachDB runs one Raft group per range; Google Spanner runs Paxos per split.',
+      'Kafka 4.0 removed ZooKeeper: its metadata lives in KRaft, a Raft-based controller quorum.',
+    ],
+    related: ['leader-election', 'strong-consistency', 'partition-tolerance', 'cap-theorem', 'replication', 'idempotency'],
+    quiz: [
+      {
+        id: 'cons-1',
+        prompt:
+          'In a 5-node cluster the leader appends an entry. Followers 1 and 2 store it; followers 3 and 4 are slow and have not answered. Is the entry committed?',
+        options: [
+          'Yes - the leader plus 2 followers is 3 of 5, a majority',
+          'No - all 5 nodes must store it first',
+          'No - 4 of 5 must store it, to tolerate one failure',
+          'Only once the slow followers answer, even with a no',
+        ],
+        answer: 0,
+        explanation:
+          'Commit needs a majority, and the leader counts itself. Waiting for everyone is the tempting answer, but it would let one slow or dead node block every write - the point of a majority is not to wait for the stragglers.',
+      },
+      {
+        id: 'cons-2',
+        prompt: 'Your 3-node etcd cluster tolerates one failure. To be safer you add a fourth node. What did you gain?',
+        options: [
+          'Tolerance of two failures',
+          'Faster writes, since there is one more node to answer',
+          'No extra tolerance: a majority of 4 is 3, so it still survives only one failure - and each write now waits for one more node',
+          'The ability to split 2 and 2 and keep both halves running',
+        ],
+        answer: 2,
+        explanation:
+          'Fault tolerance is N minus the majority: 3 - 2 = 1 and 4 - 3 = 1. Going to 5 nodes buys a second failure. A 2-2 split on four nodes leaves neither half with a majority, so nothing keeps running.',
+      },
+      {
+        id: 'cons-3',
+        prompt: 'A partition splits a 5-node cluster into {A, B, C} and {D, E}. Clients write on both sides. What happens?',
+        options: [
+          'Both sides commit, and the logs are merged when the partition heals',
+          'The {A, B, C} side keeps committing; writes on the {D, E} side never commit, so the logs cannot diverge',
+          'Both sides refuse writes until the partition heals',
+          'The side with the most recent leader wins, whatever its size',
+        ],
+        answer: 1,
+        explanation:
+          'Only a group of 3 can commit, and there can be only one such group. The minority side may accept a write into a log, but it never commits - this is the CP choice from the CAP theorem, and the reason no merge is ever needed.',
+      },
+      {
+        id: 'cons-4',
+        prompt:
+          'A team runs a 3-node etcd cluster with one node in Europe, one in the US and one in Asia. Kubernetes feels slow. What is the cause and the usual fix?',
+        options: [
+          'etcd is slow; replace it with a faster store',
+          'Too few nodes; add two more in each region',
+          'Heartbeats are too frequent; raise the heartbeat interval',
+          'Every write waits for a cross-ocean round trip to a second node; put the three nodes in one region, in three availability zones',
+        ],
+        answer: 3,
+        explanation:
+          'Consensus makes every write pay the round trip to a majority. Across continents that is tens to hundreds of milliseconds per write. Three zones in one region keep round trips near 1 ms and still survive losing a zone; more distant nodes only add latency.',
+      },
+      {
+        id: 'cons-5',
+        prompt:
+          'In the Lab (5 nodes) you kill three followers one after the other while writes flow. What do you see?',
+        options: [
+          'Writes keep committing, just more slowly',
+          'The leader steps down after the first crash',
+          'Writes commit while 2 are down; after the third crash new entries stay dashed and writes time out',
+          'The cluster elects a second leader to share the load',
+        ],
+        answer: 2,
+        explanation:
+          'With 2 of 5 down, the leader and 2 followers still make 3. With 3 down only 2 are left, so no entry can reach a majority and the cluster refuses rather than risk diverging. It recovers as soon as one node restarts.',
+      },
+      {
+        id: 'cons-6',
+        prompt: 'A team wants to store 50,000 user click events per second in etcd, "because it never loses data". Good idea?',
+        options: [
+          'No - every write pays a majority round trip and lands on every node; consensus stores are built for small critical metadata, so use a log like Kafka or a database',
+          'Yes - consensus makes it the safest place for any data',
+          'Yes, if the cluster has 7 nodes',
+          'Yes, if heartbeats are turned off for speed',
+        ],
+        answer: 0,
+        explanation:
+          'Consensus buys safety with latency and full copies on every node, which is worth it for configuration and leases, not for bulk events. More nodes make each write slower, not faster.',
+      },
+      {
+        id: 'cons-7',
+        prompt: 'To make writes faster, someone proposes committing an entry once any 2 of the 5 nodes store it. What breaks?',
+        options: [
+          'Nothing - 2 copies already survive one crash',
+          'Two groups of 2 that share no node could each commit a different entry at the same index, so the replicas disagree',
+          'Reads become slower',
+          'Leader election stops working',
+        ],
+        answer: 1,
+        explanation:
+          'Safety comes from overlap: any two groups of 3 out of 5 share at least one node, which carries what was decided. Two groups of 2 can be disjoint - that is split brain. Surviving a crash is not the same as never contradicting yourself.',
+      },
+      {
+        id: 'cons-8',
+        prompt:
+          'The leader stores a write on 3 of 5 nodes, commits it, and crashes before replying to the client. The client times out. What happened to the write?',
+        options: [
+          'It is lost, because the client got no answer',
+          'It is rolled back by the next leader',
+          'It is committed only if the old leader restarts',
+          'It is committed and survives: the new leader must hold it - so the client should retry with a request id, to avoid applying it twice',
+        ],
+        answer: 3,
+        explanation:
+          'Committed means stored on a majority, and the vote rule means only a node with that entry can win. A timeout therefore does not mean failure; retrying blindly could apply it twice, which is why clients attach a unique request id.',
+      },
+      {
+        id: 'cons-9',
+        prompt:
+          'In the Lab you choose "Cut off the leader". The old leader keeps appending the writes it receives, shown dashed. What happens to those entries when you heal the partition?',
+        options: [
+          'The new leader log overwrites them - they were never committed, and their clients already timed out',
+          'They are merged into the new leader log',
+          'They are committed, because the old leader accepted them first',
+          'The new leader steps down and adopts them',
+        ],
+        answer: 0,
+        explanation:
+          'Entries that never reached a majority were never promised to anyone. When the old leader sees the higher term it steps down, and the Raft rule replaces the conflicting part of its log with the leader log. Only committed entries are permanent.',
+      },
+      {
+        id: 'cons-10',
+        prompt: 'A bug makes one node acknowledge entries it never stored. Does Raft protect the cluster?',
+        options: [
+          'Yes - the majority vote filters out any bad node',
+          'Yes, as long as the cluster has 5 nodes',
+          'No - Raft and Paxos assume nodes fail by stopping, not by lying; tolerating that needs a Byzantine fault tolerant protocol',
+          'No, but adding an even number of nodes fixes it',
+        ],
+        answer: 2,
+        explanation:
+          'A false acknowledgement can complete a majority that does not really exist, so a committed entry could be lost. Crash-fault protocols trust every message. Byzantine fault tolerance needs 3f + 1 nodes and is used where participants do not trust each other.',
+      },
+      {
+        id: 'cons-11',
+        prompt:
+          'A 5-node cluster: the leader round trip to its four followers is 1 ms, 1 ms, 2 ms and 40 ms (one follower is far away). About how long does a write take to commit, ignoring disk?',
+        options: [
+          'About 40 ms - the slowest follower',
+          'About 1 ms - it needs the 2 fastest followers',
+          'About 44 ms - the sum of all round trips',
+          'About 0 ms - the leader commits alone',
+        ],
+        answer: 1,
+        explanation:
+          'The leader needs 2 followers besides itself, and the two 1 ms followers answer first. The distant node only matters if a nearby one fails - then writes jump to 2 ms, and with two nearby ones gone, to 40 ms.',
+      },
+      {
+        id: 'cons-12',
+        prompt:
+          'After a partition heals, a healthy cluster briefly loses its leader, although the leader never failed. The two nodes that were cut off rejoin with a much higher term. Why, and what do real systems do?',
+        options: [
+          'The partition corrupted the leader log',
+          'The leader crashed during the partition without anyone noticing',
+          'Rejoining nodes always become the new leader',
+          'While cut off, they kept timing out and raising their term; the higher term forces the leader to step down. Pre-vote (on by default in etcd since 3.5) makes a node check it could win before raising its term',
+        ],
+        answer: 3,
+        explanation:
+          'A node that cannot win still bumps its term on every timeout, and any higher term makes a leader step down. Pre-vote adds a round where the node first asks whether it could win, so an isolated node stops disrupting the cluster. The Lab has no pre-vote, so you can see this with "Cut off followers".',
+      },
+    ],
   },
   {
     slug: 'idempotency',

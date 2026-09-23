@@ -296,7 +296,7 @@ export const LABS: LabDefinition[] = [
   {
     id: 'consensus',
     title: 'Consensus Lab',
-    blurb: 'Elect a leader, replicate a log, and partition the cluster.',
+    blurb: 'Elect a leader and commit writes on a majority, then crash, pause or partition the nodes.',
     category: 'distributed',
     difficulty: 'Advanced',
     concept: 'consensus',
