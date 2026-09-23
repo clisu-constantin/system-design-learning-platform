@@ -8,9 +8,10 @@ export const performanceConcepts: Concept[] = [
     category: 'performance',
     difficulty: 'Beginner',
     lab: 'caching',
+    labFocus: 'caching',
     keywords: ['hit rate', 'ttl', 'eviction', 'redis', 'stale'],
     what: 'A cache stores the result of an expensive operation in a fast store so that repeated requests can be served without redoing the work.',
-    why: 'A cache hit from memory costs a few milliseconds; the database query behind it might cost a hundred. At high read volumes, caching is usually the single largest latency and cost improvement available.',
+    why: 'A cache hit from memory costs about a millisecond; the database query behind it might cost fifty. At high read volumes, caching is usually the single largest latency and cost improvement available - and it takes read load off the database.',
     how: [
       'On a read, look in the cache first (a hit returns immediately).',
       'On a miss, query the source, store the result, and return it.',
@@ -21,15 +22,16 @@ export const performanceConcepts: Concept[] = [
       'Read-heavy workloads where the same data is requested repeatedly.',
       'Expensive computations: aggregations, rendered pages, external API results.',
       'Data that tolerates being a few seconds or minutes old.',
+      'Skewed access, where a small hot set of keys gets most of the traffic and fits in memory.',
     ],
     diagram: `User -> API -> Cache
                  |
-                 +-- HIT  ----------> response      ~4 ms
+                 +-- HIT  ----------> response      ~1 ms
                  |
                  +-- MISS
                        |
                        v
-                    Database  --> store in cache --> response   ~120 ms`,
+                    Database  --> store in cache --> response   ~50 ms`,
     advantages: [
       'Large latency reduction on the hot path.',
       'Protects the database from read spikes.',
@@ -40,6 +42,11 @@ export const performanceConcepts: Concept[] = [
         approach: 'Caching with a TTL',
         gains: ['Simple', 'Bounded staleness', 'Big hit-rate win for hot keys'],
         costs: ['Users can see stale data for up to the TTL', 'Cache and source can disagree', 'One more system to operate'],
+      },
+      {
+        approach: 'A bigger cache (more memory)',
+        gains: ['Holds more of the hot set, so the hit rate rises', 'Fewer evictions of keys that are still wanted'],
+        costs: ['RAM costs money', 'Diminishing returns once the hot set fits - the long tail of rare keys barely hits'],
       },
       {
         approach: 'No cache',
@@ -61,24 +68,154 @@ export const performanceConcepts: Concept[] = [
     quiz: [
       {
         id: 'cache-1',
-        prompt: 'Hit rate is 90%, cache hits take 5 ms and misses 100 ms. What is the approximate average latency?',
+        prompt: 'Your cache has a 90% hit rate. Hits take 5 ms and misses take 100 ms. A teammate says the average request takes about 5 ms now. What is the average really?',
         options: ['5 ms', '14.5 ms', '52 ms', '100 ms'],
         answer: 1,
         explanation:
-          '0.9 x 5 + 0.1 x 100 = 14.5 ms. The 10% of misses dominate the average, which is why the last few points of hit rate matter so much.',
+          '0.9 x 5 + 0.1 x 100 = 14.5 ms. The 10% of misses add 10 ms and dominate the average, which is why the last few points of hit rate matter so much. 5 ms is the tempting answer, but it is the hit latency, not the average.',
       },
       {
         id: 'cache-2',
-        prompt: 'A popular key expires and 5,000 concurrent requests miss at once, overwhelming the database. What is this called and how is it mitigated?',
+        prompt: 'A popular key expires and 5,000 concurrent requests miss at once. All 5,000 run the same query and the database falls over. What is this, and what fixes it?',
         options: [
-          'Replication lag - add replicas',
-          'Cache stampede - mitigate with locking/coalescing, jittered TTLs or background refresh',
-          'Sharding skew - change the shard key',
-          'Head-of-line blocking - switch to HTTP/3',
+          'Replication lag - add read replicas',
+          'Cache penetration - cache a negative result for missing keys',
+          'A cache stampede - let one request reload the key while the rest wait, or serve the stale copy during a background refresh',
+          'Too small a cache - double the memory limit',
+        ],
+        answer: 2,
+        explanation:
+          'This is the thundering herd, also called a cache stampede: one hot key expiring turns into thousands of identical queries. Only one request should recompute the value (a per-key lock or request coalescing), or the old value is served while one refresh runs. More memory does not help: the key was not evicted, it expired. Penetration is about keys that do not exist at all.',
+      },
+      {
+        id: 'cache-3',
+        prompt: 'In the Caching Lab, traffic is 1,000 req/sec, the hit rate is about 60% and the database runs about 400 queries/sec against a capacity of 900. You switch "Cache enabled" off. What do you see?',
+        options: [
+          'Database queries jump to about 1,000/sec, past its capacity, and latency climbs steeply',
+          'Nothing much: 1,000 is close to 900, so the database copes',
+          'Latency falls, because requests no longer pay for the cache lookup first',
+          'Only the hit rate changes; database load is set by the Traffic slider alone',
+        ],
+        answer: 0,
+        explanation:
+          'Every request becomes a query, so the database goes from about 400 to 1,000 queries/sec - above its 900 capacity. Past the knee of the queueing curve latency does not grow gently, it climbs steeply. Skipping the 1 ms cache lookup is real but tiny next to that.',
+      },
+      {
+        id: 'cache-4',
+        prompt: 'Hits take 1 ms and misses 50 ms. Your hit rate goes from 95% to 99%. What changes the most?',
+        options: [
+          'Average latency drops by about 40 ms',
+          'Nothing measurable - 95% was already good enough',
+          'The cache needs five times more memory',
+          'The load reaching the database falls five times, from 5% of requests to 1%, while average latency drops only about 2 ms',
+        ],
+        answer: 3,
+        explanation:
+          'Average latency goes from about 3.5 ms to 1.5 ms - a small change. But the misses are what reach the database, and they fall from 5 in 100 requests to 1 in 100: a fivefold cut in database load. That second number is often the real reason to chase the last few points of hit rate.',
+      },
+      {
+        id: 'cache-5',
+        prompt: 'In the Caching Lab the memory limit is 100 keys and Distinct keys is 500. You drag Distinct keys to 5,000 and leave everything else alone. What happens to the hit rate, and why?',
+        options: [
+          'It rises, because more keys means more data to cache',
+          'It falls, because the same 100 slots now cover a much smaller share of the keys being asked for, so evictions climb',
+          'It stays the same, because the TTL has not changed',
+          'It drops to 0%, because the cache cannot hold 5,000 keys',
         ],
         answer: 1,
         explanation:
-          'Only one request should recompute the value; the rest wait for it or serve a slightly stale copy while it refreshes.',
+          'A cache only helps when the hot subset fits. With 5,000 distinct keys the 100 hottest cover much less of the traffic, so more requests miss and LRU keeps evicting keys that will be needed again. It does not fall to zero: the very hottest keys still stay cached because skewed traffic keeps touching them.',
+      },
+      {
+        id: 'cache-6',
+        prompt: 'An API serves 10,000 different report IDs, and each ID is requested about equally often. The team adds a cache with room for 1,000 entries and a 60 s TTL. What hit rate should they expect?',
+        options: [
+          'Around 90%, like most caches',
+          'Close to 100% once it warms up',
+          'At most about 10%, because only a tenth of equally popular keys fit',
+          'It depends only on the TTL',
+        ],
+        answer: 2,
+        explanation:
+          'With uniform access the hit rate can be no better than the share of keys that fit: 1,000 of 10,000, about 10%. Caches work so well in practice because real traffic is skewed - drag Access skew to uniform in the Lab and watch the hit rate fall. 90% is a typical number for skewed hot paths, not a law.',
+      },
+      {
+        id: 'cache-7',
+        prompt: 'A deploy restarts the cache tier and empties it. Normally 85% of 2,000 req/sec hit, so the database sees 300 queries/sec. What happens in the first minute after the restart, and what should the team have planned?',
+        options: [
+          'Nothing: the cache refills instantly',
+          'The database briefly sees all 2,000 queries/sec; size it for a cold cache or warm the hot keys before taking traffic',
+          'Requests fail until the cache is full again',
+          'The database sees 300 queries/sec as before, because the hit rate is remembered',
+        ],
+        answer: 1,
+        explanation:
+          'An empty cache is a 0% hit rate, so every request goes to the database until the hot keys are loaded again - press Flush cache in the Lab to watch it. Requests do not fail with cache-aside, they just get slow, and the database may tip over. Warming the top keys, or restarting cache nodes one at a time, avoids the cold start.',
+      },
+      {
+        id: 'cache-8',
+        prompt: 'An admin changes a price in the database. Product pages are cached with a 10-minute TTL, and customers keep seeing the old price for several minutes. What is the cleanest fix?',
+        options: [
+          'Delete the cached key when the price is written, so the next read loads the new price',
+          'Flush the whole cache on every write',
+          'Turn off the cache for product pages',
+          'Raise the TTL so entries are reloaded less often',
+        ],
+        answer: 0,
+        explanation:
+          'The TTL only bounds staleness to 10 minutes; it does not remove it. Deleting the key on write means the very next read misses and loads the fresh row. Flushing everything makes every write a cold start for the whole site, and turning the cache off gives up the benefit to fix one key. A longer TTL makes the problem worse.',
+      },
+      {
+        id: 'cache-9',
+        prompt: 'After every cold start the database gets a sharp load spike exactly every 60 seconds, then it goes quiet. Every key uses a 60 s TTL. What is going on?',
+        options: [
+          'The database runs a scheduled job every minute',
+          'The cache is too small and evicts everything each minute',
+          'Every key was loaded in the same few seconds, so they all expire together; add random jitter to each TTL',
+          'The hit rate is 100%, so the database should see no load at all',
+        ],
+        answer: 2,
+        explanation:
+          'Keys written at the same moment with the same TTL expire at the same moment, so the misses arrive in waves. Adding jitter (for example 60 s plus or minus 20%) spreads the expiries out and the spikes disappear. An undersized cache would give constant misses, not a sharp periodic spike.',
+      },
+      {
+        id: 'cache-10',
+        prompt: 'The Redis cluster in front of the database goes down, and every API request starts returning HTTP 500. The database itself is healthy. What was designed wrong?',
+        options: [
+          'Nothing - without a cache the API cannot work',
+          'The cache was a hard dependency; a cache error should fall through to the database with a short timeout, so the API gets slower instead of failing',
+          'The database should have been the one to fail first',
+          'Redis needed a longer TTL',
+        ],
+        answer: 1,
+        explanation:
+          'A cache is a performance tool, never a correctness mechanism. With cache-aside, a cache error can be treated as a miss and the request answered from the database - slower, but working. The database must then be able to survive that load, which is the same question as surviving a cold cache.',
+      },
+      {
+        id: 'cache-11',
+        prompt: 'Bots request product IDs that do not exist. Each request misses the cache, queries the database, finds nothing, and caches nothing - so the next identical request does the same. How do you stop these reaching the database?',
+        options: [
+          'Raise the TTL on real products',
+          'Add more memory to the cache',
+          'Use LFU instead of LRU',
+          'Cache the "not found" result for a short time, or check a Bloom filter of known IDs first',
+        ],
+        answer: 3,
+        explanation:
+          'This is cache penetration: keys that never exist never populate the cache, so every request goes to the database. Caching the negative result briefly, or rejecting unknown IDs with a Bloom filter, closes the gap. The other options only help keys that exist.',
+      },
+      {
+        id: 'cache-12',
+        prompt: 'A public product image is served by your API from Redis on every page view. Where does caching it give the biggest win?',
+        options: [
+          'In Redis, with a longer TTL',
+          'At the CDN edge and in the browser, with Cache-Control headers, so most requests never reach your servers',
+          'In the database buffer pool',
+          'In an in-process cache on each API instance',
+        ],
+        answer: 1,
+        explanation:
+          'The outermost layer that can hold the data correctly gives the biggest win. A public image can live at the CDN and in the browser, so the request never reaches your infrastructure at all. Redis still costs a network hop, an API server and your bandwidth on every view.',
       },
     ],
   },
@@ -97,7 +234,17 @@ export const performanceConcepts: Concept[] = [
       'Read-through: the cache itself loads from the database on a miss - the application only talks to the cache.',
       'Write-through: writes go to the cache and the database synchronously, keeping them consistent.',
       'Write-behind: writes go to the cache and are flushed to the database asynchronously.',
-      'Write-around: writes go straight to the database and the cache is only populated on read.',
+      'Write-around: writes go straight to the database (deleting any cached copy) and the cache is only populated on read.',
+    ],
+    when: [
+      'Always - every cache needs an explicit answer to who fills it and what happens on a write.',
+      'Per data type: ask how bad a stale read is and how bad a lost write is, and let those two answers pick the strategy.',
+      'Write-behind only for data you can afford to lose, such as view counters and metrics.',
+    ],
+    advantages: [
+      'Makes the freshness guarantee of each piece of data explicit instead of accidental.',
+      'Lets you trade write latency against durability deliberately.',
+      'Deleting keys on write keeps the invalidation logic idempotent and order-independent.',
     ],
     diagram: `CACHE ASIDE          WRITE THROUGH        WRITE BEHIND        WRITE AROUND
 app -> cache (miss)  app -> cache         app -> cache        app -> database
@@ -108,6 +255,11 @@ app -> store in cache   (both updated)       -> database          on next read)`
         approach: 'Cache-aside',
         gains: ['Only requested data is cached', 'Cache outage degrades performance, not correctness'],
         costs: ['Every miss pays cache + database', 'Duplicate logic in every read path', 'Race conditions between load and write'],
+      },
+      {
+        approach: 'Read-through',
+        gains: ['One code path for hits and misses', 'The loader can let only one request reload a key, which stops stampedes in one place'],
+        costs: ['The cache layer must know how to load every kind of entity', 'If the cache is down, reads fail unless the client falls back to the database'],
       },
       {
         approach: 'Write-through',
@@ -122,22 +274,147 @@ app -> store in cache   (both updated)       -> database          on next read)`
       {
         approach: 'Write-around',
         gains: ['Cache is not polluted by write-once data', 'Simple write path'],
-        costs: ['First read after a write is always a miss'],
+        costs: ['First read after a write is always a miss', 'An update must still delete the old cached copy, or it stays stale until the TTL'],
       },
     ],
     mistakes: [
       'Mixing strategies per code path without documenting it, so nobody knows the freshness guarantee.',
       'Using write-behind for data you cannot afford to lose.',
+      'Updating the cached value in place on a write instead of deleting it - two concurrent writers can leave the older value cached.',
+      'Writing to the database and forgetting to delete the cached key, then debugging stale reads.',
+      'Letting a cache error fail the request instead of falling back to the database.',
     ],
     related: ['caching', 'redis', 'denormalization'],
     quiz: [
       {
         id: 'cs-1',
-        prompt: 'Which strategy risks losing data if the cache node crashes?',
-        options: ['Cache-aside', 'Write-through', 'Write-behind', 'Write-around'],
+        prompt: 'Writes are acknowledged as soon as they reach the cache and are flushed to the database every 30 seconds. The cache node crashes. What happens to the writes of the last 20 seconds?',
+        options: [
+          'They are safe, because the database has them',
+          'They are replayed from the cache on restart',
+          'They are lost - the caller was told they succeeded, but they never reached the database',
+          'They are retried automatically by the database',
+        ],
         answer: 2,
         explanation:
-          'Write-behind acknowledges the write once it is in the cache and flushes to the database later. Anything not yet flushed is lost.',
+          'This is write-behind: the acknowledgement comes before the database has the data, so anything not yet flushed dies with the cache node. It is the only strategy that can lose acknowledged writes. With write-through the database would have every write, because the caller waits for it.',
+      },
+      {
+        id: 'cs-2',
+        prompt: 'A video site counts views: 50,000 increments per second, read a few times a minute, and losing a few seconds of counts in a crash is acceptable. Which write strategy fits?',
+        options: [
+          'Write-behind: count in the cache and flush totals to the database in batches',
+          'Write-through: every increment to the cache and the database',
+          'Write-around: every increment straight to the database',
+          'No cache: the database must see each increment',
+        ],
+        answer: 0,
+        explanation:
+          'Write-behind turns 50,000 small database writes per second into one batched update every few seconds, and its one risk - losing unflushed writes - is acceptable here. Write-through and write-around would both send all 50,000 writes per second to the database.',
+      },
+      {
+        id: 'cs-3',
+        prompt: 'In the Cache Strategies Lab you watch the cache-aside write: UPDATE to the database, then DEL key, then 200 OK. A developer removes the DEL step to save a round trip. What do readers see?',
+        options: [
+          'Nothing changes - the database has the new value',
+          'The old value, served from the cache until its TTL runs out',
+          'An error on the next read',
+          'The new value, because the cache watches the database',
+        ],
+        answer: 1,
+        explanation:
+          'In cache-aside nothing links the cache to the database except the application. Without the DEL, the cached copy stays and every read hits it - stale - until the TTL expires. The cache does not watch the database; that is exactly the job the DEL step does.',
+      },
+      {
+        id: 'cs-4',
+        prompt: 'Two requests update the same product at almost the same time. Each writes the database, then SETs its own new value into the cache. Sometimes the cache ends up with the older value for good. What is the safer write path?',
+        options: [
+          'Add a longer TTL so the cache changes less often',
+          'Write the cache first, then the database',
+          'Use write-behind so the cache is the only writer',
+          'Delete the cached key after the database write instead of setting it, so the next read loads the current row',
+        ],
+        answer: 3,
+        explanation:
+          'The two SETs can land in the opposite order from the database writes, leaving the older value cached. A DEL is idempotent and order-independent: whichever request deletes last, the next read reloads from the source of truth. Swapping the order or lengthening the TTL keeps the race and only changes how long it lasts.',
+      },
+      {
+        id: 'cs-5',
+        prompt: 'A nightly job imports 10 million order rows that nobody will read for weeks. The service uses write-through for all writes. What goes wrong, and what should the import use instead?',
+        options: [
+          'Nothing - write-through keeps everything fresh',
+          'The import fills the cache with rows nobody reads and evicts the hot keys; the import should write around the cache',
+          'The import is lost if the cache crashes',
+          'The database rejects the import',
+        ],
+        answer: 1,
+        explanation:
+          'Write-through caches everything that is written, including write-once data, so the import pushes the hot set out and the hit rate collapses the next morning. Write-around sends those writes straight to the database; the cache fills only with what is read. Data loss is the risk of write-behind, not write-through.',
+      },
+      {
+        id: 'cs-6',
+        prompt: 'Your service uses a read-through cache library. The cache cluster goes down, and every read now returns an error, although the database is healthy. What is missing?',
+        options: [
+          'A fallback: on a cache error the loader should read the database directly, so reads get slower instead of failing',
+          'A longer TTL',
+          'Write-behind for the reads',
+          'A bigger cache cluster',
+        ],
+        answer: 0,
+        explanation:
+          'With read-through the application only talks to the cache, so a cache outage becomes a read outage unless the client falls back to the database. Cache-aside falls through naturally; read-through has to be written to do it. A bigger or longer-lived cache does nothing while it is down.',
+      },
+      {
+        id: 'cs-7',
+        prompt: 'Stock levels change every few seconds, and selling an item you do not have is expensive. Product pages show stock from a cache. What must the checkout do?',
+        options: [
+          'Trust the cached stock level, because it is at most a few seconds old',
+          'Use write-behind so stock updates are fast',
+          'Re-check and reserve the stock atomically in the database at checkout, whatever the page showed',
+          'Raise the TTL so the cache is hit more often',
+        ],
+        answer: 2,
+        explanation:
+          'A cache is fine for showing roughly how many are left, but the decision that sells the item must use the source of truth, atomically. "At most a few seconds old" is exactly the window in which two buyers take the last item. The strategy is chosen by how bad stale is - and here stale is very bad.',
+      },
+      {
+        id: 'cs-8',
+        prompt: 'In the Cache Strategies Lab you pick Write around, then Read, right after a write of a new row. What does the read do first, and why?',
+        options: [
+          'Hits the cache, because the write stored the row there',
+          'Misses the cache, then loads the row from the database and stores it - write-around never put it in the cache',
+          'Reads from the cache, which fetches it from the database by itself',
+          'Fails, because the row is only in the database',
+        ],
+        answer: 1,
+        explanation:
+          'Write-around writes only to the database, so the first read after a write is always a miss: the application loads the row and fills the cache on the way back. That miss is the price of keeping write-once data out of the cache. Fetching by itself would be read-through, a different pattern.',
+      },
+      {
+        id: 'cs-9',
+        prompt: 'Thirty call sites repeat the same cache-aside code, and a hot key missing sends hundreds of identical queries to the database. What change fixes both problems in one place?',
+        options: [
+          'Switch every write to write-through',
+          'Shorten the TTL',
+          'Remove the cache from the hot key',
+          'Move to read-through with one loader that lets a single request reload a missing key while the others wait',
+        ],
+        answer: 3,
+        explanation:
+          'Read-through puts the loading logic in one place, so call sites become one line, and that one loader can make sure only one request reloads a key (single flight). Write-through keeps written keys warm but does not stop a stampede on a key that expired, and a shorter TTL makes misses more frequent.',
+      },
+      {
+        id: 'cs-10',
+        prompt: 'A user changes their display name. It appears inside cached feed pages, comment threads and profile cards, each under its own key. Keeping track of every key to delete keeps missing some. What scales better?',
+        options: [
+          'Flush the whole cache whenever any user changes their name',
+          'Cache small canonical objects (the user) and assemble pages from them, or put a version in the key and bump it on change',
+          'Use write-behind for names',
+          'Never cache anything that contains a name',
+        ],
+        answer: 1,
+        explanation:
+          'Deleting every derived key by hand is where caching bugs come from. Caching the user once and assembling pages makes one delete precise; a versioned key (user:42:v7) makes old entries unreachable at once and they age out on their own. Flushing everything turns each rename into a cold start.',
       },
     ],
   },
@@ -147,14 +424,17 @@ app -> store in cache   (both updated)       -> database          on next read)`
     tagline: 'An in-memory data structure server used as cache, session store and more.',
     category: 'performance',
     difficulty: 'Beginner',
-    keywords: ['in-memory', 'ttl', 'lru', 'pubsub', 'sorted set', 'lock'],
-    what: 'Redis is a single-threaded, in-memory store with data structures (strings, hashes, lists, sets, sorted sets, streams), optional persistence, TTLs and replication.',
+    lab: 'caching',
+    labFocus: 'redis',
+    keywords: ['in-memory', 'ttl', 'lru', 'maxmemory', 'eviction', 'pubsub', 'sorted set', 'lock'],
+    what: 'Redis is an in-memory store that runs commands one at a time on a single thread, with data structures (strings, hashes, lists, sets, sorted sets, streams), per-key TTLs, a memory limit with an eviction policy, optional persistence and replication.',
     why: 'Sub-millisecond operations plus useful data structures make it the default choice for caching, session storage, rate limiting, leaderboards, and simple queues.',
     how: [
       'Data lives in RAM; persistence (RDB snapshots, AOF log) is for recovery, not for capacity.',
       'Commands are executed one at a time, which makes single-key operations naturally atomic.',
-      'maxmemory plus an eviction policy (allkeys-lru is common for caches) bounds memory.',
-      'Replication and Sentinel/Cluster provide failover and sharding.',
+      'A TTL (SET key value EX 60) makes a key disappear after that many seconds; Redis removes expired keys when they are touched and in a background sweep.',
+      'maxmemory plus an eviction policy bounds memory: allkeys-lru evicts the least recently used key, and noeviction - the default policy - refuses new writes when full.',
+      'Replication is asynchronous; Sentinel adds failover and Cluster shards keys across nodes.',
     ],
     when: [
       'Caching database results and rendered fragments.',
@@ -164,20 +444,189 @@ app -> store in cache   (both updated)       -> database          on next read)`
     diagram: `SET  session:abc  {json}  EX 1800     -> expires in 30 min
 INCR rate:user:42                     -> atomic counter
 ZADD leaderboard 4820 "ada"           -> sorted set
-GET  product:42                       -> sub-millisecond read`,
+GET  product:42                       -> sub-millisecond read
+CONFIG SET maxmemory-policy allkeys-lru -> evict when full`,
+    advantages: [
+      'Sub-millisecond operations, because everything is in RAM.',
+      'Every single command is atomic, so counters, rate limits and locks need no extra coordination.',
+      'Rich data structures: sorted sets, hashes, streams and more, not just strings.',
+      'Per-key TTLs and a memory limit make it a self-cleaning cache.',
+    ],
     tradeoffs: [
       {
-        approach: 'Redis as a cache',
-        gains: ['Enormous latency win', 'Rich structures beyond key/value', 'Simple to operate at small scale'],
-        costs: ['RAM is expensive - dataset must fit', 'Another component with its own failure modes', 'Persistence is weaker than a real database'],
+        approach: 'Redis as a cache (maxmemory + allkeys-lru)',
+        gains: ['Memory stays bounded', 'Cold keys are evicted automatically', 'Writes never fail for lack of room'],
+        costs: ['Any key can vanish, so only store what you can reload', 'LRU is approximated by sampling a few keys'],
+      },
+      {
+        approach: 'Redis as a store (noeviction)',
+        gains: ['Never silently drops a key', 'A full memory shows up as errors you can alert on'],
+        costs: ['Writes fail with an OOM error when memory is full', 'Memory must be sized and watched'],
+      },
+      {
+        approach: 'RDB snapshots',
+        gains: ['Compact file', 'Fast restart'],
+        costs: ['Loses every write since the last snapshot, often minutes'],
+      },
+      {
+        approach: 'AOF log (fsync every second)',
+        gains: ['Loses at most about one second of writes'],
+        costs: ['Larger file and slower restart', 'Some write throughput spent on the log'],
       },
     ],
     mistakes: [
       'Using Redis as the system of record for data you cannot lose.',
       'Storing huge values or running O(n) commands (KEYS) on a single-threaded server.',
       'Relying on a naive SETNX lock for correctness-critical mutual exclusion.',
+      'Leaving maxmemory unset on a cache: on 64-bit systems the default is no limit, so Redis grows until the machine runs out of RAM.',
+      'Overwriting a key with a plain SET and losing its TTL - SET clears the expiry unless you pass EX again.',
     ],
     related: ['caching', 'cache-strategies', 'distributed-locks', 'rate-limiting'],
+    quiz: [
+      {
+        id: 'redis-1',
+        prompt: 'In the Caching Lab on the Redis focus, Redis holds 150 keys - its memory limit - with allkeys-lru, and a request misses on a key that is not cached. What happens when the API stores it?',
+        options: [
+          'The SET fails, because memory is full',
+          'Redis evicts the least recently used key to make room, stores the new one, and the Evicted count goes up',
+          'Redis grows past its limit and evicts later',
+          'Redis evicts the key with the shortest TTL left',
+        ],
+        answer: 1,
+        explanation:
+          'With allkeys-lru, a write that needs room makes Redis evict the key used longest ago, so memory stays at the limit and the new key gets in. Refusing the write is what noeviction does. Evicting by shortest remaining TTL is a different policy, volatile-ttl.',
+      },
+      {
+        id: 'redis-2',
+        prompt: 'Same Lab, memory full. You switch the eviction policy to noeviction. What do you see?',
+        options: [
+          'Nothing changes: noeviction only matters for keys without a TTL',
+          'Redis crashes with an out-of-memory error',
+          'Reads start failing',
+          'SET refused climbs: new keys cannot be cached, but reads are still answered - hits from Redis, misses from the database',
+        ],
+        answer: 3,
+        explanation:
+          'Under noeviction Redis answers commands that add data with an OOM error but keeps serving reads. Cache-aside treats the failed SET as harmless and answers from the database, so the only effect is that the cache stops learning new keys until TTLs free some room. That is why noeviction, the Redis default, is the wrong policy for a cache.',
+      },
+      {
+        id: 'redis-3',
+        prompt: 'A team installs Redis with the default config on a 64-bit server and uses it as a cache, with no TTLs. A few weeks later the server starts swapping and Redis is killed. Why?',
+        options: [
+          'maxmemory defaults to 0 on 64-bit systems, meaning no limit, so Redis kept every key until the machine ran out of RAM',
+          'The default policy allkeys-lru evicted too slowly',
+          'Redis leaks memory after a few weeks',
+          'AOF persistence filled the RAM',
+        ],
+        answer: 0,
+        explanation:
+          'Without maxmemory there is nothing to evict against, so a cache with no TTLs only grows. Set maxmemory below the RAM of the machine and pick allkeys-lru. allkeys-lru is not the default - noeviction is - and it only acts once a limit is set.',
+      },
+      {
+        id: 'redis-4',
+        prompt: 'Login sessions are stored only in Redis, with a 30-minute TTL. Memory fills up during a traffic peak. Which policy fits, and why?',
+        options: [
+          'allkeys-lru, so Redis silently logs out the users who were idle longest',
+          'allkeys-random, to spread the logouts fairly',
+          'noeviction with a memory alert: a full Redis refuses new logins visibly instead of silently logging people out',
+          'No maxmemory, so sessions are never lost',
+        ],
+        answer: 2,
+        explanation:
+          'For a cache, eviction is harmless because the data can be reloaded. Sessions have no database behind them, so an eviction is a surprise logout. noeviction turns a full memory into errors you can alert on and size for. No limit at all just moves the failure to the operating system killing Redis.',
+      },
+      {
+        id: 'redis-5',
+        prompt: 'An engineer runs KEYS user:* on a production Redis holding 20 million keys, to find a few test users. What happens to the other clients?',
+        options: [
+          'Nothing - KEYS runs in the background',
+          'They all wait: commands run one at a time on one thread, and KEYS scans every key before anything else runs. SCAN walks the keys in small steps instead',
+          'Only clients reading user:* keys are slowed',
+          'Redis splits the scan across its CPU cores',
+        ],
+        answer: 1,
+        explanation:
+          'The single thread that makes every command atomic also means one slow command blocks everyone. KEYS is O(n) over the whole keyspace, so with 20 million keys every other client stalls for the whole scan. SCAN returns a few keys per call and lets other commands run in between.',
+      },
+      {
+        id: 'redis-6',
+        prompt: 'A rate limiter runs on four app instances. Each does GET count, adds 1 in code, then SET count. Under load, users get more requests through than the limit allows. What is the fix?',
+        options: [
+          'Use INCR, which reads and increments in one atomic command (or a small Lua script for check-and-increment)',
+          'Add more app instances',
+          'Give the counter a longer TTL',
+          'Use a bigger Redis machine',
+        ],
+        answer: 0,
+        explanation:
+          'GET then SET is a read-modify-write race: two instances read 9, both write 10, and one request is never counted. INCR does the whole thing inside Redis in one command, and commands never interleave. A bigger machine or more instances only make the race more frequent.',
+      },
+      {
+        id: 'redis-7',
+        prompt: 'Redis runs with AOF and appendfsync everysec. The machine loses power. How much of the acknowledged data can be gone?',
+        options: [
+          'Nothing - AOF makes Redis as durable as a database',
+          'Everything since the last RDB snapshot, often minutes',
+          'About the last second of writes',
+          'All of it - Redis is in memory only',
+        ],
+        answer: 2,
+        explanation:
+          'With fsync every second the log reaches disk once a second, so up to about one second of writes can be lost. Minutes of loss is the RDB-only case. appendfsync always would lose less, at a large cost in throughput.',
+      },
+      {
+        id: 'redis-8',
+        prompt: 'The Redis primary dies and Sentinel promotes a replica. A few writes that clients saw acknowledged just before the crash are missing. How?',
+        options: [
+          'Sentinel deleted them during the failover',
+          'The TTL on those keys ran out',
+          'The replica was evicting keys',
+          'Replication is asynchronous: the primary acknowledged the writes before the replica had them',
+        ],
+        answer: 3,
+        explanation:
+          'Redis replication is asynchronous, so the primary answers the client first and ships the write to replicas afterwards. Writes in that gap die with the primary. This is one reason Redis should not be the only copy of money or orders.',
+      },
+      {
+        id: 'redis-9',
+        prompt: 'Sessions are written with SET session:abc {json} EX 1800. Later, a bug fix updates the session with a plain SET session:abc {json}. Weeks later memory is full of old sessions. Why?',
+        options: [
+          'The plain SET replaced the value and cleared its TTL, so those keys never expire',
+          'EX 1800 means 1800 days',
+          'Redis ignores TTLs when memory is not full',
+          'Expired keys are only removed on restart',
+        ],
+        answer: 0,
+        explanation:
+          'SET overwrites the whole key, including its expiry: the key becomes persistent unless you pass EX (or KEEPTTL) again. Redis does remove expired keys on its own, both when they are touched and in a background sweep, so the TTL is not the problem - its absence is.',
+      },
+      {
+        id: 'redis-10',
+        prompt: 'A weekly leaderboard must show the top 10 of 2 million players and the rank of any one player, updated on every game. Which Redis structure fits?',
+        options: [
+          'A string per player, with a KEYS scan to rank them',
+          'A sorted set: ZADD on each game, ZREVRANGE 0 9 for the top 10, ZREVRANK for one player',
+          'A list, sorted in the application after LRANGE',
+          'A hash of player to score, sorted with HGETALL in the application',
+        ],
+        answer: 1,
+        explanation:
+          'A sorted set keeps members ordered by score, so updating a score, reading the top 10 and finding one rank are all about O(log n). The other options pull 2 million entries into the application to sort them on every read.',
+      },
+      {
+        id: 'redis-11',
+        prompt: 'After moving to Redis Cluster, MGET user:1:name user:2:name fails with a CROSSSLOT error. What is going on?',
+        options: [
+          'Cluster mode does not support MGET at all',
+          'One of the keys has expired',
+          'The keys hash to different slots on different nodes, and multi-key commands need all keys in one slot - a hash tag such as {user:1} controls which slot a key goes to',
+          'The cluster needs more replicas',
+        ],
+        answer: 2,
+        explanation:
+          'Cluster shards keys by hash slot, and a multi-key command can only touch keys in the same slot. Hash tags put related keys in one slot on purpose - for example {user:1}:name and {user:1}:email. MGET itself works, as long as the keys share a slot.',
+      },
+    ],
   },
   {
     slug: 'cdn-caching',

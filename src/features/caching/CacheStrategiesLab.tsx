@@ -44,6 +44,38 @@ const STRATEGIES: { value: Strategy; label: string }[] = [
   { value: 'write-around', label: 'Write around' },
 ];
 
+/**
+ * What each strategy costs, in the simplified numbers the diagram shows (cache
+ * about 1 ms, database about 50 ms - the same figures as the Caching Lab).
+ */
+const PROFILES: Record<Strategy, { writeWaits: string; readAfterWrite: string; cacheDies: string }> = {
+  'cache-aside': {
+    writeWaits: 'Database, then a DEL: about 51 ms',
+    readAfterWrite: 'A miss that reloads the new value',
+    cacheDies: 'Reads fall back to the database: slower, still correct',
+  },
+  'read-through': {
+    writeWaits: 'Whatever write strategy it is paired with',
+    readAfterWrite: 'A miss the cache loads by itself',
+    cacheDies: 'Reads fail unless the client falls back to the database',
+  },
+  'write-through': {
+    writeWaits: 'Cache and database: about 51 ms',
+    readAfterWrite: 'A hit with the new value',
+    cacheDies: 'Nothing lost: the database has every write',
+  },
+  'write-behind': {
+    writeWaits: 'Cache only: about 1 ms',
+    readAfterWrite: 'A hit, while the database is still behind',
+    cacheDies: 'Acknowledged writes not yet flushed are lost',
+  },
+  'write-around': {
+    writeWaits: 'Database only: about 50 ms',
+    readAfterWrite: 'A miss: the first read loads it',
+    cacheDies: 'Reads fall back to the database: slower, still correct',
+  },
+};
+
 const FLOWS: Record<Strategy, Record<Operation, Step[]>> = {
   'cache-aside': {
     read: [
@@ -56,7 +88,7 @@ const FLOWS: Record<Strategy, Record<Operation, Step[]>> = {
     ],
     write: [
       { from: 'app', to: 'db', label: 'UPDATE', outcome: 'success', note: 'Writes go directly to the database.' },
-      { from: 'app', to: 'cache', label: 'DEL key', outcome: 'warning', note: 'The cached copy is invalidated. Forgetting this step is the classic stale-data bug.' },
+      { from: 'app', to: 'cache', label: 'DEL key', outcome: 'warning', note: 'The cached copy is deleted, not updated. Cache-aside usually pairs with this write path (write-around plus invalidation). Forgetting the DEL is the classic stale-data bug.' },
       { from: 'app', to: 'client', label: '200 OK', outcome: 'success', note: 'Next read misses and reloads the fresh value.' },
     ],
   },
@@ -107,8 +139,8 @@ const FLOWS: Record<Strategy, Record<Operation, Step[]>> = {
       { from: 'app', to: 'client', label: '200 OK', outcome: 'success', note: 'Response returned.' },
     ],
     write: [
-      { from: 'app', to: 'db', label: 'INSERT', outcome: 'success', note: 'The write goes straight to the database, bypassing the cache entirely.' },
-      { from: 'app', to: 'client', label: '201 Created', outcome: 'success', note: 'The cache is never polluted with write-once data that nobody reads.' },
+      { from: 'app', to: 'db', label: 'INSERT', outcome: 'success', note: 'The write goes straight to the database, bypassing the cache. A new row has nothing cached yet; an update would also DEL the old cached copy.' },
+      { from: 'app', to: 'client', label: '201 Created', outcome: 'success', note: 'The cache is never filled with write-once data that nobody reads. The first read of this row will miss.' },
     ],
   },
 };
@@ -206,6 +238,22 @@ export function CacheStrategiesLab() {
               ))}
             </ol>
           </div>
+          <div className="card p-4">
+            <p className="label mb-3">What {STRATEGIES.find((item) => item.value === strategy)?.label.toLowerCase()} costs</p>
+            <dl className="space-y-2 text-sm">
+              {[
+                ['A write waits for', PROFILES[strategy].writeWaits],
+                ['Read right after a write', PROFILES[strategy].readAfterWrite],
+                ['If the cache dies', PROFILES[strategy].cacheDies],
+              ].map(([term, detail]) => (
+                <div key={term} className="flex flex-col gap-0.5">
+                  <dt className="text-xs text-faint">{term}</dt>
+                  <dd className="text-ink">{detail}</dd>
+                </div>
+              ))}
+            </dl>
+            <p className="mt-3 text-[11px] text-faint">Simplified latencies: cache about 1 ms, database about 50 ms.</p>
+          </div>
           {concept?.tradeoffs ? (
             <div className="card p-4">
               <p className="label mb-3">Trade-offs</p>
@@ -285,10 +333,10 @@ export function CacheStrategiesLab() {
           <NodeStatRow label="Strategy" value={STRATEGIES.find((item) => item.value === strategy)?.label ?? ''} />
         </ArchNode>
         <ArchNode kind="cache" title="Cache" subtitle="Redis" placed={LAYOUT.cache}>
-          <NodeStatRow label="Latency" value="~4 ms" />
+          <NodeStatRow label="Latency" value="~1 ms" />
         </ArchNode>
         <ArchNode kind="sql" title="Database" subtitle="source of truth" placed={LAYOUT.db}>
-          <NodeStatRow label="Latency" value="~120 ms" />
+          <NodeStatRow label="Latency" value="~50 ms" />
         </ArchNode>
         <ArchNode kind="client" title="Caller" subtitle="waiting for the response" placed={LAYOUT.client} compact />
       </DiagramCanvas>
