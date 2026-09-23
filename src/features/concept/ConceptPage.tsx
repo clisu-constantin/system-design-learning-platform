@@ -21,7 +21,7 @@ import {
 } from 'lucide-react';
 import { ConceptHeader, AsciiBlock, ExplanationCard, QuizCard } from '@/components/learning';
 import { Badge, Button, ErrorBoundary, Expandable, Tabs, type TabItem } from '@/components/ui';
-import { FlowVisual, SequenceFlow } from '@/components/architecture/FlowVisual';
+import { FlowVisual } from '@/components/architecture/FlowVisual';
 import { getConcept, loadConcept, peekConcept, resolveRelated } from '@/data/concepts';
 import { loadDepth } from '@/data/concepts/deep';
 import { getVisual } from '@/data/visuals';
@@ -170,17 +170,9 @@ function ConceptBody({ concept }: { concept: Concept }) {
         id: 'diagram',
         label: 'Diagram',
         icon: <Play className="h-3.5 w-3.5" />,
-        content: <FlowVisual spec={visual} />,
+        // Keyed by slug so another concept starts on Live, with none of this one's traffic.
+        content: <FlowVisual key={concept.slug} spec={visual} walkthrough />,
       });
-
-      if (visual.steps?.length) {
-        items.push({
-          id: 'steps',
-          label: 'Step by step',
-          icon: <ArrowRight className="h-3.5 w-3.5" />,
-          content: <SequenceFlow spec={visual} />,
-        });
-      }
     }
 
     if (lab) {

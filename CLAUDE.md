@@ -140,10 +140,12 @@ The product complaint that shaped this app was "too much text". Concept pages th
 
 - `src/data/visuals/` maps every concept slug to a `VisualSpec` (nodes, edges with a particle
   `rate`, optional `steps`). All 106 concepts have one - keep it that way.
-- `FlowVisual` renders a spec as a self-running diagram; `SequenceFlow` walks the same spec one hop
-  at a time with a caption of **six words or fewer**.
-- The concept page shows: diagram tab, step-by-step tab, lab tab, trade-offs as chips, quiz, and one
-  "Full explanation" tab that holds all the prose. The right column is short cards only.
+- `FlowVisual` renders a spec as a self-running Diagram. With `walkthrough` (the concept page only),
+  a spec with `steps` also gets a chip row under the canvas: "Live" for the traffic, then one chip
+  per step. Picking a step stops the traffic and walks one request along that hop, on the same
+  Diagram, with a caption of **six words or fewer**. Play advances the steps and loops.
+- The concept page shows: Diagram tab (with its Walkthrough), lab tab, trade-offs as chips, quiz,
+  and one "Full explanation" tab that holds all the prose. The right column is short cards only.
 - Run `npm run check:visuals` after editing a spec. It covers `src/data/visuals`, the home hero and
   the `src/features/evolution` stage layouts, and fails the build on overlapping boxes, nodes past
   the canvas, labels too long for their box, step captions over six words, nodes with no edges, and
@@ -170,14 +172,14 @@ interchangeable, which contradicts the entire stateless/horizontal-scaling lesso
   introduced and label it afterwards (`2 nodes, multi-AZ`) rather than leaving a single box that
   quietly says "this is where everything goes down".
 
-- `SequenceFlow` shows the active step caption as a banner over the canvas, never as an edge label -
-  on a short edge an edge label always lands on a node.
+- A Walkthrough step shows its caption as a banner over the canvas, never as an edge label - on a
+  short edge an edge label always lands on a node.
 - `FlowVisual` auto-fits its spec to the container width (0.5x-1.3x, via `DiagramCanvas`'s `fit`
   prop), so a spec authored at 760px fills a wider card instead of stopping halfway across it. Pass
   `zoom` only to pin a scale.
-- `FlowVisual` and `SequenceFlow` have a Pause/Play control, start paused under
-  `prefers-reduced-motion`, and stop ticking while scrolled off screen (`useAutoplay`). Their nodes
-  and edges are memoized on `spec`, so only the particle layer re-renders per frame - keep it that
+- `FlowVisual` has a Pause/Play control, starts paused under `prefers-reduced-motion`, and stops
+  ticking while scrolled off screen (`useAutoplay`). Its nodes and edges are memoized on `spec` (and
+  the active Walkthrough step), so only the particle layer re-renders per frame - keep it that
   way; every `ArchNode` is a framer-motion `layout` component that measures the DOM on re-render.
 
 ## Content conventions

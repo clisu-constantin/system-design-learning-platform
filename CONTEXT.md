@@ -19,6 +19,14 @@ _Avoid_: Section, module, chapter
 The long-form written explanation of one Concept, shown in its "Full explanation" tab.
 _Avoid_: Deep dive, article
 
+**Diagram**:
+The running picture of one Concept: its parts and the traffic that flows between them. The first thing a Concept shows.
+_Avoid_: Visual, flow, animation
+
+**Walkthrough**:
+The ordered steps of a Diagram, one hop at a time, each with a caption of six words or fewer. Shown on the same Diagram, not beside it. Most Concepts do not have one.
+_Avoid_: Step by step, sequence, tour
+
 **Lab**:
 An interactive simulation the learner drives with controls. A Concept may host one.
 _Avoid_: Demo, exercise, widget

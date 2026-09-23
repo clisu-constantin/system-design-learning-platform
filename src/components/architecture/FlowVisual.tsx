@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from 'react';
+import { useMemo, useRef, useState, type ReactNode } from 'react';
 import { Pause, Play } from 'lucide-react';
 import { cn } from '@/utils/cn';
 import type { NodeKind, NodeStatus, RequestOutcome } from '@/types';
@@ -133,48 +133,94 @@ const renderNodes = (spec: VisualSpec, layout: Layout, activeIds?: Set<string>) 
   ));
 
 /**
- * A self-running architecture diagram: traffic flows along the edges on its own,
- * with no controls. Used as the primary content of a concept page, so the first
- * thing a learner meets is a working system rather than a paragraph.
+ * A self-running architecture diagram: traffic flows along the edges on its own.
+ * Used as the primary content of a concept page, so the first thing a learner
+ * meets is a working system rather than a paragraph.
+ *
+ * With `walkthrough`, a spec that has `steps` also gets a chip row under the
+ * canvas: "Live" for the traffic, then one chip per step. Picking a step stops
+ * the traffic and walks one request along that hop over the same diagram, so
+ * the Walkthrough is never a second copy of the picture in another tab.
  */
 export function FlowVisual({
   spec,
   className,
   grid = true,
   zoom,
+  walkthrough = false,
 }: {
   spec: VisualSpec;
   className?: string;
   grid?: boolean;
   /** Fixes the scale instead of fitting to the container width. */
   zoom?: number;
+  /** Shows the Walkthrough chip row when the spec has steps. */
+  walkthrough?: boolean;
 }) {
+  const steps = useMemo(() => (walkthrough ? (spec.steps ?? []) : []), [walkthrough, spec.steps]);
+  // null is Live: free-flowing traffic. A number is the Walkthrough step on show.
+  const [stepIndex, setStepIndex] = useState<number | null>(null);
   const particles = useRef<Particle[]>([]);
   const carry = useRef<number[]>(spec.edges.map(() => 0));
   const rerender = useRerender(30);
   const autoplay = useAutoplay();
+  // How far the stepped request is along its hop. A picked step parks it
+  // mid-edge, where it is visible instead of hidden under the node card.
+  const progress = useRef(0.5);
+
+  const active = stepIndex === null ? undefined : steps[Math.min(stepIndex, steps.length - 1)];
+  const activeFrom = active?.from;
+  const activeTo = active?.to;
 
   // Only the particles change from frame to frame. Keeping layout, edges and
   // node elements referentially stable lets DiagramCanvas reuse its curves and
   // lets React skip the node cards entirely - each is a framer-motion `layout`
-  // component, which measures the DOM whenever it re-renders.
+  // component, which measures the DOM whenever it re-renders. In a Walkthrough
+  // they change once per step, not once per frame.
   const layout = useMemo(() => toLayout(spec), [spec]);
-  const edges = useMemo(
-    () =>
-      spec.edges.map((edge) => ({
+  const edges = useMemo(() => {
+    const wiring: DiagramEdge[] = spec.edges.map((edge) => {
+      const isActive = edge.from === activeFrom && edge.to === activeTo;
+      return {
         from: edge.from,
         to: edge.to,
-        tone: edge.tone ?? 'default',
+        tone: isActive ? 'brand' : (edge.tone ?? 'default'),
         label: edge.label,
         labelT: edge.labelT,
         dashed: edge.dashed,
         curvature: edge.curvature,
-      })),
-    [spec],
+        animated: isActive,
+        faded: activeFrom !== undefined && !isActive,
+      };
+    });
+    // A step may travel a hop the wiring does not draw in that direction (a
+    // response going back), so it gets its own highlighted edge.
+    if (activeFrom && activeTo && !wiring.some((edge) => edge.animated)) {
+      wiring.push({ from: activeFrom, to: activeTo, tone: 'brand', animated: true });
+    }
+    return wiring;
+  }, [spec, activeFrom, activeTo]);
+  const nodes = useMemo(
+    () =>
+      renderNodes(
+        spec,
+        layout,
+        activeFrom && activeTo ? new Set([activeFrom, activeTo]) : undefined,
+      ),
+    [spec, layout, activeFrom, activeTo],
   );
-  const nodes = useMemo(() => renderNodes(spec, layout), [spec, layout]);
 
   useTicker(autoplay.running, (dt) => {
+    if (stepIndex !== null) {
+      progress.current += dt * 0.85;
+      if (progress.current >= 1.25) {
+        progress.current = 0;
+        setStepIndex((value) => ((value ?? 0) + 1) % steps.length);
+      }
+      rerender();
+      return;
+    }
+
     spec.edges.forEach((edge, index) => {
       const rate = edge.rate ?? 0;
       if (rate <= 0) return;
@@ -197,19 +243,47 @@ export function FlowVisual({
     rerender();
   });
 
-  const particleViews: ParticleView[] = particles.current.map((particle) => ({
-    id: particle.id,
-    from: particle.route[0],
-    to: particle.route[1],
-    t: particle.t,
-    outcome: particle.outcome ?? 'success',
-  }));
+  const particleViews: ParticleView[] = active
+    ? [{ id: 1, from: active.from, to: active.to, t: Math.min(1, progress.current), outcome: active.outcome ?? 'success' }]
+    : particles.current.map((particle) => ({
+        id: particle.id,
+        from: particle.route[0],
+        to: particle.route[1],
+        t: particle.t,
+        outcome: particle.outcome ?? 'success',
+      }));
+
+  const showStep = (position: number) => {
+    // The live traffic stops: one request on one hop is the whole point of a step.
+    particles.current = [];
+    progress.current = 0.5;
+    setStepIndex(position);
+    autoplay.setPlaying(false);
+  };
+
+  const showLive = () => {
+    setStepIndex(null);
+    autoplay.setPlaying(!autoplay.reducedMotion);
+  };
 
   const width = spec.width ?? 760;
   const height = spec.height ?? 320;
 
   return (
-    <figure ref={autoplay.ref} className={cn('overflow-hidden rounded-2xl border border-line bg-canvas', className)}>
+    <figure
+      ref={autoplay.ref}
+      className={cn('relative overflow-hidden rounded-2xl border border-line bg-canvas', className)}
+    >
+      {active && stepIndex !== null ? (
+        // The caption is a banner, not an edge label: on a short edge it would
+        // land on top of a node and become unreadable.
+        <span className="absolute left-3 top-3 z-20 inline-flex items-center gap-2 rounded-lg border border-brand/40 bg-surface px-2.5 py-1.5 text-[11px] font-medium text-brand shadow-card">
+          <span className="font-mono text-faint">
+            {stepIndex + 1}/{steps.length}
+          </span>
+          {active.label}
+        </span>
+      ) : null}
       <DiagramCanvas
         layout={layout}
         edges={edges}
@@ -222,124 +296,50 @@ export function FlowVisual({
       >
         {nodes}
       </DiagramCanvas>
-      {/* The control sits under the canvas, not over it, so it can never cover a node. */}
-      <div className="flex items-center gap-3 border-t border-line px-4 py-2">
-        {spec.caption ? <figcaption className="min-w-0 flex-1 text-xs text-muted">{spec.caption}</figcaption> : null}
-        <PlayPauseButton
-          playing={autoplay.playing}
-          onToggle={() => autoplay.setPlaying((value) => !value)}
-          className="ml-auto shrink-0"
-        />
+      {/* The controls sit under the canvas, not over it, so they can never cover a node. */}
+      <div className="space-y-2 border-t border-line px-4 py-2">
+        {steps.length > 0 ? (
+          <div role="group" aria-label="Walkthrough" className="flex flex-wrap items-center gap-1.5">
+            <WalkthroughChip selected={stepIndex === null} onClick={showLive}>
+              Live
+            </WalkthroughChip>
+            {steps.map((step, position) => (
+              <WalkthroughChip
+                key={`${step.from}-${step.to}-${position}`}
+                selected={position === stepIndex}
+                onClick={() => showStep(position)}
+              >
+                <span className="mr-1.5 font-mono text-faint">{position + 1}</span>
+                {step.label}
+              </WalkthroughChip>
+            ))}
+          </div>
+        ) : null}
+        <div className="flex items-center gap-3">
+          {spec.caption ? <figcaption className="min-w-0 flex-1 text-xs text-muted">{spec.caption}</figcaption> : null}
+          <PlayPauseButton
+            playing={autoplay.playing}
+            onToggle={() => autoplay.setPlaying((value) => !value)}
+            className="ml-auto shrink-0"
+          />
+        </div>
       </div>
     </figure>
   );
 }
 
-/**
- * The same diagram, walked one hop at a time with a short caption. This replaces
- * a numbered list of paragraphs in the "How it works" tab.
- */
-export function SequenceFlow({ spec, className }: { spec: VisualSpec; className?: string }) {
-  const steps = useMemo(() => spec.steps ?? [], [spec.steps]);
-  const [index, setIndex] = useState(0);
-  const autoplay = useAutoplay();
-  // With reduced motion the request is shown parked mid-edge instead of travelling.
-  const restingProgress = autoplay.reducedMotion ? 0.5 : 0;
-  const progress = useRef(restingProgress);
-  const rerender = useRerender(30);
-  const layout = useMemo(() => toLayout(spec), [spec]);
-  const width = spec.width ?? 760;
-  const height = spec.height ?? 320;
-
-  useTicker(autoplay.running && steps.length > 0, (dt) => {
-    progress.current += dt * 0.85;
-    if (progress.current >= 1.25) {
-      progress.current = 0;
-      setIndex((value) => (value + 1) % steps.length);
-    }
-    rerender();
-  });
-
-  const active = steps[Math.min(index, Math.max(steps.length - 1, 0))];
-  const activeFrom = active?.from;
-  const activeTo = active?.to;
-
-  // Nodes and wiring change once per step, not once per frame.
-  const nodes = useMemo(
-    () => renderNodes(spec, layout, new Set([activeFrom, activeTo].filter((id): id is string => Boolean(id)))),
-    [spec, layout, activeFrom, activeTo],
-  );
-  const edges = useMemo(
-    () =>
-      steps.map((step, position) => ({
-        from: step.from,
-        to: step.to,
-        tone: position === index ? ('brand' as const) : ('muted' as const),
-        animated: position === index,
-      })),
-    [steps, index],
-  );
-
-  if (steps.length === 0 || !active) return <FlowVisual spec={spec} className={className} />;
-
+function WalkthroughChip({ selected, onClick, children }: { selected: boolean; onClick: () => void; children: ReactNode }) {
   return (
-    <div className={cn('space-y-3', className)}>
-      <figure ref={autoplay.ref} className="relative overflow-hidden rounded-2xl border border-line bg-canvas">
-        {/* The caption is a banner, not an edge label: on a short edge it would
-            land on top of a node and become unreadable. */}
-        <span className="absolute left-3 top-3 z-20 inline-flex items-center gap-2 rounded-lg border border-brand/40 bg-surface px-2.5 py-1.5 text-[11px] font-medium text-brand shadow-card">
-          <span className="font-mono text-faint">
-            {index + 1}/{steps.length}
-          </span>
-          {active.label}
-        </span>
-        <DiagramCanvas
-          layout={layout}
-          edges={edges}
-          particles={[
-            {
-              id: 1,
-              from: active.from,
-              to: active.to,
-              t: Math.min(1, progress.current),
-              outcome: active.outcome ?? 'success',
-            },
-          ]}
-          width={width}
-          height={height}
-          fit={FLOW_FIT}
-        >
-          {nodes}
-        </DiagramCanvas>
-      </figure>
-
-      <div className="flex flex-wrap items-center gap-1.5">
-        {steps.map((step, position) => (
-          <button
-            key={`${step.from}-${step.to}-${position}`}
-            type="button"
-            onClick={() => {
-              setIndex(position);
-              autoplay.setPlaying(false);
-              progress.current = restingProgress;
-            }}
-            className={cn(
-              'rounded-lg border px-2.5 py-1.5 text-[11px] font-medium transition-colors',
-              position === index
-                ? 'border-brand bg-brand/10 text-brand'
-                : 'border-line text-muted hover:border-brand/40 hover:text-ink',
-            )}
-          >
-            <span className="mr-1.5 font-mono text-faint">{position + 1}</span>
-            {step.label}
-          </button>
-        ))}
-        <PlayPauseButton
-          playing={autoplay.playing}
-          onToggle={() => autoplay.setPlaying((value) => !value)}
-          className="ml-auto px-2.5 py-1.5"
-        />
-      </div>
-    </div>
+    <button
+      type="button"
+      onClick={onClick}
+      aria-pressed={selected}
+      className={cn(
+        'rounded-lg border px-2.5 py-1.5 text-[11px] font-medium transition-colors',
+        selected ? 'border-brand bg-brand/10 text-brand' : 'border-line text-muted hover:border-brand/40 hover:text-ink',
+      )}
+    >
+      {children}
+    </button>
   );
 }
