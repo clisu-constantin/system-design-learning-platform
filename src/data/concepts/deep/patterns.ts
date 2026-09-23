@@ -18,8 +18,11 @@ export const patternsDepth: DepthMap = {
         code: {
           caption: 'The arithmetic, and why hybrids exist',
           body: `typical user, 200 followers, 5 posts/day
-  on write:  5 x 200 = 1,000 writes/day, feed read = 1 lookup
-  on read:   5 writes/day, every feed read joins 200 timelines
+  on write:  5 x 200 = 1,000 timeline writes/day
+             each feed read = 1 lookup of a built list
+  on read:   5 writes/day, one row per post
+             each feed read merges every account the
+             reader follows (say 200 queries)
 
 celebrity, 50,000,000 followers, 20 posts/day
   on write:  1,000,000,000 writes/day for ONE account
@@ -33,7 +36,7 @@ HYBRID (what real systems do)
       {
         heading: 'The hybrid, and the other meaning of fan-out',
         paragraphs: [
-          'Large social platforms use a threshold: accounts below some follower count are pushed into follower timelines at write time, accounts above it are pulled at read time and merged. A feed read becomes "my precomputed timeline, plus recent posts from the few celebrities I follow, merged by time". It is more code and it is the only approach that works at both ends of the distribution.',
+          'Large social platforms use a threshold: accounts below some follower count are pushed into follower timelines at write time, accounts above it are pulled at read time and merged. A feed read becomes "my precomputed timeline, plus recent posts from the few celebrities I follow, merged by time". Twitter described this design publicly: home timelines held in an in-memory cache, pushed for most accounts, with the largest accounts merged in at read time. It is more code, and it is what lets one system serve both ends of the follower distribution.',
           'Fan-out also has a second, simpler meaning: one request triggering several parallel calls. A page that needs profile, orders, recommendations and notifications fans out to four services and merges the responses. Here the concern is different - latency is the slowest branch, and availability is the product of all of them.',
           'For that second kind, the important discipline is per-branch timeouts and partial results. If recommendations are slow, the page should render without them rather than waiting. Treating every branch as mandatory turns four services at 99.9 percent into a page at 99.6 percent for no product reason.',
         ],
@@ -47,7 +50,7 @@ HYBRID (what real systems do)
       {
         heading: 'What precomputing costs you besides writes',
         paragraphs: [
-          'Storage multiplies. One post stored in a million timelines is a million references, and while each is small, the total across a large user base becomes a serious cost. Most systems bound it by keeping only recent entries per timeline and falling back to a query for older pages.',
+          'Storage multiplies. One post stored in a million timelines is a million references, and while each is small, the total across a large user base becomes a serious cost. Most systems bound it by keeping only recent entries per timeline (Twitter kept 800 per home timeline) and falling back to a query for older pages.',
           'Deletion and editing become fan-out operations too. Removing a post means removing it from every timeline it was written into, which is the same expensive operation again - and it must be reliable, because a deleted post still appearing is a serious problem.',
           'And a new follower has an empty relationship until it is backfilled. Following someone must either trigger a backfill of their recent posts into your timeline, or the read path must merge recent posts for recently followed accounts. Both are extra machinery that the on-read approach never needs.',
         ],
@@ -60,10 +63,10 @@ HYBRID (what real systems do)
           'A social product with 10 million users. Median follower count is 150; the largest account has 8 million followers.',
         walkthrough: [
           'Pure fan-out on write: the top account posting once creates 8 million timeline writes. At 20 posts a day that is 160 million writes from one user, dwarfing everything else.',
-          'Pure fan-out on read: every feed load queries 150 timelines and merges. At 50,000 feed loads per second that is 7.5 million queries per second - also infeasible.',
+          'Pure fan-out on read: a typical user follows about 150 accounts, so every feed load runs 150 queries and merges them. At 50,000 feed loads per second that is 7.5 million queries per second - also infeasible.',
           'Hybrid: accounts with fewer than 10,000 followers fan out on write. Above that, posts are pulled at read time.',
           'A feed read becomes: read my precomputed timeline (one lookup), then fetch recent posts from the celebrities I follow (usually fewer than 20 accounts, cached aggressively), then merge by timestamp.',
-          'Celebrity posts are cached at the edge since millions of people read exactly the same content, so the pull side is cheap.',
+          'Celebrity posts are cached in memory, since millions of people read exactly the same few posts, so each pull is cheap.',
           'Deletion: for pushed posts, a background job removes them from timelines; for pulled posts, deletion is immediate since there is only one copy.',
           'New follow: a backfill job inserts the last 50 posts of the followed account into the timeline, unless that account is a celebrity, in which case nothing is needed.',
         ],

@@ -440,7 +440,7 @@ export const LABS: LabDefinition[] = [
   {
     id: 'fan-out',
     title: 'Fan-out Lab',
-    blurb: 'Fan-out on write or on read, up to a celebrity with millions of followers.',
+    blurb: 'A post reaches its followers on write, on read or hybrid - from 150 followers up to a 50M celebrity.',
     category: 'patterns',
     difficulty: 'Intermediate',
     concept: 'fan-out',
