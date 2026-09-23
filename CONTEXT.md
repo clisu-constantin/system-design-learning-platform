@@ -28,7 +28,7 @@ The ordered steps of a Diagram, one hop at a time, each with a caption of six wo
 _Avoid_: Step by step, sequence, tour
 
 **Lab**:
-An interactive simulation the learner drives with controls. A Concept may host one.
+An interactive simulation the learner drives with controls. A Concept may host one Lab. One Lab can be hosted by several Concepts, and it also has a page of its own.
 _Avoid_: Demo, exercise, widget
 
 ### Progress

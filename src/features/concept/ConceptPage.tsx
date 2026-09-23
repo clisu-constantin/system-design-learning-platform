@@ -2,7 +2,6 @@ import { Suspense, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import {
   AlertTriangle,
-  ArrowRight,
   BookOpen,
   Calculator,
   Check,
@@ -139,9 +138,12 @@ function ConceptBody({ concept }: { concept: Concept }) {
   // The notes column sits beside the content only from xl up; below that it
   // stacks under the content and cannot be folded, whatever was saved.
   const isWide = useMediaQuery(XL_QUERY);
-  const layout = useLayout();
-  const asideFolded = isWide && layout.asideFolded;
-  const { setAsideFolded } = layout;
+  const { asideFolded: savedFolded, setAsideFolded } = useLayout();
+  const [tab, setTab] = useState('');
+  // A lab has its own control column, so the notes step aside while its tab is
+  // open. Reopening them there lasts until the learner leaves the tab and never
+  // touches the saved choice.
+  const [notesInLab, setNotesInLab] = useState(false);
   // The control that was clicked disappears with the fold, so hand focus to
   // the one that replaces it instead of dropping it on the page body.
   const hideButton = useRef<HTMLButtonElement>(null);
@@ -149,16 +151,6 @@ function ConceptBody({ concept }: { concept: Concept }) {
   const moveFocus = useRef(false);
   // Fade the column in only when the learner reopens it, not on every page load.
   const reopened = useRef(false);
-  const foldAside = (folded: boolean) => {
-    moveFocus.current = true;
-    reopened.current = !folded;
-    setAsideFolded(folded);
-  };
-  useEffect(() => {
-    if (!moveFocus.current) return;
-    moveFocus.current = false;
-    (asideFolded ? showTab : hideButton).current?.focus();
-  }, [asideFolded]);
   const lab = concept.lab ? getLab(concept.lab) : undefined;
   const visual = getVisual(concept.slug);
 
@@ -225,6 +217,25 @@ function ConceptBody({ concept }: { concept: Concept }) {
     return items;
   }, [concept, lab, visual]);
 
+  const activeTab = tabs.some((item) => item.id === tab) ? tab : (tabs[0]?.id ?? '');
+  const inLab = activeTab === 'lab';
+  const asideFolded = isWide && (inLab ? !notesInLab : savedFolded);
+  const selectTab = (id: string) => {
+    setTab(id);
+    if (id !== 'lab') setNotesInLab(false);
+  };
+  const foldAside = (folded: boolean) => {
+    moveFocus.current = true;
+    reopened.current = !folded;
+    if (inLab) setNotesInLab(!folded);
+    else setAsideFolded(folded);
+  };
+  useEffect(() => {
+    if (!moveFocus.current) return;
+    moveFocus.current = false;
+    (asideFolded ? showTab : hideButton).current?.focus();
+  }, [asideFolded]);
+
   const when = concept.when ?? [];
   // With several approaches, the first one is an option (Sticky sessions, Round
   // robin), not the concept itself - so its gains and costs are labelled with its
@@ -247,7 +258,7 @@ function ConceptBody({ concept }: { concept: Concept }) {
       >
         {/* Diagram first - it is the content, not an illustration */}
         <div className="min-w-0">
-          <Tabs items={tabs} />
+          <Tabs items={tabs} value={activeTab} onChange={selectTab} />
         </div>
 
         {/* Short notes only. Anything longer lives in Full explanation. */}
@@ -282,20 +293,6 @@ function ConceptBody({ concept }: { concept: Concept }) {
                 {oneLine.endsWith('...') ? oneLine : `${oneLine}.`}
               </p>
             </div>
-          ) : null}
-
-          {lab ? (
-            <Link
-              to={`/labs/${lab.id}`}
-              className="flex items-center gap-3 rounded-2xl border border-brand/40 bg-brand/5 p-4 transition-colors hover:bg-brand/10"
-            >
-              <FlaskConical className="h-4 w-4 shrink-0 text-brand" />
-              <span className="min-w-0 flex-1">
-                <span className="block text-sm font-medium text-brand">Open the lab</span>
-                <span className="block truncate text-[11px] text-muted">{lab.title}</span>
-              </span>
-              <ArrowRight className="h-3.5 w-3.5 shrink-0 text-brand" />
-            </Link>
           ) : null}
 
           {when.length ? (

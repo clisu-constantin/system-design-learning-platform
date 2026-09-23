@@ -1,5 +1,5 @@
 import { Link } from 'react-router-dom';
-import { Check, FlaskConical } from 'lucide-react';
+import { Check } from 'lucide-react';
 import type { ConceptSummary } from '@/types';
 import { Badge, Button, difficultyTone } from '@/components/ui';
 import { CATEGORY_BY_ID } from '@/data/categories';
@@ -28,12 +28,6 @@ export function ConceptHeader({ concept }: { concept: ConceptSummary }) {
             <div className="mt-3 flex flex-wrap items-center gap-2">
               <Badge tone={difficultyTone(concept.difficulty)}>{concept.difficulty}</Badge>
               <Badge>{category.title}</Badge>
-              {concept.lab ? (
-                <Badge tone="brand">
-                  <FlaskConical className="h-3 w-3" />
-                  Interactive lab
-                </Badge>
-              ) : null}
             </div>
           </div>
 
