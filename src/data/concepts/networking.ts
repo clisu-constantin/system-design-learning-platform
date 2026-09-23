@@ -545,7 +545,7 @@ ordered, complete, later      unordered, lossy, on time`,
         ],
         answer: 3,
         explanation:
-          'TCP promises an in-order byte stream, so it cannot hand over #11 before #10. The Server node in the Lab shows this as "Held back" and "Waiting for #10": head-of-line blocking. Handing over #11 to #15 first is what UDP does - there each datagram goes to the app the moment it arrives.',
+          'TCP promises an in-order byte stream, so it cannot hand over #11 before #10. The TCP receivers in the Lab (Voice player, TCP and File saver, TCP) show this as "Held back" and "Waiting for #10": head-of-line blocking. Handing over #11 to #15 first is what UDP does - there each datagram goes to the app the moment it arrives.',
       },
       {
         id: 'tcpudp-5',
