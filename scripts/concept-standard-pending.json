@@ -32,10 +32,7 @@
     "eventual-consistency",
     "leader-election",
     "consensus",
-    "message-queues",
     "kafka",
-    "background-workers",
-    "task-queues",
     "redundancy",
     "fault-tolerance",
     "high-availability",
@@ -58,12 +55,9 @@
     "event-sourcing",
     "distributed-tracing",
     "fan-out",
-    "backpressure",
     "saga-pattern",
     "outbox-pattern",
-    "leader-follower",
-    "producer-consumer",
-    "request-response"
+    "leader-follower"
   ],
   "labs": [
     "requirements",

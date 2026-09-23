@@ -35,7 +35,7 @@ QUEUED
         heading: 'Delivery guarantees, and the one you will actually use',
         paragraphs: [
           'At-most-once acknowledges the message before processing: if the worker crashes mid-work, the message is gone. Fast, lossy, acceptable only for disposable data such as sampled metrics. At-least-once acknowledges after processing: a crash means the message is redelivered, so work may happen twice. This is the default in virtually every broker.',
-          'Exactly-once is what everyone wants and what no distributed system truly provides, because the acknowledgement itself can be lost. What you can build is exactly-once effect: at-least-once delivery plus idempotent consumers. Deduplicate by message id, or use natural unique keys so a repeat write is a no-op.',
+          'Exactly-once is what everyone wants, and no broker can promise it for side effects outside the broker - an email sent, a card charged - because the acknowledgement itself can be lost after the work is done. What you can build is an exactly-once effect: at-least-once delivery plus idempotent consumers. Deduplicate by message id, or use natural unique keys so a repeat write is a no-op.',
           'The practical implication is simple and non-negotiable: every consumer must be safe to run twice on the same message. Design that in from the first consumer you write, because it is far harder to retrofit once messages are flowing.',
         ],
         bullets: [
@@ -58,17 +58,17 @@ QUEUED
       {
         title: 'Absorbing a flash sale without dropping orders',
         setup:
-          'Normal load is 200 orders per minute. A sale drives 12,000 orders in the first two minutes. The payment processor accepts at most 100 calls per second.',
+          'Normal load is 200 orders per minute. A sale drives 12,000 orders in the first minute - 200 per second. The payment processor accepts at most 100 calls per second.',
         walkthrough: [
-          'Synchronous design: 100 orders per second arrive against a processor limited to 100 per second, plus the database write and email. Requests time out, customers retry, and the retries make it worse.',
+          'Synchronous design: 200 orders per second arrive against a processor limited to 100 per second, so half of the requests wait behind the other half until they time out. Customers retry, and the retries make it worse.',
           'Queued design: the API validates and saves the order (about 30 ms), enqueues a payment message, and returns "order received" immediately. Users get a response in well under a second throughout.',
-          'The queue grows to about 11,000 messages. Workers drain at 100 per second, so the backlog clears in roughly two minutes and every order is processed exactly once.',
+          'The queue grows by 200 - 100 = 100 messages per second for 60 seconds, to about 6,000 payment messages. Workers keep draining at 100 per second, so after the rush the backlog clears in roughly another minute.',
           'Customers see "payment processing" rather than an error - a product decision that had to be made deliberately, and which turns a hard failure into a visible delay.',
-          'Guardrails: a dead letter queue for cards that fail permanently, alerting on oldest-message age above 5 minutes, and idempotency keys so a redelivered payment message cannot charge twice.',
+          'Guardrails: a dead letter queue for cards that fail permanently, alerting on oldest-message age above 5 minutes, and idempotency keys so a redelivered payment message cannot charge twice - every order is charged once even though delivery is at-least-once.',
           'Scaling: workers auto-scale on backlog per worker, so the drain rate rises to the processor limit and no further - the queue is also acting as a rate limiter.',
         ],
         result:
-          'The same traffic that broke the synchronous design produced a two-minute backlog instead. The queue converted an availability problem into a latency problem, which is almost always the trade you want.',
+          'The same traffic that broke the synchronous design produced a backlog of about 6,000 messages that was gone two minutes after the sale started. The queue converted an availability problem into a latency problem, which is almost always the trade you want.',
       },
     ],
     jargon: [
@@ -552,7 +552,7 @@ Alert on oldest-message age PER QUEUE, with different thresholds.`,
       {
         heading: 'A task queue is a queue plus a job lifecycle',
         paragraphs: [
-          'A raw message queue moves bytes. A task queue - Celery, Sidekiq, BullMQ, Temporal and friends - adds the things you would otherwise write yourself: serialising a function call and its arguments, retry policies with backoff, scheduled and delayed execution, result storage, progress reporting, and a dashboard showing what is running and what failed.',
+          'A raw message queue moves bytes. A task queue - Celery, Sidekiq, BullMQ, RQ and friends - adds the things you would otherwise write yourself: serialising a function call and its arguments, retry policies with backoff, scheduled and delayed execution, result storage, progress reporting, and a dashboard showing what is running and what failed.',
           'That is why teams reach for one rather than using the broker directly. The queue is the easy part; the lifecycle around each job is where the work actually is, and getting retries, timeouts and failure visibility right is worth a library.',
           'The trade-off is a layer of magic. Arguments are serialised, so passing a whole object is a trap - it is stale by the time the job runs, and it bloats the message. Pass identifiers and let the job load current state.',
         ],

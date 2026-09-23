@@ -42,18 +42,29 @@ followers = 50M writes      but every read is expensive`,
     category: 'patterns',
     difficulty: 'Advanced',
     lab: 'queue',
-    keywords: ['flow control', 'bounded queue', 'load shedding', 'queue depth'],
+    labFocus: 'backpressure',
+    keywords: ['flow control', 'bounded queue', 'load shedding', 'queue depth', '429', 'retry-after'],
     what: 'Backpressure is explicit feedback from an overloaded consumer to its producer: slow down, or I will reject your work.',
     why: 'Without it, an overloaded system buffers until memory is gone or latency is so high that every response is useless anyway. Failing fast is a feature.',
     how: [
       'Use bounded queues - an unbounded queue is a memory leak with a timer.',
-      'When the bound is reached, reject (429/503), block the producer, or shed low-priority work.',
+      'When the bound is reached, reject (429/503 with Retry-After), block the producer, or shed low-priority work.',
       'Propagate the signal upstream so the pressure reaches the actual source.',
       'Monitor queue depth and oldest-message age, not only throughput.',
     ],
-    diagram: `Producer 1000/s -> [bounded queue: 10,000] -> Consumers 400/s
-queue full after 16 s
-  -> reject new work with 429 (fast, honest)
+    when: [
+      'A producer can, even briefly, send faster than its consumer can process.',
+      'A sustained overload is possible and memory or latency must stay bounded.',
+      'Clients can slow down or retry later when told to.',
+    ],
+    advantages: [
+      'Memory and waiting time stay bounded under any load.',
+      'Overload becomes visible at the source instead of hiding in a buffer.',
+      'The system keeps serving what it accepted instead of collapsing.',
+    ],
+    diagram: `Clients -> Producer 1000/s -> [bounded queue: 10,000] -> Consumers 400/s
+queue full after 10,000 / 600 = about 16 s
+  -> reject new work with 429 + Retry-After (fast, honest)
   -> or block the producer (flow control)
   -> NOT: grow forever, then OOM and lose everything`,
     tradeoffs: [
@@ -63,12 +74,27 @@ queue full after 16 s
         costs: ['Some work is refused', 'Clients must handle rejection properly'],
       },
       {
+        approach: 'Blocking the producer',
+        gains: ['Nothing is refused or lost', 'The producer runs at exactly the rate the consumer can take'],
+        costs: ['The producer stalls, and its own callers wait', 'Can deadlock when producer and consumer wait on each other'],
+      },
+      {
+        approach: 'Dropping (shedding) work',
+        gains: ['The producer never waits', 'Keeps the stream live - fits metrics, telemetry and video frames'],
+        costs: ['Data is lost on purpose', 'Only acceptable where a missing item costs little'],
+      },
+      {
         approach: 'Unbounded buffering',
         gains: ['Nothing is refused immediately'],
         costs: ['Latency grows without limit', 'Eventual OOM loses everything at once'],
       },
     ],
-    mistakes: ['Increasing the queue size as a fix - it delays the failure and makes it bigger.'],
+    mistakes: [
+      'Increasing the queue size as a fix - it delays the failure and makes it bigger.',
+      'Retrying a 429 at once, or at every layer, so the rejection multiplies the load it was meant to reduce.',
+      'Stopping the signal at one hop - the service rejects, but the real source never slows down.',
+      'Processing work whose caller already timed out, so an overloaded system stays overloaded.',
+    ],
     related: ['message-queues', 'rate-limiting', 'bulkhead', 'circuit-breaker'],
     quiz: [
       {
@@ -82,7 +108,137 @@ queue full after 16 s
         ],
         answer: 1,
         explanation:
-          'A permanent deficit cannot be buffered away. Either process faster or refuse work explicitly, so latency and memory stay bounded.',
+          'A permanent deficit cannot be buffered away. A bigger limit only makes the backlog and the wait longer before the same failure. Either process faster or refuse work explicitly, so latency and memory stay bounded.',
+      },
+      {
+        id: 'bp-2',
+        prompt:
+          'In the Lab, 300 msg/sec arrive, 2 workers do 40 msg/sec each and the queue is bounded at 1,000. About when do rejections start, and at what rate?',
+        options: [
+          'Never - the queue holds 1,000 messages',
+          'After about 3.3 s, at 300 per second',
+          'After about 4.5 s, at about 220 per second',
+          'At once, at 80 per second',
+        ],
+        answer: 2,
+        explanation:
+          'The queue gains 300 - 80 = 220 msg/sec, so it is full after 1,000 / 220 = about 4.5 s. From then on the workers still take 80/sec and the other 220/sec are refused - the Rejected metric climbs at that rate. 3.3 s would ignore the workers draining.',
+      },
+      {
+        id: 'bp-3',
+        prompt: 'Same Lab: you turn Bounded queue off. What changes?',
+        options: [
+          'Rejections stop; depth and the wait of every new message grow without limit - in a real process until memory runs out',
+          'Nothing - the workers catch up',
+          'The producer slows down to match the workers',
+          'The workers get faster',
+        ],
+        answer: 0,
+        explanation:
+          'Without a bound nothing tells the producer to slow down, so the 220 msg/sec surplus piles up forever. The Oldest message metric keeps climbing: the queue converted errors into a delay that has no limit. The workers do not change.',
+      },
+      {
+        id: 'bp-4',
+        prompt: 'An agent samples CPU every second and ships the samples to a collector, which is overloaded. Which full-buffer policy fits?',
+        options: [
+          'Block the application until the collector catches up',
+          'Spill to local disk with no limit',
+          'Return 429 to the end user',
+          'Drop samples when the buffer is full - a missing sample costs little and the application must never stall',
+        ],
+        answer: 3,
+        explanation:
+          'The right policy depends on the data. A lost CPU sample is barely noticed, while blocking the application for monitoring would make the monitoring the outage. An unlimited spill is an unbounded buffer on disk.',
+      },
+      {
+        id: 'bp-5',
+        prompt: 'The order queue of a checkout API is full. Which policy fits new orders?',
+        options: [
+          'Drop them silently',
+          'Reject with 503 or 429 and a Retry-After header, so the client knows and can try again later',
+          'Accept them into an unbounded overflow buffer',
+          'Hold each HTTP request open for minutes until space frees up',
+        ],
+        answer: 1,
+        explanation:
+          'An order must not vanish, so dropping is out, and an unbounded overflow is the same deferred crash. Holding requests open just moves the queue into threads and connections. A fast, honest rejection tells the client exactly what to do.',
+      },
+      {
+        id: 'bp-6',
+        prompt:
+          'Service C is overloaded and answers 429. B retries each call to C 3 times at once, and A retries each call to B 3 times. In the worst case, how much traffic does one user request send to C?',
+        options: ['1 call', '4 calls', 'Up to 16 calls', '3 calls'],
+        answer: 2,
+        explanation:
+          'A makes up to 4 attempts at B, and each of those makes up to 4 attempts at C: 4 x 4 = 16. Retries at every layer multiply the load exactly when C asked for less. Retry at one layer, honour Retry-After, and back off.',
+      },
+      {
+        id: 'bp-7',
+        prompt: 'A fast sender streams data to a slow receiver over TCP, and the receiving application stops reading from its socket. What does TCP do?',
+        options: [
+          'The receive window shrinks to zero and the sender stops sending until the receiver reads again',
+          'The receiver drops packets until the sender notices',
+          'The receive buffer grows without limit',
+          'The connection is closed at once',
+        ],
+        answer: 0,
+        explanation:
+          'TCP flow control is built-in backpressure: the receiver advertises how much buffer space it has left, and at zero the sender must wait. Buffers are bounded on both sides, so nothing grows forever and nothing is dropped.',
+      },
+      {
+        id: 'bp-8',
+        prompt:
+          'During an overload the queue wait is 40 s, but clients time out after 10 s. Workers keep processing requests from the front of the queue. What goes wrong, and what is the fix?',
+        options: [
+          'Nothing - every request is eventually processed',
+          'The workers need more memory',
+          'Raise the client timeout to 60 s',
+          'Workers spend their time on requests whose clients left 30 s ago; drop work past its deadline and reject at the door when the expected wait exceeds the timeout',
+        ],
+        answer: 3,
+        explanation:
+          'A request whose caller has given up is pure waste, and working on it keeps the system overloaded. Checking the deadline before doing the work - and refusing early - spends capacity only on answers someone will read. A longer timeout makes every user wait 40 s.',
+      },
+      {
+        id: 'bp-9',
+        prompt:
+          'A queue normally holds 50,000 messages and drains them in 20 s. At a quiet hour, when 10 messages a minute arrive, its consumer silently stops. Which alert fires first?',
+        options: [
+          'Queue depth above 100,000',
+          'Oldest message older than 2 minutes',
+          'Producer error rate above 1%',
+          'CPU of the producers above 80%',
+        ],
+        answer: 1,
+        explanation:
+          'At 10 messages a minute the depth would need days to reach 100,000, but the oldest message passes 2 minutes after 2 minutes. Producers see nothing wrong at all. Oldest-message age measures the delay directly, whatever the traffic.',
+      },
+      {
+        id: 'bp-10',
+        prompt: 'A service runs at 150% of its capacity. Health checks, checkouts from paying customers and bulk export requests all arrive. What should be shed first?',
+        options: [
+          'Health checks - they are not real traffic',
+          'Checkouts - they are the heaviest requests',
+          'An equal share of every kind of request',
+          'Bulk exports, so checkouts and health checks keep their capacity',
+        ],
+        answer: 3,
+        explanation:
+          'Load shedding is choosing what to lose. Dropping health checks gets healthy instances removed from the pool and makes the overload worse; dropping checkouts loses revenue. Low-priority bulk work can be retried later at the lowest cost.',
+      },
+      {
+        id: 'bp-11',
+        prompt:
+          'A producer thread puts items into a bounded in-memory queue that blocks when full. To make room, the consumer needs a lock that the blocked producer is holding. What happens?',
+        options: [
+          'The queue grows past its bound',
+          'Deadlock - each waits for the other; blocking backpressure needs care with circular waits',
+          'The consumer skips the item',
+          'The producer drops the item',
+        ],
+        answer: 1,
+        explanation:
+          'Blocking is the simplest form of backpressure, but a producer blocked while holding something the consumer needs can never be released. A bounded queue never grows past its bound, and neither side gives up on its own.',
       },
     ],
   },
@@ -443,25 +599,184 @@ leader fails -> elect the most up-to-date follower`,
     category: 'patterns',
     difficulty: 'Beginner',
     lab: 'queue',
-    keywords: ['queue', 'decoupling', 'throughput', 'workers'],
+    labFocus: 'producer-consumer',
+    keywords: ['queue', 'decoupling', 'throughput', 'workers', 'competing consumers', 'bounded buffer'],
     what: 'Producers create work items and place them in a shared buffer; consumers take items and process them, at their own pace.',
     why: 'It decouples rates. Producers can burst, consumers can be scaled independently, and the buffer absorbs the difference - within its bounds.',
     how: [
-      'Size the consumer pool from required throughput: arrival rate / per-consumer rate.',
+      'Size the consumer pool from required throughput: arrival rate / per-consumer rate, plus headroom to drain bursts.',
       'Bound the buffer so overload is visible and controlled.',
-      'Each item should be processed by exactly one consumer, and processing should be idempotent.',
+      'Each item goes to one consumer at a time (competing consumers); a redelivery can repeat it, so processing should be idempotent.',
+      'Acknowledge after the work is done, and partition by key when order matters.',
+    ],
+    when: [
+      'Work is created at a different rate, or in bursts, from the rate it can be done.',
+      'The creating side and the working side should scale, deploy or fail independently.',
+      'Items are independent enough to be processed in parallel.',
+    ],
+    advantages: [
+      'Short bursts become a short delay instead of errors.',
+      'Consumers scale out without touching the producers.',
+      'A slow or restarting consumer does not stop the producers.',
     ],
     diagram: `Producers --> [ bounded buffer ] --> Consumers
  100/s                depth                 3 x 40/s = 120/s
-stable: consumption >= production`,
+stable: consumption >= production (20/s of headroom)
+throughput = min(production, consumption)`,
     tradeoffs: [
       {
         approach: 'Buffered producer/consumer',
         gains: ['Absorbs bursts', 'Independent scaling', 'Failure isolation'],
         costs: ['Latency between production and processing', 'Buffer is state that can be lost or grow'],
       },
+      {
+        approach: 'Producer calls the consumer directly',
+        gains: ['No buffer to run, size or monitor', 'The producer knows at once whether the work succeeded'],
+        costs: ['The producer can only go as fast as the consumer', 'A consumer outage stops the producer too'],
+      },
+    ],
+    mistakes: [
+      'Sizing consumers for the average rate, so every burst leaves a backlog that never quite drains.',
+      'An unbounded buffer that hides a rate mismatch until memory runs out.',
+      'Adding consumers past the partition count, where the extra ones sit idle.',
+      'Acknowledging on receipt, so a crash loses the item.',
     ],
     related: ['message-queues', 'backpressure', 'background-workers', 'pub-sub'],
+    quiz: [
+      {
+        id: 'pc-1',
+        prompt: 'Producers create 100 items/sec and one consumer handles 40/sec. How many consumers do you run, and why?',
+        options: [
+          '2 - that is close enough to the average',
+          '3 - 120/sec keeps up and leaves 20/sec to drain bursts',
+          '100 - one per item per second',
+          '1 with a much bigger buffer',
+        ],
+        answer: 1,
+        explanation:
+          '2 consumers do 80/sec and fall 20/sec behind forever. 3 do 120/sec: they keep up, and the spare 20/sec is what empties the buffer after a burst. A bigger buffer only stores the deficit.',
+      },
+      {
+        id: 'pc-2',
+        prompt: 'In the Lab, 100 items/sec are produced and 3 workers consume 40/sec each. You lower Workers to 2. What happens?',
+        options: [
+          'Nothing visible - the buffer absorbs it',
+          'The buffer stays empty but the workers look busier',
+          'Depth grows by 20/sec, the 500-message buffer is full after about 25 s, then producers are rejected',
+          'Depth grows by 80/sec',
+        ],
+        answer: 2,
+        explanation:
+          'Two workers consume 80/sec against 100 produced, so the buffer gains 20/sec and reaches 500 after 500 / 20 = 25 s. From then on backpressure refuses the surplus. The buffer absorbs bursts, not a permanent gap.',
+      },
+      {
+        id: 'pc-3',
+        prompt: 'A Kafka topic has 4 partitions. The team scales its consumer group from 4 to 16 consumers, and lag does not improve at all. Why?',
+        options: [
+          'Each partition is read by one consumer of the group, so 4 consumers work and 12 sit idle',
+          'Kafka limits every group to 4 consumers',
+          'The new consumers need a warm-up period',
+          'Lag only improves when producers slow down',
+        ],
+        answer: 0,
+        explanation:
+          'Within one consumer group a partition is assigned to one consumer, so parallelism is capped at the partition count. More partitions, faster consumers or a faster downstream are the levers - more consumers are not.',
+      },
+      {
+        id: 'pc-4',
+        prompt: 'Several consumers take items from one buffer. Updates for the same account must be applied in order. What do you do?',
+        options: [
+          'Nothing - a buffer is first in, first out, so completion order is kept',
+          'Add more consumers',
+          'Make the buffer bigger',
+          'Route items by account id so one consumer handles each account in sequence',
+        ],
+        answer: 3,
+        explanation:
+          'Items leave the buffer in order but finish in any order when several consumers work in parallel. Partitioning by account keeps each account sequential while different accounts still run in parallel. More consumers make the reordering more likely, not less.',
+      },
+      {
+        id: 'pc-5',
+        prompt:
+          'The buffer holds 5 items and producers block when it is full. Producers send 100 items in one second every minute; consumers handle 10/sec. What happens?',
+        options: [
+          'Producers block for most of every burst - the buffer is too small for the burst it is meant to absorb',
+          'Items are lost when the buffer is full',
+          'The consumers speed up during the burst',
+          'Nothing - 100 items a minute is well under 10/sec',
+        ],
+        answer: 0,
+        explanation:
+          'The average (100 a minute) is fine, but the burst is 100 at once. With room for only 5, the producers wait until the consumers have taken about 95 - roughly 10 s of every minute. Sizing the buffer for the burst (about 100) keeps the producers free. Blocking loses nothing, it just stalls.',
+      },
+      {
+        id: 'pc-6',
+        prompt: 'The buffer is unbounded and consumers are 5% slower than producers, all day, every day. When does anyone notice?',
+        options: [
+          'Immediately - producers get errors',
+          'Late: the wait grows quietly for hours until items are hours old or the process runs out of memory',
+          'Never - 5% is within tolerance',
+          'After exactly one buffer size',
+        ],
+        answer: 1,
+        explanation:
+          'An unbounded buffer never pushes back, so producers see nothing. A small permanent gap adds up: 5% of 1,000/sec is 180,000 items an hour. A bound and an oldest-item alert surface it on day one.',
+      },
+      {
+        id: 'pc-7',
+        prompt: 'A consumer acknowledges each item as soon as it receives it, then processes it. It crashes halfway through an item. What happens to that item?',
+        options: [
+          'It is redelivered to another consumer',
+          'The producer sends it again',
+          'It is lost - acknowledge after the work is done, and make processing idempotent for the redeliveries that brings',
+          'It stays in the buffer until the consumer restarts',
+        ],
+        answer: 2,
+        explanation:
+          'The acknowledgement told the buffer the item was finished, so it was removed. Acknowledging after the work means a crash leads to a redelivery instead - the safe direction, as long as a repeat does no harm.',
+      },
+      {
+        id: 'pc-8',
+        prompt:
+          'Consumers run at 30% CPU but lag keeps growing. Each item makes one call to a downstream API that allows 500 requests per second. What helps most?',
+        options: [
+          'Doubling the consumers',
+          'Giving each consumer more CPU',
+          'A bigger buffer',
+          'Batching many items per API call, since the downstream limit is the real ceiling',
+        ],
+        answer: 3,
+        explanation:
+          'The consumers are waiting on the API, not computing, so more consumers or more CPU just queue at the same 500 req/sec. Sending 50 items per call raises the ceiling fifty-fold. Scale the side that is actually slow.',
+      },
+      {
+        id: 'pc-9',
+        prompt: 'Consumers can do 200 items/sec and producers make 50/sec. The buffer is empty and consumers are idle 75% of the time. Is this a problem?',
+        options: [
+          'Yes - consumers should always be fully busy',
+          'No - the idle time is headroom that absorbs the next burst; scale down only if enough is left for the peaks',
+          'Yes - an empty buffer means items are being lost',
+          'No - but producers should be made faster to match',
+        ],
+        answer: 1,
+        explanation:
+          'Consumers faster than producers is the stable state: throughput is min(production, consumption), so it is 50/sec either way. Idle capacity costs money but buys burst absorption. An empty buffer means items are processed at once, not lost.',
+      },
+      {
+        id: 'pc-10',
+        prompt:
+          'Producers double to 200 items/sec. Consumers still handle 120/sec in total. How many items per second are completed, and where do the rest go?',
+        options: [
+          '200 - the buffer speeds up the consumers',
+          '160 - the average of the two',
+          '120; the other 80/sec pile up in the buffer until it is full, then are refused',
+          '0 - the pipeline stalls',
+        ],
+        answer: 2,
+        explanation:
+          'Throughput is the minimum of the two rates, so 120/sec get done. The buffer takes the 80/sec surplus until it hits its bound, and then backpressure refuses it. A buffer changes when work is done, never how much can be done.',
+      },
+    ],
   },
   {
     slug: 'request-response',
@@ -469,16 +784,30 @@ stable: consumption >= production`,
     tagline: 'The synchronous default - and the coupling it creates.',
     category: 'patterns',
     difficulty: 'Beginner',
-    keywords: ['synchronous', 'timeout', 'coupling', 'latency budget'],
+    lab: 'queue',
+    labFocus: 'request-response',
+    keywords: ['synchronous', 'timeout', 'coupling', 'latency budget', 'deadline', '202 accepted'],
     what: 'The caller sends a request and waits for a response, blocking (logically) until it arrives or the timeout fires.',
     why: 'It is the simplest model and the right one when the caller genuinely needs the answer to continue. The cost is temporal coupling: the callee must be available right now.',
     how: [
       'Set a timeout on every call, derived from the overall latency budget.',
-      'Chained synchronous calls multiply failure probability - keep chains short.',
-      'Where the answer is not needed immediately, publish an event instead.',
+      'Chained synchronous calls multiply failure probability and add their latencies - keep chains short and run independent calls in parallel.',
+      'Propagate the remaining deadline, and stop work when the caller has gone.',
+      'Where the answer is not needed immediately, publish an event or a job instead.',
+    ],
+    when: [
+      'The caller needs the answer to continue: reads, logins, validation, a payment result the page must show.',
+      'The work is fast compared with the time the user is willing to wait.',
+      'Immediate, simple error handling matters more than surviving a dependency outage.',
+    ],
+    advantages: [
+      'The result, or the error, arrives on the next line.',
+      'Easy to write, read, trace and debug.',
+      'No broker, job status or eventual completion to explain to users.',
     ],
     diagram: `A -> B -> C -> D   each 99.9% available
-combined ~99.7%, and latency is the sum of all hops.
+the request needs all four: 0.999^4 = ~99.6%,
+and latency is the sum of all hops.
 Every synchronous hop is a shared fate decision.`,
     tradeoffs: [
       {
@@ -492,6 +821,151 @@ Every synchronous hop is a shared fate decision.`,
         costs: ['Eventual completion', 'Requires status tracking and idempotency'],
       },
     ],
+    mistakes: [
+      'Calls with no timeout, or a timeout longer than the budget of the caller.',
+      'Long chains of sequential calls where some could run in parallel or not at all.',
+      'Doing work the user does not need (emails, analytics) inside the request.',
+      'Retrying at every layer of a chain, multiplying load on the slowest service.',
+    ],
     related: ['rest-apis', 'message-queues', 'circuit-breaker', 'microservices'],
+    quiz: [
+      {
+        id: 'rr-1',
+        prompt: 'A calls B, B calls C and C calls D, all synchronously. Each of the four is up 99.9% of the time, independently. About how available is the endpoint of A?',
+        options: ['99.9%', '99.6%', '99.99%', '96%'],
+        answer: 1,
+        explanation:
+          'The request succeeds only if all four are up: 0.999^4 = about 0.996. Each synchronous dependency multiplies availability down, so A is worse than any single service. 96% would be 99% each.',
+      },
+      {
+        id: 'rr-2',
+        prompt: 'An endpoint makes three calls in sequence, taking 50, 80 and 120 ms. None of them needs the result of another. What does running them in parallel give?',
+        options: ['About 250 ms', 'About 83 ms', 'About 120 ms - the slowest call', 'About 50 ms - the fastest call'],
+        answer: 2,
+        explanation:
+          'In sequence the latencies add: 250 ms. In parallel you wait for all three, so the slowest one, 120 ms, sets the time. The average and the fastest are not how waiting for several answers works.',
+      },
+      {
+        id: 'rr-3',
+        prompt:
+          'In the Lab the queue is off: 12 requests/sec arrive and 3 workers finish 3 each per second (333 ms a job). What do you see?',
+        options: [
+          'Every user waits about 333 ms and nothing fails',
+          'Callers pile up because only 9 of the 12 per second can be served; waits grow until callers hit the 2 s timeout, and some jobs finish after their caller has gone',
+          'The API rejects 3 requests per second at once with 429',
+          'Workers speed up to 4 per second',
+        ],
+        answer: 1,
+        explanation:
+          'Capacity is 3 x 3 = 9/sec against 12, so about 3 callers per second have to wait, holding a connection. Waits grow until the timeout cuts them off: the Timed out and Wasted work metrics climb. Nothing rejects early, which is exactly the problem.',
+      },
+      {
+        id: 'rr-4',
+        prompt: 'Same Lab: you turn the Queue on. What changes for users?',
+        options: [
+          'Nothing - the workers are still too slow',
+          'Every request now succeeds at once and all the work is done',
+          'The workers get faster',
+          'Users get an answer in 20 ms, but the work still falls behind: the queue grows by about 3 per second, as a delay instead of timeouts',
+        ],
+        answer: 3,
+        explanation:
+          'The queue takes the job off the request path, so the user is answered at once. It does not add capacity: 12 in and 9 out still leaves 3 per second waiting - now in the queue, visible as depth and oldest-message age. Decoupling moves the wait; only more capacity removes it.',
+      },
+      {
+        id: 'rr-5',
+        prompt: 'A service calls a dependency with no timeout. The dependency starts hanging. What happens to the service?',
+        options: [
+          'Its threads or connections wait on the hanging calls until none are left, and it stops answering even requests that do not use that dependency',
+          'Nothing - the operating system cancels the calls',
+          'Only the requests that call the dependency slow down',
+          'The dependency is removed automatically',
+        ],
+        answer: 0,
+        explanation:
+          'Each hanging call holds a thread or a connection. With no timeout they are never released, the pool runs dry, and the whole service stops - a cascading failure. A timeout shorter than the budget of the caller frees the resource and turns the hang into an error it can handle.',
+      },
+      {
+        id: 'rr-6',
+        prompt:
+          'The user-facing budget is 1 s. After A and B have used 900 ms, C receives the call with the remaining deadline attached. C needs about 300 ms. What should C do?',
+        options: [
+          'Do the work anyway - the answer might still be useful',
+          'Wait for more capacity, then do the work',
+          'Refuse at once, because the answer cannot arrive within the 100 ms that is left',
+          'Double the deadline and continue',
+        ],
+        answer: 2,
+        explanation:
+          'With 100 ms left and 300 ms of work, the result would arrive after the user has already been given an error. Deadline propagation lets C see that and save its capacity for requests that can still succeed.',
+      },
+      {
+        id: 'rr-7',
+        prompt: 'A login form must tell the user whether the password is correct. Should the password check be a request/response call or a message on a queue?',
+        options: [
+          'A request/response call - the user cannot continue without the answer',
+          'A queue - it is always more reliable',
+          'A queue, with the result emailed to the user',
+          'Either - the user does not notice',
+        ],
+        answer: 0,
+        explanation:
+          'Synchronous is right when the caller needs the answer to proceed, and a login needs it immediately. A queue would only add a status to poll for. Reliability is not the question when the user is waiting at the form.',
+      },
+      {
+        id: 'rr-8',
+        prompt:
+          'A report takes 2 minutes to generate. Clients hold the HTTP connection open, and many are cut off after 60 s by the load balancer. What design fits?',
+        options: [
+          'Raise every timeout on the path to 5 minutes',
+          'Answer 202 Accepted with a status URL; a worker builds the report, and the client polls or is notified',
+          'Generate the report twice to make it faster',
+          'Ask users to retry until it works',
+        ],
+        answer: 1,
+        explanation:
+          'Long work should not hold a connection. 202 Accepted keeps the interaction request/response for the client - submit, then check status - while the server does the work in the background. Longer timeouts hold threads and connections for minutes, and retries start the work again.',
+      },
+      {
+        id: 'rr-9',
+        prompt: 'Users often close the page while a 5-second search is running. The server keeps computing every search to the end. What does this cost under load, and what is the fix?',
+        options: [
+          'Nothing - the results are cached anyway',
+          'Only network bandwidth',
+          'Nothing, because closed pages do not count as traffic',
+          'Capacity spent on answers nobody reads; honour the cancellation signal and stop the work when the client disconnects',
+        ],
+        answer: 3,
+        explanation:
+          'Work for a caller who has gone is pure waste, and it takes capacity from users who are still waiting. Most frameworks expose a cancellation signal when the client disconnects; using it stops the work early.',
+      },
+      {
+        id: 'rr-10',
+        prompt:
+          'Service B is redeployed with 30 seconds of downtime. A calls B synchronously for every order. What do customers see, compared with A publishing an OrderPlaced event that B consumes?',
+        options: [
+          'The same in both designs',
+          'Synchronously, orders fail for 30 s; with the event, orders succeed and B catches up when it is back',
+          'With the event, orders fail for 30 s',
+          'Synchronously, orders are delayed 30 s but never fail',
+        ],
+        answer: 1,
+        explanation:
+          'Request/response needs both sides up at the same moment - temporal coupling. With an event in between, B being down only delays its part of the work. The price is eventual completion and status tracking.',
+      },
+      {
+        id: 'rr-11',
+        prompt: 'The user-facing budget is 800 ms. A calls B, then C, in sequence. Which timeouts make sense for those two calls?',
+        options: [
+          '2 s for B and 2 s for C',
+          'No timeouts - the budget is enforced by the user',
+          '300 ms for B and 300 ms for C, leaving room for the own work of A',
+          '800 ms for B and 800 ms for C',
+        ],
+        answer: 2,
+        explanation:
+          'Sequential timeouts add up: 300 + 300 = 600 ms leaves 200 ms for A itself, inside 800 ms. 800 ms each could spend 1.6 s before A answers, and 2 s each is worse still. Timeouts come from the budget, not from a default.',
+      },
+    ],
   },
 ];

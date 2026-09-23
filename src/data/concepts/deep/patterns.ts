@@ -106,7 +106,7 @@ HYBRID (what real systems do)
           caption: 'Four responses when the buffer is full',
           body: `BLOCK      producer waits            simplest; can deadlock if circular
 DROP       discard new (or oldest)   fine for metrics, telemetry, video
-REJECT     return 429 / error        best for request-response APIs
+REJECT     return 429 / error        fits request-response APIs
 SPILL      write to disk             more capacity, higher latency, bounded eventually
 
 choose per data type:
@@ -631,8 +631,8 @@ with M consumers, message ORDER is not preserved
           caption: 'The costs of a chain, made explicit',
           body: `A -> B -> C -> D   each 99.9% available, each p99 = 50 ms
 
-availability   0.999^3 = 99.7%      (A is now worse than any dependency)
-p99 latency    150 ms + A's own work (tails ADD along the chain)
+availability   0.999^4 = 99.6%      (A and its 3 dependencies must all be up)
+p99 latency    up to 150 ms + A's own work (tails add along the chain)
 failure        D down = A down, unless A degrades deliberately
 
 fix: make hops parallel where possible, remove hops that are not
@@ -664,20 +664,20 @@ needed for the answer, and define a fallback for each one that stays.`,
     ],
     examples: [
       {
-        title: 'Turning a 4-second endpoint into 80 milliseconds',
+        title: 'Turning a 4-second checkout into about 1 second',
         setup:
-          'POST /checkout makes six synchronous calls in sequence: validate cart, check stock, calculate tax, charge card, create shipment, send confirmation. p95 is 4.2 seconds.',
+          'POST /checkout makes six synchronous calls in sequence. At p95: validate cart 120 ms, check stock 180 ms, calculate tax 400 ms, charge card 900 ms, create shipment 1,000 ms, send confirmation 1,600 ms - 4.2 seconds in total.',
         walkthrough: [
           'Classify each call: which are required to tell the user their order was placed?',
           'Required: validate cart, check stock, charge card. Everything else is not - the user does not need tax calculation detail, a shipment record or an email before seeing a confirmation.',
-          'Send confirmation (600 ms) moves to a queue. It is the clearest case: an email provider being slow should never delay a checkout.',
-          'Create shipment (900 ms) moves to a queue, driven by the OrderPlaced event. The warehouse does not act within seconds anyway.',
+          'Send confirmation (1,600 ms) moves to a queue. It is the clearest case: an email provider being slow should never delay a checkout.',
+          'Create shipment (1,000 ms) moves to a queue, driven by the OrderPlaced event. The warehouse does not act within seconds anyway.',
           'Calculate tax (400 ms) must be included in the total, but the result is cacheable per region and product category - it becomes a 2 ms lookup for most requests.',
-          'The three remaining calls run in parallel where the dependencies allow: cart validation and stock check together, then payment.',
-          'Result: p95 becomes about 80 ms, and availability improves because two of the six dependencies can now be entirely down without affecting checkout.',
+          'The remaining calls run in parallel where the dependencies allow: cart validation and stock check together (180 ms, the slower of the two), then the 2 ms tax lookup, then payment (900 ms).',
+          'Result: p95 becomes about 180 + 2 + 900 = roughly 1.1 seconds, most of it the card charge that the user genuinely has to wait for. Availability improves too, because two of the six dependencies can now be entirely down without affecting checkout.',
         ],
         result:
-          'Half the calls did not need to be synchronous at all. Asking "does the user need this to get their answer?" per dependency is the highest-value latency exercise available, and it improves availability at the same time.',
+          'Checkout went from 4.2 s to about 1.1 s, because half the calls did not need to be synchronous at all. Asking "does the user need this to get their answer?" per dependency is the highest-value latency exercise available, and it improves availability at the same time.',
       },
     ],
     jargon: [

@@ -1563,22 +1563,24 @@ export const systemVisuals: Record<string, VisualSpec> = {
   backpressure: {
     width: 760,
     height: 290,
-    caption: 'A bounded queue refuses work instead of buffering until memory runs out.',
+    caption: 'A bounded queue refuses new work, and the refusal travels back upstream.',
     nodes: [
-      { id: 'prod', kind: 'server', label: 'Producer', sub: '1,000/s', x: 40, y: 105, w: 160, h: 80 },
-      { id: 'queue', kind: 'queue', label: 'Bounded queue', sub: '10,000 max', x: 280, y: 100, w: 190, h: 96, stat: ['Full', 'yes'], alert: true },
-      { id: 'reject', kind: 'client', label: 'HTTP 429', x: 560, y: 15, w: 160, h: 74 },
-      { id: 'cons', kind: 'worker', label: 'Consumers', sub: '400/s', x: 560, y: 180, w: 160, h: 80 },
+      { id: 'clients', kind: 'client', label: 'Clients', x: 20, y: 105, w: 130, h: 80 },
+      { id: 'prod', kind: 'server', label: 'Producer', sub: '1,000/s', x: 190, y: 105, w: 150, h: 80 },
+      { id: 'queue', kind: 'queue', label: 'Bounded queue', sub: '10,000 max', x: 380, y: 97, w: 190, h: 96, stat: ['Full', 'yes'], alert: true },
+      { id: 'cons', kind: 'worker', label: 'Consumers', sub: '400/s', x: 610, y: 105, w: 140, h: 80 },
     ],
     edges: [
+      { from: 'clients', to: 'prod', tone: 'brand', rate: 5 },
       { from: 'prod', to: 'queue', tone: 'brand', rate: 5 },
-      { from: 'queue', to: 'reject', tone: 'danger', rate: 3, outcome: 'failure' },
       { from: 'queue', to: 'cons', tone: 'ok', rate: 2 },
     ],
     steps: [
-      { from: 'prod', to: 'queue', label: 'Producer pushes 1,000/s' },
+      { from: 'clients', to: 'prod', label: 'Clients send 1,000/s' },
+      { from: 'prod', to: 'queue', label: 'Producer publishes to bounded queue' },
       { from: 'queue', to: 'cons', label: 'Consumers drain only 400/s' },
-      { from: 'queue', to: 'reject', label: 'At 10,000: reject with 429', outcome: 'failure' },
+      { from: 'queue', to: 'prod', label: 'Full at 10,000: publish refused', outcome: 'failure' },
+      { from: 'prod', to: 'clients', label: '429 with Retry-After upstream', outcome: 'failure' },
     ],
   },
 
@@ -1710,12 +1712,12 @@ export const systemVisuals: Record<string, VisualSpec> = {
   'request-response': {
     width: 760,
     height: 270,
-    caption: 'Each synchronous hop multiplies failure probability and adds its latency.',
+    caption: 'Four hops at 99.9% each: together about 99.6%, and the latencies add.',
     nodes: [
       { id: 'a', kind: 'service', label: 'A', sub: '99.9%', x: 40, y: 95, w: 130, h: 80 },
       { id: 'b', kind: 'service', label: 'B', sub: '99.9%', x: 230, y: 95, w: 130, h: 80 },
       { id: 'c', kind: 'service', label: 'C', sub: '99.9%', x: 420, y: 95, w: 130, h: 80 },
-      { id: 'd', kind: 'sql', label: 'D', sub: 'combined ~99.7%', x: 600, y: 95, w: 140, h: 80 },
+      { id: 'd', kind: 'sql', label: 'D', sub: '99.9%', x: 600, y: 95, w: 140, h: 80 },
     ],
     edges: [
       { from: 'a', to: 'b', tone: 'brand', rate: 2.4 },
