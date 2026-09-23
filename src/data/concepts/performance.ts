@@ -932,7 +932,7 @@ Materialized view: read 1 precomputed row
       {
         id: 'db-cache-2',
         prompt:
-          'In the Cache Layers Lab the buffer pool holds 4,000 pages, the orders table is 20,000 pages, and the buffer pool hit ratio sits near 50%. You drag the buffer pool to 24,000 pages. What do you see?',
+          'In the Cache Layers Lab, with the materialized view off, the buffer pool holds 4,000 pages, the orders table is 20,000 pages, and the buffer pool hit ratio sits near 50%. You drag the buffer pool to 24,000 pages. What do you see?',
         options: [
           'Nothing changes: a buffer pool only speeds up writes',
           'The hit ratio jumps to 100% at once, because the whole table is loaded into RAM when the size changes',
