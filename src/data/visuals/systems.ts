@@ -1055,7 +1055,7 @@ export const systemVisuals: Record<string, VisualSpec> = {
     caption: 'Allowed requests reach the API; the rest get 429 with Retry-After.',
     nodes: [
       { id: 'client', kind: 'client', label: 'Client', sub: '100 requests', x: 40, y: 110, w: 150, h: 80 },
-      { id: 'limiter', kind: 'api-gateway', label: 'Rate limiter', sub: 'token bucket 10/s', x: 270, y: 100, w: 190, h: 96, stat: ['Tokens', '3 / 10'] },
+      { id: 'limiter', kind: 'api-gateway', label: 'Rate limiter', sub: 'bucket 10, refill 5/s', x: 270, y: 100, w: 190, h: 96, stat: ['Tokens', '3 / 10'] },
       { id: 'api', kind: 'server', label: 'API', x: 560, y: 15, w: 160, h: 76 },
       { id: 'reject', kind: 'client', label: 'HTTP 429', sub: 'Too Many Requests', x: 545, y: 190, w: 190, h: 80 },
     ],
@@ -1067,7 +1067,7 @@ export const systemVisuals: Record<string, VisualSpec> = {
     steps: [
       { from: 'client', to: 'limiter', label: 'Burst of 100 arrives' },
       { from: 'limiter', to: 'api', label: 'Tokens available: allowed' },
-      { from: 'limiter', to: 'reject', label: 'Bucket empty: 429', outcome: 'failure' },
+      { from: 'limiter', to: 'reject', label: 'Bucket empty: 429 + Retry-After', outcome: 'failure' },
     ],
   },
 

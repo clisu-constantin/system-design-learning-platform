@@ -354,25 +354,25 @@ left the app. Required for mobile and SPAs, recommended everywhere.`,
 
   'rate-limiting': {
     analogy: {
-      title: 'A doorman with a counter',
+      title: 'A doorman with a pouch of wristbands',
       body:
-        'The club holds 300 people. The doorman counts, and when it is full, the next person waits rather than being let in to make the place unusable for everyone inside. It is not hostility - it is the only way the people already inside have a good evening. A system without a doorman does not serve everyone; it fails everyone at once.',
+        'Every guest needs a wristband to get in. The doorman holds at most 10, and is handed one new wristband every 6 seconds. A group of 10 arriving together walks straight in if the pouch is full; the 11th is told "come back in 6 seconds". Over an hour no more than 610 get in, however they arrive. That is a token bucket: the pouch is the burst, the steady supply is the rate, and "come back in 6 seconds" is a 429 with Retry-After.',
     },
     deepDive: [
       {
         heading: 'Four algorithms, and what each gets wrong',
         paragraphs: [
-          'Fixed window counts requests per calendar minute. It is trivial to implement with one counter and one expiry, and it allows a burst of double the limit at a window boundary: 100 requests at 10:00:59 and 100 more at 10:01:00 both pass.',
-          'Sliding window log stores a timestamp per request and counts those within the last 60 seconds. Perfectly accurate, and the memory cost grows with the request rate - potentially large for high-volume clients. Sliding window counter approximates it by weighting the previous window, which is accurate enough for almost everything at a fraction of the cost.',
-          'Token bucket is the one most systems end up using. Tokens refill at a steady rate up to a maximum; each request consumes one. It enforces an average rate while permitting a burst up to the bucket size, which matches how real clients behave. Leaky bucket is its sibling, smoothing output to a constant rate instead of allowing bursts.',
+          'Fixed window counts requests per calendar minute. It is trivial to implement with one counter and one expiry, and it allows a burst of double the limit at a window boundary. With a limit of 100 per minute, for example, 100 requests at 10:00:59.9 and 100 more at 10:01:00.1 all pass: each batch lands in its own window with a fresh counter, so 200 get through within 0.2 seconds.',
+          'Sliding window log stores a timestamp per request and counts those within the last 60 seconds. Perfectly accurate, and the memory cost grows with the request rate - potentially large for high-volume clients. Sliding window counter approximates it with two counters: 15 seconds into the current minute, it counts the previous minute at 75% plus the current one. It assumes the previous minute was evenly spread; Cloudflare measured only 0.003% of requests wrongly allowed or limited with it.',
+          'Token bucket is the one many systems end up using - Stripe and Amazon API Gateway both describe theirs as token buckets. Tokens refill at a steady rate up to a maximum; each request consumes one. It enforces an average rate while permitting a burst up to the bucket size, which matches how real clients behave. Leaky bucket is its sibling: requests queue and drain at a constant rate, so bursts wait instead of passing.',
         ],
         code: {
           caption: 'Token bucket, which covers most needs',
           body: `capacity 100 tokens, refill 10 tokens/sec
 
 t=0    bucket 100   burst of 100 requests -> all pass, bucket 0
-t=1    bucket 10    10 requests pass, 11th is rejected
-t=10   bucket 100   full again if idle
+t=1    bucket 10    10 requests pass, 11th is rejected, bucket 0
+t=11   bucket 100   full again after 10 idle seconds
 
 allows a legitimate burst, enforces 10/sec sustained.
 Redis: one hash per key (tokens, last_refill) updated in a Lua script
@@ -384,7 +384,7 @@ so the check-and-decrement is atomic across all app instances.`,
         paragraphs: [
           'The key determines fairness. Per API key or user id is the most meaningful for authenticated traffic. Per IP is the fallback for anonymous traffic, but it punishes users behind a shared NAT and is trivially evaded with a proxy pool. Many systems layer several: a global limit, a per-user limit, and a tighter limit on expensive endpoints.',
           'Different endpoints deserve different limits. A login endpoint should be far stricter than a product listing, because the threat is credential stuffing rather than load. Expensive operations - search, export, report generation - should be counted more heavily, sometimes literally by assigning them a cost in tokens.',
-          'When you reject, return 429 with a Retry-After header, and expose the limit in headers (RateLimit-Limit, RateLimit-Remaining, RateLimit-Reset) so well-behaved clients can pace themselves. Silent throttling produces clients that retry harder, which is the opposite of the goal.',
+          'When you reject, return 429 Too Many Requests (RFC 6585) with a Retry-After header, and expose the allowance in headers so well-behaved clients can pace themselves. GitHub sends x-ratelimit-limit, x-ratelimit-remaining and x-ratelimit-reset; an IETF draft is standardising RateLimit and RateLimit-Policy fields. Silent throttling produces clients that retry harder, which is the opposite of the goal.',
         ],
         bullets: [
           'Per user or API key for authenticated traffic; per IP only as a fallback.',
@@ -412,7 +412,7 @@ so the check-and-decrement is atomic across all app instances.`,
           'Problem 1 - credential stuffing: an attacker distributes across 5,000 IPs and stays under the limit on every one. Fix: a per-account limit on login attempts, 5 per 15 minutes, regardless of source IP.',
           'Problem 2 - corporate users: an entire office behind one NAT address shares the 1,000 and gets throttled during normal work. Fix: authenticate first, then limit per user rather than per IP.',
           'Problem 3 - an expensive export endpoint: 1,000 exports per minute would destroy the database, although it is within the limit. Fix: per-endpoint costs, with export counted as 50 tokens.',
-          'Problem 4 - a legitimate client synchronising at startup sends 200 requests in two seconds and is blocked, although its hourly average is tiny. Fix: token bucket with a burst capacity of 300 and a refill of 16 per second.',
+          'Problem 4 - a legitimate client synchronising at startup sends 1,500 requests in 30 seconds, gets 500 of them rejected, and fails its sync, although its hourly average is tiny. Fix: a token bucket with a capacity of 2,000 and a refill of about 16 per second (1,000 per minute sustained): the full bucket covers all 1,500.',
           'Implementation: a Lua script in Redis updates the bucket atomically, keyed by user id plus endpoint class.',
           'Failure policy: if Redis is unavailable, general endpoints fail open (serve the request) while login fails closed (reject), because the consequences differ.',
         ],

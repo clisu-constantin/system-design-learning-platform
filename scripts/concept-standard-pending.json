@@ -46,7 +46,6 @@
     "exponential-backoff",
     "health-checks",
     "jwt",
-    "rate-limiting",
     "tls-https",
     "secrets-management",
     "monolith",
