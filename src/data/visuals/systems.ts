@@ -666,21 +666,29 @@ export const systemVisuals: Record<string, VisualSpec> = {
 
   'disaster-recovery': {
     width: 760,
-    height: 280,
-    caption: 'A backup that has never been restored is an untested hypothesis.',
+    height: 320,
+    caption: 'Replication survives a lost region; only a backup undoes a bad write.',
     nodes: [
-      { id: 'prod', kind: 'sql', label: 'Production', sub: 'region A', x: 50, y: 100, w: 170, h: 80 },
-      { id: 'backup', kind: 'storage', label: 'Backups', sub: 'region B, separate account', x: 300, y: 95, w: 200, h: 88 },
-      { id: 'restore', kind: 'server', label: 'Restore drill', sub: 'RTO 1 h, RPO 5 min', x: 570, y: 95, w: 170, h: 88 },
+      { id: 'users', kind: 'client', label: 'Users', x: 300, y: 10, w: 160, h: 64 },
+      { id: 'prod', kind: 'sql', label: 'Primary DB', sub: 'region A', x: 30, y: 130, w: 180, h: 80 },
+      { id: 'standby', kind: 'sql', label: 'Standby DB', sub: 'region B, async', x: 550, y: 130, w: 180, h: 80 },
+      { id: 'backup', kind: 'storage', label: 'Backups', sub: 'region B, own account', x: 270, y: 226, w: 220, h: 80 },
     ],
     edges: [
-      { from: 'prod', to: 'backup', tone: 'violet', rate: 1.4, label: 'continuous' },
-      { from: 'backup', to: 'restore', tone: 'ok', rate: 1, label: 'monthly' },
+      { from: 'users', to: 'prod', tone: 'ok', rate: 2 },
+      { from: 'prod', to: 'standby', tone: 'violet', rate: 1.4, label: 'replication' },
+      { from: 'prod', to: 'backup', tone: 'info', rate: 0.5 },
+      // Where users go once region A is lost and the standby is promoted.
+      { from: 'users', to: 'standby', tone: 'muted', dashed: true },
     ],
     steps: [
-      { from: 'prod', to: 'backup', label: 'Continuous copy to region B' },
-      { from: 'backup', to: 'restore', label: 'Monthly drill: restore for real' },
-      { from: 'backup', to: 'restore', label: 'Drill proves RTO and RPO' },
+      { from: 'users', to: 'prod', label: 'Users write to region A' },
+      { from: 'prod', to: 'standby', label: 'Replica trails by seconds' },
+      { from: 'prod', to: 'backup', label: 'Hourly backup, other account' },
+      { from: 'prod', to: 'standby', label: 'Bad write copied at once', outcome: 'warning' },
+      { from: 'backup', to: 'prod', label: 'Only the backup is clean' },
+      { from: 'users', to: 'prod', label: 'Region A lost', outcome: 'failure' },
+      { from: 'users', to: 'standby', label: 'Standby promoted, users follow' },
     ],
   },
 
