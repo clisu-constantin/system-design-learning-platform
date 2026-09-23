@@ -186,35 +186,207 @@ GET  product:42                       -> sub-millisecond read`,
     category: 'performance',
     difficulty: 'Intermediate',
     lab: 'cdn',
-    keywords: ['edge', 'cache key', 'vary', 'purge', 'immutable'],
+    labFocus: 'cdn-caching',
+    keywords: ['edge', 'cache key', 'vary', 'purge', 'immutable', 's-maxage'],
     what: 'The caching layer of a CDN: what the edge stores, how it builds a cache key, how long it keeps the object, and how you invalidate it.',
     why: 'A CDN only helps to the extent that it hits. Hit rate is decided by your cache keys and headers, not by the CDN vendor.',
     how: [
       'The cache key is typically host + path + selected query parameters + Vary headers.',
-      'Cache-Control: public, max-age=31536000, immutable for content-hashed assets.',
+      'Cache-Control from the origin says whether a shared cache may keep a copy (public, private, no-store) and for how long (max-age, or s-maxage for shared caches only).',
+      'Content-hashed assets get Cache-Control: public, max-age=31536000, immutable - a deploy changes the URL.',
       'Use stale-while-revalidate to serve the old copy while refreshing in the background.',
       'Invalidate by purge, or better, by changing the URL (cache busting).',
+    ],
+    when: [
+      'Every static asset: hash the file name and cache it for a year.',
+      'Public, shared responses such as product lists or article pages: a short s-maxage, even a few seconds.',
+      'HTML that must reflect deploys at once: no-cache with an ETag, so each use is a cheap revalidation.',
+      'Never for per-user responses: mark them private or no-store.',
     ],
     diagram: `Cache key:  GET /static/app.a91f.js
 Cache-Control: public, max-age=31536000, immutable
 -> never revalidated; new deploy produces app.b72c.js`,
+    advantages: [
+      'A hashed URL with a one-year max-age is fetched from the origin once per edge, then never again.',
+      'Even a 10 second TTL on a busy public response removes almost all of its origin load.',
+      'stale-if-error keeps serving the last good copy while the origin is down.',
+    ],
     tradeoffs: [
       {
         approach: 'Version-in-URL (immutable)',
-        gains: ['Near-100% hit rate', 'No purges needed', 'Instant deploys'],
+        gains: ['Near-100% hit rate', 'No purges needed', 'Nothing stale after a deploy'],
         costs: ['Build step must hash assets', 'HTML itself must stay short-lived'],
       },
       {
         approach: 'Short TTL + purge',
         gains: ['Works for content that cannot change URL'],
-        costs: ['Lower hit rate', 'Purge propagation is not instant'],
+        costs: ['Lower hit rate', 'Stale copies until each one expires or the purge arrives, which is not at the same moment everywhere'],
+      },
+      {
+        approach: 'no-cache (revalidate every use)',
+        gains: ['Never serves an old version', 'Most answers are a small 304 Not Modified'],
+        costs: ['Every request still makes a trip to the origin', 'Origin sees 100% of requests'],
       },
     ],
     mistakes: [
-      'Including a tracking query parameter in the cache key, fragmenting the cache per user.',
+      'Including a tracking query parameter in the cache key, fragmenting the cache into a copy per campaign.',
+      'Including the Cookie header in the key of static files, so every visitor gets a private copy.',
       'Caching authenticated responses at a shared edge.',
+      'Vary: User-Agent, which stores one copy per browser version.',
+      'Expecting a purge to clear browser caches - it only clears the CDN.',
     ],
     related: ['cdn', 'caching', 'http-https'],
+    quiz: [
+      {
+        id: 'cdn-caching-1',
+        prompt:
+          'In the CDN Lab the policy is public, s-maxage=30 on URLs that stay the same between deploys. You press Deploy new version. Triangles appear and "Old version served" jumps near 100%, then falls to 0 over about 30 seconds. Why?',
+        options: [
+          'The deploy failed on some servers and they are still running the old code',
+          'Each edge copy of the old bytes is still fresh by its TTL, and it is only replaced when it expires',
+          'The purge is still on its way to the edges',
+          'Browsers are sending the old version back to the edge',
+        ],
+        answer: 1,
+        explanation:
+          'The origin has v2, but the URL did not change, so every edge keeps answering from its v1 copy until its 30 seconds run out - popular files first, rare files last. Nothing was purged, so the purge is the tempting wrong answer. A purge would shorten the window; hashed URLs would remove it.',
+      },
+      {
+        id: 'cdn-caching-2',
+        prompt:
+          'The index.html of a single-page app must show a new deploy within seconds, but you still want to avoid sending the full file when nothing changed. Which header fits?',
+        options: [
+          'Cache-Control: no-store',
+          'Cache-Control: public, max-age=31536000, immutable',
+          'Cache-Control: private, max-age=3600',
+          'Cache-Control: no-cache, with an ETag',
+        ],
+        answer: 3,
+        explanation:
+          'no-cache means store it but check with the origin before every use. When the ETag still matches, the answer is a 304 Not Modified with no body, and a deploy is visible on the very next request. no-store is the tempting wrong one: it also shows deploys at once, but forces a full download every time.',
+      },
+      {
+        id: 'cdn-caching-3',
+        prompt:
+          'In the CDN Lab you set Cache-Control to no-cache for the hashed static files. The hit rate drops to 0% and origin traffic equals total traffic, though most answers are small 304s. Why is this the wrong policy for these files?',
+        options: [
+          'Every request still pays a trip to the origin, yet a hashed file can never change - immutable with a long max-age would make them edge hits',
+          'no-cache forbids the edge from storing the file at all',
+          '304 responses are larger than full responses',
+          'no-cache makes the edge serve old versions',
+        ],
+        answer: 0,
+        explanation:
+          'Revalidation is cheap in bytes but not in time: each use waits for the origin to say "not modified". A file whose name changes whenever its content does never needs that question. The tempting wrong answer is that no-cache forbids storing - that is no-store; no-cache stores and revalidates.',
+      },
+      {
+        id: 'cdn-caching-4',
+        prompt:
+          'You want edges to keep the public product list for 60 seconds, while browsers check again on every page view. Which Cache-Control header does that?',
+        options: [
+          'max-age=60',
+          'private, max-age=60',
+          'public, max-age=0, s-maxage=60',
+          'no-store, s-maxage=60',
+        ],
+        answer: 2,
+        explanation:
+          's-maxage applies only to shared caches such as a CDN and overrides max-age there, so the edge keeps 60 seconds while browsers get 0. max-age=60 alone is the tempting answer, but it would let every browser keep its own copy for a minute too. private forbids the edge from storing it at all.',
+      },
+      {
+        id: 'cdn-caching-5',
+        prompt:
+          'In the CDN Lab you set the cache key to Host + path + Cookie header. The hit rate falls to almost 0% and the edges fill with thousands of objects. What should the key be for these static files?',
+        options: [
+          'Host + path + Cookie, with a longer TTL',
+          'Host + path only - the files do not change per visitor, and ideally they are served from a cookie-free hostname',
+          'Host + path + User-Agent',
+          'No key - static files should skip the CDN',
+        ],
+        answer: 1,
+        explanation:
+          'Every visitor has a different cookie, so every request looks like a new object and no copy is ever used twice. A longer TTL is the tempting answer, but a copy that nobody else can match is useless however long it lives. A cookie-free hostname for assets makes the mistake impossible to repeat.',
+      },
+      {
+        id: 'cdn-caching-6',
+        prompt:
+          'Marketing links add ?utm_source=... to every URL, and the product list uses ?page=2, ?page=3. To fix a poor hit rate, someone configures the edge to ignore the whole query string. What breaks?',
+        options: [
+          'Nothing - query strings never change a response',
+          'The utm links stop working',
+          'The edge starts refusing requests with a query string',
+          'Page 2 and page 3 now get the cached copy of page 1',
+        ],
+        answer: 3,
+        explanation:
+          'Ignoring the query string removes the utm fragmentation, but ?page does change the response, and with it out of the key every page looks the same. The fix is to ignore the parameters that do not change the bytes (utm_*) and keep the ones that do. "Query strings never change a response" is the tempting belief that caused it.',
+      },
+      {
+        id: 'cdn-caching-7',
+        prompt:
+          'To serve a mobile layout, the origin adds Vary: User-Agent to its HTML. The edge hit rate falls from 95% to 20%. Why, and what fixes it?',
+        options: [
+          'There are thousands of distinct User-Agent strings, so each page is stored once per string - vary on a small device-class value instead, or use separate URLs',
+          'Vary headers are not supported by CDNs',
+          'The mobile layout is larger, so the edge runs out of space',
+          'Vary forces every request to revalidate',
+        ],
+        answer: 0,
+        explanation:
+          'Vary adds the named request header to the cache key, so every distinct value becomes its own copy, and each copy needs its own miss. Two or three device classes keep that to two or three copies. Running out of space is the tempting answer, but the problem is the number of keys, not the size of any one.',
+      },
+      {
+        id: 'cdn-caching-8',
+        prompt:
+          'In the CDN Lab (public, s-maxage) at 200 requests per second, you drag the Edge TTL from 30 s to 1 s. The hit rate drops much more than it did at 20,000 requests per second. Why?',
+        options: [
+          'The edges are too far from the users at low traffic',
+          'Low traffic makes the origin slower',
+          'Each edge asks the origin about each file at most once per TTL; at low traffic a rare file is asked for again only after its copy has expired',
+          'A 1 s TTL turns off the cache',
+        ],
+        answer: 2,
+        explanation:
+          'A copy only earns hits from the requests that arrive while it is fresh. At high traffic even a rare file is asked for many times per second, so a 1 s TTL still catches most of them; at low traffic the next request usually comes after it expired. Turning the cache off is the tempting answer, but hits of popular files still happen at 1 s.',
+      },
+      {
+        id: 'cdn-caching-9',
+        prompt:
+          'In the CDN Lab you press Purge all edges. Europe drops its copies first; Asia Pacific keeps serving the old version for another second or so. In production, what should the design assume about a purge?',
+        options: [
+          'It reaches locations one by one, so for a short window different users see different versions - and it never touches browser caches',
+          'It is atomic - every location drops its copies at the same moment',
+          'It only works for hashed URLs',
+          'It permanently disables caching for the purged URL',
+        ],
+        answer: 0,
+        explanation:
+          'A purge is a message to hundreds of locations; the big vendors now finish in well under a minute, but never all at the same instant, and the browsers holding a copy never hear about it. Treating it as atomic is the tempting assumption behind "purge after every deploy" designs. Hashed URLs need no purge at all.',
+      },
+      {
+        id: 'cdn-caching-10',
+        prompt:
+          'A public product list gets 5,000 requests per second, spread across 100 edge locations, and each edge keeps it with s-maxage=10. About how many requests per second reach the origin for it?',
+        options: ['About 5,000', 'About 500', 'At most about 10', 'Zero'],
+        answer: 2,
+        explanation:
+          'Each of the 100 edges fetches it at most once every 10 seconds: 100 / 10 = 10 requests per second, against 5,000 without the cache, and no user sees data older than 10 seconds. 500 is the tempting answer - it treats the cache as dropping only 90% of the load. Zero would need a TTL that never ends.',
+      },
+      {
+        id: 'cdn-caching-11',
+        prompt:
+          'The same product list has s-maxage=10. Every 10 seconds, the first user at each edge waits 300 ms while the edge fetches a fresh copy. Which directive removes that wait without lowering freshness much?',
+        options: [
+          'no-cache',
+          'stale-while-revalidate=60',
+          'Vary: Accept-Encoding',
+          'private',
+        ],
+        answer: 1,
+        explanation:
+          'stale-while-revalidate (RFC 5861) lets the edge answer at once with the copy that just expired while it fetches the new one in the background, so no user waits for the origin. no-cache is the tempting wrong answer: it makes every request wait for the origin, not only one every 10 seconds.',
+      },
+    ],
   },
   {
     slug: 'database-caching',

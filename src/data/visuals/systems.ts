@@ -54,7 +54,7 @@ export const systemVisuals: Record<string, VisualSpec> = {
       { from: 'origin', to: 'eu', label: 'Copy stored at the edge' },
       { from: 'users', to: 'eu', label: 'Next Paris user: 11 ms hit', outcome: 'cache-hit' },
       { from: 'users', to: 'us', label: 'US users hit the US edge', outcome: 'cache-hit' },
-      { from: 'users', to: 'ap', label: 'Asia: 13 ms, not 220 ms', outcome: 'cache-hit' },
+      { from: 'users', to: 'ap', label: 'Asia: 13 ms, not 240 ms', outcome: 'cache-hit' },
     ],
   },
 
@@ -86,7 +86,7 @@ export const systemVisuals: Record<string, VisualSpec> = {
     caption: 'Auth and limits are applied once, before anything reaches a service.',
     nodes: [
       { id: 'client', kind: 'client', label: 'Client', x: 40, y: 125, w: 140, h: 74 },
-      { id: 'gw', kind: 'api-gateway', label: 'API Gateway', sub: 'JWT - limits - routing', x: 270, y: 110, w: 190, h: 96 },
+      { id: 'gw', kind: 'api-gateway', label: 'API Gateway x2', sub: 'JWT - limits - routing', x: 270, y: 110, w: 190, h: 96 },
       { id: 'users', kind: 'service', label: 'Users', x: 570, y: 20, w: 150, h: 74 },
       { id: 'orders', kind: 'service', label: 'Orders', x: 570, y: 125, w: 150, h: 74 },
       { id: 'pay', kind: 'service', label: 'Payments', x: 570, y: 230, w: 150, h: 74 },

@@ -793,6 +793,7 @@ Reverse proxy:  internet -> proxy -> [servers]  (protects/serves the server)`,
     category: 'networking',
     difficulty: 'Beginner',
     lab: 'cdn',
+    labFocus: 'cdn',
     keywords: ['edge', 'cache', 'latency', 'origin', 'invalidation'],
     what: 'A content delivery network is a global fleet of edge caches. Users are routed to a nearby edge, which serves cached content directly and only contacts your origin on a miss.',
     why: 'The speed of light is a hard constraint: a round trip from Sydney to Virginia costs about 200 ms no matter how fast your servers are. Serving from an edge 50 km away turns that into single-digit milliseconds.',
@@ -837,7 +838,8 @@ CDN ON : most users -> nearest edge  (5-30 ms)`,
     mistakes: [
       'Caching responses that vary by user without including the user in the cache key.',
       'Content-hashed filenames missing, so you cannot cache aggressively and still deploy.',
-      'Assuming a purge is instant everywhere - design for a window of staleness.',
+      'Assuming a purge is instant everywhere - it reaches locations one by one, and it never clears browser caches.',
+      'Putting a CDN only in front of a region the users are not in - a hit still pays the trip to the edge.',
     ],
     realWorld: [
       'Video streaming is mostly a CDN problem: segments are cached at the edge and origin sees a fraction of requests.',
@@ -847,16 +849,143 @@ CDN ON : most users -> nearest edge  (5-30 ms)`,
     quiz: [
       {
         id: 'cdn-1',
-        prompt: 'Your CDN hit rate is 55% for images that never change. What is the most likely cause?',
+        prompt:
+          'Your CDN hit rate is 55% for product images that never change once uploaded. The cache key is the URL alone. What is the most likely cause?',
         options: [
           'The CDN has too few edge locations',
-          'Cache-Control TTLs are short or missing, so edges keep revalidating with the origin',
-          'Users are too far away',
-          'The origin is too slow',
+          'Cache-Control TTLs are short or missing, so edges keep going back to the origin',
+          'Users are too far away from the edges',
+          'The origin is too slow to fill the edges',
         ],
         answer: 1,
         explanation:
-          'Hit rate is mostly a function of cache keys and TTLs. Immutable assets should be served with long max-age and content-hashed URLs.',
+          'With a clean cache key, hit rate is decided by how long each edge may keep a copy. Files that never change should carry a long max-age on content-hashed URLs, so every edge asks the origin once. More edge locations is the tempting answer, but it would split the same traffic across more caches and lower the hit rate, not raise it.',
+      },
+      {
+        id: 'cdn-2',
+        prompt:
+          'In the CDN Lab with the CDN off, Asia Pacific users see about 240 ms per request and North America about 50 ms. The origin spends about 25 ms of that doing work. Someone proposes doubling the origin CPU. What happens to the Asia Pacific number?',
+        options: [
+          'It halves to about 120 ms',
+          'It drops to about 13 ms, the same as with the CDN',
+          'It barely moves: about 215 ms of it is the round trip across 11,500 km, which CPU cannot shorten',
+          'It gets worse, because a bigger server takes longer to respond',
+        ],
+        answer: 2,
+        explanation:
+          'Almost all of the 240 ms is distance - light in fibre covers about 200 km per millisecond and real routes are longer than straight lines. Faster CPU can only shave the 25 ms of work. Halving is the tempting answer, but it assumes the time is spent on the server. Only moving the answer closer to the user, which is what an edge does, removes the distance.',
+      },
+      {
+        id: 'cdn-3',
+        prompt:
+          'In the CDN Lab the CDN is on with a hit rate near 99%. You switch Edge locations to US only. What happens to latency for Europe users?',
+        options: [
+          'It climbs back to over 100 ms: their hits are now served from an edge an ocean away',
+          'It stays around 11 ms, because the hit rate is still near 99%',
+          'It drops further, because one edge holds every file',
+          'Europe users get errors, because they have no edge of their own',
+        ],
+        answer: 0,
+        explanation:
+          'A hit only saves the trip from the edge to the origin; the user still has to reach the edge. With only a US edge, Europe users pay about 6,000 km each way even on a hit. Staying at 11 ms is the tempting answer, but hit rate says nothing about where the edge is. A CDN buys distance only where it has locations near the users.',
+      },
+      {
+        id: 'cdn-4',
+        prompt:
+          'A logged-in dashboard API returns different data for every user and cannot be cached. Users are in Europe, the API is in Virginia. Is there any latency gain from sending it through the CDN?',
+        options: [
+          'No - a CDN only helps content it can cache',
+          'No - it adds a hop, so it is always slower',
+          'Only if the responses are compressed',
+          'Yes - the TCP and TLS handshakes end at the nearby edge, and the edge reuses warm connections to the origin',
+        ],
+        answer: 3,
+        explanation:
+          'Setting up a connection costs several round trips before the first byte of the request. Ending them at an edge 20 km away turns each into a few milliseconds, and the long leg runs over a connection that is already open. The request still reaches the origin every time. "Only cached content benefits" is the tempting answer and the reason teams leave their APIs off the CDN.',
+      },
+      {
+        id: 'cdn-5',
+        prompt:
+          'A team puts GET /account behind the CDN with the URL as the cache key and a 60 second TTL. Users report seeing the name of another customer. What is wrong, and what is the fix?',
+        options: [
+          'The TTL is too long - lower it to 5 seconds',
+          'The response varies by user but the key does not - mark it Cache-Control: private (or no-store) so shared caches never keep it',
+          'The edges are out of sync - purge them after every login',
+          'The origin is returning the wrong user - fix the database query',
+        ],
+        answer: 1,
+        explanation:
+          'The first user to ask fills the edge copy, and everyone with the same URL gets it until it expires. A per-user response must not be stored by a shared cache at all, which is what private and no-store say. A shorter TTL is the tempting answer, but it only shrinks the leak to 5 seconds of other people seeing private data.',
+      },
+      {
+        id: 'cdn-6',
+        prompt:
+          'At 10:00 you deploy a new styles.css at the same URL, served with Cache-Control: max-age=86400. At 10:05 some users see the new design, others the old one. You purge the CDN and many still see the old one. What is the long-term fix?',
+        options: [
+          'Put a hash of the content in the file name and keep the long max-age; keep the HTML that links to it short-lived',
+          'Purge the CDN again, and keep purging until everyone has it',
+          'Lower max-age to 60 seconds for every file',
+          'Serve CSS from the origin, never from the CDN',
+        ],
+        answer: 0,
+        explanation:
+          'The old copy lives in two places: the edges, which a purge can clear, and the browsers, which it cannot - they keep it for up to a day. A new file name is a new URL, so no cache anywhere holds a wrong copy, and the long max-age stays safe. A 60 second TTL is the tempting answer, but it trades away the hit rate on every file forever to fix a deploy problem.',
+      },
+      {
+        id: 'cdn-7',
+        prompt:
+          'Normally 10,000 requests per second hit your CDN with a 98% hit rate, so the origin sees 200 per second. A link goes viral and traffic grows to 200,000 per second while the hit rate holds at 98%. What does the origin see?',
+        options: [
+          'Still about 200 per second',
+          'About 196,000 per second',
+          'About 4,000 per second',
+          'About 200,000 per second',
+        ],
+        answer: 2,
+        explanation:
+          'Origin traffic is total traffic times the miss rate: 200,000 x 2% = 4,000 per second, twenty times the usual load but a fiftieth of the spike. That is why origin offload matters most on the worst day. Staying at 200 is the tempting answer - it would need the hit rate to rise to 99.9%. In practice the hit rate often does rise with traffic, because popular files are asked for again before their copies expire.',
+      },
+      {
+        id: 'cdn-8',
+        prompt:
+          'The origin goes down for ten minutes. Edges hold copies of most pages, but those copies expire during the outage and users start getting 502 errors. Which one-line change lets the edges keep answering with what they hold while the origin returns errors?',
+        options: [
+          'Cache-Control: no-cache',
+          'Vary: *',
+          'Cache-Control: private',
+          'Cache-Control: stale-if-error=86400',
+        ],
+        answer: 3,
+        explanation:
+          'stale-if-error (RFC 5861) allows a cache to serve an expired copy when the origin answers with an error or cannot be reached. The outage becomes slightly old pages instead of error pages. no-cache is the tempting wrong one: it makes every use ask the origin first, which fails immediately when the origin is down.',
+      },
+      {
+        id: 'cdn-9',
+        prompt:
+          'A user in Sydney types your domain. Nothing in your application knows where users are. How does the request end up at the Sydney edge rather than one in Europe?',
+        options: [
+          'The CDN DNS answers with an address near the user, or one anycast address is announced from every location and routing delivers it to the nearest',
+          'The origin looks at the IP address and sends a redirect to the nearest edge',
+          'The browser measures every edge and picks the fastest one',
+          'It does not - every user reaches the same edge, which forwards the request',
+        ],
+        answer: 0,
+        explanation:
+          'Routing to the nearest edge happens before any request reaches you: either the CDN name server returns a nearby address, or the same address is advertised from every location and BGP routing takes the shortest path. A redirect from the origin is the tempting answer, but it would cost the full trip to the origin first, the very trip the CDN exists to avoid.',
+      },
+      {
+        id: 'cdn-10',
+        prompt:
+          'In the CDN Lab, with hashed URLs on and a high hit rate, you change the cache key to Host + path + every query parameter. Shared links carry about 40 different utm_campaign values. What do you see, and why?',
+        options: [
+          'Nothing changes: query parameters never reach the edge',
+          'The hit rate drops and origin traffic climbs: each file is now stored up to 40 times per edge, and each copy is fetched from the origin on its own',
+          'Every request fails, because query strings make a response uncacheable',
+          'The hit rate rises, because the edge now stores more copies',
+        ],
+        answer: 1,
+        explanation:
+          'The cache key decides whether two requests are the same object. The bytes do not depend on utm_campaign, but the key now does, so one file becomes 40 objects that each need their own miss. Query strings do not make a response uncacheable - they only split it. The fix is to leave tracking parameters out of the key and keep the ones that change the content, such as ?page=2.',
       },
     ],
   },
@@ -881,10 +1010,16 @@ CDN ON : most users -> nearest edge  (5-30 ms)`,
       'Public APIs that need keys, quotas and versioning.',
       'Mobile clients that would otherwise make ten calls to render one screen.',
     ],
+    advantages: [
+      'Bad tokens, unknown routes and clients over quota are rejected before they cost a service anything.',
+      'Auth, rate limits, logging and CORS are written once instead of once per service.',
+      'Clients see one stable API while services are split, renamed or moved behind it.',
+      'One call from a mobile app can fan out to several services inside the data centre.',
+    ],
     diagram: `GET /api/orders/123
   |
   v
-API Gateway
+API Gateway               (2+ instances, multi-AZ)
   |-- JWT validation      (401 if invalid)
   |-- Rate limit check    (429 if over quota)
   |-- Route match         /api/orders/* -> Orders Service
@@ -892,9 +1027,18 @@ API Gateway
 Orders Service -> Orders DB`,
     tradeoffs: [
       {
-        approach: 'Single API gateway',
+        approach: 'One shared API gateway',
         gains: ['One place for auth, limits, logging, versioning', 'Clients see a stable surface while services change'],
-        costs: ['Potential bottleneck and single point of failure', 'Can grow into a monolith of routing logic', 'Adds a hop'],
+        costs: [
+          'On every request path: a bottleneck and single point of failure unless it runs as several instances',
+          'Can grow into a monolith of routing logic',
+          'Adds a hop',
+        ],
+      },
+      {
+        approach: 'One gateway per client type (backend for frontend)',
+        gains: ['Each app gets responses shaped for it', 'Mobile and web teams change their layer without waiting for each other'],
+        costs: ['Several gateways to run and keep consistent', 'Shared rules like auth can drift between them'],
       },
       {
         approach: 'Direct client-to-service calls',
@@ -911,16 +1055,157 @@ Orders Service -> Orders DB`,
     quiz: [
       {
         id: 'agw-1',
-        prompt: 'Why validate JWTs at the gateway rather than in each service?',
+        prompt:
+          'A bot sends 5,000 requests per second with forged tokens to /api/orders. Twelve services each verify tokens with their own library. Where should these requests be rejected, and why?',
         options: [
-          'Services cannot verify signatures',
-          'It rejects unauthenticated traffic before it consumes backend capacity, and keeps one implementation of the rules',
-          'It makes tokens shorter',
-          'It removes the need for TLS',
+          'In each service, because only services can verify signatures',
+          'At the gateway: it rejects them before they cost any service capacity, and the token rules live in one implementation',
+          'At the database, which is the last line of defence',
+          'Nowhere - TLS already stops forged tokens',
         ],
         answer: 1,
         explanation:
-          'Early rejection protects backends and centralises the logic. Services usually still verify the token as defence in depth.',
+          'A forged token fails the signature check at the gateway, so none of the 5,000 requests reaches a service, and fixing a token rule means changing one place instead of twelve. Services usually still verify the token as defence in depth. TLS is the tempting wrong answer: it protects the connection, not the identity inside the request.',
+      },
+      {
+        id: 'agw-2',
+        prompt:
+          'In the API Gateway Lab you switch "Token is valid" off and send GET /api/orders/123. Where does the request stop, and what does the client get back?',
+        options: [
+          'At the Orders Service, with 403 Forbidden',
+          'At the rate limit check, with 429 Too Many Requests',
+          'At the gateway JWT check, with 401 Unauthorized - the Orders Service is never called',
+          'Nowhere - it reaches Orders, which returns 200',
+        ],
+        answer: 2,
+        explanation:
+          'Authentication is the first stage of the pipeline, and a bad signature fails it, so the gateway answers 401 and Backend cost stays at none. 403 is the tempting wrong answer: it means the caller is known but not allowed, which is a decision for the service that owns the data, not for an unauthenticated request.',
+      },
+      {
+        id: 'agw-3',
+        prompt:
+          'In the API Gateway Lab, requests with an invalid token never use up the quota, and the rate limit check sits after JWT validation. Why is a per-client limit placed after authentication?',
+        options: [
+          'It needs the verified client identity to know whose quota to charge - before authentication it only has an IP address',
+          'Rate limiting is slower than authentication, so it goes last',
+          'The HTTP standard requires authentication first',
+          'So that invalid tokens can use up the quota of a real client',
+        ],
+        answer: 0,
+        explanation:
+          'A per-client quota is keyed by who the caller is, and that is only known once the token is verified. Gateways often add a coarse per-IP limit before authentication as well, against floods. Charging whatever the token claims before checking it is the tempting shortcut, and it lets an attacker burn the quota of a real customer with forged tokens.',
+      },
+      {
+        id: 'agw-4',
+        prompt:
+          'A partner reports that after 10 calls in a minute their integration starts getting errors, and it works again the next minute. Their token is valid. What is the gateway most likely returning?',
+        options: [
+          '401 Unauthorized, because the token expired',
+          '503 Service Unavailable, because a service is down',
+          '404 Not Found, because the route changed',
+          '429 Too Many Requests, because they used up their quota for the window',
+        ],
+        answer: 3,
+        explanation:
+          'Errors that start after a fixed number of calls and clear when the window resets are a rate limit, and 429 (RFC 6585) is the status for it, often with a Retry-After header. 401 is tempting, but an expired token would keep failing in the next minute too. The right client behaviour is to back off and retry after the window, not to retry at once.',
+      },
+      {
+        id: 'agw-5',
+        prompt:
+          'Your gateway runs as one instance. Every service behind it runs three replicas across zones. The gateway host is restarted for a kernel patch. What do users see?',
+        options: [
+          'Nothing - the services are redundant, so the system is too',
+          'A full outage: every request passes through the gateway, so it has to run as several instances across zones behind a load balancer',
+          'Only requests to one service fail',
+          'Requests slow down but still succeed',
+        ],
+        answer: 1,
+        explanation:
+          'A system is only as available as the weakest part every request passes through. Three replicas of each service do not help when the one door in front of them is closed. That is why the Lab and the Diagram show the gateway as x2: it is on every path, so it needs the same redundancy as anything else that fronts the system.',
+      },
+      {
+        id: 'agw-6',
+        prompt:
+          'To ship a discount campaign fast, a team adds price and discount rules to the gateway, with calls to two services to compute them. Six months later the gateway has 4,000 lines of business logic. What is the risk?',
+        options: [
+          'None - the gateway is the fastest place for logic because it runs first',
+          'The gateway will reject valid tokens',
+          'A bug in one business rule can now take down every route, and every team must coordinate changes in one shared component',
+          'Clients will need to know the internal service layout',
+        ],
+        answer: 2,
+        explanation:
+          'The gateway is on the path of every request, so its code has the largest blast radius in the system, and shared business rules in it recreate the coupling microservices were meant to remove. Keep it thin: routing, auth, limits and light transformation. Running first is the tempting argument, but speed was never the problem - ownership and blast radius are.',
+      },
+      {
+        id: 'agw-7',
+        prompt:
+          'The Orders Service trusts the X-User-Id header the gateway adds and does no checks of its own. It is also reachable from any machine on the internal network. What can go wrong?',
+        options: [
+          'Anything that reaches Orders directly can set X-User-Id to any user and act as them',
+          'Nothing - the gateway already checked the token',
+          'The gateway will return 429 for internal calls',
+          'The header is too large for HTTP',
+        ],
+        answer: 0,
+        explanation:
+          'The header is only as trustworthy as the path it came from. A compromised internal host, or a mis-routed request, skips the gateway and sets whatever identity it likes. Services should verify the token themselves (or accept calls only over mTLS from the gateway) and not be reachable around it. "The gateway checked" is the tempting answer and exactly the mistake the Lab warns about.',
+      },
+      {
+        id: 'agw-8',
+        prompt:
+          'User 42 has a valid token and calls GET /api/orders/999, an order that belongs to user 7. The gateway checks the token and routes the call. Which part must refuse it?',
+        options: [
+          'The gateway, with 401, because the token is invalid',
+          'The client app, by hiding the order in the interface',
+          'Nobody - a valid token means the request is allowed',
+          'The Orders Service, which knows who owns order 999, with 403 or 404',
+        ],
+        answer: 3,
+        explanation:
+          'The token is valid, so authentication passes; the question is authorisation for one specific record, and only the service that owns the data knows who owns order 999. The gateway authenticates, services authorise. 401 is the tempting wrong answer, but nothing is wrong with the token itself. Hiding it in the app protects nothing, because anyone can call the API directly.',
+      },
+      {
+        id: 'agw-9',
+        prompt:
+          'A mobile home screen makes six calls in a row to six services over a network with 80 ms round trips, about 700 ms before it renders. You add one gateway route, GET /mobile/home, that calls the six services in parallel inside the data centre, where each hop is about 2 ms and the slowest service takes 40 ms. Roughly how long does the screen wait now?',
+        options: [
+          'About 700 ms - the same services still do the same work',
+          'About 120 ms: one 80 ms mobile round trip plus the slowest internal call',
+          'About 480 ms: six 80 ms round trips',
+          'About 12 ms: six 2 ms hops',
+        ],
+        answer: 1,
+        explanation:
+          'Aggregation moves the fan-out from the slow mobile network to the fast internal one. The phone pays one 80 ms round trip, and the parallel internal calls take as long as the slowest one, about 40 ms. 12 ms is the tempting answer, but it forgets the mobile round trip that remains and the service time of the slowest call.',
+      },
+      {
+        id: 'agw-10',
+        prompt:
+          'The GET /mobile/home aggregation route waits for all six services. Recommendations sometimes take 2 seconds, and then the whole home screen takes 2 seconds. What should the route do?',
+        options: [
+          'Remove the timeout so recommendations always arrive',
+          'Retry recommendations immediately when they are slow',
+          'Give each dependency its own timeout, say 50 ms for recommendations, and return the screen without them when they are late',
+          'Move the recommendations logic into the gateway',
+        ],
+        answer: 2,
+        explanation:
+          'A response that combines several calls is as slow as the slowest one, so each dependency needs its own time budget, and the product decides what the screen shows without it. Immediate retries are the tempting answer, but they add load to a service that is already slow and make the wait longer. Moving the logic into the gateway only moves the slowness.',
+      },
+      {
+        id: 'agw-11',
+        prompt:
+          'The Orders Service needs to call the Payments Service. A developer routes the call out to the public gateway URL and back in, so it gets the same auth and limits. What is the problem?',
+        options: [
+          'Service-to-service calls pay an extra hop through a shared component and count against client quotas - they belong on internal routes or a service mesh',
+          'None - every call should go through the public gateway',
+          'The gateway cannot route to Payments',
+          'Payments will reject the call because it came from inside',
+        ],
+        answer: 0,
+        explanation:
+          'The gateway handles north-south traffic, from the outside world in. East-west calls between services use internal addresses, often through a service mesh that adds mTLS, retries and tracing. Hair-pinning through the public gateway is tempting because it reuses the rules, but it adds latency, mixes internal load with client quotas, and makes the gateway a dependency of every internal call.',
       },
     ],
   },

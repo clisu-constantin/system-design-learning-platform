@@ -122,7 +122,7 @@ export const LABS: LabDefinition[] = [
   {
     id: 'cdn',
     title: 'CDN Lab',
-    blurb: 'Three regions, one origin, and the speed of light as a hard constraint.',
+    blurb: 'Three regions, one origin: beat distance with edges, then tune TTLs, cache keys and purges.',
     category: 'networking',
     difficulty: 'Beginner',
     concept: 'cdn',

@@ -264,7 +264,7 @@ HLL      PFADD uniques "ana"           count distinct in 12 KB, ~0.8% error`,
       {
         heading: 'The headers that actually control an edge cache',
         paragraphs: [
-          'Cache-Control is the instruction the origin gives to every cache on the path. max-age is how long a browser may reuse it; s-maxage overrides that for shared caches like a CDN, which is how you tell browsers to revalidate often while the edge holds a copy for an hour. public and private decide whether a shared cache may store it at all - private means browser only.',
+          'Cache-Control is the instruction the origin gives to every cache on the path. max-age is how long any cache may reuse it; s-maxage overrides that for shared caches like a CDN only, which is how you tell browsers to revalidate often while the edge holds a copy for an hour. public and private decide whether a shared cache may store it at all - private means browser only.',
           'no-cache does not mean do not cache; it means store it but revalidate before each use, which is usually what you want for HTML. no-store is the real prohibition, for anything genuinely secret. immutable tells the browser not even to revalidate, which is correct for hashed asset filenames.',
           'ETag and Last-Modified enable revalidation: the client sends the fingerprint back and the server can answer 304 Not Modified with no body. A 304 still costs a round trip, so it is much better than a full transfer and much worse than a cache hit - which is why long max-age on immutable assets beats frequent revalidation.',
         ],
@@ -290,7 +290,7 @@ Images that may change
         heading: 'The cache key decides your hit rate',
         paragraphs: [
           'An edge stores one object per cache key. By default the key is the URL, and everything you add to it multiplies the number of stored copies. Add the Cookie header and every visitor gets a private copy, so the hit rate collapses to near zero - the single most common CDN misconfiguration.',
-          'Vary is the polite way to say "this response differs by that header". Vary: Accept-Encoding is fine and necessary (two copies, gzip and brotli). Vary: User-Agent is close to catastrophic, because there are millions of distinct user agent strings and therefore millions of copies of the same page.',
+          'Vary is the polite way to say "this response differs by that header". Vary: Accept-Encoding is fine and necessary (a handful of copies: brotli, gzip and uncompressed). Vary: User-Agent is close to catastrophic, because there are millions of distinct user agent strings and therefore millions of copies of the same page.',
           'Query strings deserve the same scrutiny. Marketing parameters like utm_source make every shared link a unique cache key even though the response is identical, so configure the CDN to ignore them. Conversely, a parameter that genuinely changes the response - ?page=2 - must be in the key or you will serve page 1 to everyone.',
         ],
         bullets: [
@@ -304,9 +304,9 @@ Images that may change
       {
         heading: 'Invalidation, staleness and dynamic content',
         paragraphs: [
-          'A purge is a message to hundreds of locations and takes seconds to minutes to complete. Designs that require instant global invalidation are fragile; designs built on immutable URLs never need it. Where you must purge, prefer tag-based or surrogate-key purging so one product update clears exactly the objects containing it.',
+          'A purge is a message to hundreds of locations. The large vendors now complete one in seconds, but the locations never drop their copies at the same instant, and browsers keep the copies they already hold. Designs that require instant global invalidation are fragile; designs built on immutable URLs never need it. Where you must purge, prefer tag-based or surrogate-key purging so one product update clears exactly the objects containing it.',
           'stale-while-revalidate is the most underused directive on the list. It lets the edge serve a slightly stale copy immediately while refreshing in the background, so users never wait for a revalidation and the origin sees one request instead of a burst. stale-if-error does the same for outages: when the origin returns 5xx, the edge keeps serving the old copy and your incident becomes invisible to most users.',
-          'Even genuinely dynamic responses benefit from short edge TTLs. A public product list cached for 10 seconds at the edge, under 5,000 requests per second, means the origin serves one request every 10 seconds instead of 50,000 - and users see data that is at most 10 seconds old, which almost always matches the product requirement.',
+          'Even genuinely dynamic responses benefit from short edge TTLs. A public product list cached for 10 seconds at the edge, under 5,000 requests per second, means each edge location asks the origin once every 10 seconds instead of passing on 50,000 requests - and users see data that is at most 10 seconds old, which almost always matches the product requirement.',
         ],
       },
     ],
@@ -319,7 +319,7 @@ Images that may change
           'The page is identical for all logged-out users and changes at most every few minutes. The only dynamic part is a small logged-in header.',
           'Step 1: split the response. The page becomes cacheable HTML; the user-specific header is fetched by a separate small API call marked private, no-store.',
           'Step 2: set Cache-Control: public, s-maxage=30, stale-while-revalidate=120 on the page.',
-          'The edge now serves the same copy to everyone for 30 seconds. Origin traffic falls from 5,000 requests per second to roughly 1 per 30 seconds per edge location.',
+          'The edge now serves the same copy to everyone for 30 seconds. Origin traffic falls from 5,000 requests per second to roughly 1 per 30 seconds per edge location - with about 150 locations serving readers, about 5 requests per second in total.',
           'During revalidation, stale-while-revalidate means readers keep getting instant responses; only one background request per edge goes to the origin.',
           'When the story is updated, an explicit purge by surrogate key clears just that page, and the next request repopulates it within a second.',
         ],
