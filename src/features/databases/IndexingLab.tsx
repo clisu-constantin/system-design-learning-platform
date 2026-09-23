@@ -142,6 +142,10 @@ export function IndexingLab() {
   const sample = rows[Math.floor(tableSize * 0.78)];
   const email = target || sample.email;
   const targetIndex = useMemo(() => rows.findIndex((row) => row.email === email), [rows, email]);
+  // The index keeps its keys sorted, so the leaf page holding a key follows from its
+  // rank in sorted order. A missing key still walks down to the leaf where it would be.
+  const sortedEmails = useMemo(() => rows.map((row) => row.email).sort(), [rows]);
+  const rank = useMemo(() => lowerBound(sortedEmails, email), [sortedEmails, email]);
 
   const tablePages = Math.ceil(tableSize / ROWS_PER_PAGE);
   const shape = indexShape(tableSize);
@@ -444,6 +448,27 @@ export function IndexingLab() {
             ]}
           />
 
+          <div className="card p-4">
+            <p className="label mb-3">
+              Index on users(email){hasIndex ? ', the pages one lookup reads' : ' - not created yet'}
+            </p>
+            <BTreeView
+              shape={shape}
+              rank={Math.min(rank, tableSize - 1)}
+              email={email}
+              heapPage={targetIndex >= 0 ? Math.floor(targetIndex / ROWS_PER_PAGE) + 1 : null}
+              active={hasIndex}
+            />
+            <p className="mt-3 text-xs text-faint">
+              {hasIndex
+                ? `One page per level, root to leaf, then one table page for the row: ${indexPages} pages, not ${formatNumber(tablePages)}.`
+                : 'What CREATE INDEX would build. Until then every read scans the table pages.'}{' '}
+              Simplified: about {INDEX_FANOUT} keys per index page and {ROWS_PER_PAGE} rows per table page, so{' '}
+              {formatNumber(tableSize)} rows need {indexLevels} {indexLevels === 1 ? 'level' : 'levels'}; a table{' '}
+              {INDEX_FANOUT} times bigger needs one more.
+            </p>
+          </div>
+
           <div className="card overflow-hidden">
             <div className="flex items-center justify-between border-b border-line px-4 py-2.5">
               <p className="label">users table</p>
@@ -563,9 +588,9 @@ export function IndexingLab() {
               fill="none"
               strokeDasharray="6 5"
               strokeWidth={1.5}
-              className="stroke-[rgb(var(--c-line))]"
+              className="stroke-line"
             />
-            <text x={266} y={30} className="fill-[rgb(var(--c-faint))] font-mono" style={{ fontSize: 11 }}>
+            <text x={266} y={30} className="fill-faint font-mono" style={{ fontSize: 11 }}>
               One PostgreSQL database
             </text>
           </g>
@@ -677,6 +702,88 @@ export function IndexingLab() {
         />
       </div>
     </LabShell>
+  );
+}
+
+/** First position in a sorted list whose value is not below the key. */
+function lowerBound(sorted: string[], key: string) {
+  let low = 0;
+  let high = sorted.length;
+  while (low < high) {
+    const middle = (low + high) >> 1;
+    if (sorted[middle] < key) low = middle + 1;
+    else high = middle;
+  }
+  return low;
+}
+
+/** Page chips drawn per level; a wide level shows a window around the page on the path. */
+const TREE_CHIPS = 7;
+
+/**
+ * The B-tree of idx_users_email as pages, root first. Each level shows the page the
+ * lookup reads, among the pages of that level; the last row is the table page the
+ * row lives in. Same simplified model as the cost numbers.
+ */
+function BTreeView({
+  shape,
+  rank,
+  email,
+  heapPage,
+  active,
+}: {
+  shape: number[];
+  rank: number;
+  email: string;
+  heapPage: number | null;
+  active: boolean;
+}) {
+  // Leaf page holding the key, then its parent on each level above.
+  const path: number[] = [];
+  let page = Math.floor(rank / INDEX_FANOUT);
+  for (let level = shape.length - 1; level >= 0; level -= 1) {
+    path[level] = Math.min(page, shape[level] - 1);
+    page = Math.floor(page / INDEX_FANOUT);
+  }
+  const chip = (onPath: boolean) =>
+    cn(
+      'rounded-md border px-2 py-1 font-mono text-[10px]',
+      onPath && active ? 'border-brand bg-brand/10 text-brand' : 'border-line text-faint',
+    );
+  return (
+    <div className="space-y-2 overflow-x-auto">
+      {shape.map((pages, level) => {
+        const start = clamp(path[level] - Math.floor(TREE_CHIPS / 2), 0, Math.max(0, pages - TREE_CHIPS));
+        const end = Math.min(pages, start + TREE_CHIPS);
+        const leaf = level === shape.length - 1;
+        return (
+          <div key={level} className="flex min-w-max items-center gap-2">
+            <span className="w-32 shrink-0 text-[11px] text-muted">
+              {LEVEL_NAME(level, shape.length)}
+              <span className="text-faint">
+                {' '}
+                ({formatNumber(pages)} {pages === 1 ? 'page' : 'pages'})
+              </span>
+            </span>
+            {start > 0 ? <span className="font-mono text-[10px] text-faint">+{formatNumber(start)}</span> : null}
+            {Array.from({ length: end - start }, (_, offset) => {
+              const index = start + offset;
+              const onPath = index === path[level];
+              return (
+                <span key={index} className={chip(onPath)}>
+                  {leaf && onPath ? email.slice(0, 14) : `page ${index + 1}`}
+                </span>
+              );
+            })}
+            {end < pages ? <span className="font-mono text-[10px] text-faint">+{formatNumber(pages - end)}</span> : null}
+          </div>
+        );
+      })}
+      <div className="flex min-w-max items-center gap-2">
+        <span className="w-32 shrink-0 text-[11px] text-muted">Table (heap)</span>
+        <span className={chip(heapPage !== null)}>{heapPage !== null ? `page ${formatNumber(heapPage)}` : 'key not found, stop'}</span>
+      </div>
+    </div>
   );
 }
 

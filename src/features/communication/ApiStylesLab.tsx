@@ -206,8 +206,16 @@ export function ApiStylesLab({ focus }: LabProps<'api-styles'>) {
 
   const over = overFetched(plan);
   const callerInfo = CALLERS[caller];
-  const rest = compare[0].plan;
   const graphql = compare[1].plan;
+  /**
+   * The fixed REST baseline gRPC per resource is compared against: the same calls,
+   * whole JSON resources. Not the current REST options, which the learner may have
+   * set to Embed or Sparse fields - that would compare a different set of calls.
+   */
+  const restBaseline = useMemo(
+    () => planFor({ ...setup, style: 'rest', restShape: 'per-resource', sparseFields: false }),
+    [setup],
+  );
 
   return (
     <LabShell
@@ -235,7 +243,7 @@ export function ApiStylesLab({ focus }: LabProps<'api-styles'>) {
           </span>
         </div>
       }
-      insight={<Insight>{insightFor(setup, plan, rest, graphql)}</Insight>}
+      insight={<Insight>{insightFor(setup, plan, restBaseline, graphql)}</Insight>}
       metrics={
         <>
           <MetricsPanel
@@ -478,7 +486,7 @@ function endpointsOf(setup: Setup) {
   return 1;
 }
 
-function insightFor(setup: Setup, plan: Plan, rest: Plan, graphql: Plan) {
+function insightFor(setup: Setup, plan: Plan, restBaseline: Plan, graphql: Plan) {
   const over = formatPercent(overFetched(plan));
   if (setup.style === 'rest') {
     if (setup.restShape === 'per-resource') {
@@ -532,8 +540,8 @@ function insightFor(setup: Setup, plan: Plan, rest: Plan, graphql: Plan) {
   if (setup.rpcDesign === 'per-resource') {
     return (
       <>
-        The same {plan.requests} calls as REST, but binary protobuf makes the answers {formatBytes(plan.bytes)} instead
-        of {formatBytes(rest.bytes)}, and the generated stub checks every field against the .proto contract. Protobuf
+        The same {plan.requests} calls as REST with one call per resource, but binary protobuf makes the answers{' '}
+        {formatBytes(plan.bytes)} instead of the {formatBytes(restBaseline.bytes)} of whole JSON resources, and the generated stub checks every field against the .proto contract. Protobuf
         shrinks the encoding, not the choice of fields: {over} is still never shown.{' '}
         {setup.caller === 'service'
           ? `Inside one data centre a round trip is about ${setup.rttMs} ms, so ${plan.waves.length} round trips cost little - switch the caller to the mobile app and see them add up.`
