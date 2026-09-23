@@ -2,6 +2,8 @@ import { useEffect, useState } from 'react';
 import { Outlet, useLocation } from 'react-router-dom';
 import { cn } from '@/utils/cn';
 import { ErrorBoundary } from '@/components/ui';
+import { useLayout } from '@/app/providers/LayoutProvider';
+import { LG_QUERY, useMediaQuery } from '@/hooks/useMediaQuery';
 import type { Difficulty } from '@/types';
 import { Sidebar } from './Sidebar';
 import { TopBar } from './TopBar';
@@ -14,13 +16,18 @@ const isTyping = (element: Element | null) =>
 
 /**
  * Two-column application layout: persistent navigation on the left, the active
- * workspace on the right. The sidebar collapses into an overlay below lg.
+ * workspace on the right. The sidebar collapses into an overlay below lg; from
+ * lg up the learner can fold it into a strip of icons, and that choice persists.
  */
 export function AppShell() {
   const [searchOpen, setSearchOpen] = useState(false);
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const [difficulty, setDifficulty] = useState<Difficulty | 'all'>('all');
   const location = useLocation();
+  const { sidebarFolded, setSidebarFolded } = useLayout();
+  const isWide = useMediaQuery(LG_QUERY);
+  // A stored fold only applies to the static column; the small-screen drawer always shows everything.
+  const folded = isWide && sidebarFolded;
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -49,7 +56,8 @@ export function AppShell() {
     <div className="flex h-full flex-col bg-canvas">
       <TopBar
         onOpenSearch={() => setSearchOpen(true)}
-        onToggleSidebar={() => setMobileNavOpen((open) => !open)}
+        onToggleSidebar={() => (isWide ? setSidebarFolded(!sidebarFolded) : setMobileNavOpen((open) => !open))}
+        sidebarExpanded={isWide ? !sidebarFolded : mobileNavOpen}
         difficulty={difficulty}
         onDifficultyChange={setDifficulty}
       />
@@ -57,12 +65,18 @@ export function AppShell() {
       <div className="flex min-h-0 flex-1">
         <aside
           className={cn(
-            'w-72 shrink-0 border-r border-line bg-surface',
-            'fixed inset-y-14 left-0 z-40 transition-transform lg:static lg:inset-auto lg:translate-x-0',
+            'w-72 shrink-0 overflow-hidden border-r border-line bg-surface',
+            'fixed inset-y-14 left-0 z-40 transition-[transform,width] duration-150 lg:static lg:inset-auto lg:translate-x-0',
+            folded && 'lg:w-14',
             mobileNavOpen ? 'translate-x-0 shadow-2xl' : '-translate-x-full',
           )}
         >
-          <Sidebar difficulty={difficulty} onNavigate={() => setMobileNavOpen(false)} />
+          <Sidebar
+            difficulty={difficulty}
+            folded={folded}
+            onUnfold={() => setSidebarFolded(false)}
+            onNavigate={() => setMobileNavOpen(false)}
+          />
         </aside>
 
         {mobileNavOpen ? (
