@@ -4,7 +4,7 @@ import {
   ArchNode,
   DiagramCanvas,
   NodeStatRow,
-  OUTCOME_STYLE,
+  ParticleLegend,
   type DiagramEdge,
   type Layout,
   type ParticleView,
@@ -204,8 +204,9 @@ export function CapacityLab({ focus }: LabProps<'capacity'>) {
     const arrivals = sampleArrivals(visualRate(est.peakQps), dt);
     for (let index = 0; index < arrivals; index += 1) {
       // A write puts a row and an object; a read gets them. Both halves ride the same wire to the
-      // app tier, so they look like one dot that splits there.
-      const outcome: RequestOutcome = Math.random() < writeShare ? 'cache-hit' : 'success';
+      // app tier, so they look like one dot that splits there. Reads and writes are both plain
+      // requests: no particle outcome means "write", so the mix is stated in the legend instead.
+      const outcome: RequestOutcome = 'success';
       const speed = 0.85 + Math.random() * 0.3;
       particles.current.push(
         { id: nextParticleId(), route: ['clients', 'lb', 'app', 'db'], leg: 0, t: 0, speed, outcome },
@@ -249,7 +250,7 @@ export function CapacityLab({ focus }: LabProps<'capacity'>) {
         setSetup(start);
         particles.current = [];
       }}
-      legend={<CapacityLegend />}
+      legend={<CapacityLegend writeShare={writeShare} />}
       insight={
         <Insight>
           {rounding ? (
@@ -497,31 +498,17 @@ export function CapacityLab({ focus }: LabProps<'capacity'>) {
   );
 }
 
-function CapacityLegend() {
-  const items: { outcome: RequestOutcome; label: string }[] = [
-    { outcome: 'success', label: 'Read request' },
-    { outcome: 'cache-hit', label: 'Write request' },
-  ];
+function CapacityLegend({ writeShare }: { writeShare: number }) {
+  const writesInTen = Math.round(writeShare * 10);
   return (
     <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5">
-      {items.map((item) => {
-        const { fill, shape } = OUTCOME_STYLE[item.outcome];
-        return (
-          <span key={item.outcome} className="flex items-center gap-1.5 text-[11px] text-muted">
-            <svg width={14} height={14} viewBox="-7 -7 14 14" aria-hidden>
-              {shape === 'diamond' ? (
-                <rect x={-4} y={-4} width={8} height={8} rx={1} fill={fill} transform="rotate(45)" />
-              ) : (
-                <circle r={4} fill={fill} />
-              )}
-            </svg>
-            {item.label}
-          </span>
-        );
-      })}
+      <ParticleLegend outcomes={['success']} />
       <span className="text-[11px] text-faint">
-        A dot is a sample of the traffic, not one request. It splits at the app tier: one half to the database, one
-        to object storage.
+        A dot is a sample of the traffic, not one request. Reads and writes look the same: at this mix{' '}
+        {writesInTen === 0
+          ? 'fewer than 1 dot in 10 is a write'
+          : `about ${writesInTen} in 10 dots ${writesInTen === 1 ? 'is a write' : 'are writes'}`}
+        . A dot splits at the app tier: one half to the database, one to object storage.
       </span>
     </div>
   );

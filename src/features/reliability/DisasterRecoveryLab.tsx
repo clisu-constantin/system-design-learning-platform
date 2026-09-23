@@ -221,11 +221,11 @@ function RegionZones({ lost }: { lost: boolean }) {
         width={430}
         height={356}
         rx={16}
-        className={cn('fill-none', lost ? 'stroke-[rgb(var(--c-danger))]' : 'stroke-[rgb(var(--c-line))]')}
+        className={cn('fill-none', lost ? 'stroke-danger' : 'stroke-line')}
         strokeWidth={1.5}
         strokeDasharray="6 6"
       />
-      <text x={36} y={216} className="fill-[rgb(var(--c-muted))] font-mono" style={{ fontSize: 11 }}>
+      <text x={36} y={216} className="fill-muted font-mono" style={{ fontSize: 11 }}>
         {lost ? 'REGION A - LOST' : 'REGION A - primary'}
       </text>
       <rect
@@ -234,11 +234,11 @@ function RegionZones({ lost }: { lost: boolean }) {
         width={430}
         height={356}
         rx={16}
-        className="fill-none stroke-[rgb(var(--c-line))]"
+        className="fill-none stroke-line"
         strokeWidth={1.5}
         strokeDasharray="6 6"
       />
-      <text x={526} y={216} className="fill-[rgb(var(--c-muted))] font-mono" style={{ fontSize: 11 }}>
+      <text x={526} y={216} className="fill-muted font-mono" style={{ fontSize: 11 }}>
         REGION B - recovery
       </text>
     </g>
