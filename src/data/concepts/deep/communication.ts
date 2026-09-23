@@ -285,7 +285,7 @@ Changing a number or a type is a breaking change for every client.`,
 
 WEBSOCKET
   handshake once (~500 bytes)
-  then ~6 bytes of framing per message
+  then 2-14 bytes of framing per message
   -> a few bytes/s per idle user, delivery in ~1 RTT
 
 10,000 users: polling ~4 MB/s of pure overhead; sockets, almost nothing.`,
@@ -452,7 +452,7 @@ data: {"symbol":"ACME","price":12.6}`,
         heading: 'The two costs: wasted requests and average staleness',
         paragraphs: [
           'Polling has exactly two dials and they pull against each other. A shorter interval means fresher data and more requests; a longer interval means fewer requests and staler data. Average staleness is about half the interval, and the request rate is clients divided by interval.',
-          'The arithmetic gets uncomfortable quickly. Ten thousand clients polling every 5 seconds is 2,000 requests per second, and if the data changes once a minute, roughly 99 percent of those requests return nothing new. You are paying full request cost - TLS, auth, query - for an answer of "still nothing".',
+          'The arithmetic gets uncomfortable quickly. Ten thousand clients polling every 5 seconds is 2,000 requests per second, and if the data changes once a minute, each client sees one change every 12 polls - 11 of every 12 requests (about 92 percent) return nothing new. You are paying full request cost - TLS, auth, query - for an answer of "still nothing".',
           'That waste is the whole argument for the alternatives. But notice what polling buys: complete statelessness, trivial implementation, natural load balancing, and responses that can be cached by a CDN. For infrequent updates those properties are genuinely valuable.',
         ],
         code: {
@@ -460,10 +460,10 @@ data: {"symbol":"ACME","price":12.6}`,
           body: `10,000 clients, data changes once a minute
 
 interval  requests/sec  avg staleness  useful responses
-1 s        10,000         0.5 s          0.17%
-5 s         2,000         2.5 s          0.83%
-30 s          333          15 s            5%
-60 s          167          30 s           10%
+1 s        10,000         0.5 s          1.7%
+5 s         2,000         2.5 s          8.3%
+30 s          333          15 s           50%
+60 s          167          30 s          100%
 
 With ETag + 304, each wasted request costs a round trip and
 ~100 bytes instead of a full payload - often enough to make

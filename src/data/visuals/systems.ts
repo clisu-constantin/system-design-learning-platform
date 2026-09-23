@@ -1359,20 +1359,22 @@ export const systemVisuals: Record<string, VisualSpec> = {
 
   polling: {
     width: 760,
-    height: 270,
+    height: 290,
     caption: '10,000 clients every 5 s is 2,000 req/sec - even when nothing changed.',
     nodes: [
-      { id: 'clients', kind: 'client', label: '10,000 clients', sub: 'every 5 s', x: 60, y: 90, w: 180, h: 82 },
-      { id: 'api', kind: 'server', label: 'API', sub: '2,000 req/sec', x: 330, y: 90, w: 170, h: 82, alert: true },
-      { id: 'resp', kind: 'storage', label: '304 Not Modified', x: 570, y: 90, w: 170, h: 78 },
+      { id: 'clients', kind: 'client', label: '10,000 clients', sub: 'every 5 s', x: 40, y: 100, w: 180, h: 82 },
+      { id: 'api', kind: 'server', label: 'API', sub: '2,000 req/sec', x: 320, y: 100, w: 170, h: 82, alert: true },
+      { id: 'data', kind: 'sql', label: 'Data store', sub: 'changes once a minute', x: 570, y: 100, w: 170, h: 82 },
     ],
     edges: [
       { from: 'clients', to: 'api', tone: 'brand', rate: 6 },
-      { from: 'api', to: 'resp', tone: 'muted', rate: 5, outcome: 'warning' },
+      { from: 'api', to: 'clients', tone: 'muted', rate: 5, outcome: 'warning', curvature: 0.9 },
+      { from: 'api', to: 'data', tone: 'default', rate: 2 },
     ],
     steps: [
       { from: 'clients', to: 'api', label: 'Poll with If-None-Match' },
-      { from: 'api', to: 'resp', label: 'Unchanged: a cheap 304', outcome: 'warning' },
+      { from: 'api', to: 'data', label: 'Compare ETag with current version' },
+      { from: 'api', to: 'clients', label: 'Unchanged: a cheap 304', outcome: 'warning' },
       { from: 'clients', to: 'api', label: 'Five seconds later, ask again', outcome: 'warning' },
     ],
   },
@@ -1384,7 +1386,7 @@ export const systemVisuals: Record<string, VisualSpec> = {
     nodes: [
       { id: 'client', kind: 'client', label: 'Client', x: 60, y: 90, w: 150, h: 78 },
       { id: 'server', kind: 'server', label: 'Held request', sub: 'up to 30 s', x: 300, y: 85, w: 180, h: 88 },
-      { id: 'event', kind: 'queue', label: 'Event arrives', x: 570, y: 90, w: 160, h: 78 },
+      { id: 'event', kind: 'queue', label: 'Pub/Sub', sub: 'wakes the waiter', x: 570, y: 85, w: 160, h: 88 },
     ],
     edges: [
       { from: 'client', to: 'server', tone: 'brand', rate: 1 },
