@@ -180,74 +180,77 @@ ETag: "a3f9"
       {
         heading: 'What TCP actually does for you',
         paragraphs: [
-          'TCP gives four guarantees: every byte arrives, in the order sent, without duplication, and the sender slows down when the network is congested. It achieves this with sequence numbers, acknowledgements, retransmission timers and congestion control - all of it invisible to your code, which just reads a stream.',
-          'Those guarantees have a price, and the price is time. Connection setup is a round trip before any data moves. A lost packet means waiting for a retransmission, and everything behind it waits too, because the stream must be delivered in order. Congestion control deliberately starts slow and ramps up, so short connections never reach full speed.',
-          'For almost everything - HTTP, databases, SSH, message brokers - this is the right trade. Losing a byte of a JSON payload is not an acceptable outcome, and the latency cost is invisible next to the work being done.',
+          'TCP gives four guarantees: every byte arrives (or the connection reports an error), in the order sent, without duplication, and the sender slows down when the network is congested. It achieves this with sequence numbers, acknowledgements, retransmission timers and congestion control - all of it invisible to your code, which just reads a stream.',
+          'Those guarantees have a price, and the price is time. Connection setup (SYN, SYN-ACK, ACK) is a round trip before any data moves. A lost packet has to be noticed first: every packet that arrives after the gap makes the receiver repeat the same ACK, and after 3 duplicate ACKs the sender resends it (fast retransmit). With nothing behind it to trigger duplicate ACKs, the sender waits for a timeout instead - at least 200 ms on Linux. Either way the lost packet arrives at least a round trip late, and everything behind it waits too, because the stream must be delivered in order. That wait is head-of-line blocking.',
+          'For almost everything - HTTP, databases, SSH, message brokers - this is the right trade. Losing a byte of a JSON payload is not an acceptable outcome, and the latency cost is small next to the work being done. Congestion control adds one more cost: a new connection starts slowly and ramps up, so short connections never reach full speed.',
         ],
         code: {
           caption: 'The cost and the guarantee, side by side',
           body: `                   TCP                    UDP
 setup              1 RTT handshake        none, send immediately
 delivery           guaranteed, in order   best effort, any order
-lost packet        retransmitted (wait)   gone
-congestion         backs off automatically  your problem
-header             20 bytes               8 bytes
+lost packet        resent (1+ RTT late)   gone
+congestion         backs off by itself    your problem
+header             20 bytes minimum       8 bytes
 head-of-line       yes (ordered stream)   no
-used by            HTTP, SQL, SSH, Kafka  DNS, QUIC, video, games`,
+used by            HTTP/1-2, SQL, SSH     DNS, QUIC, video, games`,
         },
       },
       {
         heading: 'Why anyone chooses UDP',
         paragraphs: [
           'UDP is a thin wrapper over IP: send a datagram, hope it arrives. No handshake, no ordering, no retransmission, no congestion control. That sounds worse in every way until you notice the category of applications for which late data is worthless data.',
-          'In a voice call, a packet that arrives 400 ms late cannot be played - the conversation has moved on. Retransmitting it wastes bandwidth and delays the packets behind it. Better to drop it and let the codec conceal the gap. The same logic applies to live video and multiplayer game state: the next update supersedes the lost one.',
+          'In a voice call, a frame that arrives after its playout time cannot be played - the conversation has moved on. Retransmitting it wastes bandwidth and, over TCP, delays the frames behind it. Better to drop it and let the codec conceal the gap. The same logic applies to live video and multiplayer game state: the next update supersedes the lost one.',
           'The second reason is control. QUIC (and therefore HTTP/3) runs over UDP not because it wants unreliability, but because it wants to implement reliability itself, per stream, in user space - free from the in-order delivery rule baked into TCP and from the slow pace of changing kernel networking stacks.',
         ],
         bullets: [
           'Use TCP when every byte matters: APIs, databases, file transfer, messaging.',
           'Use UDP when fresh beats complete: voice, video, game state, telemetry samples.',
           'Use UDP when you want your own reliability model: QUIC, some RPC frameworks.',
-          'DNS uses UDP for small queries and falls back to TCP for large responses.',
+          'DNS uses UDP for small queries and falls back to TCP when the answer is too large.',
         ],
       },
       {
         heading: 'Things that bite people in practice',
         paragraphs: [
-          'TCP connections are not free and not infinite. Each one holds kernel buffers, and a server has a finite number of ports and file descriptors. Connection pooling and keep-alive exist because opening a connection per request wastes a round trip and exhausts resources at scale.',
-          'The TIME_WAIT state surprises everyone at least once: a closed connection lingers for a minute or two to catch stray packets. A service that opens thousands of short-lived connections per second can accumulate tens of thousands of sockets in TIME_WAIT and start failing to connect, with plenty of CPU and memory free.',
+          'TCP connections are not free and not infinite. Each one holds kernel buffers, and a server has a finite number of ports and file descriptors. Connection pooling and keep-alive (holding a connection open to reuse it) exist because opening a connection per request wastes a round trip and exhausts resources at scale.',
+          'The TIME_WAIT state surprises everyone at least once: the side that closes a connection keeps it for twice the maximum segment lifetime - 60 seconds on Linux - to catch stray packets. A service that opens thousands of short-lived connections per second can pile up tens of thousands of sockets in TIME_WAIT, run out of local ports and start failing to connect, with plenty of CPU and memory free.',
           'On the UDP side, the hazards are size and firewalls. A datagram larger than the path MTU gets fragmented, and one lost fragment loses the whole datagram - so keep them under roughly 1,400 bytes. And many corporate networks block or aggressively time out UDP, which is why QUIC implementations always keep a TCP fallback.',
         ],
       },
     ],
     examples: [
       {
-        title: 'Why a video call and an API call want opposite things',
+        title: 'One lost packet, three ways',
         setup:
-          'The same network drops 2 percent of packets. Compare what happens to a JSON API request and to a voice stream.',
+          'One-way delay 30 ms, so a round trip is 60 ms. A voice call sends a 20 ms frame every 20 ms, and the receiver plays each frame 60 ms after it would normally arrive. Frame #10, sent at t = 200 ms, is dropped.',
         walkthrough: [
-          'API over TCP: a packet in the middle of the response is lost. TCP detects it and retransmits, costing one round trip (say 60 ms).',
-          'Everything after the lost packet was already received but is held back until the gap is filled, because the application must see bytes in order. The response arrives 60 ms late but complete - perfectly acceptable.',
-          'Voice over TCP: the same 20 ms of audio is retransmitted and arrives 60 ms late. By then the playback buffer has moved on, so it is useless - and the audio after it was delayed too, producing an audible stutter.',
-          'Voice over UDP: the packet is simply lost. The codec interpolates 20 ms of audio, which most listeners cannot detect, and everything after it plays on time.',
-          'Note the asymmetry: TCP turned one lost packet into a stutter, UDP turned it into an inaudible blip. Same loss rate, opposite outcomes.',
+          'Over TCP, frames #11, #12 and #13 arrive at 250, 270 and 290 ms. Each makes the receiver repeat its ACK for #10, and each duplicate ACK reaches the sender 30 ms later.',
+          'The third duplicate ACK reaches the sender at 320 ms, so it resends #10. The resend arrives at 350 ms - 150 ms after the first send, where a normal frame takes 30 ms.',
+          'Frame #10 had to play at 200 + 30 + 60 = 290 ms, so it is 60 ms late. Frames #11 and #12 were already there, but TCP held them behind the gap until 350 ms, past their playout times of 310 and 330 ms. One drop, three missed frames: 60 ms of stutter.',
+          'Over UDP the same drop costs frame #10 only. Frames #11, #12 and #13 go to the app at 250, 270 and 290 ms and play on time, and the codec fills one 20 ms gap that most listeners do not notice.',
+          'An API response of 10 packets on the same TCP connection loses its third packet. It still arrives complete, about one round trip (60 ms) later than it would have - a slower response, not a broken one.',
         ],
         result:
-          'The question is never which protocol is more reliable. It is whether late data still has value. If yes, use TCP; if no, use UDP and handle loss in the codec or the application.',
+          'Same network, same drop: TCP turned it into 60 ms of stutter for the call and 60 ms of extra wait for the API; UDP turned it into one hidden 20 ms gap. The question is never which protocol is more reliable. It is whether late data still has value. If yes, use TCP; if no, use UDP and handle loss in the codec or the app.',
       },
     ],
     jargon: [
       { term: 'Datagram', plain: 'One self-contained UDP message. It arrives whole or not at all.' },
       { term: 'Three-way handshake', plain: 'SYN, SYN-ACK, ACK - the round trip TCP spends before sending your data.' },
+      {
+        term: 'Head-of-line blocking',
+        plain: 'Data that already arrived, waiting because an earlier packet is missing and the stream must stay in order.',
+      },
       { term: 'Congestion control', plain: 'TCP slowing itself down when the network shows signs of overload.' },
       { term: 'MTU', plain: 'The largest packet the path accepts, typically about 1,500 bytes. Exceed it and packets fragment.' },
-      { term: 'Keep-alive', plain: 'Holding a TCP connection open to reuse it and avoid paying the handshake again.' },
       { term: 'QUIC', plain: 'A reliable, multiplexed protocol built on UDP. The transport under HTTP/3.' },
     ],
     remember: [
       'TCP: ordered, reliable, congestion-aware - and therefore sometimes late.',
-      'UDP: no promises, no waiting - and therefore always fresh.',
+      'UDP: no promises and no waiting - a lost datagram never holds up the next one.',
       'Choose by asking whether late data is still useful.',
-      'TCP head-of-line blocking means one lost packet delays everything behind it.',
+      'TCP head-of-line blocking means one lost packet delays everything behind it by at least a round trip.',
       'QUIC uses UDP to build its own reliability, per stream, without the in-order rule.',
     ],
   },
