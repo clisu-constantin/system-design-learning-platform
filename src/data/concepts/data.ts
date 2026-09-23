@@ -449,28 +449,205 @@ WHERE created_at >= '2026-09-01'`,
     tagline: 'Store each fact once so it cannot contradict itself.',
     category: 'data',
     difficulty: 'Beginner',
-    keywords: ['3nf', 'schema design', 'redundancy', 'integrity'],
+    lab: 'schema-design',
+    labFocus: 'database-normalization',
+    keywords: ['3nf', 'schema design', 'redundancy', 'integrity', 'update anomaly'],
     what: 'Normalization organises tables so that each piece of information is stored in exactly one place, with relationships expressed by keys.',
-    why: 'Duplicated data drifts. If a customer address exists in three tables, sooner or later they disagree, and no query can tell you which one is right.',
+    why: 'Duplicated data drifts. If a customer email is copied into every one of their orders, a change has to reach every copy, and a change that stops part way leaves the rows disagreeing - with no constraint to notice and no query that can tell you which one is right.',
     how: [
       'Give every entity its own table and a primary key.',
       'Move repeating groups into child tables linked by foreign keys.',
-      'Ensure non-key columns depend on the whole key and nothing else (third normal form is usually enough).',
+      'Ensure non-key columns depend on the key, the whole key and nothing but the key (third normal form is usually enough).',
+      'Keep historical values, such as the price paid, as facts of their own - copying them is not duplication.',
     ],
-    when: ['Transactional systems where correctness of writes matters most.'],
+    when: [
+      'Transactional systems where correctness of writes matters most.',
+      'Any fact that changes and is referenced from many rows: names, emails, plans, prices.',
+      'As the starting point of every schema - denormalise specific read paths later, once measurement shows they need it.',
+    ],
+    advantages: [
+      'A change writes one row, so it either happens or it does not.',
+      'No update, insert or delete anomalies.',
+      'Constraints (foreign keys, unique keys) can protect the data.',
+    ],
     diagram: `DENORMALISED                    NORMALISED
 orders                          orders        customers
  id, customer_name,              id,           id (PK)
  customer_email, total           customer_id,  name
- (name repeated per order)       total         email`,
+ (email repeated per order)      total         email`,
     tradeoffs: [
       {
         approach: 'Normalized schema',
-        gains: ['No update anomalies', 'Smaller storage', 'One source of truth'],
+        gains: ['No update anomalies', 'A change writes one row', 'One source of truth'],
         costs: ['Reads need joins', 'Very hot read paths may become join-heavy'],
       },
+      {
+        approach: 'Copying the fact into every row',
+        gains: ['A read answers from one row, no join', 'Simple queries for one screen'],
+        costs: ['A change must reach every copy', 'A half-done change leaves rows that disagree', 'More storage and more rows written'],
+      },
+    ],
+    mistakes: [
+      'Treating a historical value (price paid, address at shipping time) as duplication and joining to the current value, which rewrites history.',
+      'Denormalising up front because joins "will be slow", before any measurement.',
+      'Relying on application code to update every copy - every other writer (an admin tool, a script, another service) will miss one.',
     ],
     related: ['denormalization', 'sql-databases', 'database-indexing'],
+    quiz: [
+      {
+        id: 'norm-1',
+        prompt:
+          'An orders table stores customer_email on every order. A customer with 120 orders changes email, and the job that rewrites the rows crashes after 70 of them. What state is the data in?',
+        options: [
+          'The database notices the rows disagree and rolls the 70 rows back',
+          'Only the customers table is wrong; the orders are fine',
+          'The customer now has two emails across their orders, and no constraint flags it',
+          'Nothing changed, because email is not part of the primary key',
+        ],
+        answer: 2,
+        explanation:
+          'Each of the 120 rows is valid on its own, so no constraint can see that 70 say one thing and 50 say another. That is the update anomaly. The database only rolls back what was inside one failed transaction - it has no idea the 120 copies are the same fact.',
+      },
+      {
+        id: 'norm-2',
+        prompt:
+          'In the Schema Design Lab you switch to Normalized and raise Changes left half-done to 10%. The disagreeing-copies counter stays at 0. Why?',
+        options: [
+          'The Lab turns failures off in the normalized schema',
+          'Foreign keys block every write that fails',
+          'The normalized schema retries failed changes automatically',
+          'The email lives in one customers row, so a change either writes that row or does not - there is no second copy to disagree with',
+        ],
+        answer: 3,
+        explanation:
+          'Half-done changes still happen in the normalized schema; they just cannot split one fact in two. A single-row write is atomic. Foreign keys are tempting but they check that a reference points somewhere, not that copies agree.',
+      },
+      {
+        id: 'norm-3',
+        prompt:
+          'order_items stores price_at_purchase, while products stores the current price. A reviewer says this is duplication and asks you to join to products.price instead. What do you answer?',
+        options: [
+          'Agree - the price should live in exactly one place',
+          'The price paid is a different fact, frozen in time; joining to the current price would change old orders whenever the price changes',
+          'Agree, but keep a nightly job that copies products.price into order_items',
+          'Store the price only in order_items and drop it from products',
+        ],
+        answer: 1,
+        explanation:
+          'Normalization is about storing each fact once, and "what this customer paid on that day" is not the same fact as "what the product costs today". Joining to the current price is tempting because it looks normalised, but it silently rewrites every past invoice after a price change.',
+      },
+      {
+        id: 'norm-4',
+        prompt:
+          'A university keeps one table: enrollments(student_id, student_name, course_id, course_title, instructor). It wants to publish a new course before anyone has enrolled. What goes wrong?',
+        options: [
+          'The course cannot be recorded without inventing a fake enrollment row - an insert anomaly',
+          'Nothing - just insert a row with an empty student_id',
+          'The instructor column must be dropped first',
+          'The course is recorded, but the student names are duplicated',
+        ],
+        answer: 0,
+        explanation:
+          'Course data only lives on enrollment rows, so no enrollment means nowhere to put the course. An empty student_id is the tempting workaround, but it is the fake row: it breaks the key and every count of students. The fix is a courses table that exists on its own.',
+      },
+      {
+        id: 'norm-5',
+        prompt:
+          'In a flat sales table, the only row for the product "Blue Lamp" is deleted when its last order is cancelled. The next day nobody can find the lamp price or supplier. Which change prevents this?',
+        options: [
+          'Soft-delete sales rows instead of deleting them',
+          'Add an index on product_name',
+          'Keep a backup of the sales table',
+          'Move product data into its own products table that sales rows reference by product_id',
+        ],
+        answer: 3,
+        explanation:
+          'This is a delete anomaly: removing one fact (the order) removed another (the product). Soft-deleting hides the symptom but keeps product data hostage to order rows. Giving products their own table makes each fact live and die on its own.',
+      },
+      {
+        id: 'norm-6',
+        prompt: 'employees(id, name, department_id, department_name). Which column breaks third normal form, and what is the fix?',
+        options: [
+          'name - move it to a people table',
+          'department_name - it depends on department_id, not on the employee id; move it to a departments table',
+          'department_id - foreign keys are not allowed in 3NF',
+          'None - every column depends on id somehow',
+        ],
+        answer: 1,
+        explanation:
+          'department_name is determined by department_id, a non-key column, so it depends on the key only through another column (a transitive dependency). "Depends on id somehow" is the tempting answer, but 3NF asks for the key and nothing but the key. Renaming a department would otherwise touch every employee row.',
+      },
+      {
+        id: 'norm-7',
+        prompt:
+          'order_lines has the composite key (order_id, product_id) and the columns qty and product_name. What is wrong with product_name here?',
+        options: [
+          'Nothing - it is in the same row as the key',
+          'It should be part of the key',
+          'It depends on only half of the key (product_id), so every order line repeats it - a second normal form violation',
+          'It is a historical fact and must stay',
+        ],
+        answer: 2,
+        explanation:
+          'qty needs both order_id and product_id to be known, but product_name needs only product_id - a partial dependency. The historical-fact answer is tempting, but a product name is not frozen at purchase the way the price paid is; renaming the product would have to rewrite every line.',
+      },
+      {
+        id: 'norm-8',
+        prompt:
+          'A normalised order page joins 3 tables on indexed keys and takes 8 ms at 300 reads per second. A teammate wants to copy the customer name and the total into orders "to make it fast". What do you do?',
+        options: [
+          'Keep it normalised - measure first; denormalise a path only when measurement shows the joins are the problem',
+          'Copy the columns now, before traffic grows',
+          'Drop the foreign keys to speed up the joins',
+          'Move the whole schema to a document database',
+        ],
+        answer: 0,
+        explanation:
+          'At 8 ms the joins are not the bottleneck, and copying the columns buys every future email or name change a set of copies to keep in sync. "Before traffic grows" is the tempting argument, but it trades certain integrity work for a speed-up nobody has measured yet.',
+      },
+      {
+        id: 'norm-9',
+        prompt:
+          'In the Lab on the Database Normalization focus, the database is over budget at 200 reads/sec and 20 email changes/sec with 100 orders per customer. Switching to Normalized fixes it even though each read now touches 6 rows instead of 1. Why?',
+        options: [
+          'The normalized schema is faster on every workload',
+          'Normalizing adds an index the denormalized schema did not have',
+          'Reads stop going to the database after normalizing',
+          'Each email change drops from 101 row writes to 1, and at only 200 reads/sec that saving is far bigger than the extra read rows',
+        ],
+        answer: 3,
+        explanation:
+          '20 changes x 101 rows is about 2,000 row writes per second, while 200 reads x 6 rows is 1,200 cheap row reads. The workload was write-heavy, so the copies cost more than the joins. "Faster on every workload" is exactly what the Denormalization focus disproves with 1,500 reads per second.',
+      },
+      {
+        id: 'norm-10',
+        prompt:
+          'To stop half-done email changes, a team keeps the copied email on orders but wraps the customers row and all order rows in one transaction. What does that fix, and what does it leave?',
+        options: [
+          'It fixes everything - the copies can no longer disagree',
+          'It stops an interrupted change from leaving rows half-updated, but a writer that never touches the copies (an admin tool, another service) still leaves them stale, and each change still writes every copy',
+          'It fixes nothing, because transactions do not cover UPDATE statements',
+          'It removes the need for the orders table',
+        ],
+        answer: 1,
+        explanation:
+          'A transaction makes one change all-or-nothing, which is real progress. But the schema still permits disagreement: any code path that updates only customers leaves the copies behind, and every change still rewrites all the rows. Normalising removes the copies, so there is nothing left to forget.',
+      },
+      {
+        id: 'norm-11',
+        prompt:
+          'orders.customer_id is a foreign key to customers(id) with the default ON DELETE behaviour. Someone deletes a customer who still has orders. What happens in PostgreSQL?',
+        options: [
+          'The customer is deleted and the orders keep a customer_id that points nowhere',
+          'The orders are deleted with the customer',
+          'The delete is rejected with an error, because orders still reference that customer',
+          'customer_id on those orders is set to NULL',
+        ],
+        answer: 2,
+        explanation:
+          'The default is NO ACTION: if referencing rows still exist when the constraint is checked, the delete fails. Cascading or setting NULL only happens when you ask for ON DELETE CASCADE or SET NULL. Orphaned references are what the foreign key exists to prevent.',
+      },
+    ],
   },
   {
     slug: 'denormalization',
@@ -478,18 +655,25 @@ orders                          orders        customers
     tagline: 'Deliberately duplicating data to make a read path fast.',
     category: 'data',
     difficulty: 'Intermediate',
-    keywords: ['read optimization', 'precomputation', 'materialized view', 'fan-out'],
+    lab: 'schema-design',
+    labFocus: 'denormalization',
+    keywords: ['read optimization', 'precomputation', 'materialized view', 'fan-out', 'derived data'],
     what: 'Denormalization stores redundant copies of data - a counter, an embedded document, a materialised view - so that a frequent read does not have to join or aggregate.',
-    why: 'Some read paths are so hot that joins and aggregates dominate your database load. Precomputing the answer moves the cost to write time, where it is usually cheaper and rarer.',
+    why: 'Some read paths are so hot that joins and aggregates dominate your database load. Precomputing the answer moves the cost to write time, where it is paid once per change instead of once per read.',
     how: [
-      'Identify the expensive, frequent query.',
+      'Identify the expensive, frequent query, and check that an index does not already fix it.',
       'Precompute its result on write, or maintain a materialised view.',
-      'Decide how the copy is kept in sync: transactionally, via triggers, or asynchronously through events.',
+      'Decide how the copy is kept in sync: in the same transaction, via triggers, or asynchronously through events.',
       'Accept and document a staleness window if the update is asynchronous.',
+      'Run a reconciliation job that recomputes the copy from the source and fixes drift.',
     ],
-    when: ['Feeds, counters, leaderboards, product pages, anything read far more than written.'],
+    when: [
+      'Feeds, counters, leaderboards, product pages, anything read far more than written.',
+      'Stores without joins (most NoSQL), where writing the data once per access path is the data model.',
+    ],
+    advantages: ['Reads answer from one row or one document', 'Predictable read cost under heavy load'],
     diagram: `Normalized read:  SELECT COUNT(*) FROM likes WHERE post_id = ?
-                  -> scans thousands of rows per page view
+                  -> counts every like row on every page view
 
 Denormalized:     posts.like_count  (maintained on write)
                   -> one column read, updated when a like happens`,
@@ -499,12 +683,189 @@ Denormalized:     posts.like_count  (maintained on write)
         gains: ['Much faster and cheaper reads', 'Predictable query cost'],
         costs: ['Two copies that can diverge', 'Write path becomes more complex', 'Backfills needed when logic changes'],
       },
+      {
+        approach: 'Staying normalised (index, join at read time)',
+        gains: ['One source of truth, nothing to reconcile', 'Writes stay one row'],
+        costs: ['Every read pays the join or the aggregate', 'Hot read paths can dominate database load'],
+      },
     ],
     mistakes: [
       'Denormalising before measuring - an index often solves the same problem with no duplication.',
       'Having no reconciliation job, so drift is never detected.',
+      'Letting the copy become the only copy, so it can no longer be rebuilt from a source of truth.',
+      'Copying a fact that changes often into many places, so every change fans out into many writes.',
     ],
     related: ['database-normalization', 'caching', 'cqrs', 'fan-out'],
+    quiz: [
+      {
+        id: 'denorm-1',
+        prompt:
+          'A post page runs COUNT(*) over the likes table on every view. Views are 5,000 per second, new likes are 20 per second, and the count dominates database load. What is the fitting change?',
+        options: [
+          'Add more read replicas and keep counting on every view',
+          'Store like_count on posts, update it in the same transaction as the like insert, and run a reconciliation job',
+          'Cache the page for 24 hours',
+          'Delete old likes so the count is faster',
+        ],
+        answer: 1,
+        explanation:
+          'The read is 250 times more frequent than the write, the textbook case for precomputing on write. The same transaction keeps the two copies from splitting, and the reconciliation job catches drift from paths that bypass it. Replicas are tempting but they only spread the same wasted counting over more machines.',
+      },
+      {
+        id: 'denorm-2',
+        prompt:
+          'An order page takes 400 ms. EXPLAIN shows a sequential scan on orders.customer_id in the join. Someone proposes copying the customer columns into orders. What do you try first?',
+        options: [
+          'Add an index on orders.customer_id and measure again',
+          'Copy the columns - joins are always slow',
+          'Move the orders into a document database',
+          'Cache the whole page for an hour',
+        ],
+        answer: 0,
+        explanation:
+          'The join is slow because it scans, not because it is a join. An index often solves the same problem with no duplication and nothing to keep in sync. Denormalising here would hide a missing index behind copies that now need maintenance.',
+      },
+      {
+        id: 'denorm-3',
+        prompt:
+          'like_count is incremented by the application in a statement separate from the like insert. After a year, spot checks show counts that do not match the likes table. Which change stops requests that fail between the two statements from splitting them?',
+        options: [
+          'Run the increment before the insert instead of after',
+          'Increment by 2 to compensate',
+          'Put the insert and the increment in one transaction',
+          'Read the count from a replica',
+        ],
+        answer: 2,
+        explanation:
+          'Two separate statements can be split by any failure in between, whichever runs first. One transaction makes them all-or-nothing. Swapping the order is tempting but it only changes the direction of the error, not whether it happens.',
+      },
+      {
+        id: 'denorm-4',
+        prompt:
+          'Clients retry the Like request on timeout. The likes table has a unique key on (user_id, post_id), so the second insert is rejected, yet like_count still goes up twice. What is the fix?',
+        options: [
+          'Turn off client retries',
+          'Only increment when the insert actually created a row - or derive the count from the rows',
+          'Remove the unique key so both inserts succeed',
+          'Lower the timeout',
+        ],
+        answer: 1,
+        explanation:
+          'The insert is idempotent thanks to the unique key; the blind increment is not. Tie the increment to the effect of the insert (for example INSERT ... ON CONFLICT DO NOTHING and increment only if a row was inserted). Turning off retries is tempting but it trades a counting bug for user-visible failures.',
+      },
+      {
+        id: 'denorm-5',
+        prompt:
+          'An admin tool deletes spam likes directly in the database, and like_count never goes down. Which sync mechanism would have kept the counter right for those deletes too?',
+        options: [
+          'An increment in the application code',
+          'A longer cache TTL',
+          'A read replica for the admin tool',
+          'A database trigger on the likes table',
+        ],
+        answer: 3,
+        explanation:
+          'A trigger runs for every writer, including tools and scripts that bypass the application. Its cost is invisible behaviour that the next engineer may not expect. Application code is the tempting answer, but it is exactly what the admin tool bypassed.',
+      },
+      {
+        id: 'denorm-6',
+        prompt:
+          'In the Lab on the Denormalization focus you switch to Denormalized: database load drops from over budget to about 25%, but the disagreeing-copies counter starts to climb. What is the Lab telling you?',
+        options: [
+          'The copies need a mechanism that keeps them honest - turn on the reconciliation job, and keep changes in one transaction',
+          'Denormalization is broken and should be undone',
+          'The counter is a display bug and can be ignored',
+          'Raise the database budget',
+        ],
+        answer: 0,
+        explanation:
+          'The read path is now cheap, and the price is copies that can drift when a change stops part way. That is expected, and it is why every denormalised value needs a sync mechanism and a reconciliation job. Switching back is tempting but it brings the read overload back.',
+      },
+      {
+        id: 'denorm-7',
+        prompt:
+          'A product stock level changes 1,000 times per second and is read 50 times per second. A teammate wants to copy it into 30 denormalised listing documents. What happens?',
+        options: [
+          'Reads get faster at no cost',
+          'Nothing changes, because the reads are few',
+          'Every stock change becomes 30 writes - about 30,000 writes per second to save 50 lookups',
+          'The listings become the source of truth',
+        ],
+        answer: 2,
+        explanation:
+          'Denormalisation pays off when reads vastly outnumber writes. Here writes win by 20 to 1, so the copy multiplies the expensive side. "Reads get faster" is true but ignores the write fan-out that pays for it.',
+      },
+      {
+        id: 'denorm-8',
+        prompt:
+          'Product search documents embed the brand name and are updated by an asynchronous consumer of change events. A brand is renamed, and for about 2 seconds search still shows the old name. What does this mean?',
+        options: [
+          'The search index is corrupt and must be deleted',
+          'It is the expected staleness window of an asynchronous copy - document it, and make sure the consumer is idempotent and the index can be rebuilt',
+          'Asynchronous copies never go stale',
+          'The rename must be rolled back',
+        ],
+        answer: 1,
+        explanation:
+          'An asynchronous copy is eventually consistent: it scales well and is briefly behind. That is the trade chosen, so it should be documented, not treated as a failure. The search document is derived data, so if it ever drifts further it can be rebuilt from the source.',
+      },
+      {
+        id: 'denorm-9',
+        prompt:
+          'To save a join, a team copies author_name into every post and drops the name column from users. A year later nobody can say what an author is actually called. What went wrong?',
+        options: [
+          'Nothing - the posts hold the name',
+          'The join should have been cached instead',
+          'The posts needed an index on author_name',
+          'The copy became the only copy - a second source of truth that can no longer be rebuilt from anything',
+        ],
+        answer: 3,
+        explanation:
+          'Safe denormalisation is derived data: you can delete it and recompute it from the source. Removing the source turns the copies into competing originals, and after one partial rename they disagree forever. "The posts hold the name" is the tempting answer, but which of the posts?',
+      },
+      {
+        id: 'denorm-10',
+        prompt:
+          'You move orders to a key-value store without joins. The app needs "orders by customer" and "orders by product". What is the usual design?',
+        options: [
+          'Write each order into two tables, one keyed by customer and one by product, and accept keeping them in sync',
+          'Run a join in the application for every request by scanning all orders',
+          'Store only by customer and scan for product queries',
+          'Store only one table and add a secondary index on every column',
+        ],
+        answer: 0,
+        explanation:
+          'Without joins, denormalisation is the data model: each access path gets its own copy of the data, and keeping them in agreement is accepted up front. Scanning all orders is the tempting fallback, and it grows with the whole dataset on every request.',
+      },
+      {
+        id: 'denorm-11',
+        prompt:
+          'A dashboard aggregates 50 million rows on every request. The business is fine with numbers up to 5 minutes old. What fits best?',
+        options: [
+          'Run the aggregate on every request, on a bigger machine',
+          'Copy the totals into every row of the source table',
+          'A materialised view refreshed every 5 minutes',
+          'Remove the dashboard',
+        ],
+        answer: 2,
+        explanation:
+          'A materialised view stores the query result and is refreshed on command, so reads are cheap and the source stays the only truth. Its data is as old as the last refresh, which the 5-minute budget allows. Copying totals into every row creates many copies to keep in sync for one screen.',
+      },
+      {
+        id: 'denorm-12',
+        prompt:
+          'A viral post gets 3,000 likes per second, and each like updates posts.like_count in the same transaction as the insert. Like requests start queueing. Why, and what is a common fix?',
+        options: [
+          'The likes table is too big - partition it',
+          'Every transaction waits for the lock on the same counter row; buffer the increments and apply them asynchronously in batches, and reconcile from the likes table',
+          'The count column is the wrong type',
+          'Retries are too aggressive',
+        ],
+        answer: 1,
+        explanation:
+          'The same transaction is the safest sync, but it serialises every writer on one hot row. Batching increments asynchronously removes the contention at the price of a short staleness window, and the reconciliation job keeps it honest. Partitioning likes is tempting but the lock is on the posts row, not on likes.',
+      },
+    ],
   },
   {
     slug: 'read-replicas',
