@@ -120,25 +120,168 @@ write arrives at A:
     tagline: 'The share of time the system answers correctly - and what it takes to raise it.',
     category: 'distributed',
     difficulty: 'Beginner',
+    lab: 'redundancy',
+    labFocus: 'availability',
     keywords: ['uptime', 'nines', 'redundancy', 'mtbf', 'mttr'],
-    what: 'Availability is the proportion of time a system is able to serve requests, usually expressed in nines (99.9%, 99.99%).',
-    why: 'Each extra nine multiplies architectural effort. Naming a target decides whether you need redundancy, multi-zone deployment and automated failover.',
+    what: 'Availability is the share of time - or of requests - in which a system serves successfully, usually written in nines (99.9%, 99.99%).',
+    why: 'Each extra nine allows ten times less downtime: 99.9% is about 8.8 hours a year, 99.99% about 52.6 minutes, 99.999% about 5 minutes. Naming a target decides whether you need redundancy, multi-zone deployment and automated failover.',
     how: [
       'Availability of components in series multiplies: two 99.9% dependencies give about 99.8%.',
-      'Redundancy converts multiplication into a much smaller failure probability.',
-      'Availability improves by reducing MTTR (recover fast) as much as by raising MTBF (fail less).',
+      'Redundant copies multiply failure chances instead: two independent 99.9% copies are down together only 0.1% x 0.1% of the time.',
+      'Availability is MTBF / (MTBF + MTTR), so recovering fast (MTTR) counts as much as failing less often (MTBF).',
+      'Measure it as good requests over total requests, so partial failures count too.',
     ],
     diagram: `Series:   LB(99.99) x API(99.9) x DB(99.9)  ~= 99.79%  -> ~18 h/year
-Redundant DB (two independent 99.9 nodes with failover) -> ~99.9999% for that tier`,
+Redundant DB (two independent 99.9 nodes)   -> ~99.9999% for that tier,
+                                               plus the failover time`,
     tradeoffs: [
       {
         approach: 'Chasing more nines',
         gains: ['Less user-visible downtime', 'Survives larger failures'],
-        costs: ['Cost grows roughly exponentially', 'More automation to test and maintain', 'Often requires weaker consistency'],
+        costs: ['Cost climbs steeply with each nine', 'More automation to test and maintain', 'Slower, more careful change, because deploys spend the budget', 'Often requires weaker consistency'],
+      },
+      {
+        approach: 'Accepting fewer nines',
+        gains: ['Cheaper and simpler: fewer copies, manual recovery can be enough', 'Faster change, with a larger error budget to spend'],
+        costs: ['Hours of downtime a year that users will notice', 'Every incident is a full outage while a human recovers'],
       },
     ],
-    mistakes: ['Counting only the application and ignoring dependencies, DNS and deploy-related downtime.'],
+    mistakes: [
+      'Counting only the application and ignoring dependencies, DNS and deploy-related downtime.',
+      'Assuming two copies are independent when they share a rack, a zone or a deploy.',
+      'Measuring whether the process was running instead of whether requests succeeded.',
+    ],
     related: ['high-availability', 'redundancy', 'failover', 'slo'],
+    quiz: [
+      {
+        id: 'avail-1',
+        prompt:
+          'A checkout request needs the load balancer (99.99%), the API (99.9%) and the database (99.9%) - all three, every time. Roughly what availability can checkout reach?',
+        options: [
+          '99.9% - the weakest part sets it',
+          '99.99% - the best part sets it',
+          'About 99.79% - the three availabilities multiply',
+          'About 99.93% - the average of the three',
+        ],
+        answer: 2,
+        explanation:
+          'In series every part must work, so the chances multiply: 0.9999 x 0.999 x 0.999 is about 0.9979, roughly 18 hours of downtime a year. The weakest part is the tempting answer, but it is only an upper bound - each extra dependency adds its own downtime on top.',
+      },
+      {
+        id: 'avail-2',
+        prompt: 'The team promises 99.99% availability over a year. How much downtime does that allow?',
+        options: ['About 8.8 hours', 'About 4.4 hours', 'About 5 minutes', 'About 52.6 minutes'],
+        answer: 3,
+        explanation:
+          '0.01% of a year (525,960 minutes) is about 52.6 minutes. 8.8 hours is the budget of 99.9% and 4.4 hours of 99.95% - one nine less is ten times more downtime. 5 minutes is five nines.',
+      },
+      {
+        id: 'avail-3',
+        prompt:
+          'For a whole day the service returns errors for 5% of requests, but the process never stops, so the uptime dashboard shows 100%. How should availability be measured?',
+        options: [
+          'As good requests over total requests - about 95% today',
+          'Trust the uptime - the process was running',
+          'By CPU usage',
+          'Count only full outages longer than five minutes',
+        ],
+        answer: 0,
+        explanation:
+          'Users experienced one failure in twenty, whatever the process state. Counting successful requests over valid requests captures partial failures, which are far more common than total ones. Uptime of the process is the tempting number because it is easy to collect, but it hides exactly this.',
+      },
+      {
+        id: 'avail-4',
+        prompt:
+          'In the Lab (Availability focus) every part is up 99%, and the design allows about 14.6 days of downtime a year. You switch Each part is up to 99.9%. What happens?',
+        options: [
+          'The downtime halves',
+          'The downtime falls roughly tenfold, to under two days',
+          'Nothing, because the design did not change',
+          'The downtime falls to zero',
+        ],
+        answer: 1,
+        explanation:
+          'Each part is now down 0.1% instead of 1%, ten times less, so the product of the four parts loses about ten times less time. It is not exactly tenfold because the zone term does not change. That is the meaning of one more nine: ten times less downtime, not half.',
+      },
+      {
+        id: 'avail-5',
+        prompt:
+          'The database tier gets a second node. Each node is up 99.9%, they fail independently, and failover is instant. What availability can the tier reach?',
+        options: ['99.8%', '99.9%', 'About 99.9999%', '99.99%'],
+        answer: 2,
+        explanation:
+          'The tier is down only when both nodes are down: 0.1% x 0.1% = 0.0001%, so about six nines. 99.8% is the series formula - it would apply if every request needed both nodes. Real failover is not instant, and each switch adds its own downtime on top of this number.',
+      },
+      {
+        id: 'avail-6',
+        prompt:
+          'The same pair of database nodes fails over by hand: someone is paged and promotes the standby in about 30 minutes. The primary fails about 9 times a year. What dominates the downtime of the tier?',
+        options: [
+          'The 30-minute manual switch on every failure - about 4.5 hours a year',
+          'The chance that both nodes are down at once',
+          'Nothing - two nodes make it six nines',
+          'The replication lag',
+        ],
+        answer: 0,
+        explanation:
+          'Both nodes down together happens about 0.0001% of the time - roughly 30 seconds a year. Nine manual failovers of 30 minutes each are about 4.5 hours. Redundancy only counts if failover is fast, which is why the Lab charges every failure its failover time.',
+      },
+      {
+        id: 'avail-7',
+        prompt:
+          'A checkout page calls six services synchronously and measures 99.2%. Recommendations and loyalty points are not needed to place the order. What is usually the cheapest way to raise availability?',
+        options: [
+          'Make all six services more reliable',
+          'Add retries with no limit to every call',
+          'Add a seventh service that monitors the six',
+          'Make recommendations and loyalty points soft: a timeout with a fallback, or send the work to a queue',
+        ],
+        answer: 3,
+        explanation:
+          'Every hard dependency multiplies availability down; removing it from the critical path removes a factor from the product. Making all six more reliable is slow and costly. Unlimited retries amplify load on a struggling service, and another service on the path is another factor, not a fix.',
+      },
+      {
+        id: 'avail-8',
+        prompt:
+          'Two app servers, each 99.9%, sit in the same rack and receive every deploy at the same moment. The spreadsheet says the pair reaches 99.9999%. What is wrong?',
+        options: [
+          'Nothing - 0.1% squared is 0.0001%',
+          'Six nines needs three copies',
+          'The copies share a rack and a deploy, so they fail together and the squaring does not apply',
+          'Racks are more reliable than servers, so it is even better',
+        ],
+        answer: 2,
+        explanation:
+          'The squared failure chance assumes the copies fail independently. A shared rack, zone or deploy is one failure that takes both at once, so the real number is closer to the availability of the rack or of the deploy process. Independence has to be engineered, for example with separate zones and rolling deploys.',
+      },
+      {
+        id: 'avail-9',
+        prompt:
+          'The target is 99.9% of requests this quarter. Three weeks in, a bad deploy and a dependency outage have used 90% of the error budget. What does the error budget tell the team to do?',
+        options: [
+          'Ship faster to make up for lost time',
+          'Slow down risky releases and spend the time on reliability until the budget recovers',
+          'Lower the target to 99%',
+          'Nothing - the budget resets next quarter',
+        ],
+        answer: 1,
+        explanation:
+          'An error budget turns a target into a rule: spend it on change while it lasts, then stop taking risk and fix reliability. Shipping faster spends a budget that is almost gone, and moving the target after missing it makes the number meaningless.',
+      },
+      {
+        id: 'avail-10',
+        prompt: 'An API runs at 99.95% today. The product manager asks for 99.999%. What is the honest first answer?',
+        options: [
+          'Add a second server and it is done',
+          'Yes, with better monitoring',
+          'It is impossible for any system',
+          'That allows about 5 minutes of downtime a year, so no human step can be on any recovery path - it needs redundancy and automatic failover everywhere; does the business need that?',
+        ],
+        answer: 3,
+        explanation:
+          'Each nine allows ten times less downtime, and 5 minutes a year is shorter than a person needs to open a laptop. It is achievable for some systems, at a cost that grows with each nine, so the right first step is to price it against what the business actually needs. One more server or more monitoring does not change the recovery time.',
+      },
+    ],
   },
   {
     slug: 'partition-tolerance',

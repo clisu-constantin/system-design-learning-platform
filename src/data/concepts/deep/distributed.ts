@@ -215,7 +215,7 @@ This is why: fewer hard dependencies, more redundant copies.`,
         paragraphs: [
           'Two instances are not twice as available if switching between them requires a human at 3am. The measured availability of a redundant pair is dominated by detection and switching time, which is why health checks, automated promotion and DNS or load balancer updates matter more than the spare capacity itself.',
           'Watch for shared fate: two instances in the same rack, same zone, same deploy, or depending on the same configuration service are not independent. Correlated failure is what turns a calculated six nines into a real two. The 0.01 squared arithmetic above assumes independence, and independence is the thing you must actually engineer.',
-          'And rehearse. A failover path that has never been exercised has roughly a coin-flip chance of working, because it accumulates untested assumptions: stale credentials, a hardcoded hostname, a replica too far behind to promote. Game days and deliberate failovers in business hours are how that probability becomes high.',
+          'And rehearse. A failover path that has never been exercised has a poor chance of working, because it accumulates untested assumptions: stale credentials, a hardcoded hostname, a replica too far behind to promote. Game days and deliberate failovers in business hours are how that probability becomes high.',
         ],
       },
     ],

@@ -174,7 +174,7 @@ graceful degradation: the feature is reduced, the page still works`,
         heading: 'Availability is dominated by how fast you recover',
         paragraphs: [
           'Availability is often expressed as MTBF divided by MTBF plus MTTR - time between failures over that plus time to recover. In practice you have far more control over the second term. Making failures rarer is slow, expensive work; making recovery faster is usually a matter of automation and preparation.',
-          'A system that fails once a month but recovers in 30 seconds is at about 99.999 percent. A system that fails once a year but takes eight hours to recover is at about 99.9 percent. The second sounds more reliable and is two orders of magnitude worse.',
+          'A system that fails once a month but recovers in 30 seconds is at about 99.999 percent. A system that fails once a year but takes eight hours to recover is at about 99.9 percent. The second sounds more reliable and has about eighty times more downtime: 8 hours a year against 6 minutes.',
           'So the highest-leverage availability work is nearly always: detect faster, fail over automatically, and make rollback trivial. Those three reduce MTTR directly, and none of them require the underlying components to become more reliable.',
         ],
         code: {

@@ -134,7 +134,7 @@ export const foundationVisuals: Record<string, VisualSpec> = {
   availability: {
     width: 760,
     height: 280,
-    caption: 'Dependencies in series multiply: three 99.9% components give about 99.7%.',
+    caption: 'Dependencies in series multiply: 99.99% x 99.9% x 99.9% is about 99.79%.',
     nodes: [
       { id: 'lb', kind: 'load-balancer', label: 'LB', sub: '99.99%', x: 40, y: 100, w: 140, h: 80 },
       { id: 'api', kind: 'server', label: 'API', sub: '99.9%', x: 230, y: 100, w: 140, h: 80 },
