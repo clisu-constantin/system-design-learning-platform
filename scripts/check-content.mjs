@@ -25,6 +25,8 @@ const MIN_WALKTHROUGH_STEPS = 3;
 const MIN_JARGON_TERMS = 4;
 const MIN_REMEMBER_LINES = 3;
 const MIN_QUIZ_QUESTIONS = 10;
+// Four options would put the right one longest or shortest about a quarter of the time each.
+const MAX_ANSWER_LENGTH_TELL = 0.35;
 
 const REGISTRY = 'src/features/labs/registry.ts';
 
@@ -106,6 +108,32 @@ function rendersDiagram(file, seen = new Set()) {
 }
 
 /** The Concept standard: every Concept hosts a registered Lab and a Quiz, and every Lab draws its system. */
+/**
+ * Option length must not give the answer away. Per Category, the right option may be the strictly
+ * longest (or strictly shortest) option in at most MAX_ANSWER_LENGTH_TELL of the questions - a
+ * learner who always picks the longest answer should not pass.
+ */
+function checkAnswerLengthTell(concepts, problems) {
+  const byCategory = new Map();
+  for (const concept of concepts)
+    for (const question of concept.quiz ?? []) {
+      const lengths = question.options.map((option) => option.length);
+      const right = lengths[question.answer];
+      const others = lengths.filter((_, index) => index !== question.answer);
+      const tally = byCategory.get(concept.category) ?? { total: 0, longest: 0, shortest: 0 };
+      tally.total += 1;
+      if (others.every((length) => length < right)) tally.longest += 1;
+      if (others.every((length) => length > right)) tally.shortest += 1;
+      byCategory.set(concept.category, tally);
+    }
+  for (const [category, { total, longest, shortest }] of byCategory)
+    for (const [word, count] of [['longest', longest], ['shortest', shortest]])
+      if (count / total > MAX_ANSWER_LENGTH_TELL)
+        problems.push(
+          `Quiz of category '${category}': the right option is the ${word} in ${count} of ${total} questions - reword options so length does not give the answer away`,
+        );
+}
+
 function checkConceptStandard(concepts, problems) {
   const labs = registeredLabs(problems);
   const labIds = new Set(labs.map((lab) => lab.id));
@@ -199,6 +227,7 @@ try {
   }
 
   checkConceptStandard(CONCEPTS, problems);
+  checkAnswerLengthTell(CONCEPTS, problems);
 
   for (const concept of CONCEPTS) {
     const at = (message) => problems.push(`${concept.slug}: ${message}`);

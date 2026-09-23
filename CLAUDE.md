@@ -93,7 +93,9 @@ useTicker(running, (dt) => { /* mutate state.current */ rerender(); });
    Lesson under the Diagram and `check:content` fails the build without it. See below.
 4. Give it a Lab and a Quiz: set `lab` to a registered `LabId` (a new Lab, or a shared one with a
    Lab focus - see below), and write `quiz` with at least 10 scenario questions. `check:content`
-   fails the build on a Concept with no Lab or with fewer than 10 questions.
+   fails the build on a Concept with no Lab or with fewer than 10 questions. Make the wrong options
+   as specific as the right one: it also fails when, across a Category, the right option is the
+   strictly longest (or shortest) option in more than 35% of the questions.
 5. That is it — the sidebar, search, glossary links, category page and progress tracking all read
    from `CONCEPTS`. That export (`@/data/concepts`) is a light `ConceptSummary` index generated at
    build time by `scripts/vite-plugin-concept-index.ts`; the lesson body is fetched with
