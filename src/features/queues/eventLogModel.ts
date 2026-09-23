@@ -196,20 +196,87 @@ export function applyRetention(state: LogState) {
 }
 
 /**
- * A consumer whose committed offset fell below the log start offset cannot read
- * those records any more. Like `auto.offset.reset=earliest`, it jumps to the
- * oldest record still kept, and the records in between are lost to it.
- * Returns how many records were skipped.
+ * What a consumer does when its committed offset points at a record that is not
+ * in the log (Kafka's `auto.offset.reset`): start again at the oldest record
+ * still kept, or jump to the end and read only new records.
  */
-export function skipDeleted(offsets: number[], state: LogState) {
+export type OffsetReset = 'earliest' | 'latest';
+
+/** Where `auto.offset.reset` sends an offset that is below the log start offset. */
+const resetTarget = (log: PartitionLog, reset: OffsetReset) => (reset === 'earliest' ? log.start : endOffset(log));
+
+/**
+ * The billing group, whose committed offset fell below the log start offset,
+ * cannot read those records any more: `auto.offset.reset` moves it to the
+ * oldest kept record (earliest) or to the log end (latest). Returns how many
+ * records it had never read and now never will - records it read before a
+ * rewind are not lost to it.
+ */
+export function skipDeleted(state: LogState, reset: OffsetReset) {
+  const billing = state.billing;
   let skipped = 0;
   state.partitions.forEach((log, partition) => {
-    if (offsets[partition] < log.start) {
-      skipped += log.start - offsets[partition];
-      offsets[partition] = log.start;
-    }
+    const offset = billing.offsets[partition];
+    if (offset >= log.start) return;
+    const landed = resetTarget(log, reset);
+    skipped += Math.max(0, landed - Math.max(offset, billing.highWater[partition]));
+    billing.offsets[partition] = landed;
+    billing.highWater[partition] = Math.max(billing.highWater[partition], landed);
   });
+  billing.skipped += skipped;
   return skipped;
+}
+
+export interface SeekResult {
+  partition: number;
+  /** The offset the group actually committed. */
+  landed: number;
+  /** `kept`: the offset is in the log. `deleted`: retention removed it. `past-end`: not written yet. */
+  outcome: 'kept' | 'deleted' | 'past-end';
+  /** Records it will read a second time. */
+  replay: number;
+  /** Records it had never read and now jumped over. */
+  skipped: number;
+}
+
+/**
+ * Where a seek of every partition to `offset` would land, without moving
+ * anything: the Lab previews it next to the control.
+ */
+export function previewSeek(state: LogState, offset: number, reset: OffsetReset): SeekResult[] {
+  const billing = state.billing;
+  return state.partitions.map((log, partition) => {
+    const end = endOffset(log);
+    const outcome = offset > end ? 'past-end' : offset < log.start ? 'deleted' : 'kept';
+    const landed = outcome === 'past-end' ? end : outcome === 'deleted' ? resetTarget(log, reset) : offset;
+    const highWater = billing.highWater[partition];
+    return {
+      partition,
+      landed,
+      outcome,
+      replay: Math.max(0, highWater - landed),
+      skipped: Math.max(0, landed - Math.max(billing.offsets[partition], highWater)),
+    };
+  });
+}
+
+/**
+ * Commits `offset` for the billing group on every partition, like
+ * `kafka-consumer-groups --reset-offsets --to-offset`. An offset retention
+ * already deleted cannot be served, so `auto.offset.reset` decides where the
+ * group lands; an offset past the log end lands on the end.
+ * Simplified: the Lab resolves the reset at once, a real consumer does it on
+ * its next fetch, when the broker answers OFFSET_OUT_OF_RANGE.
+ */
+export function seekBilling(state: LogState, offset: number, reset: OffsetReset) {
+  const results = previewSeek(state, offset, reset);
+  const billing = state.billing;
+  for (const result of results) {
+    billing.offsets[result.partition] = result.landed;
+    billing.highWater[result.partition] = Math.max(billing.highWater[result.partition], result.landed);
+    billing.skipped += result.skipped;
+  }
+  return results;
 }
 
 /** Folds one record into a set of balances, the way the projection code does. */

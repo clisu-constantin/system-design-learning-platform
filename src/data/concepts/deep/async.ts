@@ -127,6 +127,7 @@ Independent groups, independent progress, no copying of data.`,
           'Replay from an offset is routine: fix a bug, reprocess the range.',
           'Compacted topics keep only the latest value per key - a durable snapshot of current state.',
           'A group slower than retention loses the records deleted before it read them.',
+          'An offset older than retention cannot be replayed: the group lands where auto.offset.reset says - the oldest kept record (earliest) or the log end (latest).',
         ],
       },
       {
