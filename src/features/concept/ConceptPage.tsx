@@ -1,4 +1,4 @@
-import { Suspense, useEffect, useMemo, useState } from 'react';
+import { Suspense, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import {
   AlertTriangle,
@@ -12,6 +12,8 @@ import {
   Lightbulb,
   Loader2,
   Minus,
+  PanelRightClose,
+  PanelRightOpen,
   Play,
   Plus,
   Scale,
@@ -24,6 +26,8 @@ import { getConcept, loadConcept, peekConcept, resolveRelated } from '@/data/con
 import { loadDepth } from '@/data/concepts/deep';
 import { getVisual } from '@/data/visuals';
 import { useProgress } from '@/app/providers/ProgressProvider';
+import { useLayout } from '@/app/providers/LayoutProvider';
+import { XL_QUERY, useMediaQuery } from '@/hooks/useMediaQuery';
 import { getLab } from '@/features/labs/registry';
 import { cn } from '@/utils/cn';
 import type {
@@ -127,8 +131,34 @@ function useFullConcept(summary: ConceptSummary | undefined): { concept?: Concep
   return state.slug === slug ? state : { failed: false };
 }
 
+/** Links the fold button and the reopen tab to the column they control. */
+const ASIDE_ID = 'concept-notes';
+
 function ConceptBody({ concept }: { concept: Concept }) {
   const related = useMemo(() => resolveRelated(concept), [concept]);
+  // The notes column sits beside the content only from xl up; below that it
+  // stacks under the content and cannot be folded, whatever was saved.
+  const isWide = useMediaQuery(XL_QUERY);
+  const layout = useLayout();
+  const asideFolded = isWide && layout.asideFolded;
+  const { setAsideFolded } = layout;
+  // The control that was clicked disappears with the fold, so hand focus to
+  // the one that replaces it instead of dropping it on the page body.
+  const hideButton = useRef<HTMLButtonElement>(null);
+  const showTab = useRef<HTMLButtonElement>(null);
+  const moveFocus = useRef(false);
+  // Fade the column in only when the learner reopens it, not on every page load.
+  const reopened = useRef(false);
+  const foldAside = (folded: boolean) => {
+    moveFocus.current = true;
+    reopened.current = !folded;
+    setAsideFolded(folded);
+  };
+  useEffect(() => {
+    if (!moveFocus.current) return;
+    moveFocus.current = false;
+    (asideFolded ? showTab : hideButton).current?.focus();
+  }, [asideFolded]);
   const lab = concept.lab ? getLab(concept.lab) : undefined;
   const visual = getVisual(concept.slug);
 
@@ -204,23 +234,61 @@ function ConceptBody({ concept }: { concept: Concept }) {
   }, [concept, lab, visual]);
 
   const when = concept.when ?? [];
-  const costs = concept.tradeoffs?.[0]?.costs ?? [];
-  const gains = concept.advantages ?? concept.tradeoffs?.[0]?.gains ?? [];
+  // With several approaches, the first one is an option (Sticky sessions, Round
+  // robin), not the concept itself - so its gains and costs are labelled with its
+  // name instead of reading as the gains and costs of the whole concept.
+  const firstTradeoff = concept.tradeoffs?.[0];
+  const option = (concept.tradeoffs?.length ?? 0) > 1 ? firstTradeoff?.approach : undefined;
+  const costs = firstTradeoff?.costs ?? [];
+  const costsLabel = option ? `${option}: what it costs` : 'What it costs';
+  const gains = concept.advantages ?? firstTradeoff?.gains ?? [];
+  const gainsLabel = !concept.advantages && option ? `${option}: what you gain` : 'What you gain';
+  const oneLine = concept.what ? short(concept.what, 150) : '';
 
   return (
     <div className="px-5 py-5 lg:px-8">
-      <div className="mx-auto grid max-w-[1600px] gap-4 xl:grid-cols-[minmax(0,1fr)_320px]">
+      <div
+        className={cn(
+          'mx-auto grid max-w-[1600px] gap-4',
+          asideFolded ? 'xl:grid-cols-[minmax(0,1fr)_auto]' : 'xl:grid-cols-[minmax(0,1fr)_320px]',
+        )}
+      >
         {/* Diagram first - it is the content, not an illustration */}
         <div className="min-w-0">
           <Tabs items={tabs} />
         </div>
 
         {/* Short notes only. Anything longer lives in Full explanation. */}
-        <aside className="space-y-3 xl:sticky xl:top-[4.5rem] xl:self-start">
+        <aside
+          id={ASIDE_ID}
+          className={cn(
+            'space-y-3 xl:sticky xl:top-[4.5rem] xl:self-start',
+            reopened.current && 'xl:animate-fade-in',
+            asideFolded && 'hidden',
+          )}
+        >
+          {isWide ? (
+            <div className="flex justify-end">
+              <Button
+                size="sm"
+                variant="ghost"
+                ref={hideButton}
+                onClick={() => foldAside(true)}
+                aria-controls={ASIDE_ID}
+                aria-expanded
+              >
+                <PanelRightClose className="h-3.5 w-3.5" />
+                Hide notes
+              </Button>
+            </div>
+          ) : null}
+
           {concept.what ? (
             <div className="card p-4">
               <p className="label mb-1.5">In one line</p>
-              <p className="text-sm leading-relaxed text-ink">{short(concept.what, 150)}.</p>
+              <p className="text-sm leading-relaxed text-ink">
+                {oneLine.endsWith('...') ? oneLine : `${oneLine}.`}
+              </p>
             </div>
           ) : null}
 
@@ -254,7 +322,7 @@ function ConceptBody({ concept }: { concept: Concept }) {
 
           {costs.length ? (
             <div className="card p-4">
-              <p className="label mb-2 text-danger">What it costs</p>
+              <p className="label mb-2 text-danger">{costsLabel}</p>
               <ul className="space-y-1.5">
                 {costs.slice(0, 3).map((item) => (
                   <li key={item} className="flex gap-2 text-xs leading-relaxed text-muted">
@@ -268,7 +336,7 @@ function ConceptBody({ concept }: { concept: Concept }) {
 
           {gains.length ? (
             <div className="card p-4">
-              <p className="label mb-2 text-brand">What you gain</p>
+              <p className="label mb-2 text-brand">{gainsLabel}</p>
               <ul className="space-y-1.5">
                 {gains.slice(0, 3).map((item) => (
                   <li key={item} className="flex gap-2 text-xs leading-relaxed text-muted">
@@ -297,6 +365,21 @@ function ConceptBody({ concept }: { concept: Concept }) {
             </div>
           ) : null}
         </aside>
+
+        {/* Its own narrow grid column, so the reopen tab never covers the content (a lab's controls, say). */}
+        {asideFolded ? (
+          <button
+            type="button"
+            ref={showTab}
+            onClick={() => foldAside(false)}
+            aria-controls={ASIDE_ID}
+            aria-expanded={false}
+            className="sticky top-[4.5rem] flex animate-fade-in flex-col items-center gap-2 self-start rounded-lg border border-line bg-surface px-1.5 py-3 text-xs font-medium text-muted shadow-card transition-colors hover:bg-elevated hover:text-ink"
+          >
+            <PanelRightOpen className="h-3.5 w-3.5" />
+            <span className="[writing-mode:vertical-rl]">Show notes</span>
+          </button>
+        ) : null}
       </div>
     </div>
   );

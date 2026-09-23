@@ -1,13 +1,16 @@
 import { Link } from 'react-router-dom';
-import { Menu, Moon, Search, Sun } from 'lucide-react';
+import { Menu, Moon, PanelLeftClose, PanelLeftOpen, Search, Sun } from 'lucide-react';
 import { Button, Select } from '@/components/ui';
 import { useTheme } from '@/app/providers/ThemeProvider';
 import { useProgress } from '@/app/providers/ProgressProvider';
+import { LG_QUERY, useMediaQuery } from '@/hooks/useMediaQuery';
 import type { Difficulty } from '@/types';
 
 interface TopBarProps {
   onOpenSearch: () => void;
+  /** Below lg this opens the drawer; from lg up it folds the sidebar into its icon strip. */
   onToggleSidebar: () => void;
+  sidebarExpanded: boolean;
   difficulty: Difficulty | 'all';
   onDifficultyChange: (value: Difficulty | 'all') => void;
 }
@@ -19,14 +22,28 @@ const DIFFICULTY_OPTIONS: { value: Difficulty | 'all'; label: string }[] = [
   { value: 'Advanced', label: 'Advanced' },
 ];
 
-export function TopBar({ onOpenSearch, onToggleSidebar, difficulty, onDifficultyChange }: TopBarProps) {
+export function TopBar({ onOpenSearch, onToggleSidebar, sidebarExpanded, difficulty, onDifficultyChange }: TopBarProps) {
   const { theme, toggle } = useTheme();
   const { overall } = useProgress();
+  // Only the wide-screen sidebar folds; below lg the same button opens a drawer, as it always did.
+  const canFold = useMediaQuery(LG_QUERY);
 
   return (
     <header className="sticky top-0 z-30 flex h-14 items-center gap-3 border-b border-line bg-surface/85 px-3 backdrop-blur lg:px-5">
-      <Button size="icon" variant="ghost" className="lg:hidden" onClick={onToggleSidebar} aria-label="Toggle navigation">
-        <Menu className="h-5 w-5" />
+      <Button
+        size="icon"
+        variant="ghost"
+        onClick={onToggleSidebar}
+        aria-label="Toggle navigation"
+        aria-expanded={sidebarExpanded}
+        title={canFold ? (sidebarExpanded ? 'Fold navigation' : 'Open navigation') : undefined}
+      >
+        <Menu className="h-5 w-5 lg:hidden" />
+        {sidebarExpanded ? (
+          <PanelLeftClose className="hidden h-5 w-5 lg:block" />
+        ) : (
+          <PanelLeftOpen className="hidden h-5 w-5 lg:block" />
+        )}
       </Button>
 
       <Link to="/" className="flex items-center gap-2.5">
@@ -67,7 +84,7 @@ export function TopBar({ onOpenSearch, onToggleSidebar, difficulty, onDifficulty
 
       <Link
         to="/progress"
-        className="hidden items-center gap-2 rounded-xl border border-line bg-elevated px-3 py-1.5 text-xs text-muted transition-colors hover:border-brand/50 hover:text-ink sm:flex"
+        className="flex items-center gap-2 rounded-xl border border-line bg-elevated px-3 py-1.5 text-xs text-muted transition-colors hover:border-brand/50 hover:text-ink"
         title="Learning progress"
       >
         <span className="relative h-1.5 w-16 overflow-hidden rounded-full bg-line">

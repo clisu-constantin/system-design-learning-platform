@@ -1,5 +1,6 @@
 import { useMemo, type ReactNode } from 'react';
 import { cn } from '@/utils/cn';
+import { useFitScale, type FitRange } from '@/hooks/useFitScale';
 import type { RequestOutcome } from '@/types';
 import { curveBetween, curveToPath, midpoint, pointOnCurve, type Curve, type Layout } from './geometry';
 
@@ -60,14 +61,34 @@ interface DiagramCanvasProps {
   /** Extra SVG drawn under the nodes (zones, brackets, annotations). */
   underlay?: ReactNode;
   grid?: boolean;
+  /**
+   * Scale range when fitting the design space to the container width.
+   * Defaults to 0.5x-1x: a lab never grows past its authored size, and below
+   * half size it scrolls sideways inside its card instead of shrinking further.
+   */
+  fit?: FitRange;
+  /** Pins the scale instead of fitting to the container width. */
+  zoom?: number;
 }
+
 
 /**
  * The shared stage for every lab: an SVG wiring layer with animated request
  * particles, and HTML node cards positioned on top of it.
  *
- * On small screens the canvas scrolls horizontally instead of shrinking into an
- * unreadable diagram.
+ * Everything is authored in a fixed design space (`width` x `height`, 960px wide
+ * by default) and the whole layer stack - grid, SVG wiring, particles, edge
+ * labels and node cards - is scaled together by one CSS transform, so they can
+ * never drift apart. An outer box sized to the scaled dimensions keeps the page
+ * layout height correct (a transform alone does not change layout size).
+ *
+ * The scale fits the container width within `fit` (0.5x-1x by default). Below
+ * the floor the canvas scrolls horizontally inside its own box rather than
+ * shrinking into an unreadable diagram; the page itself never scrolls sideways.
+ *
+ * Anything that converts pointer coordinates into diagram space must divide by
+ * the scale. Nothing does today: node and particle clicks are element handlers,
+ * which transforms do not affect.
  */
 export function DiagramCanvas({
   width = 960,
@@ -79,7 +100,10 @@ export function DiagramCanvas({
   className,
   underlay,
   grid = true,
+  fit,
+  zoom,
 }: DiagramCanvasProps) {
+  const { ref, scale } = useFitScale(width, fit, zoom);
   const curves = useMemo(() => {
     const map = new Map<string, Curve>();
     for (const edge of edges) {
@@ -100,87 +124,96 @@ export function DiagramCanvas({
   };
 
   return (
-    <div className={cn('w-full overflow-x-auto overflow-y-hidden rounded-2xl', className)}>
-      <div
-        className={cn('relative', grid && 'grid-bg')}
-        style={{ width, height, minWidth: width }}
-      >
-        <svg
-          width={width}
-          height={height}
-          className="absolute inset-0 overflow-visible"
-          aria-hidden
+    <div ref={ref} className={cn('w-full min-w-0 overflow-x-auto overflow-y-hidden rounded-2xl', className)}>
+      {/* Takes the scaled size in layout; the child below is painted scaled into it. */}
+      <div className="mx-auto overflow-hidden" style={{ width: width * scale, height: height * scale }}>
+        <div
+          className={cn('relative', grid && 'grid-bg')}
+          style={{
+            width,
+            height,
+            minWidth: width,
+            transform: scale === 1 ? undefined : `scale(${scale})`,
+            transformOrigin: 'top left',
+          }}
         >
-          {underlay}
-          {edges.map((edge) => {
-            const curve = curveFor(edge.from, edge.to);
-            if (!curve) return null;
-            const tone = edge.tone ?? 'default';
-            const label = edge.label
-              ? edge.labelT === undefined
-                ? midpoint(curve)
-                : pointOnCurve(curve, edge.labelT)
-              : null;
-            return (
-              <g key={`${edge.from}->${edge.to}-${edge.label ?? ''}`} opacity={edge.faded ? 0.25 : 1}>
-                <path
-                  d={curveToPath(curve)}
-                  fill="none"
-                  stroke={EDGE_STROKE[tone]}
-                  strokeWidth={edge.width ?? 1.75}
-                  strokeLinecap="round"
-                  strokeDasharray={edge.dashed ? '5 5' : edge.animated ? '6 6' : undefined}
-                  className={edge.animated ? 'animate-dash' : undefined}
-                />
-                {label && edge.label ? (
-                  <g>
-                    {/* Chip behind the text: edge labels sit over the grid and
-                        sometimes near a node, and must stay readable. */}
-                    <rect
-                      x={label.x - (edge.label.length * 5.1) / 2 - 5}
-                      y={label.y - 16}
-                      width={edge.label.length * 5.1 + 10}
-                      height={15}
-                      rx={4}
-                      className="fill-[rgb(var(--c-surface))] stroke-[rgb(var(--c-line))]"
-                      strokeWidth={1}
-                    />
-                    <text
-                      x={label.x}
-                      y={label.y - 5}
-                      textAnchor="middle"
-                      className="fill-[rgb(var(--c-muted))] font-mono"
-                      style={{ fontSize: 9.5 }}
-                    >
-                      {edge.label}
-                    </text>
-                  </g>
-                ) : null}
-              </g>
-            );
-          })}
+          <svg
+            width={width}
+            height={height}
+            className="absolute inset-0 overflow-visible"
+            aria-hidden
+          >
+            {underlay}
+            {edges.map((edge) => {
+              const curve = curveFor(edge.from, edge.to);
+              if (!curve) return null;
+              const tone = edge.tone ?? 'default';
+              const label = edge.label
+                ? edge.labelT === undefined
+                  ? midpoint(curve)
+                  : pointOnCurve(curve, edge.labelT)
+                : null;
+              return (
+                <g key={`${edge.from}->${edge.to}-${edge.label ?? ''}`} opacity={edge.faded ? 0.25 : 1}>
+                  <path
+                    d={curveToPath(curve)}
+                    fill="none"
+                    stroke={EDGE_STROKE[tone]}
+                    strokeWidth={edge.width ?? 1.75}
+                    strokeLinecap="round"
+                    strokeDasharray={edge.dashed ? '5 5' : edge.animated ? '6 6' : undefined}
+                    className={edge.animated ? 'animate-dash' : undefined}
+                  />
+                  {label && edge.label ? (
+                    <g>
+                      {/* Chip behind the text: edge labels sit over the grid and
+                          sometimes near a node, and must stay readable. */}
+                      <rect
+                        x={label.x - (edge.label.length * 5.1) / 2 - 5}
+                        y={label.y - 16}
+                        width={edge.label.length * 5.1 + 10}
+                        height={15}
+                        rx={4}
+                        className="fill-[rgb(var(--c-surface))] stroke-[rgb(var(--c-line))]"
+                        strokeWidth={1}
+                      />
+                      <text
+                        x={label.x}
+                        y={label.y - 5}
+                        textAnchor="middle"
+                        className="fill-[rgb(var(--c-muted))] font-mono"
+                        style={{ fontSize: 9.5 }}
+                      >
+                        {edge.label}
+                      </text>
+                    </g>
+                  ) : null}
+                </g>
+              );
+            })}
 
-          {particles.map((particle) => {
-            const curve = curveFor(particle.from, particle.to);
-            if (!curve) return null;
-            const point = pointOnCurve(curve, Math.min(1, Math.max(0, particle.t)));
-            const style = OUTCOME_STYLE[particle.outcome];
-            return (
-              <g
-                key={particle.id}
-                transform={`translate(${point.x} ${point.y})`}
-                onClick={particle.onClick}
-                style={{ cursor: particle.onClick ? 'pointer' : undefined, pointerEvents: 'auto' }}
-              >
-                {particle.highlighted ? (
-                  <circle r={9} fill="none" stroke={style.fill} strokeWidth={1.5} opacity={0.9} />
-                ) : null}
-                <ParticleShape shape={style.shape} fill={style.fill} />
-              </g>
-            );
-          })}
-        </svg>
-        {children}
+            {particles.map((particle) => {
+              const curve = curveFor(particle.from, particle.to);
+              if (!curve) return null;
+              const point = pointOnCurve(curve, Math.min(1, Math.max(0, particle.t)));
+              const style = OUTCOME_STYLE[particle.outcome];
+              return (
+                <g
+                  key={particle.id}
+                  transform={`translate(${point.x} ${point.y})`}
+                  onClick={particle.onClick}
+                  style={{ cursor: particle.onClick ? 'pointer' : undefined, pointerEvents: 'auto' }}
+                >
+                  {particle.highlighted ? (
+                    <circle r={9} fill="none" stroke={style.fill} strokeWidth={1.5} opacity={0.9} />
+                  ) : null}
+                  <ParticleShape shape={style.shape} fill={style.fill} />
+                </g>
+              );
+            })}
+          </svg>
+          {children}
+        </div>
       </div>
     </div>
   );

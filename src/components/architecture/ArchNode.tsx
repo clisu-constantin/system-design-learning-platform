@@ -11,6 +11,8 @@ interface ArchNodeProps {
   title: ReactNode;
   subtitle?: ReactNode;
   status?: NodeStatus;
+  /** Replaces the default status text ("Down", "Healthy"...), e.g. "Off" for a node that is switched off. */
+  statusLabel?: string;
   /** Absolute placement inside a DiagramCanvas. Omit to render inline. */
   placed?: Placed;
   children?: ReactNode;
@@ -32,6 +34,7 @@ export function ArchNode({
   title,
   subtitle,
   status = 'healthy',
+  statusLabel,
   placed,
   children,
   onClick,
@@ -55,6 +58,12 @@ export function ArchNode({
       onClick={onClick}
       aria-pressed={interactive && selected ? true : undefined}
       layout={!reduceMotion}
+      // A placed node animates only when its placement changes. Without this,
+      // framer-motion re-measures on every render and would spring the card
+      // whenever DiagramCanvas rescales to its container (the measured box
+      // changes although the node did not move), and would squash the text
+      // when a live stat row makes the card taller.
+      layoutDependency={placed ? `${placed.x},${placed.y},${placed.w},${placed.h}` : undefined}
       initial={reduceMotion ? false : { opacity: 0, scale: 0.85 }}
       animate={{ opacity: 1, scale: 1 }}
       transition={{ type: 'spring', stiffness: 320, damping: 28 }}
@@ -86,7 +95,7 @@ export function ArchNode({
         </div>
       </div>
       {children ? <div className="space-y-1.5">{children}</div> : null}
-      <HealthIndicator status={status} className="mt-auto pt-0.5" />
+      <HealthIndicator status={status} label={statusLabel} className="mt-auto pt-0.5" />
     </Element>
   );
 }

@@ -113,6 +113,18 @@ DB primary  --sync-->  DB standby
     ],
     diagram: `Client -> LB -> API x5 -> [ single Postgres ] -> SPOF
 Redundant app tier does not help: the database defines the availability.`,
+    tradeoffs: [
+      {
+        approach: 'Remove the SPOF with redundancy',
+        gains: ['One component failing no longer takes the system down', 'Allows maintenance and deploys without downtime'],
+        costs: ['At least double the instances to pay for and operate', 'Adds failover logic that must be tested or it will not work when needed'],
+      },
+      {
+        approach: 'Accept the SPOF and plan fast recovery',
+        gains: ['Cheaper and simpler while scale and stakes are low', 'One copy of state, so no replication lag or split brain'],
+        costs: ['Every failure of that component is a full outage', 'Recovery time depends on backups and on someone being awake'],
+      },
+    ],
     mistakes: [
       'Redundant compute sharing one stateful dependency.',
       'A "highly available" cluster that depends on one leader-election service in one zone.',

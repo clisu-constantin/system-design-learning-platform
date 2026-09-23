@@ -24,7 +24,7 @@ export const coreScenarios: Scenario[] = [
       { label: 'Redirects (100:1 read ratio)', formula: '40 x 100', result: '~4,000 reads/sec' },
       { label: 'Peak reads', formula: '4,000 x 3', result: '~12,000 reads/sec' },
       { label: 'Storage', formula: '100M/month x 500 B x 12 months x 5 years', result: '~3 TB over 5 years' },
-      { label: 'Cache working set', formula: '20% of daily reads x 500 B', result: 'Comfortably a few GB of Redis' },
+      { label: 'Cache working set', formula: '345M reads/day x 20% x 500 B', result: '~35 GB - fits in one Redis node' },
     ],
     highLevel: `Client
   |
@@ -289,7 +289,7 @@ Session registry: user -> gateway node`,
     capacity: [
       { label: 'Uploads', formula: '500 hours/min -> 30,000 hours/hour', result: 'Massive, bursty transcoding load' },
       { label: 'Views', formula: '5B views/day / 86,400', result: '~58,000 views/sec' },
-      { label: 'Bandwidth', formula: '58,000 concurrent x 3 Mbps average', result: '~174 Gbps sustained (CDN, not origin)' },
+      { label: 'Bandwidth', formula: '58,000 starts/sec x ~300 s watched x 3 Mbps', result: '~17M concurrent, ~50 Tbps (CDN, not origin)' },
       { label: 'Storage per video', formula: 'original + 6 renditions ~ 3x original', result: 'Petabytes per month' },
     ],
     highLevel: `Upload -> presigned URL -> Object Storage (original)

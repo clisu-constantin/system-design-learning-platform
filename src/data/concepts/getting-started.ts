@@ -93,6 +93,18 @@ export const gettingStartedConcepts: Concept[] = [
   [x] Group conversations       -> needs fan-out on write or read
   [ ] Video calls               -> needs media servers: different system
   [ ] Stories                   -> needs object storage + CDN`,
+    tradeoffs: [
+      {
+        approach: 'Pin down a short feature list before designing',
+        gains: ['The design is sized for features that exist, not imagined ones', 'Scope creep is visible because every addition is a written change'],
+        costs: ['Some real needs surface late and force rework', 'Time spent in the interview or planning before any architecture appears'],
+      },
+      {
+        approach: 'Design for a broad feature set up front',
+        gains: ['Fewer surprises when later features arrive', 'Data model can anticipate future queries'],
+        costs: ['More components to build, run and explain', 'Complexity is paid for features that may never ship'],
+      },
+    ],
     mistakes: [
       'Mixing in quality attributes: "must be fast" is non-functional, not functional.',
       'Accepting an unbounded feature list and then designing for all of it at once.',
@@ -203,6 +215,18 @@ export const gettingStartedConcepts: Concept[] = [
 
 Writes 10% -> ~230 writes/sec average
 2 KB per write -> ~40 GB/day -> ~14 TB/year`,
+    tradeoffs: [
+      {
+        approach: 'Size from explicit estimates (DAU x requests x peak factor)',
+        gains: ['Numbers justify choices such as sharding, caching or a single database', 'Order-of-magnitude mistakes are caught before they are built'],
+        costs: ['Inputs are guesses, so the output is only as good as its assumptions', 'Needs revisiting as real traffic data arrives'],
+      },
+      {
+        approach: 'Provision generous headroom above the estimate',
+        gains: ['Absorbs spikes and estimation error without an outage', 'Buys time before the next scaling step'],
+        costs: ['Idle capacity is paid for every month', 'Can hide an inefficient design until the bill arrives'],
+      },
+    ],
     mistakes: [
       'Designing for the average and being paged during the peak.',
       'Forgetting that reads and writes have wildly different costs.',
@@ -248,6 +272,18 @@ Round trip California -> Netherlands ~150 ms
 1 day ~= 86,400 s ~= 10^5 s
 1 million seconds ~= 11.6 days`,
     when: ['During design reviews.', 'Whenever someone says "that should be fast enough".'],
+    tradeoffs: [
+      {
+        approach: 'Round, order-of-magnitude arithmetic',
+        gains: ['Fast enough to do in an interview or a design review', 'Quickly rules out designs that cannot work, such as one disk for 1 PB'],
+        costs: ['Misses constant factors that can matter near a limit', 'Easy to trust a rounded number more than it deserves'],
+      },
+      {
+        approach: 'Benchmark or load test instead of estimating',
+        gains: ['Real numbers for your hardware, data and code paths', 'Exposes bottlenecks no latency table predicts'],
+        costs: ['Takes days of setup rather than minutes', 'Needs a working system, so it cannot guide the first design'],
+      },
+    ],
     mistakes: [
       'Treating these as benchmarks - they are ratios, and they shift with hardware.',
       'Ignoring the network round trip, usually the dominant term in a distributed call.',
@@ -275,6 +311,18 @@ Round trip California -> Netherlands ~150 ms
    -> CDN edge (hit? done)
    -> Load Balancer -> Backend -> Cache -> Database
    -> HTTP response -> parse, layout, paint`,
+    tradeoffs: [
+      {
+        approach: 'Keep connections and DNS answers warm (keep-alive, DNS caching, TLS resumption)',
+        gains: ['Later requests skip the DNS lookup and TCP and TLS handshakes', 'Cuts several round trips from every repeat visit'],
+        costs: ['Cached DNS answers delay failover to a new address until the TTL expires', 'Open connections hold memory and file descriptors on both ends'],
+      },
+      {
+        approach: 'Serve the first byte from a nearby CDN edge',
+        gains: ['Handshakes finish over a short round trip instead of a cross-continent one', 'Cached static assets are served without a trip to the origin'],
+        costs: ['Another layer to configure, pay for and debug', 'Stale content until caches expire or are purged'],
+      },
+    ],
     mistakes: [
       'Assuming the server is the slow part - DNS, connection setup and rendering often dominate.',
       'Forgetting that the first request on a cold connection pays DNS + TCP + TLS before any work starts.',

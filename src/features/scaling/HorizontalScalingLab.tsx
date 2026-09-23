@@ -20,6 +20,10 @@ import { clamp, sampleArrivals } from '@/utils/math';
 import { formatLatency, formatNumber, formatPercent } from '@/utils/format';
 
 const SERVER_CAPACITY = 400;
+const MAX_SERVERS = 8;
+// Traffic tops out at what the largest pool can serve, so every overload in
+// this lab is fixable by adding servers.
+const MAX_TRAFFIC = MAX_SERVERS * SERVER_CAPACITY;
 
 interface Snapshot {
   label: string;
@@ -47,21 +51,19 @@ export function HorizontalScalingLab() {
   const capacity = servers * SERVER_CAPACITY;
   const perServer = computeLoad(traffic / servers, SERVER_CAPACITY, { baseLatencyMs: 40, kneeAt: 0.65 });
 
+  // Logged outside the state updater: StrictMode runs updaters twice, which
+  // wrote every add/remove into the event log twice.
   const addServer = useCallback(() => {
-    setServers((count) => {
-      if (count >= 8) return count;
-      log(`Added Server ${count + 1} - pool capacity now ${formatNumber((count + 1) * SERVER_CAPACITY)} req/sec`, 'ok');
-      return count + 1;
-    });
-  }, [log]);
+    if (servers >= MAX_SERVERS) return;
+    setServers(servers + 1);
+    log(`Added Server ${servers + 1} - pool capacity now ${formatNumber((servers + 1) * SERVER_CAPACITY)} req/sec`, 'ok');
+  }, [servers, log]);
 
   const removeServer = useCallback(() => {
-    setServers((count) => {
-      if (count <= 1) return count;
-      log(`Removed Server ${count} - pool capacity now ${formatNumber((count - 1) * SERVER_CAPACITY)} req/sec`, 'warn');
-      return count - 1;
-    });
-  }, [log]);
+    if (servers <= 1) return;
+    setServers(servers - 1);
+    log(`Removed Server ${servers} - pool capacity now ${formatNumber((servers - 1) * SERVER_CAPACITY)} req/sec`, 'warn');
+  }, [servers, log]);
 
   const capture = useCallback(() => {
     setBefore({
@@ -109,7 +111,7 @@ export function HorizontalScalingLab() {
     lb: { x: 380, y: 150, w: 200, h: 88 },
   };
   for (let index = 0; index < servers; index += 1) {
-    layout[`s${index}`] = { x: xs[index], y: 330, w: width, h: 120 };
+    layout[`s${index}`] = { x: xs[index], y: 320, w: width, h: 152 };
   }
 
   const edges: DiagramEdge[] = [
@@ -159,7 +161,7 @@ export function HorizontalScalingLab() {
             <Minus className="h-4 w-4" />
             Remove
           </Button>
-          <Button variant="primary" onClick={addServer} disabled={servers >= 8}>
+          <Button variant="primary" onClick={addServer} disabled={servers >= MAX_SERVERS}>
             <Plus className="h-4 w-4" />
             Add server
           </Button>
@@ -175,8 +177,18 @@ export function HorizontalScalingLab() {
             </>
           ) : (
             <>
-              Capacity scales roughly linearly with instance count, and redundancy arrives as a side effect: losing one
-              of {servers} servers now costs {formatPercent(1 / servers)} of capacity instead of the whole service.
+              {servers === 1 ? (
+                <>
+                  One server is keeping up for now, but it is also a single point of failure: if it dies, the whole
+                  service goes with it. Adding servers raises capacity and removes that risk at the same time.
+                </>
+              ) : (
+                <>
+                  Capacity scales roughly linearly with instance count, and redundancy arrives as a side effect: losing
+                  one of {servers} servers now costs {formatPercent(1 / servers)} of capacity instead of the whole
+                  service.
+                </>
+              )}{' '}
               The next bottleneck is usually the shared database, not the app tier.
             </>
           )}
@@ -188,19 +200,33 @@ export function HorizontalScalingLab() {
             items={[
               { key: 'rps', label: 'Traffic', value: formatNumber(traffic), unit: 'req/s', tone: 'brand' },
               { key: 'instances', label: 'Servers', value: servers },
-              { key: 'utilization', label: 'Pool capacity', value: formatNumber(capacity), unit: 'req/s' },
+              {
+                key: 'utilization',
+                label: 'Pool capacity',
+                value: formatNumber(capacity),
+                unit: 'req/s',
+                hint: 'Servers x the requests per second each one can serve.',
+              },
               {
                 key: 'cpu',
                 label: 'CPU per server',
                 value: formatPercent(perServer.cpu),
                 tone: perServer.cpu > 0.9 ? 'danger' : perServer.cpu > 0.7 ? 'warn' : 'ok',
+                simulated: true,
               },
-              { key: 'latency', label: 'Latency', value: formatLatency(perServer.latencyMs) },
+              {
+                key: 'latency',
+                label: 'Latency',
+                value: formatLatency(perServer.latencyMs),
+                hint: 'Time to serve one request, from a queueing model.',
+                simulated: true,
+              },
               {
                 key: 'errorRate',
                 label: 'Errors',
                 value: formatPercent(perServer.errorRate, 1),
                 tone: perServer.errorRate > 0 ? 'danger' : 'ok',
+                simulated: true,
               },
             ]}
           />
@@ -271,11 +297,11 @@ export function HorizontalScalingLab() {
             label="Traffic"
             value={traffic}
             min={100}
-            max={5000}
+            max={MAX_TRAFFIC}
             step={50}
             onChange={setTraffic}
             format={(value) => `${formatNumber(value)} req/sec`}
-            scale={['100', '5000']}
+            scale={['100', formatNumber(MAX_TRAFFIC)]}
             tone={traffic > capacity ? 'danger' : 'brand'}
           />
           <div className="rounded-xl border border-line bg-elevated p-3">
@@ -296,9 +322,9 @@ export function HorizontalScalingLab() {
         </>
       }
     >
-      <DiagramCanvas layout={layout} edges={edges} particles={particleViews} height={475} className="bg-canvas">
+      <DiagramCanvas layout={layout} edges={edges} particles={particleViews} height={490} className="bg-canvas">
         <ArchNode kind="client" title="Users" subtitle={`${formatNumber(traffic)} req/sec`} placed={layout.users} compact />
-        <ArchNode kind="load-balancer" title="Load Balancer" subtitle="Round Robin" placed={layout.lb}>
+        <ArchNode kind="load-balancer" title="Load Balancer" subtitle="round robin, 2 nodes" placed={layout.lb}>
           <NodeStatRow label="Backends" value={servers} />
           <NodeStatRow label="Capacity" value={`${formatNumber(capacity)}/s`} />
         </ArchNode>
@@ -308,6 +334,7 @@ export function HorizontalScalingLab() {
             kind="server"
             title={`Server ${index + 1}`}
             placed={layout[`s${index}`]}
+            compact={width < 130}
             alert={perServer.cpu > 0.9}
             status={perServer.errorRate > 0.2 ? 'degraded' : 'healthy'}
           >

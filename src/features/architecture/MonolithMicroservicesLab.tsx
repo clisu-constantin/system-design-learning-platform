@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from 'react';
+import { Fragment, useCallback, useRef, useState } from 'react';
 import { Rocket, Zap } from 'lucide-react';
 import { ArchNode, DiagramCanvas, NodeStatRow, ParticleLegend, type DiagramEdge, type Layout, type ParticleView } from '@/components/architecture';
 import { Insight, LabShell, MetricsPanel } from '@/components/learning';
@@ -35,6 +35,51 @@ const TRAFFIC_SHARE: Record<Feature, number> = {
   Payments: 0.2,
   Notifications: 0.1,
 };
+
+/**
+ * Synchronous service-to-service calls, caller -> callee. Every site that depends on the
+ * dependency (demand, failures, routes, the diagram edge, the copy) is derived from this map.
+ */
+const CALLS: Partial<Record<Feature, Feature>> = { Orders: 'Payments' };
+
+/** Share of a caller's requests that make its synchronous call (one extra hop). */
+const SYNC_CALL_SHARE = 0.5;
+
+/** Services that call `feature` synchronously - they fail with it. */
+const callersOf = (feature: Feature) => FEATURES.filter((caller) => CALLS[caller] === feature);
+
+/** The dependency map as [caller, callee] pairs, for the diagram and the copy. */
+const CALL_PAIRS = FEATURES.flatMap((caller) => {
+  const callee = CALLS[caller];
+  return callee ? [[caller, callee] as const] : [];
+});
+
+/**
+ * Traffic ceiling. Only Orders scales in microservices mode, so the fixed
+ * services are sized to stay under capacity at this maximum (the busiest,
+ * Payments at 90% and Users at about 89%) - no
+ * setting of the controls produces a failure that no control can fix.
+ */
+const MAX_TRAFFIC = 2000;
+
+/**
+ * Fixed capacity of the services that do not scale. Payments is larger because
+ * it also serves the synchronous calls Orders makes to it: at MAX_TRAFFIC it
+ * sees 20% + 50% x 50% = 45% of traffic (900 req/s), Users 400 and
+ * Notifications 200 req/s.
+ */
+const FIXED_CAPACITY: Record<Exclude<Feature, 'Orders'>, number> = {
+  Users: 450,
+  Payments: 1000,
+  Notifications: 450,
+};
+
+/** Requests per second each service receives: its own share plus calls from other services. */
+const serviceDemand = (feature: Feature, traffic: number) =>
+  callersOf(feature).reduce(
+    (demand, caller) => demand + traffic * TRAFFIC_SHARE[caller] * SYNC_CALL_SHARE,
+    traffic * TRAFFIC_SHARE[feature],
+  );
 
 interface State {
   particles: Particle[];
@@ -94,13 +139,13 @@ export function MonolithMicroservicesLab() {
 
   // Monolith: all features share one pool. Microservices: capacity per service.
   const monolithCapacity = instances * 700;
-  const serviceCapacity = (feature: Feature) => (feature === 'Orders' ? instances * 500 : 400);
+  const serviceCapacity = (feature: Feature) => (feature === 'Orders' ? instances * 500 : FIXED_CAPACITY[feature]);
 
   const monolithLoad = computeLoad(traffic, monolithCapacity, { baseLatencyMs: 35, kneeAt: 0.65 });
   const serviceLoads = Object.fromEntries(
     FEATURES.map((feature) => [
       feature,
-      computeLoad(traffic * TRAFFIC_SHARE[feature], serviceCapacity(feature), { baseLatencyMs: 30, kneeAt: 0.65 }),
+      computeLoad(serviceDemand(feature, traffic), serviceCapacity(feature), { baseLatencyMs: 30, kneeAt: 0.65 }),
     ]),
   ) as Record<Feature, ReturnType<typeof computeLoad>>;
 
@@ -130,7 +175,7 @@ export function MonolithMicroservicesLab() {
         if (failed) current.failed.add(1, now);
         else {
           current.handled.add(1, now);
-          current.latency.push(monolithLoad.latencyMs);
+          current.latency.push(monolithLoad.latencyMs, now);
         }
         if (!animate()) continue;
         current.particles.push({
@@ -143,22 +188,31 @@ export function MonolithMicroservicesLab() {
         });
       } else {
         const load = serviceLoads[feature];
-        const failed = broken === feature || Math.random() < load.errorRate;
-        // Orders calls Payments synchronously - one extra network hop.
-        const extraHop = feature === 'Orders' && !failed && Math.random() < 0.5;
+        const ownFailure = broken === feature || Math.random() < load.errorRate;
+        // A synchronous call (Orders -> Payments) is one extra network hop, and the
+        // caller is only as available as the callee: if the call fails, the request fails.
+        const dependency = CALLS[feature];
+        const callee = dependency && !ownFailure && Math.random() < SYNC_CALL_SHARE ? dependency : undefined;
+        const dependencyFailure =
+          callee !== undefined && (broken === callee || Math.random() < serviceLoads[callee].errorRate);
+        const failed = ownFailure || dependencyFailure;
         if (failed) current.failed.add(1, now);
         else {
           current.handled.add(1, now);
-          current.latency.push(load.latencyMs + 12 + (extraHop ? 25 : 0));
+          current.latency.push(load.latencyMs + 12 + (callee ? serviceLoads[callee].latencyMs : 0), now);
         }
         if (!animate()) continue;
+        // A failed service is where the particle stops; a failed call stops at the callee.
+        const route = ['client', 'gateway', `svc-${feature}`];
+        if (callee) {
+          route.push(`svc-${callee}`);
+          if (!dependencyFailure) route.push(`db-${callee}`);
+        } else if (!ownFailure) {
+          route.push(`db-${feature}`);
+        }
         current.particles.push({
           id: nextParticleId(),
-          route: failed
-            ? ['client', 'gateway', `svc-${feature}`]
-            : extraHop
-              ? ['client', 'gateway', 'svc-Orders', 'svc-Payments', 'db-Payments']
-              : ['client', 'gateway', `svc-${feature}`, `db-${feature}`],
+          route,
           leg: 0,
           t: 0,
           speed: 1.3,
@@ -177,9 +231,13 @@ export function MonolithMicroservicesLab() {
   const failedQps = current.failed.rate(now);
   const servedQps = current.handled.rate(now) + failedQps;
   const errorRate = servedQps ? failedQps / servedQps : 0;
-  const avgLatency = current.latency.avg;
+  // With every request failing (or none sent within the MetricWindow horizon) there is no
+  // latency to average - the window reports null and it renders as a dash,
+  // instead of a 0 ms that reads as "very fast" or a stale last value.
+  const latencyText = formatLatency(current.latency.snapshot(now).avg);
 
   const layout = mode === 'monolith' ? MONO_LAYOUT : MICRO_LAYOUT;
+  const brokenCallers = broken ? callersOf(broken) : [];
 
   const edges: DiagramEdge[] =
     mode === 'monolith'
@@ -201,7 +259,14 @@ export function MonolithMicroservicesLab() {
             to: `db-${feature}`,
             tone: 'info',
           })),
-          { from: 'svc-Orders', to: 'svc-Payments', tone: 'warn', dashed: true, label: 'sync call' },
+          // No edge label: the two cards are 30px apart, so any label lands behind a
+          // node. The caller card subtitle says "calls Payments" instead.
+          ...CALL_PAIRS.map<DiagramEdge>(([caller, callee]) => ({
+            from: `svc-${caller}`,
+            to: `svc-${callee}`,
+            tone: broken === callee ? 'danger' : 'warn',
+            dashed: true,
+          })),
         ];
 
   const particleViews: ParticleView[] = current.particles
@@ -284,6 +349,14 @@ export function MonolithMicroservicesLab() {
                 <strong className="text-ink">every</strong> capability is down - including checkout, which has nothing
                 to do with the bug.
               </>
+            ) : brokenCallers.length > 0 ? (
+              <>
+                {broken} is down, and so is every {brokenCallers.join(' and ')} request that calls it synchronously
+                - {FEATURES.filter((feature) => feature !== broken && !brokenCallers.includes(feature)).join(' and ')}{' '}
+                keep serving, but {brokenCallers.join(' and ')} fails whenever it needs {broken}. Fault isolation only
+                holds where there is no synchronous dependency, or where the caller degrades gracefully instead of
+                failing with it.
+              </>
             ) : (
               <>
                 The {broken} service is down, but the other three keep serving. Fault isolation is real - as long as
@@ -292,14 +365,19 @@ export function MonolithMicroservicesLab() {
             )
           ) : mode === 'monolith' ? (
             <>
-              One deployment, one database, in-process calls. Average latency is {formatLatency(avgLatency)} with no
+              One deployment, one database, in-process calls. Average latency is {latencyText} with no
               network hops between features. The costs are coarse scaling and a shared release train - not performance.
             </>
           ) : (
             <>
               Each service scales and fails on its own, at the price of network hops: latency is{' '}
-              {formatLatency(avgLatency)}, and the synchronous Orders {'->'} Payments call means Orders is only as
-              available as Payments. Microservices are an organisational tool before they are a technical one.
+              {latencyText}
+              {CALL_PAIRS.map(([caller, callee]) => (
+                <Fragment key={caller}>
+                  , and the synchronous {caller} {'->'} {callee} call means {caller} is only as available as {callee}
+                </Fragment>
+              ))}
+              . Microservices are an organisational tool before they are a technical one.
             </>
           )}
         </Insight>
@@ -309,17 +387,30 @@ export function MonolithMicroservicesLab() {
           <MetricsPanel
             items={[
               { key: 'rps', label: 'Traffic', value: formatNumber(traffic), unit: 'req/s', tone: 'brand' },
-              { key: 'latency', label: 'Avg latency', value: formatLatency(avgLatency) },
+              {
+                key: 'latency',
+                label: 'Avg latency',
+                value: latencyText,
+                hint: 'Average over successful requests. Shows a dash when no request succeeded in the last few seconds.',
+                simulated: true,
+              },
               {
                 key: 'errorRate',
                 label: 'Error rate',
                 value: formatPercent(errorRate, 1),
                 tone: errorRate > 0.05 ? 'danger' : 'ok',
+                simulated: true,
               },
               {
                 key: 'blast',
                 label: 'Blast radius',
-                value: broken ? (mode === 'monolith' ? 'All features' : `${broken} only`) : 'None',
+                value: broken
+                  ? mode === 'monolith'
+                    ? 'All features'
+                    : brokenCallers.length > 0
+                      ? `${broken} + some ${brokenCallers.join(' + ')}`
+                      : `${broken} only`
+                  : 'None',
                 tone: broken && mode === 'monolith' ? 'danger' : broken ? 'warn' : 'ok',
                 hint: 'What stops working when one capability fails.',
               },
@@ -364,10 +455,11 @@ export function MonolithMicroservicesLab() {
             label="Traffic"
             value={traffic}
             min={100}
-            max={5000}
+            max={MAX_TRAFFIC}
             step={100}
             onChange={setTraffic}
             format={(value) => `${formatNumber(value)} req/sec`}
+            hint="Capped so the services that do not scale stay under capacity."
           />
           <Slider
             label="Instances"
@@ -398,7 +490,9 @@ export function MonolithMicroservicesLab() {
                     next
                       ? mode === 'monolith'
                         ? `${feature} crashed - the whole monolith process is down`
-                        : `${feature} service down - other services unaffected`
+                        : callersOf(feature).length > 0
+                          ? `${feature} service down - ${callersOf(feature).join(' and ')} requests that call it fail too`
+                          : `${feature} service down - other services unaffected`
                       : `${feature} recovered`,
                     next ? 'danger' : 'ok',
                   );
@@ -411,10 +505,16 @@ export function MonolithMicroservicesLab() {
           <div className="rounded-xl border border-line bg-elevated p-3">
             <p className="label mb-2">Utilization</p>
             {mode === 'monolith' ? (
-              <Meter label="Application" value={monolithLoad.cpu} />
+              <Meter label="Application" value={broken ? 0 : monolithLoad.cpu} />
             ) : (
               FEATURES.map((feature) => (
-                <Meter key={feature} label={feature} value={serviceLoads[feature].cpu} size="xs" className="mb-1.5" />
+                <Meter
+                  key={feature}
+                  label={feature}
+                  value={broken === feature ? 0 : serviceLoads[feature].cpu}
+                  size="xs"
+                  className="mb-1.5"
+                />
               ))
             )}
           </div>
@@ -461,7 +561,9 @@ export function MonolithMicroservicesLab() {
                 key={feature}
                 kind="service"
                 title={`${feature} Service`}
-                subtitle={feature === 'Orders' ? `x${instances}` : 'x1'}
+                subtitle={[feature === 'Orders' ? `x${instances}` : 'x1', CALLS[feature] && `calls ${CALLS[feature]}`]
+                  .filter(Boolean)
+                  .join(', ')}
                 placed={layout[`svc-${feature}`]}
                 status={broken === feature ? 'down' : serviceLoads[feature].errorRate > 0.2 ? 'degraded' : 'healthy'}
                 alert={serviceLoads[feature].saturated}
@@ -483,13 +585,14 @@ export function MonolithMicroservicesLab() {
           </>
         )}
       </DiagramCanvas>
-      <div className="flex items-center gap-4 px-4 pb-3 pt-1 text-[11px] text-faint">
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-1 px-4 pb-3 pt-1 text-[11px] text-faint">
         <span className="flex items-center gap-1.5">
           <Rocket className="h-3.5 w-3.5" /> Deployable units: {mode === 'monolith' ? 1 : FEATURES.length}
         </span>
         <span className="flex items-center gap-1.5">
-          <Zap className="h-3.5 w-3.5" /> Network hops per request: {mode === 'monolith' ? 1 : '2-3'}
+          <Zap className="h-3.5 w-3.5" /> Network hops per request: {mode === 'monolith' ? 2 : '2-3'}
         </span>
+        <span className="ml-auto">Simplified load model - latency and errors are illustrative, not measured.</span>
       </div>
     </LabShell>
   );

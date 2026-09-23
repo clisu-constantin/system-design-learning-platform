@@ -6,6 +6,11 @@ import { formatBytes, formatCompact, formatNumber } from '@/utils/format';
 
 const SECONDS_PER_DAY = 86_400;
 
+/** Rates below 10/sec keep two decimals, so a tiny product does not read as "0 req/sec". */
+const formatRate = (value: number) => (value < 10 ? value.toFixed(2) : formatNumber(value));
+
+const formatCopies = (count: number) => `${count} ${count > 1 ? 'copies' : 'copy'}`;
+
 interface Step {
   label: string;
   formula: string;
@@ -29,6 +34,7 @@ export function CapacityLab() {
     const writesPerDay = requestsPerDay * writeShare;
     const readsPerDay = requestsPerDay - writesPerDay;
     const writeQps = writesPerDay / SECONDS_PER_DAY;
+    const peakWriteQps = writeQps * peakFactor;
     const dailyBytes = writesPerDay * objectSizeKb * 1024;
     const yearlyBytes = dailyBytes * 365;
     const retainedBytes = yearlyBytes * retentionYears;
@@ -42,6 +48,7 @@ export function CapacityLab() {
       writesPerDay,
       readsPerDay,
       writeQps,
+      peakWriteQps,
       dailyBytes,
       yearlyBytes,
       retainedBytes,
@@ -60,19 +67,19 @@ export function CapacityLab() {
     {
       label: 'Average requests per second',
       formula: `${formatCompact(derived.requestsPerDay)} / 86,400 seconds`,
-      result: `${formatNumber(derived.avgQps)} req/sec`,
+      result: `${formatRate(derived.avgQps)} req/sec`,
       emphasis: true,
     },
     {
       label: 'Peak requests per second',
-      formula: `${formatNumber(derived.avgQps)} x ${peakFactor} peak factor`,
-      result: `${formatNumber(derived.peakQps)} req/sec`,
+      formula: `${formatRate(derived.avgQps)} x ${peakFactor} peak factor`,
+      result: `${formatRate(derived.peakQps)} req/sec`,
       emphasis: true,
     },
     {
       label: 'Write rate',
-      formula: `${formatNumber(derived.avgQps)} req/sec x ${Math.round(writeShare * 100)}% writes`,
-      result: `${formatNumber(derived.writeQps)} writes/sec`,
+      formula: `${formatRate(derived.avgQps)} req/sec x ${Math.round(writeShare * 100)}% writes`,
+      result: `${formatRate(derived.writeQps)} writes/sec`,
     },
     {
       label: 'Daily storage growth',
@@ -98,7 +105,7 @@ export function CapacityLab() {
     },
     {
       label: 'Peak bandwidth',
-      formula: `${formatNumber(derived.peakQps)} req/sec x ${objectSizeKb} KB`,
+      formula: `${formatRate(derived.peakQps)} req/sec x ${objectSizeKb} KB`,
       result: `${formatBytes(derived.bandwidthBytesPerSec)}/sec`,
     },
   ];
@@ -120,21 +127,21 @@ export function CapacityLab() {
       }}
       insight={
         <Insight>
-          At {formatNumber(derived.peakQps)} peak requests/sec you need roughly {serversNeeded} application server
+          At {formatRate(derived.peakQps)} peak requests/sec you need roughly {serversNeeded} application server
           {serversNeeded > 1 ? 's' : ''} at 1,000 req/sec each - plus headroom, so call it {Math.ceil(serversNeeded * 1.5)}.
           Storage grows to {formatBytes(derived.storedWithReplication)} including replication.{' '}
-          {derived.peakQps > 10000
-            ? 'At this rate a single database primary will not absorb the writes - plan for partitioning early.'
-            : 'These numbers fit comfortably on a small fleet with one primary database and replicas.'}{' '}
+          {derived.peakWriteQps > 10000
+            ? `At ${formatRate(derived.peakWriteQps)} peak writes/sec a single database primary will not absorb the writes - plan for partitioning early.`
+            : `Peak writes of ${formatRate(derived.peakWriteQps)}/sec fit on one primary database; reads scale out with replicas and caching.`}{' '}
           Round aggressively: the decisions that follow from 11,575 req/sec and "about 10k" are identical.
         </Insight>
       }
       metrics={
         <MetricsPanel
           items={[
-            { key: 'avgQps', label: 'Average QPS', value: formatNumber(derived.avgQps), tone: 'brand', hint: 'Requests per second averaged over 24 hours.' },
-            { key: 'peakQps', label: 'Peak QPS', value: formatNumber(derived.peakQps), tone: 'warn', hint: 'What you must actually provision for.' },
-            { key: 'writeQps', label: 'Writes/sec', value: formatNumber(derived.writeQps), hint: 'Writes are usually the hard constraint.' },
+            { key: 'avgQps', label: 'Average QPS', value: formatRate(derived.avgQps), tone: 'brand', hint: 'Requests per second averaged over 24 hours.' },
+            { key: 'peakQps', label: 'Peak QPS', value: formatRate(derived.peakQps), tone: 'warn', hint: 'What you must actually provision for.' },
+            { key: 'writeQps', label: 'Writes/sec', value: formatRate(derived.writeQps), hint: 'Writes are usually the hard constraint.' },
             {
               key: 'ratio',
               label: 'Read:write',
@@ -210,7 +217,7 @@ export function CapacityLab() {
             min={1}
             max={5}
             onChange={setReplicationFactor}
-            format={(value) => `${value} copies`}
+            format={formatCopies}
             hint="Durability costs storage: three copies means three times the bill."
           />
         </>
@@ -253,9 +260,9 @@ export function CapacityLab() {
             <p className="mt-1 text-[11px] text-faint">one day of hot objects</p>
           </div>
           <div className="rounded-xl border border-line bg-elevated p-4">
-            <p className="label">5-year storage</p>
+            <p className="label">{retentionYears}-year storage</p>
             <p className="metric-value mt-1 text-ink">{formatBytes(derived.storedWithReplication)}</p>
-            <p className="mt-1 text-[11px] text-faint">including {replicationFactor} replicas</p>
+            <p className="mt-1 text-[11px] text-faint">including replication ({formatCopies(replicationFactor)})</p>
           </div>
         </div>
       </div>

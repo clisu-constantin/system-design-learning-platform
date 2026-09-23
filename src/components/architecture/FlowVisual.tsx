@@ -1,7 +1,6 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import { Pause, Play } from 'lucide-react';
 import { cn } from '@/utils/cn';
-import { clamp } from '@/utils/math';
 import type { NodeKind, NodeStatus, RequestOutcome } from '@/types';
 import { advanceParticles, nextParticleId, useTicker, type Particle } from '@/simulations/engine';
 import { useRerender } from '@/hooks/useRerender';
@@ -9,6 +8,7 @@ import { useInView } from '@/hooks/useInView';
 import { usePrefersReducedMotion } from '@/hooks/usePrefersReducedMotion';
 import { ArchNode, NodeStatRow } from './ArchNode';
 import { DiagramCanvas, type DiagramEdge, type ParticleView } from './DiagramCanvas';
+import type { FitRange } from '@/hooks/useFitScale';
 import type { Layout } from './geometry';
 
 export interface VisualNode {
@@ -67,30 +67,11 @@ export interface VisualSpec {
 }
 
 /**
- * Scales a diagram to the width it is actually given.
- *
- * Specs are authored in a fixed design space; without this the diagram sits in
- * the top-left of a wider card and looks like it stops halfway across.
+ * Concept diagrams are authored in a smaller design space (760px by default)
+ * than labs, so they may grow up to 1.3x to fill a wide card instead of sitting
+ * in its top-left corner. Below 0.5x they scroll sideways instead of clipping.
  */
-function useFitScale(designWidth: number, override?: number) {
-  const ref = useRef<HTMLDivElement>(null);
-  const [fitted, setFitted] = useState(1);
-
-  useEffect(() => {
-    if (override !== undefined) return;
-    const element = ref.current;
-    if (!element || typeof ResizeObserver === 'undefined') return;
-
-    const observer = new ResizeObserver((entries) => {
-      const width = entries[0]?.contentRect.width ?? 0;
-      if (width > 0) setFitted(clamp(width / designWidth, 0.5, 1.3));
-    });
-    observer.observe(element);
-    return () => observer.disconnect();
-  }, [designWidth, override]);
-
-  return { ref, scale: override ?? fitted };
-}
+const FLOW_FIT: FitRange = { min: 0.5, max: 1.3 };
 
 const toLayout = (spec: VisualSpec): Layout =>
   Object.fromEntries(
@@ -102,11 +83,11 @@ const toLayout = (spec: VisualSpec): Layout =>
  * when the OS asks for reduced motion, and the ticker only runs while the
  * diagram is on screen. WCAG 2.2.2 requires the explicit pause either way.
  */
-function useAutoplay() {
+export function useAutoplay<T extends HTMLElement = HTMLElement>() {
   const reducedMotion = usePrefersReducedMotion();
   // null until the learner presses Play/Pause; until then the OS setting decides.
   const [choice, setChoice] = useState<boolean | null>(null);
-  const ref = useRef<HTMLElement>(null);
+  const ref = useRef<T>(null);
   const inView = useInView(ref);
 
   const playing = choice ?? !reducedMotion;
@@ -116,7 +97,7 @@ function useAutoplay() {
   return { ref, playing, setPlaying, running: playing && inView, reducedMotion };
 }
 
-function PlayPauseButton({ playing, onToggle, className }: { playing: boolean; onToggle: () => void; className?: string }) {
+export function PlayPauseButton({ playing, onToggle, className }: { playing: boolean; onToggle: () => void; className?: string }) {
   const Icon = playing ? Pause : Play;
   return (
     <button
@@ -226,26 +207,21 @@ export function FlowVisual({
 
   const width = spec.width ?? 760;
   const height = spec.height ?? 320;
-  const { ref, scale } = useFitScale(width, zoom);
 
   return (
     <figure ref={autoplay.ref} className={cn('overflow-hidden rounded-2xl border border-line bg-canvas', className)}>
-      <div ref={ref} className="w-full">
-        <div style={{ height: height * scale, overflow: 'hidden' }}>
-          <div style={{ transform: `scale(${scale})`, transformOrigin: 'top left', width, height }}>
-            <DiagramCanvas
-              layout={layout}
-              edges={edges}
-              particles={particleViews}
-              width={width}
-              height={height}
-              grid={grid}
-            >
-              {nodes}
-            </DiagramCanvas>
-          </div>
-        </div>
-      </div>
+      <DiagramCanvas
+        layout={layout}
+        edges={edges}
+        particles={particleViews}
+        width={width}
+        height={height}
+        grid={grid}
+        fit={FLOW_FIT}
+        zoom={zoom}
+      >
+        {nodes}
+      </DiagramCanvas>
       {/* The control sits under the canvas, not over it, so it can never cover a node. */}
       <div className="flex items-center gap-3 border-t border-line px-4 py-2">
         {spec.caption ? <figcaption className="min-w-0 flex-1 text-xs text-muted">{spec.caption}</figcaption> : null}
@@ -274,7 +250,6 @@ export function SequenceFlow({ spec, className }: { spec: VisualSpec; className?
   const layout = useMemo(() => toLayout(spec), [spec]);
   const width = spec.width ?? 760;
   const height = spec.height ?? 320;
-  const { ref, scale } = useFitScale(width);
 
   useTicker(autoplay.running && steps.length > 0, (dt) => {
     progress.current += dt * 0.85;
@@ -318,29 +293,24 @@ export function SequenceFlow({ spec, className }: { spec: VisualSpec; className?
           </span>
           {active.label}
         </span>
-        <div ref={ref} className="w-full">
-          <div style={{ height: height * scale, overflow: 'hidden' }}>
-            <div style={{ transform: `scale(${scale})`, transformOrigin: 'top left', width, height }}>
-              <DiagramCanvas
-                layout={layout}
-                edges={edges}
-                particles={[
-                  {
-                    id: 1,
-                    from: active.from,
-                    to: active.to,
-                    t: Math.min(1, progress.current),
-                    outcome: active.outcome ?? 'success',
-                  },
-                ]}
-                width={width}
-                height={height}
-              >
-                {nodes}
-              </DiagramCanvas>
-            </div>
-          </div>
-        </div>
+        <DiagramCanvas
+          layout={layout}
+          edges={edges}
+          particles={[
+            {
+              id: 1,
+              from: active.from,
+              to: active.to,
+              t: Math.min(1, progress.current),
+              outcome: active.outcome ?? 'success',
+            },
+          ]}
+          width={width}
+          height={height}
+          fit={FLOW_FIT}
+        >
+          {nodes}
+        </DiagramCanvas>
       </figure>
 
       <div className="flex flex-wrap items-center gap-1.5">

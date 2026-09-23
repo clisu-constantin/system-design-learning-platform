@@ -1,4 +1,5 @@
-import { memo, useEffect, useId, useMemo, useRef, useState, type PointerEvent } from 'react';
+import { memo, useId, useMemo, useState, type PointerEvent } from 'react';
+import { useElementWidth } from '@/hooks/useElementWidth';
 import { useThemeColors, type ColorToken } from '@/app/providers/ThemeProvider';
 import type { SeriesPoint } from '@/simulations/engine';
 
@@ -47,7 +48,7 @@ export const LiveChart = memo(function LiveChart({
 }: LiveChartProps) {
   const colors = useThemeColors();
   const gradientPrefix = useId();
-  const { ref, width } = useWidth<HTMLDivElement>();
+  const { ref, width } = useElementWidth();
   const [hover, setHover] = useState<number | null>(null);
 
   const format = (value: number) =>
@@ -84,7 +85,13 @@ export const LiveChart = memo(function LiveChart({
   const hovered = hover !== null && hover < data.length ? hover : null;
   const latest = data[data.length - 1];
   const summary = latest
-    ? series.map((item) => `${item.label} ${format(latest[item.key] ?? 0)}`).join(', ')
+    ? series
+        .map((item) => {
+          const value = latest[item.key];
+          // NaN is a gap (no data in the window), read out as such rather than "NaN ms".
+          return `${item.label} ${value === undefined || Number.isNaN(value) ? 'no data' : format(value)}`;
+        })
+        .join(', ')
     : 'no data yet';
 
   return (
@@ -230,22 +237,6 @@ export const LiveChart = memo(function LiveChart({
     </div>
   );
 });
-
-/** Width of the element, tracked with ResizeObserver - the charts fill their card. */
-function useWidth<T extends HTMLElement>() {
-  const ref = useRef<T>(null);
-  const [width, setWidth] = useState(0);
-
-  useEffect(() => {
-    const element = ref.current;
-    if (!element || typeof ResizeObserver === 'undefined') return;
-    const observer = new ResizeObserver((entries) => setWidth(Math.floor(entries[0]?.contentRect.width ?? 0)));
-    observer.observe(element);
-    return () => observer.disconnect();
-  }, []);
-
-  return { ref, width };
-}
 
 const clampNumber = (value: number, min: number, max: number) => Math.min(max, Math.max(min, value));
 

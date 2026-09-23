@@ -93,11 +93,21 @@ export function RateLimitingLab() {
   const burst = useCallback(() => {
     const current = state.current;
     const now = performance.now();
+    const size = limit * 2;
     let allowed = 0;
-    for (let index = 0; index < limit * 2; index += 1) {
-      if (admit(current, algorithm, limit, windowSeconds, now)) allowed += 1;
+    for (let index = 0; index < size; index += 1) {
+      // Counted like any other traffic; only the first 12 are animated, staggered.
+      const { ok, particle } = admitOne(current, algorithm, limit, windowSeconds, now, {
+        t: -index * 0.08,
+        speed: 1.3,
+      });
+      if (ok) allowed += 1;
+      if (index < 12) current.particles.push(particle);
     }
-    log(`Burst of ${limit * 2} requests: ${allowed} allowed, ${limit * 2 - allowed} rejected with 429`, 'warn');
+    log(
+      `Burst of ${size} requests: ${allowed} ${algorithm === 'leaky-bucket' ? 'queued' : 'allowed'}, ${size - allowed} rejected with 429`,
+      'warn',
+    );
     rerender();
   }, [algorithm, limit, windowSeconds, log, rerender]);
 
@@ -143,40 +153,10 @@ export function RateLimitingLab() {
     }
 
     const arrivals = sampleArrivals(requestRate, dt);
+    const arrivalSpeed = algorithm === 'leaky-bucket' ? 1.4 : 1.3;
     for (let index = 0; index < arrivals; index += 1) {
-      const ok = admit(current, algorithm, limit, windowSeconds, now);
-      if (algorithm === 'leaky-bucket') {
-        // Admission only enqueues; the drain loop above emits the allowed particle.
-        current.particles.push({
-          id: nextParticleId(),
-          route: ok ? ['client', 'limiter'] : ['client', 'rejected'],
-          leg: 0,
-          t: 0,
-          speed: 1.4,
-          outcome: ok ? 'success' : 'failure',
-        });
-        if (!ok) {
-          current.rejected += 1;
-          current.rejectedRate.add(1, now);
-        }
-        continue;
-      }
-
-      if (ok) {
-        current.allowed += 1;
-        current.allowedRate.add(1, now);
-      } else {
-        current.rejected += 1;
-        current.rejectedRate.add(1, now);
-      }
-      current.particles.push({
-        id: nextParticleId(),
-        route: ok ? ['client', 'limiter', 'api'] : ['client', 'limiter', 'rejected'],
-        leg: 0,
-        t: 0,
-        speed: 1.3,
-        outcome: ok ? 'success' : 'failure',
-      });
+      const { particle } = admitOne(current, algorithm, limit, windowSeconds, now, { t: 0, speed: arrivalSpeed });
+      current.particles.push(particle);
     }
 
     const { alive } = advanceParticles(current.particles, dt);
@@ -408,6 +388,40 @@ function admit(state: State, algorithm: Algorithm, limit: number, windowSeconds:
       return false;
     }
   }
+}
+
+/**
+ * Admits one request at the limiter, counts it, and returns the particle that should animate it.
+ * The burst button and the tick loop both go through here, so the metrics, the chart and the
+ * diagram agree however the traffic arrived. A leaky bucket only enqueues an admitted request:
+ * its drain loop counts it as allowed and animates the limiter -> api hop, so the particle made
+ * here stops at the limiter. A rejection happens at the limiter, so it travels the 429 edge.
+ */
+function admitOne(
+  state: State,
+  algorithm: Algorithm,
+  limit: number,
+  windowSeconds: number,
+  now: number,
+  motion: { t: number; speed: number },
+): { ok: boolean; particle: Particle } {
+  const ok = admit(state, algorithm, limit, windowSeconds, now);
+  let route: string[];
+  if (!ok) {
+    state.rejected += 1;
+    state.rejectedRate.add(1, now);
+    route = ['client', 'limiter', 'rejected'];
+  } else if (algorithm === 'leaky-bucket') {
+    route = ['client', 'limiter'];
+  } else {
+    state.allowed += 1;
+    state.allowedRate.add(1, now);
+    route = ['client', 'limiter', 'api'];
+  }
+  return {
+    ok,
+    particle: { id: nextParticleId(), route, leg: 0, ...motion, outcome: ok ? 'success' : 'failure' },
+  };
 }
 
 function TokenBucket({ tokens, capacity }: { tokens: number; capacity: number }) {

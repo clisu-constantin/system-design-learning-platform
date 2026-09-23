@@ -4,7 +4,7 @@ import { ArrowRight } from 'lucide-react';
 import { AsciiBlock } from '@/components/learning';
 import { FlowVisual } from '@/components/architecture/FlowVisual';
 import { getVisual } from '@/data/visuals';
-import { Badge, SegmentedControl } from '@/components/ui';
+import { Badge } from '@/components/ui';
 import { cn } from '@/utils/cn';
 
 type Verdict = 'a' | 'b' | 'equal';
@@ -221,7 +221,7 @@ export function ComparePage() {
                   </Link>
                 </div>
                 {visual ? (
-                  <FlowVisual spec={visual} zoom={0.62} className="rounded-none border-0" />
+                  <FlowVisual spec={visual} className="rounded-none border-0" />
                 ) : (
                   <AsciiBlock className="m-4">{side.diagram}</AsciiBlock>
                 )}
@@ -269,14 +269,6 @@ export function ComparePage() {
           <p className="label mb-2 text-brand">How to choose</p>
           <p className="text-sm leading-relaxed text-muted">{comparison.verdict}</p>
         </div>
-
-        <SegmentedControl
-          className="mt-6"
-          size="sm"
-          value={selected}
-          options={COMPARISONS.map((item) => ({ value: item.id, label: item.title.split(' vs ')[0] }))}
-          onChange={setSelected}
-        />
       </div>
     </div>
   );

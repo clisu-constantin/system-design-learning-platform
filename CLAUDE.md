@@ -37,7 +37,7 @@ render where you can, and only suppress it with a comment saying what external t
 
 ```
 src/
-├── app/            App, router, providers (theme, progress)
+├── app/            App, router, providers (theme, progress, layout)
 ├── components/
 │   ├── architecture/   DiagramCanvas, ArchNode, geometry, node kinds  <- shared visual language
 │   ├── charts/         LiveChart (plain SVG, no chart library), DistributionBar
@@ -47,7 +47,7 @@ src/
 ├── data/           concepts/ (per category), scenarios/, glossary, categories  <- all content
 │   └── concepts/deep/  long-form lesson per concept, code-split per category
 ├── features/       one folder per domain; labs and pages live here
-├── hooks/          useRerender
+├── hooks/          useRerender, useMediaQuery, useFitScale, ...
 ├── simulations/
 │   ├── engine/     useTicker, MetricWindow, RateCounter, useSeries, useEventLog, particles
 │   └── models/     computeLoad (queueing model), machine tiers
@@ -61,8 +61,11 @@ src/
    `requestAnimationFrame` loop with a clamped `dt`; `computeLoad` turns load/capacity into CPU,
    latency and error rate.
 2. **Architecture components** (`components/architecture/`) — `DiagramCanvas` renders an SVG wiring
-   layer plus HTML node cards positioned on top, in a fixed 960px design space that scrolls
-   horizontally on small screens. Every lab uses it, so a Redis node looks identical everywhere.
+   layer plus HTML node cards positioned on top, in a 960px design space that is scaled as one
+   layer stack (`useFitScale`) to fit its container between 0.5x and 1x; below 0.5x it scrolls
+   sideways inside its own card, never the page. Every lab uses it, so a Redis node looks identical
+   everywhere. Author layouts in design-space pixels; anything that turns a pointer position into
+   diagram coordinates must divide by the scale (nothing does today - clicks are element handlers).
 3. **LabShell** (`components/learning/`) — the chrome around every lab: toolbar, stage, control
    column, metrics strip, event log. Labs supply only their diagram and their controls.
 
@@ -122,7 +125,7 @@ caller") rather than escaping them.
 4. Add a row to `LABS` in `src/features/labs/registry.ts` (lazy import).
 5. Set `lab: '<id>'` on the concept that should host it.
 
-The lab then appears on the concept page's "Interactive Demo" tab, at `/labs/<id>`, in search, and
+The lab then appears on the concept page's "Interactive lab" tab, at `/labs/<id>`, in search, and
 on the labs index — no other wiring.
 
 ### A new playground component kind
@@ -169,8 +172,9 @@ interchangeable, which contradicts the entire stateless/horizontal-scaling lesso
 
 - `SequenceFlow` shows the active step caption as a banner over the canvas, never as an edge label -
   on a short edge an edge label always lands on a node.
-- `FlowVisual` auto-fits its spec to the container width (0.5x-1.3x), so a spec authored at 760px
-  fills a wider card instead of stopping halfway across it. Pass `zoom` only to pin a scale.
+- `FlowVisual` auto-fits its spec to the container width (0.5x-1.3x, via `DiagramCanvas`'s `fit`
+  prop), so a spec authored at 760px fills a wider card instead of stopping halfway across it. Pass
+  `zoom` only to pin a scale.
 - `FlowVisual` and `SequenceFlow` have a Pause/Play control, start paused under
   `prefers-reduced-motion`, and stop ticking while scrolled off screen (`useAutoplay`). Their nodes
   and edges are memoized on `spec`, so only the particle layer re-renders per frame - keep it that
@@ -202,7 +206,7 @@ These are editorial rules, not style preferences. They are the reason the app is
   `LiveChart`; recharts was removed because it cost every chart lab ~96 KB gzip.
 - Status is never communicated by color alone — particles have distinct shapes (circle, diamond,
   triangle, cross) and every status has a text label (`HealthIndicator`, `ParticleLegend`).
-- Dark mode is the default and is the theme diagrams are tuned for; both themes must stay readable.
+- Dark mode is the default when the OS does not ask for light (first paint follows `prefers-color-scheme`), and it is the theme diagrams are tuned for; both themes must stay readable.
 
 ## Gotchas
 
@@ -216,13 +220,28 @@ These are editorial rules, not style preferences. They are the reason the app is
   module". Heavy deps reached only from lazy chunks are listed in `optimizeDeps.include` so Vite
   never re-optimizes and force-reloads mid-session.
 - Labs that size node boxes at runtime (load balancer, horizontal scaling, auto scaling, queue) must
-  keep the widest label readable: minimum width is 52 + 6.4 per character, and the whole row must
+  keep the widest label readable: minimum width is 52 + the title width (the per-letter table in `scripts/check-visuals.mjs`, about 7px a letter), and the whole row must
   stay inside the 960px canvas.
 - The Bash tool on this machine has had trouble with large heredocs containing `.tsx`; prefer the
   Write tool for source files.
 - `ArchNode` grows to fit its content and truncates its title, so an undersized box silently
   clips its label or overlaps the node below. `npm run check:visuals` catches both; it runs as part
   of `npm run build`. Minimum height is 62 + 12 (subtitle) + 16 (stat row); minimum width is
-  52 + 6.4 per title character.
-- Everything persists to `localStorage` only (`sdi:theme`, `sdi:progress:v1`). No backend, no auth,
-  no network calls at runtime — keep it that way.
+  52 + the per-letter title width table in `scripts/check-visuals.mjs` (about 7px a letter).
+- Everything persists to `localStorage` only (`sdi:theme`, `sdi:progress:v1`, and `sdi:layout` for
+  which side panels the learner folded). No backend, no auth, no network calls at runtime — keep it
+  that way.
+
+## Agent skills
+
+### Issue tracker
+
+GitHub Issues on `clisu-constantin/system-design-learning-platform`, via the `gh` CLI. See `docs/agents/issue-tracker.md`.
+
+### Triage labels
+
+The five default labels, unchanged. See `docs/agents/triage-labels.md`.
+
+### Domain docs
+
+Single-context: `CONTEXT.md` + `docs/adr/` at the repo root. See `docs/agents/domain.md`.

@@ -39,7 +39,12 @@ function buildTable(size: number): Row[] {
   });
 }
 
-/** Cost model: sequential scan reads rows one at a time; a B-tree is log2(n). */
+/**
+ * Cost model: a sequential scan reads rows one at a time; the index lookup is
+ * modelled as a binary search, log2(n) steps. Simplified on purpose: a real
+ * B-tree node holds hundreds of keys, so 50,000 rows sit about 3 levels deep.
+ * The O(log n) shape is the lesson, and halving is easier to follow.
+ */
 const SCAN_MS_PER_1000_ROWS = 42;
 const BTREE_MS_PER_LEVEL = 0.28;
 
@@ -48,7 +53,6 @@ type Result = {
   rowsInspected: number;
   timeMs: number;
   found: Row | null;
-  writeCost: number;
 };
 
 /** Structure updates per second one machine sustains before writes queue. */
@@ -58,7 +62,16 @@ export function IndexingLab() {
   const [tableSize, setTableSize] = useState(8000);
   const [hasIndex, setHasIndex] = useState(false);
   const [target, setTarget] = useState('');
-  const [result, setResult] = useState<Result | null>(null);
+  // One result per mode, so the scan and the index lookup stay side by side
+  // until the table size or the target changes. lastMode picks which one the
+  // metrics strip and the insight describe.
+  const [results, setResults] = useState<{ scan: Result | null; index: Result | null }>({ scan: null, index: null });
+  const [lastMode, setLastMode] = useState<Result['mode'] | null>(null);
+  const result = lastMode ? results[lastMode] : null;
+  const clearResults = () => {
+    setResults({ scan: null, index: null });
+    setLastMode(null);
+  };
   const [writeRate, setWriteRate] = useState(200);
 
   const scan = useRef<{ position: number; total: number; targetIndex: number } | null>(null);
@@ -81,13 +94,11 @@ export function IndexingLab() {
       scan.current =
         mode === 'scan' ? { position: 0, total: index >= 0 ? index + 1 : rows.length, targetIndex: index } : null;
 
-      setResult({
-        mode,
-        rowsInspected,
-        timeMs,
-        found,
-        writeCost: mode === 'index' ? 1.35 : 1,
-      });
+      setResults((previous) => ({
+        ...previous,
+        [mode]: { mode, rowsInspected, timeMs, found },
+      }));
+      setLastMode(mode);
       rerender();
     },
     [email, rows, rerender],
@@ -106,13 +117,17 @@ export function IndexingLab() {
   });
 
   const btreeLevels = Math.ceil(Math.log2(Math.max(2, tableSize)));
-  const writeOverhead = hasIndex ? 0.35 : 0;
+  // Derived from the same model as the write-path meter: each write touches
+  // the table plus one structure per index. A fixed +35% here contradicted the
+  // meter, which showed the index doubling the structures updated.
+  const structuresPerWrite = hasIndex ? 2 : 1;
+  const writeOverhead = structuresPerWrite - 1;
   const indexStorageMb = (tableSize * 40) / 1_000_000;
 
   // The write-rate slider has to cost something, or the trade-off this lab
   // teaches is only a sentence. Every write updates the table and each index,
   // so the index doubles the structures touched and halves the write headroom.
-  const structuresPerSecond = writeRate * (hasIndex ? 2 : 1);
+  const structuresPerSecond = writeRate * structuresPerWrite;
   const writeLoad = computeLoad(structuresPerSecond, WRITE_CAPACITY, { baseLatencyMs: 4, kneeAt: 0.65 });
 
   const visibleRows = useMemo(() => {
@@ -128,7 +143,7 @@ export function IndexingLab() {
       title="Database Indexing Lab"
       description={`A users table with ${formatNumber(tableSize)} rows. Find one row with and without an index, and see what the index costs on writes.`}
       onReset={() => {
-        setResult(null);
+        clearResults();
         scan.current = null;
         setHasIndex(false);
         rerender();
@@ -154,7 +169,10 @@ export function IndexingLab() {
               variant="danger"
               onClick={() => {
                 setHasIndex(false);
-                setResult(null);
+                // The index is gone, so its result no longer describes anything.
+                // The scan result still does, and stays.
+                setResults((previous) => ({ ...previous, index: null }));
+                setLastMode((mode) => (mode === 'index' ? (results.scan ? 'scan' : null) : mode));
               }}
             >
               <Trash2 className="h-4 w-4" />
@@ -167,8 +185,9 @@ export function IndexingLab() {
         <Insight>
           {result?.mode === 'index' ? (
             <>
-              The B-tree inspected about {result.rowsInspected} nodes instead of {formatNumber(rows.length)} rows -
-              each level of the tree discards half the remaining candidates. The cost is on the other side: every
+              The index lookup inspected about {result.rowsInspected} nodes instead of {formatNumber(rows.length)}{' '}
+              rows - each step discards half the remaining candidates (a binary search, simplified - a real B-tree
+              packs hundreds of keys per node and is only 2-3 levels deep here). The cost is on the other side: every
               INSERT, UPDATE and DELETE must now also maintain this index, and it occupies roughly{' '}
               {indexStorageMb.toFixed(1)} MB.
             </>
@@ -201,20 +220,22 @@ export function IndexingLab() {
                 value: result ? formatLatency(result.timeMs) : '-',
                 tone: result?.mode === 'index' ? 'ok' : result ? 'danger' : 'neutral',
                 hint: 'Estimated from rows read - the shape of the curve is what matters.',
+                simulated: true,
               },
               { key: 'tableSize', label: 'Table rows', value: formatNumber(tableSize), hint: 'Rows in the users table.' },
               {
                 key: 'btree',
-                label: 'B-tree depth',
+                label: 'Lookup steps',
                 value: hasIndex ? btreeLevels : '-',
-                hint: 'log2(rows): the number of nodes a lookup touches.',
+                hint: 'log2(rows), a binary search. Simplified - a real B-tree has hundreds of keys per node, so it is much shallower (about 3 levels for 50,000 rows).',
               },
               {
                 key: 'writeCost',
                 label: 'Write overhead',
                 value: hasIndex ? `+${Math.round(writeOverhead * 100)}%` : '0%',
                 tone: hasIndex ? 'warn' : 'ok',
-                hint: 'Extra work per INSERT/UPDATE/DELETE to maintain the index.',
+                hint: 'Extra structures updated per INSERT/UPDATE/DELETE: the table, plus one per index.',
+                simulated: true,
               },
               {
                 key: 'writeLatency',
@@ -222,6 +243,7 @@ export function IndexingLab() {
                 value: formatLatency(writeLoad.latencyMs),
                 tone: writeLoad.saturated ? 'danger' : writeLoad.cpu > 0.7 ? 'warn' : 'ok',
                 hint: 'Time per INSERT at the current write rate. An index is paid for here.',
+                simulated: true,
               },
               {
                 key: 'storage',
@@ -279,11 +301,12 @@ export function IndexingLab() {
 
           {hasIndex ? (
             <div className="card p-4">
-              <p className="label mb-3">B-tree on users(email)</p>
+              <p className="label mb-3">Index on users(email), drawn as a binary search</p>
               <BTreeView levels={Math.min(4, btreeLevels)} email={email} />
               <p className="mt-3 text-xs text-faint">
                 Each level halves the search space. {formatNumber(tableSize)} rows need {btreeLevels} levels, so a
-                lookup reads about {btreeLevels} nodes instead of {formatNumber(tableSize)} rows.
+                lookup reads about {btreeLevels} nodes instead of {formatNumber(tableSize)} rows. Simplified: a real
+                B-tree node holds hundreds of keys, so the same table is only 2-3 levels deep.
               </p>
             </div>
           ) : null}
@@ -299,7 +322,11 @@ export function IndexingLab() {
             step={1000}
             onChange={(value) => {
               setTableSize(value);
-              setResult(null);
+              // The chosen email encodes a row number, so it may not exist in
+              // the resized table - the Select would show another option while
+              // the query silently searched for a row that is gone.
+              setTarget('');
+              clearResults();
               scan.current = null;
             }}
             format={(value) => `${formatNumber(value)} rows`}
@@ -316,7 +343,7 @@ export function IndexingLab() {
             ]}
             onChange={(value) => {
               setTarget(value);
-              setResult(null);
+              clearResults();
               scan.current = null;
             }}
             hint="A missing row forces a full scan - there is nothing to stop early at."
@@ -365,10 +392,12 @@ export function IndexingLab() {
           subtitle="Sequential scan"
           sql={`SELECT * FROM users\nWHERE email = '${email}';`}
           plan={`Seq Scan on users\n  Filter: (email = '...')\n  Rows Removed by Filter: ${formatNumber(
-            Math.max(0, (result?.mode === 'scan' ? result.rowsInspected : tableSize) - 1),
+            results.scan
+              ? Math.max(0, results.scan.rowsInspected - (results.scan.found ? 1 : 0))
+              : Math.max(0, tableSize - 1),
           )}`}
-          rows={result?.mode === 'scan' ? (scanning ? scanPosition : result.rowsInspected) : null}
-          time={result?.mode === 'scan' ? result.timeMs : null}
+          rows={results.scan ? (scanning ? scanPosition : results.scan.rowsInspected) : null}
+          time={results.scan ? results.scan.timeMs : null}
           tone="danger"
         />
         <QueryPanel
@@ -380,8 +409,8 @@ export function IndexingLab() {
               ? `Index Scan using idx_users_email\n  Index Cond: (email = '...')\n  Heap Fetches: 1`
               : 'Create the index to see the plan change.'
           }
-          rows={result?.mode === 'index' ? result.rowsInspected : null}
-          time={result?.mode === 'index' ? result.timeMs : null}
+          rows={results.index ? results.index.rowsInspected : null}
+          time={results.index ? results.index.timeMs : null}
           tone="ok"
         />
       </div>
@@ -432,7 +461,7 @@ function QueryPanel({
   );
 }
 
-/** Simplified B-tree drawing - enough to show that each level halves the range. */
+/** Binary-search drawing of the index - enough to show that each level halves the range. A real B-tree is far wider and shallower. */
 function BTreeView({ levels, email }: { levels: number; email: string }) {
   const letter = email.charAt(0).toLowerCase();
   return (

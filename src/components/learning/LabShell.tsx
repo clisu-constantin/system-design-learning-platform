@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react';
 import { Pause, Play, RotateCcw } from 'lucide-react';
 import { cn } from '@/utils/cn';
+import { useElementWidth } from '@/hooks/useElementWidth';
 import { Button, ErrorBoundary } from '@/components/ui';
 import type { SimEvent } from '@/simulations/engine';
 
@@ -41,8 +42,9 @@ export function LabShell({
   legend,
   footer,
 }: LabShellProps) {
+  const { ref, wide } = useWideLayout();
   return (
-    <section className="space-y-4">
+    <section ref={ref} className="space-y-4">
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div className="min-w-0">
           <h2 className="text-lg font-semibold text-ink">{title}</h2>
@@ -64,7 +66,7 @@ export function LabShell({
         </div>
       </div>
 
-      <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_320px]">
+      <div className={cn('grid gap-4', wide && 'grid-cols-[minmax(0,1fr)_320px]')}>
         <div className="min-w-0 space-y-4">
           <div className="card overflow-hidden">
             <ErrorBoundary area={title}>{children}</ErrorBoundary>
@@ -75,7 +77,7 @@ export function LabShell({
           {footer}
         </div>
 
-        <div className="space-y-4 xl:sticky xl:top-[4.5rem] xl:self-start">
+        <div className={cn('space-y-4', wide && 'sticky top-[4.5rem] self-start')}>
           <div className="card p-4">
             <p className="label mb-3">Controls</p>
             <div className="space-y-4">{controls}</div>
@@ -85,6 +87,20 @@ export function LabShell({
       </div>
     </section>
   );
+}
+
+/**
+ * Side-by-side stage and controls need room for both: 320px of controls plus a
+ * stage wide enough that DiagramCanvas stays above its 0.5x floor (about 0.6x
+ * at this width). The choice follows the width of the shell itself, not the
+ * viewport, because a lab embedded in a concept page shares the screen with
+ * that page's own side column.
+ */
+const WIDE_LAYOUT_MIN = 900;
+
+function useWideLayout() {
+  const { ref, width } = useElementWidth<HTMLElement>();
+  return { ref, wide: width >= WIDE_LAYOUT_MIN };
 }
 
 const TONE_CLASS = {

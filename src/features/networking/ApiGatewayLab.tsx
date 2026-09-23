@@ -65,7 +65,7 @@ export function ApiGatewayLab() {
       ? { id: 'limit', label: 'Rate limit check', detail: 'Disabled - one client can consume all backend capacity', status: 'skipped' }
       : overQuota
         ? { id: 'limit', label: 'Rate limit check', detail: `Quota ${quotaUsed}/${quota} exhausted -> 429 Too Many Requests`, status: 'reject' }
-        : { id: 'limit', label: 'Rate limit check', detail: `Token bucket ${quotaUsed}/${quota} used in this window`, status: 'pass' };
+        : { id: 'limit', label: 'Rate limit check', detail: `Token bucket: request ${quotaUsed + 1} of ${quota} in this window`, status: 'pass' };
 
     const target = ROUTES[endpoint];
     const routeStage: Stage = target
@@ -94,17 +94,29 @@ export function ApiGatewayLab() {
     return stages;
   }, [authEnabled, validToken, rateLimitEnabled, quotaUsed, endpoint]);
 
-  const [stages, setStages] = useState<Stage[]>(() => buildStages());
+  // The pipeline of the request last sent. While idle (stageIndex -1) the panel
+  // previews what the current controls would do instead, so the pipeline, the
+  // metrics and the response code never describe two different requests.
+  const [sentStages, setSentStages] = useState<Stage[]>([]);
+  const stages = stageIndex >= 0 ? sentStages : buildStages();
 
   const send = useCallback(() => {
     const next = buildStages();
-    setStages(next);
+    setSentStages(next);
     setStageIndex(0);
     progress.current = 0;
     setSent((value) => value + 1);
     if (next.some((stage) => stage.status === 'reject')) setRejected((value) => value + 1);
-    if (rateLimitEnabled && quotaUsed < quota) setQuotaUsed((value) => value + 1);
-  }, [buildStages, rateLimitEnabled, quotaUsed]);
+    // Only a request that reached the limiter and was let through spends quota;
+    // one rejected earlier (bad token) never got that far.
+    if (next.find((stage) => stage.id === 'limit')?.status === 'pass') setQuotaUsed((value) => value + 1);
+  }, [buildStages]);
+
+  /** Any control change starts a new preview instead of relabelling the last request. */
+  const changed = <T,>(setter: (value: T) => void) => (value: T) => {
+    setter(value);
+    setStageIndex(-1);
+  };
 
   useTicker(stageIndex >= 0 && stageIndex < stages.length, (dt) => {
     progress.current += dt * 1.6;
@@ -132,12 +144,21 @@ export function ApiGatewayLab() {
     })),
   ];
 
-  const particles: ParticleView[] =
-    active && !rejectedStage
-      ? [{ id: 1, from: 'client', to: 'gateway', t: Math.min(1, progress.current), outcome: 'success' }]
-      : finished && target && !rejectedStage
-        ? [{ id: 2, from: 'gateway', to: target, t: Math.min(1, progress.current), outcome: 'success' }]
-        : [];
+  // One request: it travels to the gateway during the first check, waits there
+  // through the others, and only the forward step carries it to the service.
+  const particles: ParticleView[] = !active
+    ? []
+    : active.id === 'forward' && target
+      ? [{ id: 2, from: 'gateway', to: target, t: Math.min(1, progress.current), outcome: 'success' }]
+      : [
+          {
+            id: 1,
+            from: 'client',
+            to: 'gateway',
+            t: stageIndex === 0 ? Math.min(1, progress.current) : 1,
+            outcome: active.status === 'reject' ? 'failure' : 'success',
+          },
+        ];
 
   return (
     <LabShell
@@ -148,11 +169,10 @@ export function ApiGatewayLab() {
         setSent(0);
         setRejected(0);
         setStageIndex(-1);
-        setStages(buildStages());
       }}
       actions={
         <>
-          <Button variant={validToken ? 'secondary' : 'danger'} onClick={() => setValidToken((value) => !value)}>
+          <Button variant={validToken ? 'secondary' : 'danger'} onClick={() => changed(setValidToken)(!validToken)}>
             <KeyRound className="h-4 w-4" />
             {validToken ? 'Valid JWT' : 'Invalid JWT'}
           </Button>
@@ -257,31 +277,28 @@ Authorization: Bearer ${validToken ? 'eyJhbGciOiJIUzI1NiIs...' : 'tampered.token
             label="Endpoint"
             value={endpoint}
             options={ENDPOINTS}
-            onChange={(value) => {
-              setEndpoint(value);
-              setStageIndex(-1);
-            }}
+            onChange={changed(setEndpoint)}
             hint="The gateway matches the path against its route table."
           />
           <Toggle
             label="JWT validation"
             checked={authEnabled}
-            onChange={setAuthEnabled}
+            onChange={changed(setAuthEnabled)}
             description="Verify the token at the edge before any backend work"
           />
           <Toggle
             label="Rate limiting"
             checked={rateLimitEnabled}
-            onChange={setRateLimitEnabled}
+            onChange={changed(setRateLimitEnabled)}
             description="Enforce a per-client quota at the gateway"
           />
           <Toggle
             label="Token is valid"
             checked={validToken}
-            onChange={setValidToken}
+            onChange={changed(setValidToken)}
             description="Off: simulate a tampered or expired token"
           />
-          <Button className="w-full justify-center" onClick={() => setQuotaUsed(0)}>
+          <Button className="w-full justify-center" onClick={() => changed(setQuotaUsed)(0)}>
             Reset quota window
           </Button>
           <div className="rounded-xl border border-line bg-elevated p-3 text-[11px] text-muted">

@@ -114,6 +114,14 @@ export function AutoScalingLab() {
       }
     }
 
+    // Lowering "Max instances" below the current fleet is a hard cap, like an
+    // auto scaling group's max size: the extra instances are terminated now,
+    // regardless of CPU or cooldown.
+    while (current.instances.length > maxInstances) {
+      const extra = current.instances.pop();
+      if (extra) log(`Fleet above max of ${maxInstances} - terminating ${extra.name}`, 'info');
+    }
+
     const ready = current.instances.filter((instance) => instance.status === 'healthy');
     const traffic = trafficAt(current.elapsed, peak);
     const capacity = Math.max(1, ready.length) * SERVER_CAPACITY;
@@ -227,20 +235,34 @@ export function AutoScalingLab() {
           <MetricsPanel
             items={[
               { key: 'rps', label: 'Traffic', value: formatNumber(traffic), unit: 'req/s', tone: 'brand' },
-              { key: 'utilization', label: 'Capacity', value: formatNumber(capacity), unit: 'req/s' },
+              {
+                key: 'utilization',
+                label: 'Capacity',
+                value: formatNumber(capacity),
+                unit: 'req/s',
+                hint: 'Instances in the pool x the requests per second each one can serve.',
+              },
               {
                 key: 'cpu',
                 label: 'Fleet CPU',
                 value: formatPercent(current.cpu),
                 tone: current.cpu * 100 > scaleOut ? 'warn' : 'ok',
+                simulated: true,
               },
               { key: 'instances', label: 'Instances', value: `${ready.length}/${count}` },
-              { key: 'latency', label: 'Latency', value: formatLatency(load.latencyMs) },
+              {
+                key: 'latency',
+                label: 'Latency',
+                value: formatLatency(load.latencyMs),
+                hint: 'Time to serve one request, from a queueing model.',
+                simulated: true,
+              },
               {
                 key: 'errorRate',
                 label: 'Errors',
                 value: formatPercent(load.errorRate, 1),
                 tone: load.errorRate > 0 ? 'danger' : 'ok',
+                simulated: true,
               },
             ]}
           />
@@ -355,7 +377,7 @@ export function AutoScalingLab() {
           placed={layout.users}
           compact
         />
-        <ArchNode kind="load-balancer" title="Load Balancer" subtitle="auto scaling group" placed={layout.lb}>
+        <ArchNode kind="load-balancer" title="Load Balancer" subtitle="auto scaling group, 2 nodes" placed={layout.lb}>
           <NodeStatRow label="In pool" value={ready.length} />
           <NodeStatRow label="Warming up" value={count - ready.length} tone="text-warn" />
         </ArchNode>

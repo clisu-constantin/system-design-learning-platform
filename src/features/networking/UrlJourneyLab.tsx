@@ -113,7 +113,9 @@ const STAGES: Stage[] = [
     detail:
       'With an index this is a handful of page reads. Without one it is a sequential scan, and the difference is the entire indexing lesson.',
     coldMs: 35,
-    warmMs: 0,
+    // A warm connection to the browser does not make a cache miss free: the
+    // query still runs. (0 here rendered as "cached" on a cache miss.)
+    warmMs: 35,
     concept: 'database-indexing',
   },
   {
@@ -184,7 +186,7 @@ export function UrlJourneyLab() {
   return (
     <LabShell
       title="What Happens When You Type a URL?"
-      description="Twelve stages between pressing Enter and seeing a page. Click any stage to read what it does and what it costs."
+      description="Up to twelve stages between pressing Enter and seeing a page. Click any stage to read what it does and what it costs."
       running={playing}
       onToggleRun={() => (playing ? setPlaying(false) : play())}
       onReset={() => {
@@ -211,7 +213,7 @@ export function UrlJourneyLab() {
       metrics={
         <MetricsPanel
           items={[
-            { key: 'total', label: 'Total time', value: formatLatency(total), tone: total > 250 ? 'warn' : 'ok' },
+            { key: 'total', label: 'Total time', value: formatLatency(total), tone: total > 250 ? 'warn' : 'ok', simulated: true },
             { key: 'stages', label: 'Stages', value: stages.length, hint: 'Steps involved in this configuration.' },
             {
               key: 'setup',
@@ -220,7 +222,8 @@ export function UrlJourneyLab() {
                 stages.filter((stage) => ['dns', 'tcp', 'tls'].includes(stage.id)).reduce((sum, stage) => sum + latencyOf(stage), 0),
               ),
               tone: warm ? 'ok' : 'warn',
-              hint: 'DNS + TCP + TLS - paid before any application work happens.',
+              hint: 'DNS + TCP + TLS - paid before any application work happens. Typical values for illustration.',
+              simulated: true,
             },
             {
               key: 'backend',
@@ -228,14 +231,16 @@ export function UrlJourneyLab() {
               value: formatLatency(
                 stages.filter((stage) => ['lb', 'app', 'cache', 'db'].includes(stage.id)).reduce((sum, stage) => sum + latencyOf(stage), 0),
               ),
-              hint: 'Everything your servers control.',
+              hint: 'Everything your servers control. Typical values for illustration.',
+              simulated: true,
             },
             {
               key: 'render',
               label: 'Rendering',
               value: formatLatency(latencyOf(STAGES[STAGES.length - 1])),
               tone: 'violet',
-              hint: 'Often larger than the entire backend time.',
+              hint: 'Often larger than the entire backend time. Typical values for illustration.',
+              simulated: true,
             },
           ]}
         />
@@ -248,7 +253,12 @@ export function UrlJourneyLab() {
             onChange={setWarm}
             description="DNS cached, connection reused, TLS session resumed"
           />
-          <Toggle label="CDN in front" checked={cdnEnabled} onChange={setCdnEnabled} description="Edge cache before your origin" />
+          <Toggle
+            label="CDN in front (always a miss)"
+            checked={cdnEnabled}
+            onChange={setCdnEnabled}
+            description="Dynamic page: the edge forwards it to your origin"
+          />
           <Toggle label="Cache hit" checked={cacheHit} onChange={setCacheHit} description="Off: the request reaches the database" />
           <div className="rounded-xl border border-line bg-elevated p-3 text-[11px] text-muted">
             <p className="label mb-2">Notice</p>

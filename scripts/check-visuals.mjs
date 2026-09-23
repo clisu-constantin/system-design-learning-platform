@@ -20,10 +20,30 @@ const CHROME_X = 52;
 // chip padding 20 + border 2 + ~19 of text + 6 gap. Without this, a node with a
 // badge silently renders as "Replic..." instead of "Replica 1".
 const BADGE_X = 47;
+// Advance width of each printable ASCII character in the ArchNode title font
+// (text-xs font-semibold: 600 12px, the Tailwind sans stack as the browser
+// resolves it), measured in headless Chromium with canvas measureText and
+// rounded up to 0.1px. A flat per-character estimate under-shot titles with
+// wide letters: "Message Queue" renders at 94px, 7.2px per character.
+// Re-measure if the title font, size or weight changes.
+const TITLE_CHAR_W = {
+  " ": 3.2, "!": 4.1, "\"": 6.5, "#": 7.9, "$": 7.9, "%": 12, "&": 8.8, "'": 4, "(": 5, ")": 5,
+  "*": 5.8, "+": 7.9, ",": 4, "-": 5.8, ".": 4, "/": 3.9, "0": 8, "1": 6, "2": 7.6, "3": 7.9,
+  "4": 8.1, "5": 7.8, "6": 8.1, "7": 7.2, "8": 8.1, "9": 8.1, ":": 4, ";": 4, "<": 7.9, "=": 7.9,
+  ">": 7.9, "?": 6.6, "@": 11.1, "A": 8.6, "B": 8.2, "C": 8.8, "D": 8.9, "E": 7.4, "F": 7.1,
+  "G": 9.1, "H": 9.3, "I": 3.7, "J": 7, "K": 8.4, "L": 7.1, "M": 10.8, "N": 9.2, "O": 9.4, "P": 8,
+  "Q": 9.4, "R": 8.2, "S": 8, "T": 7.9, "U": 9.1, "V": 8.5, "W": 12, "X": 8.6, "Y": 8.3, "Z": 8.1,
+  "[": 5, "\\": 3.9, "]": 5, "^": 7.9, "_": 7.4, "`": 6, "a": 7, "b": 7.7, "c": 7, "d": 7.7,
+  "e": 7.1, "f": 4.8, "g": 7.6, "h": 7.5, "i": 3.3, "j": 3.3, "k": 7, "l": 3.4, "m": 11, "n": 7.4,
+  "o": 7.4, "p": 7.7, "q": 7.7, "r": 5, "s": 6.7, "t": 4.8, "u": 7.4, "v": 6.9, "w": 9.9, "x": 6.8,
+  "y": 7, "z": 6.7, "{": 5, "|": 3.5, "}": 5, "~": 7.9,
+};
+// Anything outside the table (non-ASCII) is assumed as wide as a "W".
+const titleWidth = (label) => [...label].reduce((sum, ch) => sum + (TITLE_CHAR_W[ch] ?? 12), 0);
 const minWidth = (node) =>
   Math.ceil(
     CHROME_X +
-      Math.max(node.label.length * 6.4 + (node.badge ? BADGE_X : 0), node.sub ? node.sub.length * 5.2 : 0),
+      Math.max(titleWidth(node.label) + (node.badge ? BADGE_X : 0), node.sub ? node.sub.length * 5.2 : 0),
   );
 // 16 padding + 28 icon row + 16 status + 2 gaps, then subtitle and stat row
 const minHeight = (node) => 62 + (node.sub ? 12 : 0) + (node.stat ? 16 : 0);
