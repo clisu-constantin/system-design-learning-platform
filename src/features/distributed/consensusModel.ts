@@ -246,8 +246,17 @@ function resetTimer(state: ClusterState, node: RaftNode, timing: Timing) {
   node.electionAt = state.now + node.timeoutS;
 }
 
+/**
+ * Seeing a higher term makes a node a follower of that term. It does not reset the
+ * election timer: in Raft (section 5.2, Figure 2) a follower restarts its timer only
+ * when it grants a vote, hears AppendEntries from the current leader, or starts an
+ * election. A node that refuses a candidate must keep counting down, so a node with
+ * a fuller log gets to stand instead of being silenced by every stale candidacy.
+ * The one exception is a leader: it had no timer running, so stepping down starts one.
+ */
 function stepDown(state: ClusterState, node: RaftNode, term: number, timing: Timing, log: LogFn) {
-  if (node.role === 'leader') {
+  const wasLeader = node.role === 'leader';
+  if (wasLeader) {
     log(`${node.name} sees term ${term}, which is newer than its term ${node.term} - it steps down to follower`, 'warn');
   }
   node.term = term;
@@ -255,7 +264,7 @@ function stepDown(state: ClusterState, node: RaftNode, term: number, timing: Tim
   node.votedFor = null;
   node.votes = [];
   node.leaderId = null;
-  resetTimer(state, node, timing);
+  if (wasLeader) resetTimer(state, node, timing);
 }
 
 function startElection(state: ClusterState, node: RaftNode, timing: Timing, log: LogFn) {
@@ -400,6 +409,8 @@ function deliver(state: ClusterState, message: Message, timing: Timing, log: Log
       return;
     }
     case 'vote': {
+      // A higher term turns the voter into a follower of that term, but only a
+      // granted vote restarts its election timer - a refusal leaves it running.
       if (payload.term > node.term) stepDown(state, node, payload.term, timing, log);
       const upToDate =
         payload.lastTerm > lastTerm(node.log) || (payload.lastTerm === lastTerm(node.log) && payload.lastIndex >= node.log.length);
