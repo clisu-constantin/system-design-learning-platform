@@ -251,7 +251,7 @@ export const LABS: LabDefinition[] = [
   {
     id: 'data-models',
     title: 'Data Models Lab',
-    blurb: 'The same data in a relational and a document store, under four workloads.',
+    blurb: 'The same shop data in a relational database and a partitioned document store, under four workloads.',
     category: 'data',
     difficulty: 'Beginner',
     concept: 'relational-vs-non-relational',

@@ -279,18 +279,18 @@ export const dataVisuals: Record<string, VisualSpec> = {
     caption: 'One transaction, several tables, invariants enforced by the engine.',
     nodes: [
       { id: 'app', kind: 'server', label: 'BEGIN ... COMMIT', x: 50, y: 105, w: 180, h: 80 },
-      { id: 'db', kind: 'sql', label: 'PostgreSQL', sub: 'ACID', x: 320, y: 100, w: 160, h: 96, stat: ['Isolation', 'serializable'] },
-      { id: 'users', kind: 'storage', label: 'users', x: 570, y: 25, w: 150, h: 72 },
+      { id: 'db', kind: 'sql', label: 'PostgreSQL', sub: 'ACID', x: 320, y: 100, w: 160, h: 96, stat: ['Isolation', 'read committed'] },
+      { id: 'products', kind: 'storage', label: 'products', x: 570, y: 25, w: 150, h: 72 },
       { id: 'orders', kind: 'storage', label: 'orders', x: 570, y: 185, w: 150, h: 72 },
     ],
     edges: [
       { from: 'app', to: 'db', tone: 'brand', rate: 3 },
-      { from: 'db', to: 'users', tone: 'info', rate: 1.6 },
+      { from: 'db', to: 'products', tone: 'info', rate: 1.6 },
       { from: 'db', to: 'orders', tone: 'info', rate: 1.6 },
     ],
     steps: [
       { from: 'app', to: 'db', label: 'BEGIN a transaction' },
-      { from: 'db', to: 'users', label: 'Update the users row' },
+      { from: 'db', to: 'products', label: 'Reserve stock in products' },
       { from: 'db', to: 'orders', label: 'Insert the orders row' },
       { from: 'db', to: 'app', label: 'COMMIT: both or neither' },
     ],
