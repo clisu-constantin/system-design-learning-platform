@@ -1,10 +1,4 @@
 {
-  "concepts": [
-    "what-is-system-design",
-    "functional-requirements",
-    "non-functional-requirements"
-  ],
-  "labs": [
-    "requirements"
-  ]
+  "concepts": [],
+  "labs": []
 }

@@ -117,7 +117,7 @@ export const gettingStartedDepth: DepthMap = {
         paragraphs: [
           'When somebody says "design Twitter", they have not given you requirements - they have given you a brand name. The expected first move is to propose a scope and get agreement: "I will cover posting a tweet, following a user and reading a home timeline. I will leave out DMs, ads and search unless you want them." That takes thirty seconds and it saves the entire rest of the conversation.',
           'Be explicit about what is out of scope, not just what is in. An unlisted feature is an assumed feature; the interviewer or the product owner is quietly holding one in their head and will mention it at the worst moment. Naming the exclusions makes them negotiable.',
-          'Then rank what is in scope. Usually two or three core flows account for 90 percent of the traffic and all of the architectural pressure. Design for those; everything else rides on the same infrastructure.',
+          'Then rank what is in scope. Usually two or three core flows account for most of the traffic and nearly all of the architectural pressure. Design for those; everything else rides on the same infrastructure.',
         ],
       },
     ],
@@ -177,7 +177,7 @@ export const gettingStartedDepth: DepthMap = {
       {
         heading: 'Why percentiles, and never averages',
         paragraphs: [
-          'Imagine 100 requests: 99 take 50 ms and one takes 5 seconds. The average is 99 ms, which looks fine on a dashboard. But one user in a hundred waited five seconds, and if a page makes 20 such calls, most page loads contain at least one of them. Averages hide exactly the users who are having a bad time.',
+          'Imagine 100 requests: 99 take 50 ms and one takes 5 seconds. The average is 99 ms, which looks fine on a dashboard. But one user in a hundred waited five seconds, and if a page makes 20 such calls, nearly one page load in five contains at least one of them. Averages hide exactly the users who are having a bad time.',
           'So latency is stated as p95 or p99: "p99 under 300 ms" means 99 out of 100 requests finish within 300 ms. The tail is where retries, garbage collection pauses, cold caches and overloaded shards show up, which is why engineers care about it more than the median.',
           'A practical rule: the more calls a single user action makes, the more the tail dominates. With 20 backend calls per page and a p99 of 1 second, roughly one in five page loads will hit that 1 second call. Tail latency is not an edge case at scale - it is the common case.',
         ],
@@ -208,17 +208,17 @@ export const gettingStartedDepth: DepthMap = {
           '99.99% of a year is 52 minutes of allowed downtime. That is the total budget for the whole year.',
           'A single ordinary deploy with a restart costs 30-60 seconds. Twelve deploys a month would eat the entire yearly budget on planned work alone, so deploys must become zero-downtime: at least two instances behind a load balancer.',
           'An unplanned machine failure takes 5-15 minutes to notice and replace by hand. One such incident consumes 20 percent of the budget, so detection and replacement must be automated: health checks plus an auto-scaling group.',
-          'The database is still single. A failover done by a human is 15+ minutes; a managed automatic failover is 30-90 seconds. So the database needs a standby replica with automated promotion.',
-          'One availability zone going down would exceed the budget by itself, so instances and replicas spread across at least two zones. Cost roughly doubles.',
+          'The database is still single. A failover done by a human is 15+ minutes; a managed automatic failover typically takes one to two minutes. So the database needs a standby replica with automated promotion.',
+          'One availability zone going down would exceed the budget by itself, so instances and replicas spread across two or three zones. With a full copy in each, the bill grows roughly 2-3x.',
         ],
         result:
-          'Four extra nines of uptime turned into: load balancer, 2+ app instances, automated health checks, database standby with auto-failover, multi-zone deployment, and roughly 2x the bill. None of that was a configuration flag - which is exactly the honest answer to give.',
+          'Moving to four nines turned into: load balancer, 2+ app instances, automated health checks, database standby with auto-failover, multi-zone deployment, and roughly 2-3x the bill. None of that was a configuration flag - which is exactly the honest answer to give.',
       },
     ],
     jargon: [
       { term: 'Nines', plain: 'Shorthand for availability. "Four nines" means 99.99% uptime, about 52 minutes of downtime per year.' },
       { term: 'p95 / p99', plain: 'The latency that 95% (or 99%) of requests come in under. The slow tail that averages hide.' },
-      { term: 'Tail latency', plain: 'The slowest few percent of requests. At scale, most users hit it at least once per page.' },
+      { term: 'Tail latency', plain: 'The slowest few percent of requests. A page that makes many calls hits it far more often than any single call does.' },
       { term: 'Durability', plain: 'The promise that data already acknowledged as written will not be lost, even if machines die.' },
       { term: 'RPO / RTO', plain: 'How much data you may lose in a disaster (Recovery Point) and how long recovery may take (Recovery Time).' },
       { term: 'Operability', plain: 'How easy the system is to run: deploy, debug, page someone, recover. Rarely written down, always paid for.' },
