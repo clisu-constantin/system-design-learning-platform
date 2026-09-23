@@ -169,7 +169,7 @@ export const LABS: LabDefinition[] = [
   {
     id: 'queue',
     title: 'Message Queue Lab',
-    blurb: 'Producers, workers, queue depth and backpressure you can watch grow.',
+    blurb: 'Producers, workers, queue depth and backpressure you can watch grow - plus retries into a dead-letter queue, or no queue at all.',
     category: 'async',
     difficulty: 'Beginner',
     concept: 'message-queues',

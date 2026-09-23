@@ -2,13 +2,7 @@
   "concepts": [
     "what-is-system-design",
     "functional-requirements",
-    "non-functional-requirements",
-    "message-queues",
-    "background-workers",
-    "task-queues",
-    "backpressure",
-    "producer-consumer",
-    "request-response"
+    "non-functional-requirements"
   ],
   "labs": [
     "requirements"

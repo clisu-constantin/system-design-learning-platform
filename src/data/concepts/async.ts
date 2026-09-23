@@ -8,12 +8,13 @@ export const asyncConcepts: Concept[] = [
     category: 'async',
     difficulty: 'Beginner',
     lab: 'queue',
+    labFocus: 'message-queues',
     keywords: ['backpressure', 'workers', 'queue depth', 'dead letter', 'at least once'],
     what: 'A message queue stores work items durably between the service that creates them and the workers that process them.',
     why: 'It decouples a fast, user-facing request from slow work. The API returns as soon as the job is enqueued, and a spike becomes a longer queue rather than a wall of timeouts.',
     how: [
       'The producer enqueues a message and returns immediately.',
-      'Workers pull messages, process them and acknowledge; unacknowledged messages become visible again.',
+      'Workers pull messages, process them and acknowledge; a message not acknowledged within the visibility timeout becomes visible again and is redelivered.',
       'Queue depth is the key signal: it grows whenever arrival rate exceeds total consumer throughput.',
       'Messages that keep failing go to a dead-letter queue for inspection instead of blocking the queue.',
     ],
@@ -69,29 +70,154 @@ Fix: more workers, faster workers, or fewer messages.`,
     quiz: [
       {
         id: 'mq-1',
-        prompt: 'Producers send 500 msg/s. Five workers process 80 msg/s each. What happens?',
+        prompt: 'Producers send 500 msg/s into an unbounded queue. Five workers process 80 msg/s each. What happens?',
         options: [
           'The queue stays empty',
-          'Depth grows by 100 msg/s and processing latency increases without bound',
+          'Depth grows by 100 msg/s and the wait for every new message keeps growing',
           'Producers are automatically throttled',
           'Messages are dropped',
         ],
         answer: 1,
         explanation:
-          'Consumption is 400 msg/s against 500 arriving. The 100/s difference accumulates - the queue absorbs a burst, but it cannot fix a permanent deficit.',
+          'Consumption is 5 x 80 = 400 msg/s against 500 arriving, so 100 msg/s pile up. An unbounded queue neither throttles nor drops - it just grows, and so does the wait. A queue absorbs a burst; it cannot fix a permanent deficit.',
       },
       {
         id: 'mq-2',
-        prompt: 'Why must queue consumers usually be idempotent?',
+        prompt:
+          'A worker charges a card, then crashes before it acknowledges the message. The broker delivers at least once. What happens next, and what protects the customer?',
         options: [
-          'Because queues are slow',
-          'Because at-least-once delivery means a message can be delivered more than once',
-          'Because messages arrive out of order',
-          'Because workers share memory',
+          'The message is lost, so the customer is never charged',
+          'The broker sees that the charge happened and deletes the message',
+          'After the visibility timeout the message is delivered again, and only an idempotent handler - for example an idempotency key on the charge - stops a second charge',
+          'Nothing - the broker guarantees exactly-once delivery',
+        ],
+        answer: 2,
+        explanation:
+          'With no acknowledgement the broker assumes the work was not done and redelivers it. That is at-least-once delivery: no loss, possible duplicates. The broker cannot see side effects such as a card charge, so exactly-once delivery is not on offer - an idempotent handler gives an exactly-once effect.',
+      },
+      {
+        id: 'mq-3',
+        prompt:
+          'In the Lab, 100 msg/sec arrive and 3 workers do 20 msg/sec each. You raise Max depth from 500 to 5,000. What changes?',
+        options: [
+          'Rejections start after about 125 s instead of 12.5 s, and messages wait much longer first - the 40 msg/sec deficit is unchanged',
+          'The deficit disappears, because the queue can hold everything',
+          'The workers get faster, because they have more to do',
+          'Rejections start sooner, because a bigger queue is slower',
+        ],
+        answer: 0,
+        explanation:
+          'The queue grows by 100 - 60 = 40 msg/sec either way. At 500 it is full after 500 / 40 = 12.5 s; at 5,000 after 125 s. A bigger bound only delays the rejections and makes the wait longer - watch the Oldest message metric climb. Only more capacity or less work removes the deficit.',
+      },
+      {
+        id: 'mq-4',
+        prompt:
+          'Order placement calls the email service directly and waits for it. The email provider is down for 20 minutes. What changes if the order service puts a message on a queue instead?',
+        options: [
+          'Nothing - order placement fails for 20 minutes either way',
+          'Orders succeed; the confirmation emails wait in the queue and go out when the provider recovers',
+          'Orders succeed, but every email from those 20 minutes is lost',
+          'The orders themselves are queued and are placed 20 minutes late',
         ],
         answer: 1,
         explanation:
-          'If a worker crashes after doing the work but before acknowledging, the message is redelivered. Only idempotent processing makes that safe.',
+          'The queue removes the need for both sides to be up at the same moment (temporal decoupling). The order is saved and answered; the email message waits durably until a worker can send it. Nothing is lost as long as messages are kept longer than the outage.',
+      },
+      {
+        id: 'mq-5',
+        prompt:
+          'Queue A holds 10,000 messages and its oldest message is 2 seconds old. Queue B holds 500 and its oldest message is 12 minutes old. Which needs attention now?',
+        options: [
+          'A, because its depth is 20 times higher',
+          'Neither - both queues are below 50,000',
+          'Both equally, because both have a backlog',
+          'B - its consumers are 12 minutes behind or stuck, while A drains in seconds',
+        ],
+        answer: 3,
+        explanation:
+          'Depth alone is ambiguous: 10,000 messages is nothing for consumers that drain them in 2 seconds. The age of the oldest message is the delay a user actually feels, and 12 minutes means B is stuck or badly behind. Alert on oldest-message age, not only on depth.',
+      },
+      {
+        id: 'mq-6',
+        prompt:
+          'Five workers pull from one queue. The events for order 42 - created, paid, shipped - must be applied in that order. What do you do?',
+        options: [
+          'Nothing - a queue is first in, first out, so five workers finish in order too',
+          'Add more workers so each event finishes sooner',
+          'Route messages by order id to a partition or FIFO group, so one consumer applies order 42 in sequence while other orders run in parallel',
+          'Make the producer sleep between the three events',
+        ],
+        answer: 2,
+        explanation:
+          'Messages leave a queue in order, but five workers finish them in any order. Per-key ordering - a partition or message group per order id - keeps each order sequential and still spreads different orders across workers. Sleeping only makes the race less likely.',
+      },
+      {
+        id: 'mq-7',
+        prompt: 'One message always makes the worker throw an exception, and there is no limit on attempts. What happens, and what is the fix?',
+        options: [
+          'It is redelivered forever, burning worker time and blocking any ordered group it sits in; cap the attempts and move it to a dead-letter queue with an alert',
+          'The broker deletes it after the first failure, so nothing needs doing',
+          'Raise the visibility timeout so the worker has more time',
+          'Add workers so the failure matters less',
+        ],
+        answer: 0,
+        explanation:
+          'A poison message never succeeds, so without a cap it cycles forever. A dead-letter queue takes it out of the flow after N attempts and keeps it for a person to inspect. More time or more workers do not make a message that always fails succeed.',
+      },
+      {
+        id: 'mq-8',
+        prompt: 'Jobs usually take 40 seconds. The queue visibility timeout is 30 seconds. What do you see?',
+        options: [
+          'Nothing unusual - the broker waits for the job',
+          'Every job fails with a timeout error',
+          'The broker slows down delivery to match the jobs',
+          'After 30 s the message becomes visible again and a second worker starts the same job while the first is still running',
+        ],
+        answer: 3,
+        explanation:
+          'The visibility timeout is how long a delivered message stays hidden. When it runs out without an acknowledgement, the broker assumes the worker died and delivers the message again - so every 40 s job runs at least twice. Set the timeout above the slowest normal job, or extend it while working.',
+      },
+      {
+        id: 'mq-9',
+        prompt:
+          'A metrics pipeline acknowledges each message as soon as it is received, before processing it. A worker crashes halfway through a batch. What is the result?',
+        options: [
+          'The batch is redelivered to another worker',
+          'Those messages are lost - acknowledging before processing is at-most-once, acceptable for sampled metrics and not for orders',
+          'Every message in the batch is processed twice',
+          'The broker rolls the batch back automatically',
+        ],
+        answer: 1,
+        explanation:
+          'Once acknowledged, the broker forgets the message, so work that crashed is gone. That is at-most-once: fast, and lossy. At-least-once acknowledges after the work instead and pays with possible duplicates.',
+      },
+      {
+        id: 'mq-10',
+        prompt:
+          'In the Lab, 100 msg/sec arrive and 3 workers do 40 msg/sec each, so the queue is nearly empty. You press Send a burst (400 extra messages over 2 s). What does the queue do?',
+        options: [
+          'Rejects the whole burst, because it is above capacity',
+          'Grows to about 360 messages during the burst, then drains at the 20 msg/sec of spare capacity in about 18 s',
+          'Nothing - the burst goes straight to the workers',
+          'Grows forever, because the burst never ends',
+        ],
+        answer: 1,
+        explanation:
+          'During the burst 300 msg/sec arrive against 120 consumed, so the queue gains 180 per second for 2 s - about 360, below the 500 bound. Afterwards only 120 - 100 = 20 msg/sec of headroom drains it: about 18 s. The burst became a delay, not an error.',
+      },
+      {
+        id: 'mq-11',
+        prompt:
+          'Workers auto-scale on CPU. The backlog grows for an hour while worker CPU stays at 25%, because each job waits on a slow external API. Which signal should drive scaling?',
+        options: [
+          'Memory use on the workers',
+          'The number of producers',
+          'Backlog per worker, or the age of the oldest message',
+          'Network bytes in and out',
+        ],
+        answer: 2,
+        explanation:
+          'Workers that wait on IO fall behind without using CPU, so a CPU rule never fires. Backlog per worker (or oldest-message age) measures how far behind they are, which is what the user feels. Scaling on it is the standard pattern for queue consumers.',
       },
     ],
   },
@@ -1008,18 +1134,30 @@ each gets its own copy and its own backlog`,
     category: 'async',
     difficulty: 'Beginner',
     lab: 'queue',
-    keywords: ['jobs', 'workers', 'concurrency', 'retry', 'scaling'],
+    labFocus: 'background-workers',
+    keywords: ['jobs', 'workers', 'concurrency', 'retry', 'scaling', '202 accepted', 'graceful shutdown'],
     what: 'Background workers are processes that consume jobs from a queue and execute them outside the request/response cycle.',
-    why: 'Users should not wait for a PDF to render or an email provider to respond. Moving that work out keeps p95 latency about your code rather than about your slowest dependency.',
+    why: 'Users should not wait for a PDF to render or an email provider to respond. Moving that work out keeps p95 latency about your code rather than about your slowest dependency, and a failing email provider becomes a retry instead of a failed request.',
     how: [
-      'Enqueue a job with everything the worker needs (or an id it can load).',
-      'Size the pool from throughput: required rate divided by per-worker rate.',
+      'The request handler validates, saves, enqueues a job with an id (not a whole object) and answers 202 Accepted with a job id.',
+      'Size the pool from throughput: required rate divided by per-worker rate, plus headroom for bursts.',
       'Make jobs idempotent and retry with backoff; cap attempts and dead-letter the rest.',
       'Separate queues per priority so a bulk backfill cannot starve password-reset emails.',
+      'Expose job status (a status URL or a notification) and alert on the age of the oldest job per queue.',
     ],
-    diagram: `POST /export  -> enqueue job -> 202 Accepted (job_id)
+    when: [
+      'The user does not need the result to continue: emails, webhooks, notifications, analytics, search indexing.',
+      'The work is slow or heavy: PDF and export generation, image and video processing.',
+      'The work calls a third party that can be slow, rate limited or down.',
+    ],
+    advantages: [
+      'Responses stay fast no matter how slow the job is.',
+      'Workers scale independently of the web tier.',
+      'A failed job is retried in the background instead of failing the user request.',
+    ],
+    diagram: `POST /export  -> enqueue job -> 202 Accepted (job_id)   ~20 ms
                                     |
-                       worker pool processes it
+                       worker pool processes it     ~1 s per job
 client polls /exports/{job_id} or receives a webhook`,
     tradeoffs: [
       {
@@ -1027,9 +1165,171 @@ client polls /exports/{job_id} or receives a webhook`,
         gains: ['Fast responses', 'Independent scaling', 'Retry and isolation'],
         costs: ['Job status must be exposed to the user', 'Two code paths to operate', 'Ordering is not guaranteed by default'],
       },
+      {
+        approach: 'Doing the work inside the request',
+        gains: ['The response carries the final result', 'One code path, no queue or workers to run'],
+        costs: [
+          'Response time includes the slowest step',
+          'A slow or failing dependency fails the user request',
+          'Web servers must be sized for the heavy work',
+        ],
+      },
     ],
-    mistakes: ['One shared queue for everything, so a million-row import delays every transactional email.'],
+    mistakes: [
+      'One shared queue for everything, so a million-row import delays every transactional email.',
+      'Jobs that are not idempotent, so a redelivery after a deploy sends two emails or provisions two workspaces.',
+      'No graceful shutdown: every deploy kills jobs halfway through.',
+      'Monitoring only the web tier - a stopped worker raises no HTTP errors, only a growing backlog.',
+      'Moving work the user actually needs (the payment result) to the background and leaving the page with nothing to show.',
+    ],
     related: ['message-queues', 'task-queues', 'backpressure', 'idempotency'],
+    quiz: [
+      {
+        id: 'bw-1',
+        prompt:
+          'POST /signup takes 2.4 s: 40 ms to create the user, 900 ms to send a welcome email, and more for other steps. The email provider starts timing out and signups fail. Which design keeps signups working?',
+        options: [
+          'Raise the HTTP timeout of the signup endpoint to 30 seconds',
+          'Create the user, enqueue a welcome-email job and answer at once; a worker sends the email and retries with backoff',
+          'Send the email first, then create the user',
+          'Cache the responses of the email provider',
+        ],
+        answer: 1,
+        explanation:
+          'The user needs the account, not the email, before the page can continue. With the email in a worker the response takes about 50 ms, and a provider outage delays emails instead of failing signups. A longer timeout keeps the signup tied to the provider and only makes the wait longer.',
+      },
+      {
+        id: 'bw-2',
+        prompt:
+          'In the Lab, users get an answer in 20 ms while each job takes 1 s in a worker. You turn the Queue off. What do users see?',
+        options: [
+          'Still 20 ms - removing the queue removes a hop',
+          'Faster answers, because nothing waits in a queue any more',
+          'Each user now waits at least the 1 s job, plus any wait for a free worker',
+          'An immediate error on every request',
+        ],
+        answer: 2,
+        explanation:
+          'Without the queue the API calls a worker and holds the request until the job is done, so the job time moves back onto the request path. The Users node shows the wait jump from 20 ms to over a second. The work did not get slower - the user now waits for it.',
+      },
+      {
+        id: 'bw-3',
+        prompt: 'Jobs arrive at 30 per second and one worker finishes 4 per second. What is the smallest pool that keeps up?',
+        options: ['4 workers', '6 workers', '8 workers', '30 workers'],
+        answer: 2,
+        explanation:
+          '30 / 4 = 7.5, so 8 workers (32 per second) is the minimum - and it leaves only 2 per second to drain a burst, so run more in practice. 6 workers do 24 per second and fall 6 per second behind, forever.',
+      },
+      {
+        id: 'bw-4',
+        prompt:
+          'A nightly import enqueues 1 million jobs into the same queue as password-reset emails. What happens to a reset requested at 01:00, and what is the fix?',
+        options: [
+          'It waits behind the import backlog, possibly for hours; give transactional work its own queue and workers',
+          'It jumps the line because it is a small job',
+          'It is dropped because the queue is busy',
+          'The import slows itself down automatically',
+        ],
+        answer: 0,
+        explanation:
+          'A queue serves messages in order, so the reset sits behind whatever was enqueued first. Separate queues with their own workers keep urgent work fast no matter how big the bulk backlog grows. Queues do not know which job is small or urgent.',
+      },
+      {
+        id: 'bw-5',
+        prompt:
+          'A deploy restarts the workers while a provision-workspace job is half done. The job is delivered again. What must be true to avoid two workspaces?',
+        options: [
+          'The broker must use exactly-once delivery',
+          'Deploys must never happen while jobs run',
+          'Nothing - redelivery never happens because of a deploy',
+          'The job must be idempotent, keyed by user id and job type, so the second run finds the workspace and stops',
+        ],
+        answer: 3,
+        explanation:
+          'Every job runs twice eventually: a deploy, a crash or a timeout causes a redelivery. Keying the job so a repeat is a no-op makes that harmless. Brokers cannot give exactly-once effects on outside systems, and banning deploys does not stop crashes.',
+      },
+      {
+        id: 'bw-6',
+        prompt: 'Workers exit immediately on SIGTERM. What shows up after every deploy, and what is the fix?',
+        options: [
+          'Nothing - the broker finishes the jobs',
+          'A few half-finished jobs; on SIGTERM stop taking new jobs, finish or return the current one to the queue, then exit',
+          'The whole queue is lost',
+          'Producers stop sending jobs',
+        ],
+        answer: 1,
+        explanation:
+          'Killing a worker mid-job leaves partial side effects, and the job may be redelivered on top of them. Graceful shutdown finishes or hands back the current job, so deploys stop producing inconsistent data. The queue itself survives a worker restart.',
+      },
+      {
+        id: 'bw-7',
+        prompt: 'Which checkout step should stay inside the request instead of moving to a worker?',
+        options: [
+          'Sending the confirmation email',
+          'Updating the analytics counters',
+          'Charging the card, when the page must say whether the payment succeeded',
+          'Notifying the CRM',
+        ],
+        answer: 2,
+        explanation:
+          'The test is whether the user needs the result to get their answer. The page must show whether the payment worked, so the charge stays on the request path. The email, analytics and CRM change nothing the user sees right now, so they belong in workers.',
+      },
+      {
+        id: 'bw-8',
+        prompt:
+          'The workers crashed at 02:00. The website worked all night and nobody was paged. At 09:00 support hears that no emails went out. What monitoring was missing?',
+        options: [
+          'CPU on the web servers',
+          'The HTTP error rate of the API',
+          'Database connection count',
+          'The age of the oldest job per queue (and worker liveness), with an alert',
+        ],
+        answer: 3,
+        explanation:
+          'A worker outage is silent: the API keeps enqueuing and answering 202, so web metrics look perfect. The queue is where the failure shows - the oldest job gets older every minute. That is the alert that would have fired at 02:05.',
+      },
+      {
+        id: 'bw-9',
+        prompt: 'An export takes 3 minutes in a worker. The API answers 202 Accepted with a job id. What else does the product need?',
+        options: [
+          'A way to learn the result - a status URL to poll, or a notification or webhook when the export is ready',
+          'Nothing - 202 means the export is done',
+          'A longer HTTP timeout on the export endpoint',
+          'A bigger queue',
+        ],
+        answer: 0,
+        explanation:
+          '202 Accepted says the request was accepted for processing, not that it finished. The client needs a way to find out when and whether it did. A longer timeout would put the 3 minutes back on the request.',
+      },
+      {
+        id: 'bw-10',
+        prompt:
+          'Each of 50 workers opens a pool of 10 database connections. The database allows 400 connections and the web tier already uses 150. What happens when all workers run?',
+        options: [
+          'Nothing - the workers share the web tier connections',
+          'They ask for 500 more connections against 250 free, so new connections are refused; give workers a small pool of their own and never hold a connection during external calls',
+          'The database quietly queues the extra connections',
+          'Workers do not use database connections',
+        ],
+        answer: 1,
+        explanation:
+          '50 x 10 = 500 on top of 150 is 650 against a limit of 400. A database refuses connections past its limit (PostgreSQL answers "too many clients"), and the web tier suffers too. Workers need their own, smaller budget.',
+      },
+      {
+        id: 'bw-11',
+        prompt:
+          'In the Lab, 3 jobs/sec arrive and 4 workers finish 1 job/sec each. You raise Producer rate to 6/sec. What happens to the user wait and to the jobs?',
+        options: [
+          'Users wait longer for their 202',
+          'User wait stays 20 ms, but the queue grows by 2 jobs/sec and every new job finishes later than the one before',
+          'Both stay the same',
+          'Requests are rejected at once',
+        ],
+        answer: 1,
+        explanation:
+          'The API only enqueues, so its answer does not depend on the workers. But 6 in and 4 out means the queue gains 2 jobs per second, and Job done after keeps climbing. Background work hides a capacity problem from response times - which is why you watch the queue.',
+      },
+    ],
   },
   {
     slug: 'task-queues',
@@ -1037,16 +1337,33 @@ client polls /exports/{job_id} or receives a webhook`,
     tagline: 'Scheduling, priorities, retries and the operational side of jobs.',
     category: 'async',
     difficulty: 'Intermediate',
-    keywords: ['celery', 'sidekiq', 'scheduling', 'priority', 'visibility timeout'],
+    lab: 'queue',
+    labFocus: 'task-queues',
+    keywords: ['celery', 'sidekiq', 'scheduling', 'priority', 'visibility timeout', 'dead letter', 'backoff'],
     what: 'A task queue is the layer above a raw message queue: named jobs, arguments, scheduling, priorities, retry policies and visibility timeouts.',
     why: 'Most applications need "run this later", "run this every hour" and "retry three times with backoff". Rebuilding that on a raw broker is where the bugs live.',
     how: [
       'Visibility timeout must exceed worst-case processing time, or the job runs twice concurrently.',
+      'A failed task is retried after a delay that grows each attempt (exponential backoff, with jitter); after the last attempt it moves to a dead-letter queue.',
+      'Retry only transient errors - a validation error fails the same way every time.',
       'Delayed and scheduled jobs cover reminders and retries.',
       'Priority queues or separate queues per class of work prevent starvation.',
       'Keep payloads small - pass ids, not blobs.',
     ],
+    when: [
+      'Background jobs need retries, delays, schedules or priorities, not just a pipe.',
+      'Failed work must be kept and inspected instead of lost.',
+      'You want a dashboard of what is running, waiting and failing.',
+    ],
+    advantages: [
+      'Retries with backoff and dead-lettering are configuration, not code.',
+      'Delayed and scheduled execution without a separate scheduler.',
+      'Tooling to see, retry and discard failed jobs.',
+    ],
     diagram: `enqueue("send_invoice", {id: 42}, run_at=+10m, retries=3, backoff=exp)
+
+attempt 1 fails -> delayed 2 s -> attempt 2 fails -> delayed 4 s
+-> attempt 3 fails -> dead-letter queue (a person looks)
 
 visibility timeout 30s, job takes 45s
  -> message reappears, a second worker starts the same job`,
@@ -1056,8 +1373,164 @@ visibility timeout 30s, job takes 45s
         gains: ['Scheduling, retries, priorities out of the box', 'Good operational tooling'],
         costs: ['Framework-specific semantics to learn', 'Hidden defaults (timeouts, prefetch) cause surprises'],
       },
+      {
+        approach: 'Raw message queue plus your own job code',
+        gains: ['Full control of the message format and semantics', 'One less framework to learn'],
+        costs: ['Retries, delays and dead-lettering must be built and tested by you', 'No ready-made dashboard for failed jobs'],
+      },
     ],
-    mistakes: ['Visibility timeout shorter than job duration - the classic cause of duplicate processing.'],
+    mistakes: [
+      'Visibility timeout shorter than job duration - the classic cause of duplicate processing.',
+      'Retrying permanent errors, so a bad input burns five attempts before it fails anyway.',
+      'Fixed-delay retries with no jitter, so every failed task hits the recovering service at the same moment.',
+      'A dead-letter queue with no alert - failures pile up silently.',
+      'Passing whole objects as arguments, so the task runs on stale data.',
+    ],
     related: ['background-workers', 'message-queues', 'retry', 'idempotency'],
+    quiz: [
+      {
+        id: 'tq-1',
+        prompt:
+          'A thumbnail task normally takes 10 s but sometimes 90 s. The visibility timeout is 30 s. Which setting avoids a second worker starting the same task, without delaying the retry of a crashed task for hours?',
+        options: [
+          'Set the visibility timeout to 12 hours',
+          'Keep 30 s - duplicates are harmless',
+          'Set it above the slowest normal case, say 2 minutes, and let long tasks extend it while they work',
+          'Turn acknowledgements off',
+        ],
+        answer: 2,
+        explanation:
+          'Shorter than the job means duplicate concurrent runs; far longer means a crashed task stays hidden for hours before anyone retries it. A timeout just above the normal worst case, extended by a heartbeat for the rare long run, avoids both.',
+      },
+      {
+        id: 'tq-2',
+        prompt: 'A task fails with a validation error: the email address in its input is malformed. The policy retries 5 times with backoff. What should happen instead?',
+        options: [
+          'Retry 10 times, in case the address fixes itself',
+          'Fail it straight to the dead-letter queue with the error - it will fail the same way every time',
+          'Retry immediately with no delay',
+          'Drop the task silently',
+        ],
+        answer: 1,
+        explanation:
+          'Retries help with transient errors such as timeouts and 5xx answers. A permanent error returns the same result on every attempt, so retries only waste worker time and delay the report. Dead-lettering keeps the task and its error for a person; dropping it loses both.',
+      },
+      {
+        id: 'tq-3',
+        prompt: 'In the Lab, 30% of attempts fail and Max attempts is 3. About what share of tasks ends in the dead-letter queue?',
+        options: ['30%', '9%', '2.7%', '0%'],
+        answer: 2,
+        explanation:
+          'A task reaches the dead-letter queue only if all three attempts fail: 0.3 x 0.3 x 0.3 = 0.027, about 2.7%. 30% is the chance of one failed attempt, and 9% the chance that two fail. The Dead-lettered metric in the Lab settles near this share.',
+      },
+      {
+        id: 'tq-4',
+        prompt:
+          'In the Lab, 40 new tasks/sec arrive, workers can do 60/sec, Max attempts is 3. You raise Failure rate from 30% to 60%. What happens?',
+        options: [
+          'Only the dead-letter queue grows',
+          'Nothing - the workers still have spare capacity',
+          'The workers speed up to handle the retries',
+          'Retries push the load to about 78 attempts/sec, above the 60 the workers can do, so the queue grows as well',
+        ],
+        answer: 3,
+        explanation:
+          'Each task now costs 1 + 0.6 + 0.36 = 1.96 attempts on average, so 40 tasks/sec become about 78 attempts/sec. Retries are real load. With 60/sec of capacity the queue starts growing, not only the dead-letter queue.',
+      },
+      {
+        id: 'tq-5',
+        prompt:
+          'An API your tasks call is down for 4 minutes. 2,000 tasks have failed and each retries every 5 s with a fixed delay. What reaches the API when it comes back?',
+        options: [
+          'About 400 extra calls per second, in synchronised waves that can knock it over again; use exponential backoff with jitter',
+          'No extra load - retries only happen once the API is healthy',
+          'About 5 extra calls per second',
+          'The 2,000 calls once, then nothing',
+        ],
+        answer: 0,
+        explanation:
+          '2,000 tasks retrying every 5 s is 2,000 / 5 = 400 calls per second, all at the same offsets. Exponential backoff lowers the pressure over time and jitter spreads the waves. A retry policy does not know whether the API is healthy.',
+      },
+      {
+        id: 'tq-6',
+        prompt:
+          'A task is enqueued with the whole order object. It runs 10 minutes later, after the customer changed the delivery address. What is wrong, and what is the fix?',
+        options: [
+          'Nothing - the task has all the data it needs',
+          'Tasks should always run immediately',
+          'Raise the message size limit',
+          'The task works on stale data; pass the order id and load the current state when the task runs',
+        ],
+        answer: 3,
+        explanation:
+          'Arguments are serialised at enqueue time, so the object is a snapshot that goes stale while the task waits. Passing the id makes the task read the current order, and it keeps messages small. Running immediately cannot be guaranteed when there is a backlog.',
+      },
+      {
+        id: 'tq-7',
+        prompt: 'You need to send a reminder six months from now. Where should that reminder live?',
+        options: [
+          'A delayed task with run_at six months ahead',
+          'A row in the database with a due date, picked up by a periodic job',
+          'In the memory of a worker',
+          'A worker that sleeps for six months',
+        ],
+        answer: 1,
+        explanation:
+          'A task hidden for six months is invisible to everyone, and its code may not exist by the time it runs - some brokers cap delays anyway (SQS allows at most 15 minutes). A row with a due date is visible, editable and survives deploys; a periodic job turns it into a task when it is due.',
+      },
+      {
+        id: 'tq-8',
+        prompt:
+          'Password resets and weekly reports share one task queue with a priority field. Reports have not run for two days and nobody noticed. What does this show?',
+        options: [
+          'Priority fields are broken in this framework',
+          'The reports should be made high priority too',
+          'Separate queues with their own workers and alerts make starvation visible; one queue with priorities can starve low-priority work silently',
+          'The queue needs a bigger maximum size',
+        ],
+        answer: 2,
+        explanation:
+          'With a priority field, a steady flow of high-priority work can keep low-priority work waiting forever, and one queue gives you one set of metrics that hides it. Separate queues get separate worker pools and a per-queue oldest-job alert. Raising every priority just rebuilds the same problem.',
+      },
+      {
+        id: 'tq-9',
+        prompt: 'The dead-letter queue has held 3,000 failed invoice tasks for a week and nothing alerts on it. What is the real problem?',
+        options: [
+          'The dead-letter queue is too small',
+          'The retry count is too low',
+          'Nothing - the tasks are safe in the dead-letter queue',
+          'A dead-letter queue nobody watches is data loss with a delay; alert on its depth, fix the cause, then redrive the tasks',
+        ],
+        answer: 3,
+        explanation:
+          'The dead-letter queue exists so a person can look at failures. Without an alert, 3,000 customers have not been invoiced and nobody knows. More retries would not have fixed tasks that failed for a real reason.',
+      },
+      {
+        id: 'tq-10',
+        prompt: 'One task hangs forever on a network call with no timeout. Each worker runs one task at a time. What happens over time?',
+        options: [
+          'Nothing - the broker kills hung tasks',
+          'Every hang occupies a worker for good; set a per-task timeout so the task fails and is retried or dead-lettered',
+          'The visibility timeout frees the stuck worker',
+          'The queue skips the task',
+        ],
+        answer: 1,
+        explanation:
+          'A worker blocked on a call with no timeout never returns. The visibility timeout only makes the message visible to another worker - which may hang the same way - and does not free the first. A per-task timeout turns the hang into a failure the retry policy can handle.',
+      },
+      {
+        id: 'tq-11',
+        prompt: 'In the Lab, Retry delay is 2 s and doubles per attempt. A task fails its first and its second attempt. When is its third attempt ready to run?',
+        options: [
+          '2 s after the second failure',
+          '4 s after the second failure',
+          'Immediately after the second failure',
+          '8 s after the second failure',
+        ],
+        answer: 1,
+        explanation:
+          'The first failure waits 2 s, the second waits 2 x 2 = 4 s: exponential backoff. You can see the waiting tasks in the Delayed tasks node. Fixed or immediate retries would not give a struggling dependency more room each time.',
+      },
+    ],
   },
 ];
