@@ -1,9 +1,9 @@
 /**
  * Coverage check for the long-form teaching content.
  *
- * The "Full explanation" tab is assembled from src/data/concepts/deep. A concept
- * missing its entry renders as three short cards, which is the failure this app
- * exists to avoid. This asserts every concept carries the full teaching payload,
+ * The Lesson under each concept Diagram is assembled from src/data/concepts/deep.
+ * A concept missing its entry renders as three short cards, which is the failure
+ * this app exists to avoid. This asserts every concept carries the full teaching payload,
  * and that the payload is not a stub. Run with `npm run check:content`.
  */
 import { build } from 'esbuild';
@@ -84,7 +84,7 @@ try {
     const depth = await loadDepth(concept.category, concept.slug);
 
     if (!depth) {
-      at('no entry in src/data/concepts/deep - the Full explanation tab would be nearly empty');
+      at('no entry in src/data/concepts/deep - the Lesson under the Diagram would be nearly empty');
       continue;
     }
 
@@ -121,7 +121,7 @@ try {
     process.exit(1);
   }
 
-  console.log(`${CONCEPTS.length} concepts checked - full explanation content present`);
+  console.log(`${CONCEPTS.length} concepts checked - lesson content present`);
 } finally {
   rmSync(dir, { recursive: true, force: true });
 }

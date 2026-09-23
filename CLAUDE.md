@@ -90,7 +90,7 @@ useTicker(running, (dt) => { /* mutate state.current */ rerender(); });
 2. Add an animated diagram for it in `src/data/visuals/` - **this is the important half**. A concept
    page leads with its diagram; the prose is secondary and collapsed.
 3. Add a `ConceptDepth` entry to `src/data/concepts/deep/<category>.ts`, keyed by slug. This is the
-   "Full explanation" tab and `check:content` fails the build without it. See below.
+   Lesson under the Diagram and `check:content` fails the build without it. See below.
 4. That is it — the sidebar, search, glossary links, category page and progress tracking all read
    from `CONCEPTS`. That export (`@/data/concepts`) is a light `ConceptSummary` index generated at
    build time by `scripts/vite-plugin-concept-index.ts`; the lesson body is fetched with
@@ -102,7 +102,8 @@ useTicker(running, (dt) => { /* mutate state.current */ rerender(); });
 
 ### The long-form lesson (`src/data/concepts/deep/`)
 
-Written for a junior who has never met the idea. Every concept has one, and the shape is fixed:
+Written for a junior who has never met the idea. Every concept has one, and the shape is fixed.
+It renders under the Diagram: the analogy shows open, the rest behind "Read the full explanation".
 
 - `analogy` — one everyday picture with a title. The thing they will still remember next week.
 - `deepDive` — 2-3 sections of real prose, optionally with `bullets` and one fixed-width `code`
@@ -144,8 +145,11 @@ The product complaint that shaped this app was "too much text". Concept pages th
   a spec with `steps` also gets a chip row under the canvas: "Live" for the traffic, then one chip
   per step. Picking a step stops the traffic and walks one request along that hop, on the same
   Diagram, with a caption of **six words or fewer**. Play advances the steps and loops.
-- The concept page shows: Diagram tab (with its Walkthrough), lab tab, trade-offs as chips, quiz,
-  and one "Full explanation" tab that holds all the prose. The right column is short cards only.
+- The concept page has four tabs, in this order: Diagram, Interactive lab, Trade-offs (as chips),
+  Quiz. A tab with nothing to show (no Lab or no Quiz yet) is hidden. The Diagram tab shows the Diagram with
+  its Walkthrough, then the Lesson under it: the Analogy is open, and all the other prose folds
+  behind one "Read the full explanation" button, which stays open while the learner stays on that
+  Concept. The right column is short cards only.
 - Run `npm run check:visuals` after editing a spec. It covers `src/data/visuals`, the home hero and
   the `src/features/evolution` stage layouts, and fails the build on overlapping boxes, nodes past
   the canvas, labels too long for their box, step captions over six words, nodes with no edges, a

@@ -1,4 +1,4 @@
-import { Suspense, useEffect, useMemo, useRef, useState } from 'react';
+import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import {
   AlertTriangle,
@@ -132,6 +132,8 @@ function useFullConcept(summary: ConceptSummary | undefined): { concept?: Concep
 
 /** Links the fold button and the reopen tab to the column they control. */
 const ASIDE_ID = 'concept-notes';
+/** Links "Read the full explanation" to the part of the Lesson it unfolds. */
+const LESSON_ID = 'concept-lesson';
 
 function ConceptBody({ concept }: { concept: Concept }) {
   const related = useMemo(() => resolveRelated(concept), [concept]);
@@ -153,19 +155,32 @@ function ConceptBody({ concept }: { concept: Concept }) {
   const reopened = useRef(false);
   const lab = concept.lab ? getLab(concept.lab) : undefined;
   const visual = getVisual(concept.slug);
+  // The tab panel remounts on every tab switch, so the Lesson's open state lives
+  // here. It lasts while the learner stays on this concept; any other concept,
+  // including coming back to this one, starts folded again.
+  const [lessonExpanded, setLessonExpanded] = useState(false);
+  const [lessonSlug, setLessonSlug] = useState(concept.slug);
+  if (lessonSlug !== concept.slug) {
+    setLessonSlug(concept.slug);
+    setLessonExpanded(false);
+  }
+  const toggleLesson = useCallback(() => setLessonExpanded((open) => !open), []);
 
   const tabs = useMemo<TabItem[]>(() => {
     const items: TabItem[] = [];
 
-    if (visual) {
-      items.push({
-        id: 'diagram',
-        label: 'Diagram',
-        icon: <Play className="h-3.5 w-3.5" />,
-        // Keyed by slug so another concept starts on Live, with none of this one's traffic.
-        content: <FlowVisual key={concept.slug} spec={visual} walkthrough />,
-      });
-    }
+    items.push({
+      id: 'diagram',
+      label: 'Diagram',
+      icon: <Play className="h-3.5 w-3.5" />,
+      content: (
+        <div className="space-y-5">
+          {/* Keyed by slug so another concept starts on Live, with none of this one's traffic. */}
+          {visual ? <FlowVisual key={concept.slug} spec={visual} walkthrough /> : null}
+          <Lesson concept={concept} expanded={lessonExpanded} onToggle={toggleLesson} />
+        </div>
+      ),
+    });
 
     if (lab) {
       items.push({
@@ -207,15 +222,8 @@ function ConceptBody({ concept }: { concept: Concept }) {
       });
     }
 
-    items.push({
-      id: 'detail',
-      label: 'Full explanation',
-      icon: <BookOpen className="h-3.5 w-3.5" />,
-      content: <DeepDive concept={concept} />,
-    });
-
     return items;
-  }, [concept, lab, visual]);
+  }, [concept, lab, visual, lessonExpanded, toggleLesson]);
 
   const activeTab = tabs.some((item) => item.id === tab) ? tab : (tabs[0]?.id ?? '');
   const inLab = activeTab === 'lab';
@@ -261,7 +269,7 @@ function ConceptBody({ concept }: { concept: Concept }) {
           <Tabs items={tabs} value={activeTab} onChange={selectTab} />
         </div>
 
-        {/* Short notes only. Anything longer lives in Full explanation. */}
+        {/* Short notes only. Anything longer lives in the Lesson under the Diagram. */}
         <aside
           id={ASIDE_ID}
           className={cn(
@@ -439,11 +447,12 @@ function TradeOffBoard({ concept }: { concept: Concept }) {
 }
 
 /**
- * The long-form lesson. Ordered the way a junior actually learns a new idea:
- * a picture they already understand, then the definition, then the mechanics,
- * then a worked example with real numbers, then the words to use for it.
+ * The long-form lesson, under the Diagram. Only the Analogy shows at first - the
+ * picture the learner already has in their head. The rest is ordered the way a
+ * junior actually learns a new idea: the definition, then the mechanics, then a
+ * worked example with real numbers, then the words to use for it.
  */
-function DeepDive({ concept }: { concept: Concept }) {
+function Lesson({ concept, expanded, onToggle }: { concept: Concept; expanded: boolean; onToggle: () => void }) {
   const { depth, failed } = useConceptDepth(concept);
 
   return (
@@ -452,7 +461,7 @@ function DeepDive({ concept }: { concept: Concept }) {
       {!depth && !failed ? (
         <div className="flex items-center gap-2 rounded-2xl border border-line bg-surface p-5 text-sm text-muted">
           <Loader2 className="h-4 w-4 animate-spin" />
-          Loading the full lesson...
+          Loading the lesson...
         </div>
       ) : null}
       {failed ? (
@@ -462,78 +471,93 @@ function DeepDive({ concept }: { concept: Concept }) {
         </div>
       ) : null}
 
-      {concept.what ? (
-        <ExplanationCard title="What is it?" tone="brand">
-          {concept.what}
-        </ExplanationCard>
-      ) : null}
-      {concept.why ? <ExplanationCard title="Why does it exist?">{concept.why}</ExplanationCard> : null}
+      <Button
+        variant="secondary"
+        onClick={onToggle}
+        aria-expanded={expanded}
+        aria-controls={expanded ? LESSON_ID : undefined}
+      >
+        <BookOpen className="h-3.5 w-3.5" />
+        {expanded ? 'Hide the full explanation' : 'Read the full explanation'}
+      </Button>
 
-      {depth?.deepDive.map((section) => <DeepDiveBlock key={section.heading} section={section} />)}
+      {expanded ? (
+        <div id={LESSON_ID} className="space-y-3 animate-fade-in">
+          {concept.what ? (
+            <ExplanationCard title="What is it?" tone="brand">
+              {concept.what}
+            </ExplanationCard>
+          ) : null}
+          {concept.why ? <ExplanationCard title="Why does it exist?">{concept.why}</ExplanationCard> : null}
 
-      {depth?.examples.map((example) => <ExampleCard key={example.title} example={example} />)}
+          {depth?.deepDive.map((section) => <DeepDiveBlock key={section.heading} section={section} />)}
 
-      {concept.how?.length ? (
-        <Expandable title="How it works, step by step" defaultOpen>
-          <ol className="space-y-2">
-            {concept.how.map((step, index) => (
-              <li key={step} className="flex gap-2.5">
-                <span className="font-mono text-[11px] text-faint">{index + 1}</span>
-                <span>{step}</span>
-              </li>
+          {depth?.examples.map((example) => <ExampleCard key={example.title} example={example} />)}
+
+          {concept.how?.length ? (
+            <Expandable title="How it works, step by step" defaultOpen>
+              <ol className="space-y-2">
+                {concept.how.map((step, index) => (
+                  <li key={step} className="flex gap-2.5">
+                    <span className="font-mono text-[11px] text-faint">{index + 1}</span>
+                    <span>{step}</span>
+                  </li>
+                ))}
+              </ol>
+            </Expandable>
+          ) : null}
+          {concept.diagram ? (
+            <Expandable title="Plain-text sketch" hint="ASCII">
+              <AsciiBlock>{concept.diagram}</AsciiBlock>
+            </Expandable>
+          ) : null}
+          {concept.when?.length ? (
+            <Expandable title="When to use it">
+              <ul className="space-y-1.5">
+                {concept.when.map((item) => (
+                  <li key={item}>{item}</li>
+                ))}
+              </ul>
+            </Expandable>
+          ) : null}
+          {concept.realWorld?.length ? (
+            <Expandable title="In production">
+              <ul className="space-y-1.5">
+                {concept.realWorld.map((item) => (
+                  <li key={item}>{item}</li>
+                ))}
+              </ul>
+            </Expandable>
+          ) : null}
+          {concept.mistakes?.length ? (
+            <Expandable title="Common mistakes">
+              <ul className="space-y-1.5">
+                {concept.mistakes.map((item) => (
+                  <li key={item}>{item}</li>
+                ))}
+              </ul>
+            </Expandable>
+          ) : null}
+
+          {depth ? <JargonCard terms={depth.jargon} /> : null}
+          {depth ? <RememberCard lines={depth.remember} /> : null}
+
+          <div className="flex flex-wrap items-center gap-2 pt-1">
+            <Badge>{concept.difficulty}</Badge>
+            {(concept.keywords ?? []).slice(0, 6).map((keyword) => (
+              <Badge key={keyword}>{keyword}</Badge>
             ))}
-          </ol>
-        </Expandable>
+          </div>
+        </div>
       ) : null}
-      {concept.diagram ? (
-        <Expandable title="Plain-text sketch" hint="ASCII">
-          <AsciiBlock>{concept.diagram}</AsciiBlock>
-        </Expandable>
-      ) : null}
-      {concept.when?.length ? (
-        <Expandable title="When to use it">
-          <ul className="space-y-1.5">
-            {concept.when.map((item) => (
-              <li key={item}>{item}</li>
-            ))}
-          </ul>
-        </Expandable>
-      ) : null}
-      {concept.realWorld?.length ? (
-        <Expandable title="In production">
-          <ul className="space-y-1.5">
-            {concept.realWorld.map((item) => (
-              <li key={item}>{item}</li>
-            ))}
-          </ul>
-        </Expandable>
-      ) : null}
-      {concept.mistakes?.length ? (
-        <Expandable title="Common mistakes">
-          <ul className="space-y-1.5">
-            {concept.mistakes.map((item) => (
-              <li key={item}>{item}</li>
-            ))}
-          </ul>
-        </Expandable>
-      ) : null}
-
-      {depth ? <JargonCard terms={depth.jargon} /> : null}
-      {depth ? <RememberCard lines={depth.remember} /> : null}
-
-      <div className="flex flex-wrap items-center gap-2 pt-1">
-        <Badge>{concept.difficulty}</Badge>
-        {(concept.keywords ?? []).slice(0, 6).map((keyword) => (
-          <Badge key={keyword}>{keyword}</Badge>
-        ))}
-      </div>
     </div>
   );
 }
 
 /**
  * Fetches the long-form content for this concept. It is a separate chunk per
- * category, so nothing of it is downloaded until a learner opens this tab.
+ * category, so nothing of it is in the main bundle; the first concept opened in
+ * a category fetches it, and the rest of that category reads it from memory.
  *
  * The retry is the same problem `lazyWithRetry` solves: after a redeploy the
  * open document points at a chunk that no longer exists. Here that must not
