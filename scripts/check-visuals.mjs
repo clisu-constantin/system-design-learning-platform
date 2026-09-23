@@ -91,7 +91,11 @@ try {
   // The evolution stages use a different shape (title + placed box) and a taller
   // canvas, so normalise both sources into one list before checking.
   const specs = [
-    ...Object.entries({ ...VISUALS, 'home hero': HERO_VISUAL }).map(([slug, spec]) => ({
+    // Concept Diagrams show a Walkthrough; the home hero does not.
+    ...[
+      ...Object.entries(VISUALS).map(([slug, spec]) => [slug, spec, true]),
+      ['home hero', HERO_VISUAL, false],
+    ].map(([slug, spec, walkthrough]) => ({
       name: slug,
       width: spec.width ?? 760,
       height: spec.height ?? 320,
@@ -99,8 +103,7 @@ try {
       edges: spec.edges,
       steps: spec.steps ?? [],
       asymmetric: spec.asymmetric,
-      // Only concept Diagrams show a Walkthrough; the home hero does not.
-      walkthrough: slug !== 'home hero',
+      walkthrough,
     })),
     ...STAGES.map((stage) => ({
       name: `evolution ${stage.id}`,
@@ -156,13 +159,13 @@ try {
 
     // Every concept Diagram carries a Walkthrough, and the Walkthrough visits every
     // node: a box the story never reaches is a part the learner is never told about.
-    if (spec.walkthrough) {
-      if (spec.steps.length < 2) problems.push(`${name}: needs a Walkthrough of at least 2 steps`);
+    // A part that is deliberately not reached gets a `skipped` step, not a request.
+    if (spec.walkthrough && spec.steps.length < 2) {
+      problems.push(`${name}: needs a Walkthrough of at least 2 steps`);
+    } else if (spec.walkthrough) {
       const visited = new Set(spec.steps.flatMap((step) => [step.from, step.to]));
       for (const node of spec.nodes) {
-        if (spec.steps.length >= 2 && !visited.has(node.id)) {
-          problems.push(`${name}: ${node.id} ("${node.label}") is never visited by a step`);
-        }
+        if (!visited.has(node.id)) problems.push(`${name}: ${node.id} ("${node.label}") is never visited by a step`);
       }
     }
 

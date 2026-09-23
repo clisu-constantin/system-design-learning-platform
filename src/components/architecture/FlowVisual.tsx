@@ -46,6 +46,12 @@ export interface VisualStep {
   /** Six words or fewer - this is a caption, not a paragraph. */
   label: string;
   outcome?: RequestOutcome;
+  /**
+   * The hop is deliberately not taken - a pruned partition, a feature cut from
+   * scope. The wire is shown dashed and no request travels it, so the step can
+   * point at the part without claiming traffic reaches it.
+   */
+  skipped?: boolean;
 }
 
 export interface VisualSpec {
@@ -115,6 +121,18 @@ export function PlayPauseButton({ playing, onToggle, className }: { playing: boo
   );
 }
 
+/**
+ * The drawn edge a Walkthrough step travels. A step may run against the arrow
+ * (a response going back), so it reuses that edge reversed instead of drawing
+ * a second curve between the same two nodes.
+ */
+const wireFor = (edges: VisualEdge[], from: string, to: string) => {
+  const forward = edges.find((edge) => edge.from === from && edge.to === to);
+  if (forward) return { edge: forward, reversed: false };
+  const backward = edges.find((edge) => edge.from === to && edge.to === from);
+  return backward ? { edge: backward, reversed: true } : undefined;
+};
+
 const renderNodes = (spec: VisualSpec, layout: Layout, activeIds?: Set<string>) =>
   spec.nodes.map((node) => (
     <ArchNode
@@ -171,6 +189,7 @@ export function FlowVisual({
   const active = stepIndex === null ? undefined : steps[Math.min(stepIndex, steps.length - 1)];
   const activeFrom = active?.from;
   const activeTo = active?.to;
+  const activeSkipped = active?.skipped ?? false;
 
   // Only the particles change from frame to frame. Keeping layout, edges and
   // node elements referentially stable lets DiagramCanvas reuse its curves and
@@ -178,28 +197,34 @@ export function FlowVisual({
   // component, which measures the DOM whenever it re-renders. In a Walkthrough
   // they change once per step, not once per frame.
   const layout = useMemo(() => toLayout(spec), [spec]);
+  const wire = useMemo(
+    () => (activeFrom && activeTo ? wireFor(spec.edges, activeFrom, activeTo) : undefined),
+    [spec, activeFrom, activeTo],
+  );
   const edges = useMemo(() => {
     const wiring: DiagramEdge[] = spec.edges.map((edge) => {
-      const isActive = edge.from === activeFrom && edge.to === activeTo;
+      const isActive = edge === wire?.edge;
       return {
         from: edge.from,
         to: edge.to,
-        tone: isActive ? 'brand' : (edge.tone ?? 'default'),
+        // A skipped hop stays neutral and dashed: pointed at, not travelled.
+        tone: isActive && !activeSkipped ? 'brand' : (edge.tone ?? 'default'),
         label: edge.label,
         labelT: edge.labelT,
-        dashed: edge.dashed,
+        dashed: edge.dashed || (isActive && activeSkipped),
         curvature: edge.curvature,
-        animated: isActive,
+        // The marching ants run with the arrow, so they would contradict a reversed step.
+        animated: isActive && !activeSkipped && !wire?.reversed,
         faded: activeFrom !== undefined && !isActive,
       };
     });
-    // A step may travel a hop the wiring does not draw in that direction (a
-    // response going back), so it gets its own highlighted edge.
-    if (activeFrom && activeTo && !wiring.some((edge) => edge.animated)) {
+    // check:visuals keeps every step on a drawn edge; this only stops an
+    // undrawn hop from showing nothing at all.
+    if (activeFrom && activeTo && !wire) {
       wiring.push({ from: activeFrom, to: activeTo, tone: 'brand', animated: true });
     }
     return wiring;
-  }, [spec, activeFrom, activeTo]);
+  }, [spec, wire, activeFrom, activeTo, activeSkipped]);
   const nodes = useMemo(
     () =>
       renderNodes(
@@ -243,8 +268,19 @@ export function FlowVisual({
     rerender();
   });
 
+  const stepT = Math.min(1, progress.current);
   const particleViews: ParticleView[] = active
-    ? [{ id: 1, from: active.from, to: active.to, t: Math.min(1, progress.current), outcome: active.outcome ?? 'success' }]
+    ? active.skipped
+      ? []
+      : [
+          {
+            id: 1,
+            from: wire?.edge.from ?? active.from,
+            to: wire?.edge.to ?? active.to,
+            t: wire?.reversed ? 1 - stepT : stepT,
+            outcome: active.outcome ?? 'success',
+          },
+        ]
     : particles.current.map((particle) => ({
         id: particle.id,
         from: particle.route[0],

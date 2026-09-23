@@ -97,8 +97,8 @@ Other scripts:
   notification system, Netflix, e-commerce), each covering requirements, capacity, high-level
   design, database choice, API, scaling, caching, reliability, bottlenecks and trade-offs.
 - **106 concept pages**, each one led by a **live animated diagram** (traffic flowing from users to
-  the load balancer to the servers, replication streams, cache hits and misses) with a step-by-step
-  walkthrough, trade-off chips and a quiz - the prose sits in a single collapsed tab.
+  the load balancer to the servers, replication streams, cache hits and misses) with a Walkthrough
+  of the same diagram one hop at a time, trade-off chips and a quiz - the prose sits in a single collapsed tab.
 - A searchable glossary, global search (`Ctrl`/`Cmd` + `K`), difficulty
   filtering, quizzes, and progress tracking in `localStorage`.
 

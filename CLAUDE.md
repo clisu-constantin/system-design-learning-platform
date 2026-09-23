@@ -174,6 +174,9 @@ interchangeable, which contradicts the entire stateless/horizontal-scaling lesso
   introduced and label it afterwards (`2 nodes, multi-AZ`) rather than leaving a single box that
   quietly says "this is where everything goes down".
 
+- A part the story deliberately does not reach (a pruned partition, a cut feature) gets a step with
+  `skipped: true`: its wire is shown dashed and no request travels it. Never send a `failure` dot
+  there - that tells the learner traffic arrived and broke.
 - A Walkthrough step shows its caption in a strip above the canvas - never as an edge label (on a
   short edge it lands on a node) and never floated over the canvas (it covers the top-left node).
 - `FlowVisual` auto-fits its spec to the container width (0.5x-1.3x, via `DiagramCanvas`'s `fit`

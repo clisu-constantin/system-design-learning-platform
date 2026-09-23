@@ -69,7 +69,7 @@ export const dataVisuals: Record<string, VisualSpec> = {
     steps: [
       { from: 'api', to: 'redis', label: 'Command runs in RAM' },
       { from: 'redis', to: 'api', label: 'Hit: answered in 0.4 ms', outcome: 'cache-hit' },
-      { from: 'redis', to: 'session', label: 'Sessions expire after 30 min', outcome: 'cache-hit' },
+      { from: 'redis', to: 'session', label: 'Sessions expire after 30 min' },
       { from: 'api', to: 'db', label: 'Miss: app reads the database' },
       { from: 'api', to: 'redis', label: 'App caches it with TTL' },
     ],
@@ -194,8 +194,8 @@ export const dataVisuals: Record<string, VisualSpec> = {
       { from: 'p3', to: 'rows', tone: 'ok', rate: 2.4 },
     ],
     steps: [
-      { from: 'query', to: 'p1', label: 'July cannot match: pruned', outcome: 'failure' },
-      { from: 'query', to: 'p2', label: 'August cannot match: pruned', outcome: 'failure' },
+      { from: 'query', to: 'p1', label: 'July cannot match: pruned', skipped: true },
+      { from: 'query', to: 'p2', label: 'August cannot match: pruned', skipped: true },
       { from: 'query', to: 'p3', label: 'Only September is scanned' },
       { from: 'p3', to: 'rows', label: 'Result read from one partition' },
     ],
@@ -317,8 +317,8 @@ export const dataVisuals: Record<string, VisualSpec> = {
     steps: [
       { from: 'app', to: 'p2', label: 'Key hashes to Partition 2' },
       { from: 'p2', to: 'doc', label: 'Whole document in one read' },
-      { from: 'app', to: 'p1', label: 'Partition 1 is never touched', outcome: 'failure' },
-      { from: 'app', to: 'p3', label: 'Neither is Partition 3', outcome: 'failure' },
+      { from: 'app', to: 'p1', label: 'Partition 1 is never touched', skipped: true },
+      { from: 'app', to: 'p3', label: 'Neither is Partition 3', skipped: true },
     ],
   },
 

@@ -52,7 +52,7 @@ export const foundationVisuals: Record<string, VisualSpec> = {
       { from: 'store', to: 'sys', label: 'Store joins the system' },
       { from: 'live', to: 'ws', label: 'Live delivery needs WebSockets' },
       { from: 'ws', to: 'sys', label: 'Gateway joins the system' },
-      { from: 'video', to: 'media', label: 'Video cut: nothing gets built', outcome: 'failure' },
+      { from: 'video', to: 'media', label: 'Video cut: nothing gets built', skipped: true },
     ],
   },
 

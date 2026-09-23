@@ -24,7 +24,7 @@ The running picture of one Concept: its parts and the traffic that flows between
 _Avoid_: Visual, flow, animation
 
 **Walkthrough**:
-The ordered steps of a Diagram, one hop at a time, each with a caption of six words or fewer. Shown on the same Diagram, not beside it. Most Concepts do not have one.
+The ordered steps of a Diagram, one hop at a time, each with a caption of six words or fewer. Shown on the same Diagram, not beside it. Every Concept has one.
 _Avoid_: Step by step, sequence, tour
 
 **Lab**:

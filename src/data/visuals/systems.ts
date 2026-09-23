@@ -650,13 +650,16 @@ export const systemVisuals: Record<string, VisualSpec> = {
       { from: 'a', to: 'dba', tone: 'info', rate: 1.6 },
       { from: 'b', to: 'dba', tone: 'info', rate: 1.6 },
       { from: 'dba', to: 'dbb', tone: 'violet', rate: 1.2, label: 'sync', outcome: 'warning' },
+      // Where Zone B writes once the standby is promoted.
+      { from: 'b', to: 'dbb', tone: 'muted', dashed: true },
     ],
     steps: [
       { from: 'lb', to: 'a', label: 'Traffic spread over two zones' },
       { from: 'lb', to: 'b', label: 'Both zones serve at once' },
       { from: 'b', to: 'dba', label: 'Both zones write the primary' },
       { from: 'dba', to: 'dbb', label: 'Each write synced to standby', outcome: 'warning' },
-      { from: 'dba', to: 'dbb', label: 'Zone A lost: standby promoted', outcome: 'warning' },
+      { from: 'dba', to: 'dbb', label: 'Zone A lost: sync stops', skipped: true },
+      { from: 'b', to: 'dbb', label: 'Standby promoted, Zone B writes it' },
       { from: 'lb', to: 'b', label: 'Zone B serves everything, no human' },
     ],
   },

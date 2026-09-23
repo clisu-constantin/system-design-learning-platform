@@ -102,8 +102,9 @@ export const scalingVisuals: Record<string, VisualSpec> = {
       { from: 'users', to: 'lb', label: 'Traffic jumps from 200 to 5,000' },
       { from: 'lb', to: 'a1', label: 'api-1 climbs to 82% CPU', outcome: 'warning' },
       { from: 'lb', to: 'a2', label: 'api-2 climbs to 78% CPU', outcome: 'warning' },
-      { from: 'lb', to: 'a3', label: 'Pool average 78%, over 70%', outcome: 'warning' },
-      { from: 'lb', to: 'a4', label: 'Launch api-4, still booting', outcome: 'warning' },
+      { from: 'lb', to: 'a3', label: 'api-3 at 74%: pool over 70%', outcome: 'warning' },
+      // No request goes to an instance that is still booting.
+      { from: 'lb', to: 'a4', label: 'api-4 launched, still booting', skipped: true },
       { from: 'lb', to: 'a4', label: 'Health check passes, api-4 joins' },
     ],
   },
