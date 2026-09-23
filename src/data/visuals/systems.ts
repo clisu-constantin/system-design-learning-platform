@@ -1497,26 +1497,31 @@ export const systemVisuals: Record<string, VisualSpec> = {
   // ---- Patterns -----------------------------------------------------------
   'fan-out': {
     width: 760,
-    height: 310,
-    caption: 'Fan-out on write makes reads cheap and celebrity posts expensive.',
+    height: 290,
+    caption: 'Fan-out on write: one write per follower, one lookup per read.',
+    asymmetric: 'Each timeline belongs to one follower, so only Follower 1 reads Timeline 1; the other readers are not drawn.',
     nodes: [
-      { id: 'post', kind: 'client', label: 'New post', x: 40, y: 115, w: 150, h: 76 },
-      { id: 'fan', kind: 'worker', label: 'Fan-out worker', x: 260, y: 110, w: 180, h: 84 },
-      { id: 't1', kind: 'nosql', label: 'Timeline 1', x: 540, y: 15, w: 170, h: 70 },
-      { id: 't2', kind: 'nosql', label: 'Timeline 2', x: 540, y: 105, w: 170, h: 70 },
-      { id: 't3', kind: 'nosql', label: 'Timeline 5,000', x: 540, y: 195, w: 180, h: 70 },
+      { id: 'post', kind: 'client', label: 'New post', sub: '5,000 followers', x: 20, y: 105, w: 150, h: 80 },
+      { id: 'fan', kind: 'worker', label: 'Fan-out worker', x: 215, y: 103, w: 175, h: 84 },
+      { id: 't1', kind: 'cache', label: 'Timeline 1', x: 435, y: 15, w: 160, h: 70 },
+      { id: 't2', kind: 'cache', label: 'Timeline 2', x: 435, y: 110, w: 160, h: 70 },
+      { id: 't3', kind: 'cache', label: 'Timeline 5,000', x: 435, y: 205, w: 170, h: 70 },
+      { id: 'reader', kind: 'client', label: 'Follower 1', x: 630, y: 15, w: 125, h: 70 },
     ],
     edges: [
       { from: 'post', to: 'fan', tone: 'brand', rate: 1.4 },
       { from: 'fan', to: 't1', tone: 'ok', rate: 2.4 },
       { from: 'fan', to: 't2', tone: 'ok', rate: 2.4 },
       { from: 'fan', to: 't3', tone: 'warn', rate: 2.4, outcome: 'warning' },
+      { from: 'reader', to: 't1', tone: 'info', rate: 1.2 },
     ],
     steps: [
       { from: 'post', to: 'fan', label: 'New post queued for fan-out' },
       { from: 'fan', to: 't1', label: 'Written into each follower timeline' },
       { from: 'fan', to: 't2', label: 'One write per follower' },
       { from: 'fan', to: 't3', label: '5,000 followers: 5,000 writes', outcome: 'warning' },
+      { from: 'reader', to: 't1', label: 'Follower opens feed: one lookup' },
+      { from: 't1', to: 'reader', label: 'Timeline already built' },
     ],
   },
 
