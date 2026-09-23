@@ -27,6 +27,8 @@ import { formatBytes, formatLatency, formatNumber, formatPercent } from '@/utils
 import { mulberry32 } from '@/utils/math';
 import { AlertsView, DashboardView, LogsView, MetricsView } from './MonitoringPanels';
 import {
+  BLIP_EVERY_S,
+  BLIP_LENGTH_S,
   FAULTS,
   FAULT_SIZE_LABEL,
   HISTORY_S,
@@ -112,8 +114,14 @@ const LAYOUT: Layout = {
 };
 const CANVAS_HEIGHT = 505;
 
-/** Simulated seconds of history built before the Lab first renders, so charts and windows start full. */
-const WARM_UP_S = 300;
+/**
+ * Simulated seconds of healthy history built before the Lab first renders, so charts and windows
+ * start full. The warm-up runs with no fault and its alert counters are thrown away: the fault of
+ * the setup starts when the learner is watching, so every page, noisy page and missed second on
+ * screen happened in front of them. 420 s covers the 300 s chart span and ends 10 simulated
+ * seconds (1 real second) before the first blip, so the Alerting focus shows its blip at once.
+ */
+const WARM_UP_S = BLIP_EVERY_S * 3 - BLIP_LENGTH_S - 10;
 /** Chart points are one every 5 simulated seconds over the last 5 simulated minutes. */
 const CHART_STEP_S = 5;
 const CHART_SPAN_S = 300;
@@ -133,6 +141,8 @@ interface SimState {
   particles: Particle[];
   emit: Record<string, number>;
   random: () => number;
+  /** Whether the first live tick has logged the fault it starts. */
+  announced: boolean;
 }
 
 function stepSecond(state: SimState, setup: Setup, log?: (message: string, tone: 'ok' | 'warn' | 'danger') => void) {
@@ -192,12 +202,19 @@ function createState(setup: Setup): SimState {
     particles: [],
     emit: {},
     random: mulberry32(49),
+    announced: false,
   };
-  for (let index = 0; index < WARM_UP_S; index += 1) stepSecond(state, setup);
+  const healthy: Setup = { ...setup, fault: 'none' };
+  for (let index = 0; index < WARM_UP_S; index += 1) stepSecond(state, healthy);
+  // Counters and the followed request start now, with the learner watching.
+  state.alert = newAlertState();
+  state.followed = null;
   state.stream = state.traces.slice(-8);
   refreshChart(state, setup);
   return state;
 }
+
+const faultLabel = (fault: Fault) => FAULTS.find((item) => item.value === fault)?.label ?? fault;
 
 /** Emits `rate` particles per real second on average, smoothly, using a per-stream carry. */
 function emitCount(state: SimState, key: string, rate: number, dt: number) {
@@ -231,8 +248,7 @@ export function MonitoringLab({ focus }: LabProps<'monitoring'>) {
   const chooseFault = (fault: Fault) => {
     if (fault === setup.fault) return;
     change('fault')(fault);
-    const label = FAULTS.find((item) => item.value === fault)?.label ?? fault;
-    log(fault === 'none' ? 'Fault removed' : `Fault injected: ${label}`, fault === 'none' ? 'ok' : 'warn');
+    log(fault === 'none' ? 'Fault removed' : `Fault injected: ${faultLabel(fault)}`, fault === 'none' ? 'ok' : 'warn');
   };
 
   const chooseSignal = (signal: AlertSignal) =>
@@ -241,6 +257,11 @@ export function MonitoringLab({ focus }: LabProps<'monitoring'>) {
   useTicker(running, (dt) => {
     const sim = state.current;
     if (!sim) return;
+    if (!sim.announced) {
+      sim.announced = true;
+      log(`${Math.round(WARM_UP_S / 60)} simulated minutes of healthy history loaded - pages count from now`, 'ok');
+      if (setup.fault !== 'none') log(`Fault injected: ${faultLabel(setup.fault)}`, 'warn');
+    }
     sim.carry += dt * SIM_SPEED;
     let stepped = false;
     while (sim.carry >= 1) {

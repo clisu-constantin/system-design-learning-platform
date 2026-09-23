@@ -281,14 +281,14 @@ function Zone({ x, y, w, h, label, tone = 'line' }: { x: number; y: number; w: n
         rx={14}
         className={
           tone === 'danger'
-            ? 'fill-[rgb(var(--c-elevated))] stroke-[rgb(var(--c-danger))]'
-            : 'fill-[rgb(var(--c-elevated))] stroke-[rgb(var(--c-line))]'
+            ? 'fill-elevated stroke-danger'
+            : 'fill-elevated stroke-line'
         }
         fillOpacity={0.55}
         strokeDasharray="6 5"
         strokeWidth={1.5}
       />
-      <text x={x + 14} y={y + 22} className="fill-[rgb(var(--c-muted))] font-mono" style={{ fontSize: 10.5 }}>
+      <text x={x + 14} y={y + 22} className="fill-muted font-mono" style={{ fontSize: 10.5 }}>
         {label}
       </text>
     </g>

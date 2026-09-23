@@ -565,9 +565,9 @@ export function PartitioningLab() {
               fill="none"
               strokeDasharray="6 5"
               strokeWidth={1.5}
-              className="stroke-[rgb(var(--c-line))]"
+              className="stroke-line"
             />
-            <text x={30} y={108} className="fill-[rgb(var(--c-faint))] font-mono" style={{ fontSize: 11 }}>
+            <text x={30} y={108} className="fill-faint font-mono" style={{ fontSize: 11 }}>
               One PostgreSQL instance on one machine - events is one logical table
             </text>
           </g>

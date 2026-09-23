@@ -540,7 +540,7 @@ export function OutboxLab() {
         width={DATABASE_BOX.w}
         height={DATABASE_BOX.h}
         rx={14}
-        className="fill-[rgb(var(--c-elevated))] stroke-[rgb(var(--c-line))]"
+        className="fill-elevated stroke-line"
         fillOpacity={0.6}
         strokeDasharray="6 5"
         strokeWidth={1.5}
@@ -548,7 +548,7 @@ export function OutboxLab() {
       <text
         x={DATABASE_BOX.x + 14}
         y={DATABASE_BOX.y + 24}
-        className="fill-[rgb(var(--c-muted))] font-mono"
+        className="fill-muted font-mono"
         style={{ fontSize: 10.5 }}
       >
         {outboxOn ? 'Orders DB - order row + outbox row in one transaction' : 'Orders DB - the broker is not in this transaction'}

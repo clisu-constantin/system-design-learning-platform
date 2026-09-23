@@ -59,6 +59,10 @@ const MAX_ATTEMPTS = 3;
 /** Pause after a saga ends before the next order is placed automatically. */
 const NEXT_ORDER_DELAY = 3;
 
+/** React keys for statement lines and result rows. Plain counter: these are rows, not particles. */
+let rowCounter = 0;
+const nextRowId = () => ++rowCounter;
+
 type StepId = 'order' | 'inventory' | 'payment' | 'shipping';
 type StepState = 'not run' | 'committed' | 'failed' | 'compensated' | 'stuck';
 type OrderStatus = 'none' | 'PENDING' | 'APPROVED' | 'REJECTED' | 'NEEDS A HUMAN';
@@ -167,7 +171,7 @@ const chargeCard = (fail: boolean) => (world: World): Note => {
     world.steps.payment = 'failed';
     return { text: 'Payment: card declined - step 3 fails, nothing charged', tone: 'danger' };
   }
-  world.statement.push({ id: nextParticleId(), text: 'Charge', amount: PRICE });
+  world.statement.push({ id: nextRowId(), text: 'Charge', amount: PRICE });
   world.steps.payment = 'committed';
   return { text: `Payment: step 3 committed - card charged ${PRICE} euro` };
 };
@@ -189,7 +193,7 @@ const refund = (idempotent: boolean) => (world: World): Note => {
   if (world.refunded && idempotent) {
     return { text: 'Payment: same idempotency key seen before - already refunded, nothing to do', tone: 'ok' };
   }
-  world.statement.push({ id: nextParticleId(), text: 'Refund', amount: -PRICE });
+  world.statement.push({ id: nextRowId(), text: 'Refund', amount: -PRICE });
   world.steps.payment = 'compensated';
   if (world.refunded) {
     return {
@@ -509,8 +513,9 @@ export function SagaLab() {
         const net = sim.world.statement.reduce((sum, line) => sum + line.amount, 0);
         const { number, messages, world } = sim;
         const { mode, failAt } = sim.setup;
+        const id = nextRowId();
         setResults((list) =>
-          [{ id: nextParticleId(), number, mode, failAt, outcome: world.outcome, messages, net }, ...list].slice(0, 8),
+          [{ id, number, mode, failAt, outcome: world.outcome, messages, net }, ...list].slice(0, 8),
         );
       } else {
         sim.waitLeft = HOP_GAP + (sim.plan[sim.index].wait ?? 0);
