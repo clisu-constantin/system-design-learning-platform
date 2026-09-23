@@ -74,7 +74,6 @@
     "api-keys",
     "tls-https",
     "secrets-management",
-    "waf",
     "monolith",
     "modular-monolith",
     "microservices",
