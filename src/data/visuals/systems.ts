@@ -723,9 +723,9 @@ export const systemVisuals: Record<string, VisualSpec> = {
   'strong-consistency': {
     width: 760,
     height: 294,
-    caption: 'The write is acknowledged only after a quorum stores it.',
+    caption: 'The write is acknowledged only after a quorum stores it; reads ask the leader.',
     nodes: [
-      { id: 'client', kind: 'client', label: 'Write', x: 40, y: 105, w: 140, h: 74 },
+      { id: 'client', kind: 'client', label: 'Client', x: 40, y: 105, w: 140, h: 74 },
       { id: 'leader', kind: 'sql', label: 'Leader', x: 260, y: 100, w: 160, h: 84 },
       { id: 'f1', kind: 'sql', label: 'Follower 1', sub: 'ack', x: 520, y: 20, w: 170, h: 80 },
       { id: 'f2', kind: 'sql', label: 'Follower 2', sub: 'ack', x: 520, y: 110, w: 170, h: 80 },
@@ -743,6 +743,8 @@ export const systemVisuals: Record<string, VisualSpec> = {
       { from: 'leader', to: 'f2', label: 'Stored on Follower 2: quorum' },
       { from: 'leader', to: 'f3', label: 'Slow follower is not awaited', outcome: 'warning' },
       { from: 'leader', to: 'client', label: 'Acknowledged only after quorum' },
+      { from: 'client', to: 'leader', label: 'Read asks the leader' },
+      { from: 'leader', to: 'client', label: 'Latest acknowledged value, always' },
     ],
   },
 
@@ -1696,22 +1698,27 @@ export const systemVisuals: Record<string, VisualSpec> = {
   'leader-follower': {
     width: 760,
     height: 280,
-    caption: 'One node orders the writes; the rest copy that order.',
+    caption: 'One node orders the writes; the rest copy that order and serve reads.',
     nodes: [
-      { id: 'w', kind: 'client', label: 'Writes', x: 40, y: 100, w: 140, h: 74 },
-      { id: 'leader', kind: 'sql', label: 'Leader', x: 260, y: 95, w: 160, h: 84 },
-      { id: 'f1', kind: 'sql', label: 'Follower', x: 520, y: 15, w: 160, h: 74 },
-      { id: 'f2', kind: 'sql', label: 'Follower', x: 520, y: 180, w: 160, h: 74 },
+      { id: 'w', kind: 'client', label: 'Writes', x: 40, y: 22, w: 140, h: 74 },
+      { id: 'leader', kind: 'sql', label: 'Leader', x: 260, y: 17, w: 160, h: 84 },
+      { id: 'f1', kind: 'sql', label: 'Follower 1', x: 530, y: 20, w: 170, h: 78 },
+      { id: 'f2', kind: 'sql', label: 'Follower 2', x: 530, y: 185, w: 170, h: 78 },
+      { id: 'r', kind: 'client', label: 'Reads', x: 260, y: 187, w: 140, h: 74 },
     ],
     edges: [
       { from: 'w', to: 'leader', tone: 'brand', rate: 2 },
       { from: 'leader', to: 'f1', tone: 'violet', rate: 1.6, outcome: 'warning' },
       { from: 'leader', to: 'f2', tone: 'violet', rate: 1.6, outcome: 'warning' },
+      { from: 'r', to: 'f1', tone: 'ok', rate: 1.6, outcome: 'cache-hit' },
+      { from: 'r', to: 'f2', tone: 'ok', rate: 1.6, outcome: 'cache-hit' },
     ],
     steps: [
       { from: 'w', to: 'leader', label: 'Every write goes to leader' },
       { from: 'leader', to: 'f1', label: 'Leader orders it, streams it' },
       { from: 'leader', to: 'f2', label: 'Every follower copies that order' },
+      { from: 'r', to: 'f1', label: 'Reads spread over followers' },
+      { from: 'f2', to: 'r', label: 'A follower may answer stale', outcome: 'warning' },
     ],
   },
 

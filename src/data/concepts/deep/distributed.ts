@@ -372,7 +372,7 @@ It is that two operations cannot both see the same pre-state.`,
         heading: 'How it is achieved, and therefore what it costs',
         paragraphs: [
           'Single-node databases get it almost for free: one copy, internal locks, done. The cost appears when the data is replicated. Then every write must be agreed by a quorum before it can be acknowledged, using a consensus protocol like Raft, and reads must either go through the leader or confirm with a quorum that they are not stale.',
-          'That means at least one round trip to a majority for every operation. Inside a datacenter, 1-2 ms. Across regions, the round trip to the furthest quorum member - 60 to 150 ms - on every write, forever, even when nothing is wrong. Google Spanner pays this and mitigates it with atomic clocks; most systems simply keep the quorum regional.',
+          'That means at least one round trip to a majority for every operation. Inside a datacenter, 1-2 ms. Across regions, the round trip to the replica that completes the majority - 60 to 150 ms - on every write, forever, even when nothing is wrong. Google Spanner pays it too, and uses GPS and atomic clocks (TrueTime) so that read-only transactions can avoid it; most systems simply keep the quorum regional.',
           'And during a partition, a node that cannot reach a quorum must refuse rather than answer. That is the CP choice, and it is not a bug: refusing is the only way to keep the promise.',
         ],
         bullets: [

@@ -150,7 +150,7 @@ export const LABS: LabDefinition[] = [
   {
     id: 'replication',
     title: 'Database Replication Lab',
-    blurb: 'Replication lag, stale reads, and what a failover costs you.',
+    blurb: 'Leader and followers: replication lag, stale reads, sync versus async, and what a failover costs you.',
     category: 'data',
     difficulty: 'Intermediate',
     concept: 'replication',

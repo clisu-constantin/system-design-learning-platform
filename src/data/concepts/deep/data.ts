@@ -347,15 +347,15 @@ now writes to the table AND the index.`,
         paragraphs: [
           'The first is durability. More copies on more machines means the loss of one disk, one server or one datacenter does not lose data. This is the reason that is never optional for anything valuable.',
           'The second is availability. If the primary dies, a replica can be promoted, so an outage becomes a failover of seconds instead of a restore from backup taking hours. The third is read scalability: reads can be spread over replicas, which helps enormously for read-heavy workloads and not at all for write-heavy ones.',
-          'Notice that only one of the three helps with writes - none of them. All writes still go to one primary in a classic setup, so replication never increases write capacity. That is what sharding is for, and confusing the two is a common planning mistake.',
+          'Notice that none of the three helps with writes. All writes still go to one primary in a classic setup, and every replica has to replay every one of them, so replication never increases write capacity. That is what sharding is for, and confusing the two is a common planning mistake.',
         ],
       },
       {
         heading: 'Synchronous, asynchronous, and the choice you are really making',
         paragraphs: [
           'Asynchronous replication commits on the primary and streams the change to replicas afterwards. Writes are fast, because they never wait for the network, and replicas lag by milliseconds to seconds. If the primary dies before a change reaches any replica, that change is lost - which is why async replication has a real, nonzero data-loss window.',
-          'Synchronous replication waits for at least one replica to confirm before the write is acknowledged. No acknowledged write can be lost, but every write now pays a round trip, and if the replica is slow or unreachable, writes stall or the system must fall back to async.',
-          'Semi-synchronous is the common compromise: wait for one replica in the same region (a millisecond or two), stream asynchronously to the distant one. You get no data loss for the common failure - losing one machine - without paying cross-region latency on every write.',
+          'Synchronous replication waits for replicas to confirm before the write is acknowledged. No acknowledged write can be lost, but every write now pays a round trip, and if a replica it waits for is slow or unreachable, writes stall or the system must fall back to async. Waiting for every replica is rarely done for exactly that reason: one bad node stops all writes.',
+          'Semi-synchronous is the common compromise: wait for one replica - typically in the same region, a millisecond or two away - and stream asynchronously to the others. You get no data loss for the common failure - losing one machine - without paying cross-region latency on every write.',
         ],
         code: {
           caption: 'What each mode costs',
@@ -787,7 +787,7 @@ KEPT IN SYNC BY
       {
         heading: 'Routing: the part the application must own',
         paragraphs: [
-          'The database will not decide for you. Something must send each query to the primary or a replica, and the usual options are an application-level router (two connection pools), a proxy like PgBouncer or ProxySQL that classifies statements, or an ORM feature that marks read-only blocks.',
+          'The database will not decide for you. Something must send each query to the primary or a replica, and the usual options are an application-level router (two connection pools), a proxy like Pgpool-II or ProxySQL that classifies statements, or an ORM feature that marks read-only blocks.',
           'Statement-based classification sounds convenient and misleads: a SELECT inside a write transaction must go to the primary, and a SELECT ... FOR UPDATE is a write in disguise. Explicit routing in the application, where the intent is known, is more reliable than inference from the SQL text.',
           'The essential rule to encode: after a user writes, route the reads of that user to the primary for a window longer than your typical lag - often 5 seconds. Everything else can use replicas. That single rule removes the great majority of stale-read bug reports.',
         ],

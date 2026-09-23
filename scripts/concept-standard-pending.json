@@ -3,10 +3,6 @@
     "what-is-system-design",
     "functional-requirements",
     "non-functional-requirements",
-    "replication",
-    "read-replicas",
-    "strong-consistency",
-    "eventual-consistency",
     "message-queues",
     "background-workers",
     "task-queues",
@@ -15,7 +11,6 @@
     "microservices",
     "service-oriented-architecture",
     "backpressure",
-    "leader-follower",
     "producer-consumer",
     "request-response"
   ],
