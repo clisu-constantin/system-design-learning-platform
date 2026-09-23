@@ -601,7 +601,7 @@ you can delete a lock somebody else acquired after yours expired.`,
         paragraphs: [
           'Coordination is enormously simpler with a single decision maker. One node orders the writes, so there is no conflict resolution. One node runs the scheduled job, so it runs once. One node assigns partitions, so assignments do not overlap. The leader turns a distributed agreement problem into a local one.',
           'The cost is that the leader is a bottleneck for whatever it serialises, and its failure requires a detection-and-election pause during which that work stops. The whole design effort goes into making that pause short and making sure no second leader appears during it.',
-          'Note the pattern: leader-based systems are common precisely because leaderless coordination is so much harder. Raft, Kafka partitions, Postgres primaries, Kubernetes controllers - all pick one and accept a failover gap.',
+          'Note the pattern: leader-based systems are common precisely because leaderless coordination is so much harder. Raft, Kafka partitions, Postgres primaries (elected by a tool such as Patroni on top of etcd), Kubernetes controllers - all pick one and accept a failover gap.',
         ],
       },
       {
@@ -630,6 +630,7 @@ invariants
         paragraphs: [
           'Timeout tuning is a direct trade-off. Short timeouts detect failure quickly and cause spurious elections under load or GC pauses - and every spurious election is a brief write outage. Long timeouts are stable but extend the gap after a real failure. Base the value on your observed worst-case pause, not on the best case.',
           'Split votes and flapping are the failure modes to watch. Randomised timeouts mostly prevent the first; the second usually means the timeout is shorter than your real latency variance. A cluster re-electing several times an hour is telling you something about its network or its garbage collector.',
+          'One more source of needless elections: a node cut off by a partition keeps timing out and raising its term, and when it rejoins, that higher term forces a healthy leader to step down. Pre-vote fixes this - a node first asks whether it could win before it raises its term - and etcd turns it on by default since version 3.5. The Consensus Lab has no pre-vote, so Cut off followers shows the disruption.',
           'And unless you are writing a database, do not implement this yourself. Use etcd, ZooKeeper, Consul, or the leader-election primitive your platform provides - Kubernetes offers one built on a lease object. Consensus implementations are small to describe and notoriously subtle to get right.',
         ],
         bullets: [
@@ -705,13 +706,13 @@ invariants
   5        3          2      when one failure is not enough
   7        4          3      rarely worth the write latency
 
-every write costs a round trip to the slowest member of the majority`,
+every write waits for the slowest member of the fastest majority`,
         },
       },
       {
         heading: 'Where you meet it, and when to use it directly',
         paragraphs: [
-          'You use consensus every day without implementing it: etcd holds Kubernetes state, ZooKeeper coordinates Kafka and HBase, Postgres with synchronous replication and a quorum-based failover manager, CockroachDB and Spanner use Raft-like protocols per range, and every managed database with automatic failover has something similar inside.',
+          'You use consensus every day without implementing it: etcd holds Kubernetes state, ZooKeeper coordinates HBase (and Kafka before version 4.0, which moved to its own Raft-based KRaft), Postgres failover managers such as Patroni keep their leader lock in etcd, CockroachDB runs Raft per range and Spanner runs Paxos per split, and every managed database with automatic failover has something similar inside.',
           'Use it directly for small, critical, low-volume state: cluster membership, configuration, leader leases, feature flags that must be globally consistent. These systems are designed for a modest write rate and total reliability, not for throughput.',
           'Do not use it for bulk data. Every write pays a quorum round trip and is stored on every node, so a consensus store is the wrong home for user content, events or anything high volume. The standard architecture is a small consensus core managing metadata, with the bulk data in systems that reference it.',
         ],
@@ -729,10 +730,10 @@ every write costs a round trip to the slowest member of the majority`,
         setup:
           'A team deploys a 3-node etcd cluster with one node in Europe, one in the US and one in Asia, expecting maximum resilience.',
         walkthrough: [
-          'Every write must be acknowledged by 2 of 3 nodes. From the European leader, the nearest other node is the US at about 90 ms round trip.',
+          'Every write must be acknowledged by 2 of 3 nodes. From a leader in Frankfurt, the nearest other node is in Virginia at about 90 ms round trip.',
           'So every single write costs at least 90 ms, before any disk work. Kubernetes operations that do dozens of writes become visibly slow.',
-          'Worse, leadership can move. If the Asian node becomes leader, its nearest quorum partner is Europe at about 160 ms, and the cluster gets slower for no visible reason.',
-          'Election timeouts also have to be raised well above the cross-region variance, so a real failure now takes several seconds to detect.',
+          'Worse, leadership can move. If the node in Singapore becomes leader, its nearest quorum partner is Frankfurt at about 160 ms, and the cluster gets slower for no visible reason.',
+          'Election timeouts also have to be raised: etcd asks for at least 10 times the round trip, so about 1.6 s here plus margin for variance, and a real failure now takes seconds to detect.',
           'Better design: all three nodes in one region, spread across three availability zones. Round trips are about 1 ms, the cluster survives losing a zone, and writes are fast.',
           'For cross-region survival, run a separate cluster per region and replicate at the application level, accepting eventual consistency between regions - rather than paying consensus latency on every write.',
         ],
@@ -752,7 +753,7 @@ every write costs a round trip to the slowest member of the majority`,
       'Consensus agrees on an order, so replicas applying it end in the same state.',
       'Majorities overlap, which is why a committed decision can never be contradicted.',
       'Odd sizes only - four nodes tolerate the same failures as three.',
-      'Every write costs a round trip to the slowest quorum member; keep them close.',
+      'Every write waits for the slowest member of the fastest majority; keep them close.',
       'Use it for small critical metadata, never for bulk data.',
     ],
   },

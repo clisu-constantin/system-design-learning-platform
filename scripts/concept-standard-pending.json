@@ -43,8 +43,6 @@
     "strong-consistency",
     "eventual-consistency",
     "distributed-locks",
-    "leader-election",
-    "consensus",
     "idempotency",
     "rest-apis",
     "graphql",
