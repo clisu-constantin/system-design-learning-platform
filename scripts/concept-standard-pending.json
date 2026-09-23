@@ -52,7 +52,6 @@
     "event-sourcing",
     "distributed-tracing",
     "backpressure",
-    "saga-pattern",
     "leader-follower",
     "producer-consumer",
     "request-response"
