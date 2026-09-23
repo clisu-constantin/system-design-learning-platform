@@ -8,6 +8,7 @@ export const architectureConcepts: Concept[] = [
     category: 'architecture',
     difficulty: 'Beginner',
     lab: 'monolith-microservices',
+    labFocus: 'monolith',
     keywords: ['single deployment', 'simplicity', 'transactions', 'coupling'],
     what: 'A monolith packages all application functionality into a single deployable process, usually talking to a single database.',
     why: 'Everything is local: function calls instead of network calls, one transaction across all entities, one thing to deploy, one log to read. For a small team this is a large productivity advantage.',
@@ -18,7 +19,7 @@ export const architectureConcepts: Concept[] = [
     ],
     when: [
       'New products where the domain boundaries are not yet known.',
-      'Small teams - fewer than roughly a dozen engineers.',
+      'Small teams - up to roughly ten engineers, before a shared release train starts to hurt.',
       'Anything where transactional consistency across features matters.',
     ],
     diagram: `            Application (one deployable)
@@ -27,8 +28,9 @@ export const architectureConcepts: Concept[] = [
                               v
                           Database`,
     advantages: [
-      'Simple local development and debugging.',
+      'Simple local development and debugging: one stack trace, one log stream.',
       'No network failures, serialization or distributed tracing inside the app.',
+      'Real transactions across the whole domain.',
       'Refactoring across boundaries is a compiler-assisted rename.',
     ],
     tradeoffs: [
@@ -42,9 +44,160 @@ export const architectureConcepts: Concept[] = [
           'Boundaries erode unless actively defended',
         ],
       },
+      {
+        approach: 'Modular monolith',
+        gains: ['Same single deploy and transactions', 'Enforced module boundaries keep later extraction cheap'],
+        costs: ['Boundary rules and build checks to maintain', 'Still one process: no fault isolation, one release train'],
+      },
     ],
-    mistakes: ['Assuming a monolith cannot scale - most can, horizontally, for a very long time.'],
+    mistakes: [
+      'Assuming a monolith cannot scale - most can, horizontally, for a very long time.',
+      'Blaming the deployment shape for a tangled codebase - a big ball of mud is a design failure that splitting into services makes permanent.',
+      'Splitting into services to fix performance - in-process calls are faster than network calls.',
+    ],
     related: ['modular-monolith', 'microservices', 'horizontal-scaling'],
+    quiz: [
+      {
+        id: 'mono-1',
+        prompt:
+          'A six-person startup has a three-month-old product whose domain changes every week. The CTO proposes eight microservices "to be ready for scale". What do you recommend?',
+        options: [
+          'Build the eight services now, because splitting a monolith later is impossible',
+          'Build the eight services but let them share one database to keep it simple',
+          'Start with one monolith with clear internal modules, and extract a service only when a specific pressure appears',
+          'Build one service per engineer so that nobody ever blocks anybody',
+        ],
+        answer: 2,
+        explanation:
+          'With boundaries still moving every week, service boundaries drawn now will be wrong, and wrong boundaries across a network are expensive to move. A monolith keeps them cheap to change. Eight services sharing a database is the tempting shortcut, but it is a distributed monolith: every network cost and none of the independence.',
+      },
+      {
+        id: 'mono-2',
+        prompt:
+          'In the Lab, in Monolith mode, you press Break Payments. The error rate jumps to 100% - even Users requests fail. Why?',
+        options: [
+          'Every feature runs in the same process, so a crash in the payments code takes down the process that serves every feature',
+          'The load balancer stops routing traffic as soon as one feature fails',
+          'The database locks every table when payments fails',
+          'Users calls Payments on every request',
+        ],
+        answer: 0,
+        explanation:
+          'One deployable unit means one process: a crash there is a crash for every feature, which is why the Blast radius reads All features. Nothing in the Lab makes Users call Payments - the failure spreads through the shared process, not through a dependency.',
+      },
+      {
+        id: 'mono-3',
+        prompt:
+          'The Orders endpoint takes half the traffic and the monolith runs at 85% CPU on two instances. How do you add capacity without changing the architecture?',
+        options: [
+          'Scale only the Orders code inside the running process',
+          'Buy a bigger database server',
+          'Split Orders into a microservice - it is the only way a monolith can scale',
+          'Run more copies of the whole application behind the load balancer; every feature is copied along with Orders, which costs memory but works',
+        ],
+        answer: 3,
+        explanation:
+          'A monolith scales horizontally by running identical copies - raise Instances in the Lab and CPU falls. The cost is coarse scaling: Users and Notifications are copied too. Believing a monolith cannot scale at all is the classic mistake; extraction is for when that coarse scaling becomes the real problem.',
+      },
+      {
+        id: 'mono-4',
+        prompt:
+          'Checkout must create an order, decrement stock and record the payment - all three or none. The app is a monolith with one database. How do you do it?',
+        options: [
+          'A saga with a compensating action for every step',
+          'One database transaction: begin, three writes, commit - if any write fails, all three roll back',
+          'Two-phase commit between three services',
+          'Write each table separately and run a nightly repair job',
+        ],
+        answer: 1,
+        explanation:
+          'One database gives real ACID transactions across the whole domain, one of the biggest advantages of a monolith. Sagas and compensation are what you are forced into once the data lives in separate services - using them inside one database adds complexity for nothing.',
+      },
+      {
+        id: 'mono-5',
+        prompt:
+          'The team has grown to 40 engineers. Deploys queue for a day and one risky feature regularly blocks an urgent fix. Latency and CPU look fine. What is the real problem?',
+        options: [
+          'The monolith is too slow',
+          'The database is too small',
+          'Deployment coupling: everyone ships on one release train, so each deploy waits for and risks everyone else',
+          'The load balancer cannot handle the traffic',
+        ],
+        answer: 2,
+        explanation:
+          'The pain that forces most splits is about people and deployment, not performance - the metrics are fine. Module boundaries, a merge queue, and eventually extracting the parts that need their own release cadence address it. Buying hardware does not touch the release train.',
+      },
+      {
+        id: 'mono-6',
+        prompt:
+          'Every module in a large codebase imports every other one and queries any table it likes. The lead says: "The monolith failed - let us move to microservices." What is the likely result?',
+        options: [
+          'The tangled calls become network calls - a distributed big ball of mud. Clean up the boundaries inside the monolith first',
+          'Microservices untangle the dependencies automatically',
+          'It proves monoliths stop working past a certain size',
+          'Moving to a bigger server fixes the coupling',
+        ],
+        answer: 0,
+        explanation:
+          'Tangled code is a design failure, not a property of the deployment shape. Splitting it keeps every dependency and adds a network to each one. The sequence that works is monolith, then modular monolith with enforced boundaries, then extraction of the modules that have a reason to leave.',
+      },
+      {
+        id: 'mono-7',
+        prompt:
+          'PDF generation needs 6 GB of memory and sometimes gets the whole app killed for running out of memory. Everything else needs 2 GB. What is a reasonable response?',
+        options: [
+          'Move every feature into its own microservice',
+          'Extract only PDF generation into a separate worker, because it has a genuinely different resource profile, and keep the rest in the monolith',
+          'Give every instance 64 GB of memory',
+          'Ignore it, because restarts are automatic',
+        ],
+        answer: 1,
+        explanation:
+          'Extract a service for a specific, measurable reason - here the resource profile. Sizing every instance for the hungriest feature pays for 6 GB everywhere and still lets one PDF job take every feature down with it. Splitting everything solves a problem the other features do not have.',
+      },
+      {
+        id: 'mono-8',
+        prompt:
+          'In the Lab, switch from Monolith to Microservices at the same traffic. Average latency goes up. Why?',
+        options: [
+          'Microservices are written in slower languages',
+          'The monolith caches every response',
+          'Microservices have no database',
+          'Inside a monolith, features call each other in-process; with microservices each call is a network hop with serialization and its own queueing',
+        ],
+        answer: 3,
+        explanation:
+          'A function call inside one process takes no network round trip and cannot time out. Every service boundary adds a hop - the Lab adds one per call, and the Orders to Payments call adds a second. Services buy independence, not speed.',
+      },
+      {
+        id: 'mono-9',
+        prompt:
+          'The Notifications code has a memory leak. The monolith runs four instances behind a load balancer. What happens over the next few hours?',
+        options: [
+          'Only Notifications slows down',
+          'The load balancer isolates the leak on one instance',
+          'Every instance runs the same code, so every instance leaks and restarts in turn - all features are affected, not just Notifications',
+          'Nothing - the instances are stateless',
+        ],
+        answer: 2,
+        explanation:
+          'Instances of a monolith are identical copies, so a leak in one feature is a leak in all of them. Stateless means any copy can serve any request; it does not mean a bad feature is contained. That missing fault isolation is one of the listed costs of a monolith.',
+      },
+      {
+        id: 'mono-10',
+        prompt:
+          'A checkout request is slow. In a monolith, what makes finding the cause easier than in a system of six services?',
+        options: [
+          'Nothing - both need the same tooling',
+          'One stack trace and one log stream cover the whole request, so a profiler shows where the time went without distributed tracing',
+          'Monoliths retry slow requests automatically',
+          'Monoliths always use a faster database',
+        ],
+        answer: 1,
+        explanation:
+          'The whole request runs in one process, so ordinary tools see all of it. Across services there is no single stack trace: you need correlation ids and distributed tracing just to learn which hop was slow. That is part of the operational cost services add.',
+      },
+    ],
   },
   {
     slug: 'modular-monolith',
@@ -53,14 +206,20 @@ export const architectureConcepts: Concept[] = [
     category: 'architecture',
     difficulty: 'Intermediate',
     lab: 'monolith-microservices',
+    labFocus: 'modular-monolith',
     keywords: ['modules', 'boundaries', 'seams', 'extraction'],
-    what: 'A modular monolith keeps one deployable unit but enforces strict internal module boundaries: explicit interfaces, no reaching into another module data.',
+    what: 'A modular monolith keeps one deployable unit but enforces strict internal module boundaries: explicit interfaces, no reaching into the data of another module.',
     why: 'It gives you most of the design benefit of services (clear ownership, replaceable parts) while keeping the operational simplicity of one deployment - and it makes later extraction cheap.',
     how: [
       'Define modules by business capability, each owning its tables.',
-      'Cross-module access only through a published interface, never direct SQL into another module tables.',
-      'Enforce with package structure, build rules or architecture tests.',
+      'Cross-module access only through a published interface, never direct SQL into the tables of another module.',
+      'Enforce with package structure, build rules or architecture tests, so a violation fails the build.',
       'Extract a module into a service only when a real pressure (scaling, team autonomy) justifies it.',
+    ],
+    when: [
+      'A monolith whose team has grown enough that people step on each other in shared code.',
+      'A domain that is understood well enough to draw module boundaries, but no pressure yet to split the deployment.',
+      'Before any extraction into services - it is the step that makes extraction cheap.',
     ],
     diagram: `+---------------------------------------------+
 |  orders  |  payments  |  catalog  |  users   |
@@ -68,15 +227,176 @@ export const architectureConcepts: Concept[] = [
 +---------------------------------------------+
                 one deployment
 Extraction later = swap an in-process call for a network call.`,
+    advantages: [
+      'Clear ownership per module, with calls that stay in-process.',
+      'Transactions across modules still work, because there is one database.',
+      'One deploy, one process to operate.',
+      'A module with its own tables and interface can be extracted in days, not months.',
+    ],
     tradeoffs: [
       {
         approach: 'Modular monolith',
         gains: ['Clear boundaries with no network cost', 'Cheap path to services later', 'Still one deploy and one transaction scope'],
-        costs: ['Boundaries need active enforcement', 'Teams still share a release train'],
+        costs: [
+          'Boundaries need mechanical enforcement, or they erode',
+          'Teams still share a release train',
+          'No fault isolation - a crash in any module takes the process down',
+        ],
+      },
+      {
+        approach: 'Plain monolith',
+        gains: ['Nothing to enforce', 'Fastest start'],
+        costs: ['Shortcuts between modules pile up', 'Extraction later means untangling shared tables first'],
       },
     ],
-    mistakes: ['Calling it modular while modules query each other tables directly.'],
+    mistakes: [
+      'Calling it modular while modules query the tables of other modules directly.',
+      'Relying on documentation or code review instead of a check that fails the build.',
+      'Expecting fault isolation from modules - they share one process.',
+    ],
     related: ['monolith', 'microservices', 'service-oriented-architecture'],
+    quiz: [
+      {
+        id: 'mm-1',
+        prompt:
+          'The code has a billing folder and an orders folder, but to save time the orders code runs SQL straight against the invoices table that billing owns. What is the consequence?',
+        options: [
+          'None - it is one process, so any code may read any table',
+          'Billing can no longer change its tables, or be extracted, without breaking orders - the data boundary is gone',
+          'Orders becomes faster and safer',
+          'The database refuses the query',
+        ],
+        answer: 1,
+        explanation:
+          'Data ownership is the boundary that matters most. Once another module depends on your table layout, every schema change and every extraction has to find and rewrite those queries first. Being in one process makes the shortcut possible, not harmless.',
+      },
+      {
+        id: 'mm-2',
+        prompt:
+          'In the Lab (Modular), you turn off Enforce module boundaries. The Extract Payments switch becomes blocked. Why does the Lab block it?',
+        options: [
+          'Extraction needs more instances first',
+          'Payments receives too much traffic to run alone',
+          'The load balancer cannot route to a second service',
+          'Orders now reads the payments tables directly, so moving those tables to another database would break Orders - each such query must go through the Payments interface first',
+        ],
+        answer: 3,
+        explanation:
+          'The red wire from the Orders module to the Payments tables is exactly what an extraction cannot survive. Traffic and instances play no part: the blocker is a query that assumes the tables sit in the same database.',
+      },
+      {
+        id: 'mm-3',
+        prompt:
+          'In the Lab (Modular), you press Break Notifications and every module goes down. A teammate expected only Notifications to fail. Who is right?',
+        options: [
+          'The Lab: modules are a code boundary, not a process boundary. All modules share one process, so a crash takes them all down',
+          'The teammate: modules isolate faults the way services do',
+          'Neither: only Notifications and Users fail',
+          'Neither: only the database fails',
+        ],
+        answer: 0,
+        explanation:
+          'A modular monolith gives design isolation, not runtime isolation. Fault isolation needs separate processes - which is what extracting a module into a service buys, together with a network call that can fail.',
+      },
+      {
+        id: 'mm-4',
+        prompt:
+          'Thirty engineers under deadline pressure keep importing the internals of other modules. What keeps the boundaries in place?',
+        options: [
+          'A wiki page that describes the module rules',
+          'Asking reviewers to look out for it',
+          'A check that fails the build - a lint rule or module visibility that rejects imports of internals - plus a test on which tables each module touches',
+          'Splitting into microservices so imports become impossible',
+        ],
+        answer: 2,
+        explanation:
+          'Documented boundaries erode within weeks, because the shortest path to a deadline is a direct import, and reviewers miss some. Mechanical enforcement makes the violation fail before merge. Splitting into services also blocks imports, but it adds a network and a platform to fix a problem a lint rule solves.',
+      },
+      {
+        id: 'mm-5',
+        prompt:
+          'Placing an order must create the order (orders module) and reserve stock (inventory module), both or neither. It is a modular monolith with one database. What do you use?',
+        options: [
+          'A saga, because the modules are separate',
+          'One database transaction: the calls are in-process and the database is shared, and each module still writes only its own tables',
+          'Two-phase commit between the modules',
+          'Nothing - atomicity across modules is impossible',
+        ],
+        answer: 1,
+        explanation:
+          'Keeping real transactions across modules is a genuine advantage of the modular monolith. Each module writes its own tables through its own code, inside one transaction. Sagas become necessary only once the modules no longer share a database.',
+      },
+      {
+        id: 'mm-6',
+        prompt:
+          'The search module needs a different language and far more memory. It already owns its tables and is called only through its interface. What does extracting it involve?',
+        options: [
+          'Rewriting the whole system',
+          'Months of untangling joins with other modules',
+          'Splitting every module into a service at the same time',
+          'Putting the existing interface behind a network call, moving its tables, deploying it separately - and adding timeouts, retries and a fallback, because the call can now fail',
+        ],
+        answer: 3,
+        explanation:
+          'The interface and the data separation already exist, so there is one place to change and no shared tables to untangle - the work takes days. What remains are the new costs of any network call, which appear the moment the call leaves the process.',
+      },
+      {
+        id: 'mm-7',
+        prompt:
+          'In the Lab (Modular), you switch on Extract Payments. Average latency rises and Payments can now fail on its own. Why?',
+        options: [
+          'The Orders to Payments call is now a network hop that can be slow or fail; before, it was an in-process function call',
+          'The database became slower',
+          'The monolith lost instances',
+          'Payments receives more traffic than before',
+        ],
+        answer: 0,
+        explanation:
+          'Extraction swaps an in-process call for a network call - the dashed wire. That hop adds latency and a new way to fail. Traffic is unchanged; what changed is the path each Orders request takes.',
+      },
+      {
+        id: 'mm-8',
+        prompt:
+          'Twelve engineers work on one product across three business areas. Merge conflicts are constant, but deploys and performance are fine. What fits?',
+        options: [
+          'One microservice per business area, each with its own pipeline',
+          'Accept the conflicts - they come with any monolith',
+          'A modular monolith: one module per business area with enforced boundaries and its own tables, still one deploy',
+          'SOA with an enterprise service bus between the areas',
+        ],
+        answer: 2,
+        explanation:
+          'The pain is in the code, not in deployment or scaling, so the fix belongs in the code: modules give teams separate places to work. Microservices would also separate the code, but they add a network, sagas and a platform to a team that has no deployment problem.',
+      },
+      {
+        id: 'mm-9',
+        prompt:
+          'An architecture test reports a cycle: orders depends on billing, and billing depends on orders. Why fix it?',
+        options: [
+          'Cycles only make the build slower',
+          'With a cycle, neither module can change or be extracted without the other - dependencies should point one way',
+          'Cycles are required for modules to talk',
+          'Cycles only matter in microservices',
+        ],
+        answer: 1,
+        explanation:
+          'A cycle makes two modules one unit in disguise: a change to either can break the other, and neither can leave alone. Keeping dependencies one-directional, checked in CI, is part of what keeps extraction cheap.',
+      },
+      {
+        id: 'mm-10',
+        prompt:
+          'In the Lab (Modular), Payments is extracted. Now you press Break Users. What happens?',
+        options: [
+          'Only Users requests fail',
+          'Every request fails, including Payments',
+          'Nothing fails',
+          'The monolith process crashes, so Users, Orders and Notifications fail; the extracted Payments service keeps serving its own requests',
+        ],
+        answer: 3,
+        explanation:
+          'Users still lives in the monolith process, so it takes Orders and Notifications down with it - the Blast radius reads All but Payments. Payments runs in its own process now, which is the fault isolation the extraction bought.',
+      },
+    ],
   },
   {
     slug: 'microservices',
@@ -85,6 +405,7 @@ Extraction later = swap an in-process call for a network call.`,
     category: 'architecture',
     difficulty: 'Advanced',
     lab: 'monolith-microservices',
+    labFocus: 'microservices',
     keywords: ['independent deployment', 'bounded context', 'team autonomy', 'saga', 'tracing'],
     what: 'Microservices split a system into independently deployable services, each owning its data and communicating over the network.',
     why: 'The real driver is organisational: many teams shipping without coordinating a single release. Independent scaling and fault isolation are secondary benefits.',
@@ -92,6 +413,7 @@ Extraction later = swap an in-process call for a network call.`,
       'Split by business capability (bounded context), not by technical layer.',
       'Each service owns its database - no shared tables, ever.',
       'Cross-service workflows use events or sagas instead of distributed transactions.',
+      'Keep the pipes dumb: plain HTTP or a message broker for transport, business logic in the services.',
       'Invest in the platform first: CI/CD, service discovery, tracing, centralised logging.',
     ],
     when: [
@@ -140,7 +462,8 @@ No shared database. Every cross-service call can fail.`,
     ],
     realWorld: [
       'Amazon and Netflix moved to services under organisational pressure at a scale most products never reach.',
-      'Several well-known companies have consolidated services back into monoliths after measuring the cost.',
+      'Segment merged more than a hundred per-destination services back into one service in 2018, after the operational cost outgrew the benefit.',
+      'Amazon Prime Video moved one monitoring pipeline from distributed components into a single process in 2023 and reported cutting its infrastructure cost by 90%.',
     ],
     related: ['monolith', 'modular-monolith', 'api-gateway', 'saga-pattern', 'distributed-tracing'],
     quiz: [
@@ -155,20 +478,126 @@ No shared database. Every cross-service call can fail.`,
         ],
         answer: 1,
         explanation:
-          'The primary benefit is independent deployability for independent teams. Performance and code size are usually better addressed other ways.',
+          'The primary benefit is independent deployability for independent teams. A slow application gets slower with network hops, and a large codebase is a case for module boundaries, not for a network between them.',
       },
       {
         id: 'ms-2',
         prompt: 'Two microservices share one database. What is the consequence?',
         options: [
-          'Better performance',
-          'A distributed monolith: schema changes couple the services, so they must be deployed together',
+          'Better performance, because there is one fewer database',
           'Stronger fault isolation',
+          'A distributed monolith: schema changes couple the services, so they must be deployed together',
           'Simpler transactions with no downside',
+        ],
+        answer: 2,
+        explanation:
+          'A shared schema recreates the coupling that services were meant to remove, while keeping the network failures they introduce. The shared database is also a shared failure point, so isolation gets weaker, not stronger.',
+      },
+      {
+        id: 'ms-3',
+        prompt:
+          'In the Lab (Microservices), you press Break Payments. Users and Notifications keep working, but some Orders requests fail too. Why?',
+        options: [
+          'Orders calls Payments synchronously, so every Orders request that needs Payments fails with it - the caller is only as available as the callee',
+          'The API Gateway went down',
+          'Orders shares the Payments database',
+          'Random load failures unrelated to Payments',
+        ],
+        answer: 0,
+        explanation:
+          'Each service owns its own database in the Lab, so no data is shared - the failure travels along the dashed synchronous call. Fault isolation holds only where there is no synchronous dependency, or where the caller degrades gracefully instead of failing.',
+      },
+      {
+        id: 'ms-4',
+        prompt:
+          'Checkout spans the Orders, Inventory and Payments services, each with its own database. Stock is reserved, then the card is declined. What undoes the reservation?',
+        options: [
+          'A database rollback across all three services',
+          'Two-phase commit, the standard for microservices',
+          'Nothing - the stock simply stays reserved',
+          'A saga: each step has a compensating action - release the stock, cancel the order - which you write yourself and make idempotent',
+        ],
+        answer: 3,
+        explanation:
+          'There is no transaction across separate databases, so there is no rollback. Two-phase commit across services is rarely used because it blocks on the slowest participant and couples their availability. Compensation is code you own, and it can fail and be retried, so it must be idempotent.',
+      },
+      {
+        id: 'ms-5',
+        prompt:
+          'One page view calls six services in sequence, and each is available 99.9% of the time, independently. Roughly how available is the page?',
+        options: ['99.9%', '99.99%', 'About 99.4%, because the chain works only when all six do: 0.999 to the power of 6', 'About 94%'],
+        answer: 2,
+        explanation:
+          'Availability of a serial chain multiplies: 0.999^6 is about 0.994, six times the downtime of any single service. 99.9% would hold only with one service; 94% would be the result with six services at 99% each.',
+      },
+      {
+        id: 'ms-6',
+        prompt:
+          'Adding one field to the checkout flow routinely means changing four services and deploying them in a fixed order. What is the diagnosis?',
+        options: [
+          'There are too few services',
+          'The boundaries are wrong - a distributed monolith. Merge the services that always change together, or redraw them by business capability',
+          'The team needs a service mesh',
+          'The team needs more engineers',
         ],
         answer: 1,
         explanation:
-          'A shared schema recreates the coupling that services were meant to remove, while keeping the network failures they introduce.',
+          'The test of a good boundary is that most changes touch one service. Deploys in a fixed order mean independent deployment does not exist. A mesh handles retries and mTLS; it does not remove coupling between contracts.',
+      },
+      {
+        id: 'ms-7',
+        prompt:
+          'In the Lab (Microservices), Orders is the hot path. You raise Instances. What gets more capacity?',
+        options: [
+          'Only the Orders service - Users, Payments and Notifications keep their size',
+          'Every service, equally',
+          'The API Gateway',
+          'The databases',
+        ],
+        answer: 0,
+        explanation:
+          'Scaling only the hot service is one of the benefits of the split: the Orders meter drops while the others stay put. In Monolith mode the same slider copies the whole application, every feature included.',
+      },
+      {
+        id: 'ms-8',
+        prompt: 'A team of three engineers wants microservices for its first product. What do you advise?',
+        options: [
+          'Go ahead - scaling early saves a rewrite',
+          'Go ahead, as long as they use Kubernetes',
+          'One service per engineer, so nobody waits for anyone',
+          'Start with a monolith: three people would own several services each plus the platform, and the benefit - independent teams - does not exist yet',
+        ],
+        answer: 3,
+        explanation:
+          'The benefit of microservices is organisational: many teams shipping without a shared release. Three engineers are one team. They would pay the full premium - pipelines, tracing, discovery, sagas - for none of the autonomy. A container platform does not change that arithmetic.',
+      },
+      {
+        id: 'ms-9',
+        prompt:
+          'A request that crosses five services is slow. What do you need to find the slow hop, that a monolith did not need?',
+        options: [
+          'A bigger log file',
+          'A profiler on one host',
+          'Distributed tracing, with a correlation id passed along on every call so the spans of one request can be joined',
+          'Nothing more',
+        ],
+        answer: 2,
+        explanation:
+          'There is no single stack trace across processes. A profiler on one host sees only that host. Tracing joins the spans of one request across services so you can see which hop took the time.',
+      },
+      {
+        id: 'ms-10',
+        prompt:
+          'A proposal splits the system by technical layer: a validation service, a database service and a UI service. What happens?',
+        options: [
+          'Clean separation of concerns with no downside',
+          'Every request crosses every layer over the network, and every feature change touches several services - split by business capability instead',
+          'The system gets faster, because each layer scales alone',
+          'Only the database benefits',
+        ],
+        answer: 1,
+        explanation:
+          'Layer services create a chatty dependency in every request path and put every feature across several teams. A service that owns one business capability end to end keeps most changes inside one service.',
       },
     ],
   },
@@ -178,27 +607,191 @@ No shared database. Every cross-service call can fail.`,
     tagline: 'Coarse-grained shared services, often behind a central bus.',
     category: 'architecture',
     difficulty: 'Intermediate',
+    lab: 'monolith-microservices',
+    labFocus: 'service-oriented-architecture',
     keywords: ['soa', 'esb', 'contracts', 'reuse'],
     what: 'SOA organises a system into coarse-grained services that expose reusable business capabilities, historically connected by an enterprise service bus that handled routing and transformation.',
     why: 'It is the predecessor of microservices and explains many of their design rules - notably why putting logic in the bus turned out badly.',
     how: [
       'Services expose contract-first interfaces (WSDL/SOAP historically, REST/gRPC today).',
+      'Services are coarse-grained and share as much as possible, often including one enterprise database.',
       'The bus handles routing, protocol translation and orchestration.',
       'Governance is centralised: shared schemas, shared registry.',
+    ],
+    when: [
+      'An enterprise integrating many existing applications that speak different protocols.',
+      'Reusing one authoritative capability, such as customer data, across many departments.',
+      'Organisations that want central governance of contracts - as long as the shared layer stays transport-only.',
     ],
     diagram: `Client -> [ Enterprise Service Bus ] -> Billing Service
                      |                   -> CRM Service
               routing, transformation,
               orchestration, logging     <- becomes the bottleneck`,
+    advantages: [
+      'One reusable service per business capability instead of several partial copies.',
+      'Contract-first interfaces that are designed and reviewed before code.',
+      'Central visibility and governance of every integration.',
+    ],
     tradeoffs: [
       {
         approach: 'SOA with a central bus',
-        gains: ['Reuse of shared capabilities', 'Central governance and monitoring'],
-        costs: ['The bus becomes a bottleneck and a deployment coupling point', 'Coarse services still release together'],
+        gains: ['Reuse of shared capabilities', 'Central governance and monitoring', 'Protocol translation between old and new systems'],
+        costs: [
+          'The bus becomes a bottleneck and a deployment coupling point',
+          'Logic in the bus makes it a single point of failure for every capability',
+          'Coarse services and shared schemas still release together',
+        ],
+      },
+      {
+        approach: 'Microservices with dumb pipes',
+        gains: ['Logic stays in the services', 'Each service deploys and scales alone'],
+        costs: ['Decentralised governance means less central visibility', 'Each service owns its data, so reuse needs APIs or events'],
       },
     ],
-    mistakes: ['Putting business logic in the integration layer - the lesson microservices took as "smart endpoints, dumb pipes".'],
+    mistakes: [
+      'Putting business logic in the integration layer - the lesson microservices took as "smart endpoints, dumb pipes".',
+      'Letting an API gateway grow transformation and orchestration until it becomes an ESB by another name.',
+    ],
     related: ['microservices', 'event-driven-architecture', 'api-gateway'],
+    quiz: [
+      {
+        id: 'soa-1',
+        prompt:
+          'In the Lab (SOA), the bus runs + Orchestrate. You raise Traffic to 1,200 req/s and errors appear. You raise Instances to 8 and the errors stay. Why?',
+        options: [
+          'New instances take minutes to start',
+          'The database is saturated',
+          'The bus is the bottleneck: every message passes through it, and Instances scales only the services behind it',
+          'The clients are sending bad requests',
+        ],
+        answer: 2,
+        explanation:
+          'Look at the meters: Bus CPU is pinned while both services have room. Adding copies of the services does nothing for the one layer every request crosses. The shared database in the Lab is not modelled as a bottleneck here.',
+      },
+      {
+        id: 'soa-2',
+        prompt: 'Same situation: the bus is saturated at 1,200 req/s. Which change in the Lab fixes it?',
+        options: [
+          'Move transformation and orchestration out of the bus (Routing), so each message costs the bus less work',
+          'Break Orders to shed load',
+          'Lower Instances to reduce contention',
+          'Put more logic in the bus so it does fewer round trips',
+        ],
+        answer: 0,
+        explanation:
+          'Each message costs the bus x2.2 at + Orchestrate and x1 at Routing, so the same traffic needs less than half the bus capacity. That is smart endpoints, dumb pipes: the logic moves to the services, which can scale. Breaking a service drops requests instead of serving them.',
+      },
+      {
+        id: 'soa-3',
+        prompt:
+          'In the Lab (SOA), you press Bad bus deploy. Every capability fails, although both services are healthy. What does that show?',
+        options: [
+          'The services were misconfigured',
+          'Every request depends on the one shared bus, so a bad change there is a single point of failure for the whole system',
+          'The database failed',
+          'Only Orders is affected',
+        ],
+        answer: 1,
+        explanation:
+          'The services never see the traffic - it dies in the bus. Clustering the bus protects against a crashed machine, not against a bad rule deployed to all of it, which is why logic in a shared layer is so risky.',
+      },
+      {
+        id: 'soa-4',
+        prompt: 'In the Lab (SOA), you press Break Users, and Notifications goes down too. Why?',
+        options: [
+          'Notifications calls Users on every request',
+          'The bus has a bug',
+          'The shared database locked up',
+          'Users and Notifications are packed into one coarse Customer Service, so they run in one process and fail together',
+        ],
+        answer: 3,
+        explanation:
+          'SOA services are coarse-grained: several capabilities per service. The blast radius of a crash is the whole service - compare Microservices mode, where breaking Users leaves Notifications running.',
+      },
+      {
+        id: 'soa-5',
+        prompt:
+          'The rule "prefer the partner price" lives in the orchestration config of the bus, and the pricing team must change it. What typically happens?',
+        options: [
+          'The pricing team deploys the change on its own',
+          'No deploy is needed, because it is only configuration',
+          'The change waits for the team that owns the shared bus, and a bus deploy puts every integration at risk',
+          'Only the clients need to change',
+        ],
+        answer: 2,
+        explanation:
+          'Business logic in shared infrastructure turns the bus team into a bottleneck for every other team, and every bus release is a risk for everyone. Configuration is still a change to a system everything depends on.',
+      },
+      {
+        id: 'soa-6',
+        prompt:
+          'Over two years, an API gateway has gained request transformation, business validation and an aggregation route with pricing rules. What is forming?',
+        options: [
+          'An ESB by another name: business logic in a shared layer, with the same bottleneck and deployment coupling',
+          'A healthy microservices platform',
+          'A service mesh',
+          'A modular monolith',
+        ],
+        answer: 0,
+        explanation:
+          'The pattern returns whenever a shared layer accepts logic, one reasonable change at a time. The fix is to move validation back into the owning service, move aggregation into a small backend owned by the client team, and write down what the gateway may do.',
+      },
+      {
+        id: 'soa-7',
+        prompt: 'What should a shared infrastructure layer - a gateway, a mesh or a bus - be allowed to do?',
+        options: [
+          'Business validation and orchestration, because all traffic passes through it',
+          'Transport concerns: routing, authentication, retries, rate limiting and observability - business decisions stay in the services',
+          'Nothing at all',
+          'Write to the databases of the services directly',
+        ],
+        answer: 1,
+        explanation:
+          'Transport concerns are the same for every service, so a shared layer is the right place for them. A business rule belongs to one service and its team - if changing it means changing the gateway, the boundary has been crossed.',
+      },
+      {
+        id: 'soa-8',
+        prompt:
+          'Five departments each keep their own partial customer records. Which SOA idea addresses this, and still holds today?',
+        options: [
+          'Put the customer logic in the bus so every department can reach it',
+          'Let every department read the other customer tables directly',
+          'Delete four of the systems without a replacement',
+          'One reusable customer service with a contract-first interface that every department calls',
+        ],
+        answer: 3,
+        explanation:
+          'One authoritative service per business capability is the reuse SOA aimed for, and microservices keep it as data ownership. Putting the logic in the bus is the part of SOA that failed; direct table reads couple every department to one schema.',
+      },
+      {
+        id: 'soa-9',
+        prompt:
+          'A team writes and reviews an OpenAPI spec with its consumers before writing any code. Which SOA practice is this, and why keep it?',
+        options: [
+          'Orchestration, because it centralises the workflow',
+          'Bus routing, because it hides the endpoints',
+          'Contract-first: the interface is a deliberate design reviewed by its callers, not whatever the code happened to expose',
+          'Central governance, because every deploy needs approval',
+        ],
+        answer: 2,
+        explanation:
+          'Contract-first - WSDL then, OpenAPI or protobuf now - is the part of SOA worth keeping. It is not orchestration or routing; and it needs no central approval of every deploy, which is the governance that slowed SOA down.',
+      },
+      {
+        id: 'soa-10',
+        prompt:
+          'In the Lab (SOA), both services use one Enterprise DB with a shared schema. The Order Service team wants to rename a column in a shared table. What is the risk?',
+        options: [
+          'Every other service that reads that table can break, so the change needs coordination across teams - sharing as much as possible couples releases',
+          'None - the bus translates the old name',
+          'Only a small performance cost',
+          'The bus rejects the change',
+        ],
+        answer: 0,
+        explanation:
+          'Sharing data is what gives SOA its reuse, and it is also what couples teams: one schema change is a problem for everyone. Microservices answer with one database per service, at the cost of joins and transactions across services.',
+      },
+    ],
   },
   {
     slug: 'serverless',

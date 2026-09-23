@@ -214,8 +214,8 @@ export const LABS: LabDefinition[] = [
   },
   {
     id: 'monolith-microservices',
-    title: 'Monolith vs Microservices Lab',
-    blurb: 'Same product, two architectures, and an honest comparison of both.',
+    title: 'Monolith to Microservices Lab',
+    blurb: 'One product as a monolith, a modular monolith, SOA with a bus and microservices - break a part and compare.',
     category: 'architecture',
     difficulty: 'Advanced',
     concept: 'microservices',

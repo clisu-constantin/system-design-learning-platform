@@ -898,10 +898,10 @@ export const systemVisuals: Record<string, VisualSpec> = {
     height: 280,
     caption: 'Service-shaped boundaries with no network between them - extraction stays cheap.',
     nodes: [
-      { id: 'orders', kind: 'service', label: 'orders', sub: 'own tables', x: 60, y: 100, w: 170, h: 80 },
-      { id: 'users', kind: 'service', label: 'users', sub: 'own tables', x: 500, y: 10, w: 170, h: 80 },
-      { id: 'catalog', kind: 'service', label: 'catalog', sub: 'own tables', x: 500, y: 100, w: 170, h: 80 },
-      { id: 'payments', kind: 'service', label: 'payments', sub: 'own tables', x: 500, y: 190, w: 170, h: 80 },
+      { id: 'orders', kind: 'service', label: 'orders', sub: 'module, own tables', x: 60, y: 100, w: 170, h: 80 },
+      { id: 'users', kind: 'service', label: 'users', sub: 'module, own tables', x: 500, y: 10, w: 170, h: 80 },
+      { id: 'catalog', kind: 'service', label: 'catalog', sub: 'module, own tables', x: 500, y: 100, w: 170, h: 80 },
+      { id: 'payments', kind: 'service', label: 'payments', sub: 'module, own tables', x: 500, y: 190, w: 170, h: 80 },
     ],
     // Placing an order is what calls the other modules. A chain (payments
     // calling catalog calling users) would claim dependencies that do not exist.
