@@ -366,20 +366,24 @@ MICROSERVICES
       {
         heading: 'What you actually give up and gain',
         paragraphs: [
-          'Serverless means you deploy a function and the platform handles provisioning, scaling and patching. There are still servers; you simply have no say in them. You pay per invocation and per millisecond of execution, so idle costs nothing - which is transformative for spiky, low-volume or event-driven workloads.',
-          'Scaling is automatic and fast: from zero to thousands of concurrent executions without a scaling policy, a warm pool or a capacity plan. For a workload that is idle most of the day and then processes ten thousand files, this is a genuinely better model than keeping instances running.',
+          'Serverless means you deploy a function and the platform handles provisioning, scaling and patching. There are still servers; you simply have no say in them. You pay per request and per millisecond of execution, so idle costs nothing - which is transformative for spiky, low-volume or event-driven workloads.',
+          'Scaling is automatic and fast: from zero to thousands of concurrent executions without a scaling policy, a warm pool or a capacity plan. On AWS Lambda each instance serves one request at a time, so the number of instances is the number of requests in flight: 100 requests per second that take 0.5 s each keep 50 instances busy. For a workload that is idle most of the day and then processes ten thousand files, this fits far more closely than keeping instances running.',
           'What you give up is control and predictability. Execution time limits, memory limits, no persistent local state, no long-lived connections, and a runtime you cannot tune. Plus vendor coupling: the function itself may be portable, but the triggers, permissions and surrounding services rarely are.',
         ],
         code: {
           caption: 'Where the cost lines cross',
-          body: `1M requests/month, 200 ms each, 512 MB
-  serverless    ~ $5-10
-  small always-on instance ~ $15-25   -> serverless wins
+          body: `AWS Lambda list price, no free tier:
+  $0.20 per 1M requests + $0.0000166667 per GB-second
 
-100M requests/month, 200 ms each
-  serverless    ~ $400-800
-  a few instances + LB ~ $150-300     -> containers win
+1M requests/month, 200 ms each, 512 MB
+  functions   100,000 GB-s        ~ $2
+  one small always-on instance    ~ $15       -> functions cost less
 
+100M requests/month, 200 ms each, 512 MB
+  functions   10,000,000 GB-s     ~ $190
+  2 instances + load balancer     ~ $100-150  -> instances cost less
+
+an API gateway in front adds $1-3.50 per 1M requests to functions.
 steady high load favours always-on;
 spiky, low or unpredictable load favours serverless.`,
         },
@@ -387,7 +391,8 @@ spiky, low or unpredictable load favours serverless.`,
       {
         heading: 'Cold starts, and how much they actually matter',
         paragraphs: [
-          'When no warm instance exists, the platform must provision one: download the code, start the runtime, initialise the application. That is tens of milliseconds for a small Go or Rust function, a few hundred for Node or Python, and potentially seconds for a large JVM or .NET application with heavy initialisation.',
+          'When no idle instance exists, the platform must start one: download the code, start the runtime, initialise the application. That is tens of milliseconds for a small Go or Rust function, a few hundred for Node or Python, and potentially seconds for a large JVM or .NET application with heavy initialisation. On AWS Lambda that start-up time is billed like run time.',
+          'Scale to zero is the other side of the same coin. After a request the instance is kept idle for a while in case another one arrives, and then reclaimed - the platform decides when, usually after minutes, and does not promise a number. A function called every few minutes can therefore pay a cold start on almost every call, while one under steady traffic rarely does: AWS reports cold starts on under 1 percent of invocations in typical production traffic.',
           'It matters for user-facing latency and does not matter for asynchronous processing. A queue consumer that starts 800 ms late is irrelevant; an API endpoint where 5 percent of requests take an extra second is a visible product problem.',
           'Mitigations exist and have costs: provisioned concurrency keeps instances warm and reintroduces a fixed bill, smaller deployment packages and lazy initialisation reduce startup work, and choosing a lighter runtime helps most of all. Putting a function inside a VPC used to add seconds and is now much improved - but checking the current behaviour of your platform is worth it.',
         ],
@@ -414,7 +419,7 @@ spiky, low or unpredictable load favours serverless.`,
           'Users upload images that need three resized versions. Volume is 50,000 per day, arriving in bursts during business hours with near-zero traffic overnight.',
         walkthrough: [
           'Always-on design: you must size for peak. Peak is roughly 20 images per second; processing takes 2 seconds each, so about 40 concurrent workers - and they idle overnight and most of the afternoon.',
-          'Serverless design: upload to object storage triggers a function per image. Concurrency scales from 0 to 40 and back with no policy, no scaling lag and no idle cost.',
+          'Serverless design: upload to object storage triggers a function per image. Concurrency follows the bursts from 0 to about 40 and back, with no scaling policy and no idle cost.',
           'Cost: 50,000 invocations a day at 2 seconds and 1 GB is roughly 3M GB-seconds a month, about $50 - against several always-on instances sized for peak.',
           'Cold starts are irrelevant: nobody is waiting synchronously, and a 500 ms start on a 2-second job is noise.',
           'Guardrails: a concurrency limit so a bulk import cannot spawn 5,000 functions and exhaust downstream capacity, and a dead letter queue for images that fail repeatedly.',
@@ -428,12 +433,12 @@ spiky, low or unpredictable load favours serverless.`,
       { term: 'FaaS', plain: 'Functions as a service: deploy a function, the platform runs it on demand.' },
       { term: 'Cold start', plain: 'The delay when a new execution environment must be created.' },
       { term: 'Provisioned concurrency', plain: 'Paying to keep instances warm, trading the cost benefit for predictable latency.' },
-      { term: 'Concurrency limit', plain: 'A cap on simultaneous executions. Protects downstream systems and your bill.' },
-      { term: 'Vendor lock-in', plain: 'Coupling to a provider event sources, permissions and services.' },
-      { term: 'Event source', plain: 'What triggers the function: a queue, storage, a schedule, an HTTP request.' },
+      { term: 'Concurrency limit', plain: 'A cap on simultaneous executions; above it the platform throttles. Protects downstream systems and your bill.' },
+      { term: 'Scale to zero', plain: 'With no traffic, every instance is reclaimed: nothing runs and nothing is billed, and the next request cold starts.' },
+      { term: 'Vendor lock-in', plain: 'Coupling to the event sources, permissions and services of one provider.' },
     ],
     remember: [
-      'You pay per invocation, so idle is free and steady high load is expensive.',
+      'You pay per request and per busy millisecond, so idle is free and steady high load is expensive.',
       'Cold starts are noise for async work and a real problem for user-facing p99.',
       'No local state and no persistent connections - design around both.',
       'Many concurrent functions can exhaust database connections; use a pooler and a concurrency cap.',
