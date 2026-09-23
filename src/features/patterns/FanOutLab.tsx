@@ -13,7 +13,7 @@ import { Insight, LabShell, MetricsPanel } from '@/components/learning';
 import { Button, Meter, SegmentedControl, Slider } from '@/components/ui';
 import { advanceParticles, nextParticleId, useEventLog, useTicker, type Particle } from '@/simulations/engine';
 import { useRerender } from '@/hooks/useRerender';
-import { formatCompact, formatLatency, formatNumber } from '@/utils/format';
+import { formatCompact, formatLatency, formatNumber, formatSecondsMinSec } from '@/utils/format';
 
 type Strategy = 'write' | 'read' | 'hybrid';
 
@@ -93,13 +93,6 @@ const createState = (): State => ({
 /** Whether a post by this author is pushed into follower timelines. */
 const pushes = (strategy: Strategy, followers: number) =>
   strategy === 'write' || (strategy === 'hybrid' && followers < HYBRID_THRESHOLD);
-
-function formatDuration(seconds: number) {
-  if (seconds < 1) return formatLatency(seconds * 1000);
-  if (seconds < 60) return `${seconds.toFixed(seconds < 10 ? 1 : 0)} s`;
-  const minutes = Math.floor(seconds / 60);
-  return `${minutes} min ${Math.round(seconds - minutes * 60)} s`;
-}
 
 const LAYOUT: Layout = {
   author: { x: 20, y: 20, w: 170, h: 96 },
@@ -203,7 +196,7 @@ export function FanOutLab() {
         sim.jobs.shift();
         sim.lastDelay = sim.clock - job.queuedAt;
         log(
-          `Post #${job.post} reached all ${formatNumber(job.total)} timelines after ${formatDuration(sim.lastDelay)}`,
+          `Post #${job.post} reached all ${formatNumber(job.total)} timelines after ${formatSecondsMinSec(sim.lastDelay)}`,
           sim.lastDelay > 60 ? 'warn' : 'ok',
         );
       }
@@ -328,7 +321,7 @@ export function FanOutLab() {
     if (falling)
       return (
         <>
-          {formatCompact(followers)} timeline writes per post take {formatDuration(followers / WRITE_RATE)}, but the author
+          {formatCompact(followers)} timeline writes per post take {formatSecondsMinSec(followers / WRITE_RATE)}, but the author
           posts every {POST_EVERY_SIM_S / 60} minutes. The queue never drains, so the feed delay keeps growing - for
           this author and for every post queued behind it. This is the celebrity problem: switch to Hybrid.
         </>
@@ -372,7 +365,7 @@ export function FanOutLab() {
             {
               key: 'feed-delay',
               label: 'Feed delay',
-              value: push ? formatDuration(feedDelay) : 'none',
+              value: push ? formatSecondsMinSec(feedDelay) : 'none',
               sub: push ? 'until the last follower sees a new post' : 'the next read sees it',
               tone: feedDelay > 60 ? 'danger' : feedDelay > 5 ? 'warn' : 'ok',
               hint: `Pushed posts wait for the queue ahead of them, then take followers / ${formatCompact(WRITE_RATE)} writes a second.`,
@@ -398,7 +391,7 @@ export function FanOutLab() {
               key: 'backlog',
               label: 'Fan-out backlog',
               value: formatCompact(backlog),
-              sub: backlog ? `${formatDuration(backlogSeconds)} of work` : undefined,
+              sub: backlog ? `${formatSecondsMinSec(backlogSeconds)} of work` : undefined,
               tone: falling ? 'danger' : backlogSeconds > 60 ? 'warn' : 'ok',
               hint: 'Timeline writes queued and not yet done, for all posts.',
               simulated: true,

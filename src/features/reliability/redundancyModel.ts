@@ -12,6 +12,8 @@
  *   it takes to notice and switch.
  */
 
+import { formatSeconds } from '@/utils/format';
+
 export type Tier = 'lb' | 'app' | 'config' | 'db';
 export type Zone = 'A' | 'B';
 export type FailoverMode = 'automatic' | 'manual';
@@ -170,7 +172,7 @@ export function designAvailability(design: Design): DesignResult {
       copies: design.standby ? `primary + standby (${design.zones === 2 ? 'zones A+B' : 'zone A'})` : 'primary only',
       availability: dbAvailability,
       note: design.standby
-        ? `each primary failure costs a ${formatDuration(failoverSec)} ${design.failover} failover`
+        ? `each primary failure costs a ${formatSeconds(failoverSec)} ${design.failover} failover`
         : 'no standby: its downtime is yours',
     },
     {
@@ -194,14 +196,6 @@ export function designAvailability(design: Design): DesignResult {
 
 /** Downtime a given availability allows per year, in seconds. */
 export const downtimeFor = (availability: number) => (1 - availability) * SECONDS_PER_YEAR;
-
-/** A duration as the one unit that reads best: days, hours, minutes or seconds. */
-export function formatDuration(seconds: number) {
-  if (seconds >= 2 * 86400) return `${(seconds / 86400).toFixed(1)} days`;
-  if (seconds >= 3600) return `${(seconds / 3600).toFixed(1)} h`;
-  if (seconds >= 60) return `${(seconds / 60).toFixed(1)} min`;
-  return `${Math.max(0, seconds).toFixed(seconds < 10 ? 1 : 0)} s`;
-}
 
 /** An availability as a percentage with as many decimals as its nines need. */
 export function formatAvailability(availability: number) {

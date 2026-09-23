@@ -16,7 +16,7 @@ import { Button, SegmentedControl, Slider, Stepper, Toggle } from '@/components/
 import { advanceParticles, nextParticleId, useEventLog, useSeries, useTicker, type Particle } from '@/simulations/engine';
 import { useRerender } from '@/hooks/useRerender';
 import { sampleArrivals } from '@/utils/math';
-import { formatNumber, formatPercent } from '@/utils/format';
+import { formatNumber, formatPercent, formatSeconds } from '@/utils/format';
 import { cn } from '@/utils/cn';
 import type { LabFocus, LabProps, NodeKind, NodeStatus, RequestOutcome } from '@/types';
 import {
@@ -31,7 +31,6 @@ import {
   designAvailability,
   downtimeFor,
   formatAvailability,
-  formatDuration,
   zoneOf,
   type FailoverMode,
   type Replication,
@@ -643,7 +642,7 @@ export function RedundancyLab({ focus }: LabProps<'redundancy'>) {
               {
                 key: 'downtime',
                 label: 'Downtime a year',
-                value: formatDuration(model.downtimeSecPerYear),
+                value: formatSeconds(model.downtimeSecPerYear),
                 tone: model.total >= 0.9999 ? 'ok' : model.total >= 0.999 ? 'warn' : 'danger',
                 hint: 'What the design availability allows: (1 - availability) x one year.',
                 simulated: true,
@@ -712,7 +711,7 @@ export function RedundancyLab({ focus }: LabProps<'redundancy'>) {
                         </span>
                       </div>
                       <p className="text-[11px] text-faint">
-                        {row.note} - {formatDuration(downtimeFor(row.availability))} a year
+                        {row.note} - {formatSeconds(downtimeFor(row.availability))} a year
                       </p>
                     </li>
                   ))}
@@ -725,7 +724,7 @@ export function RedundancyLab({ focus }: LabProps<'redundancy'>) {
               <p className="mt-3 text-[11px] text-faint">
                 Simplified model, not a measurement: parts fail independently, each is repaired in {REPAIR_HOURS} h, a
                 whole zone is up {formatAvailability(ZONE_AVAILABILITY)}, one app server serves {APP_CAPACITY} req/s, a
-                promotion takes {PROMOTE_SEC} s and a manual failover {formatDuration(MANUAL_FAILOVER_SEC)}.
+                promotion takes {PROMOTE_SEC} s and a manual failover {formatSeconds(MANUAL_FAILOVER_SEC)}.
               </p>
             </div>
 
@@ -748,14 +747,14 @@ export function RedundancyLab({ focus }: LabProps<'redundancy'>) {
                         {formatAvailability(level)}
                         {challenge === 'target' && level === HA_TARGET ? ' (target)' : ''}
                       </span>
-                      <span>{formatDuration(downtimeFor(level))} a year</span>
+                      <span>{formatSeconds(downtimeFor(level))} a year</span>
                     </li>
                   );
                 })}
               </ul>
               <p className="mt-2 text-[11px] text-faint">
                 {model.total < LADDER[0]
-                  ? `This design is below 99%: ${formatDuration(model.downtimeSecPerYear)} of downtime a year.`
+                  ? `This design is below 99%: ${formatSeconds(model.downtimeSecPerYear)} of downtime a year.`
                   : 'The highlighted row is the band this design reaches.'}{' '}
                 Each extra nine allows ten times less downtime.
               </p>
@@ -774,38 +773,48 @@ export function RedundancyLab({ focus }: LabProps<'redundancy'>) {
       }
       controls={
         <>
-          <div className="space-y-3">
-            <p className="text-xs font-medium text-muted">Copies of each part</p>
-            <Stepper
-              label="Load balancers"
-              value={setup.lbCopies}
-              min={1}
-              max={MAX_COPIES.lb}
-              onChange={(value) => setCopies('lbCopies', 'lb', value)}
-            />
-            <Stepper
-              label="App servers"
-              value={setup.appCopies}
-              min={1}
-              max={MAX_COPIES.app}
-              onChange={(value) => setCopies('appCopies', 'app', value)}
-              hint={`Each serves up to ${APP_CAPACITY} req/s (simplified). N+1 means one can die and the rest still carry the traffic.`}
-            />
-            <Stepper
-              label="Config service"
-              value={setup.configCopies}
-              min={1}
-              max={MAX_COPIES.config}
-              onChange={(value) => setCopies('configCopies', 'cfg', value)}
-              hint="Feature flags and settings every app server reads. Easy to forget, and every request needs it."
-            />
-            <Toggle
-              label="Standby database"
-              checked={setup.standby}
-              onChange={setStandby}
-              description="A second copy that takes over when the primary dies"
-            />
-          </div>
+          {spofHidden ? (
+            <div className="space-y-2">
+              <p className="text-xs font-medium text-muted">Copies of each part</p>
+              <p className="text-[11px] text-faint">
+                Hidden until you find the single point of failure - the copy counts would give it away. Kill parts one
+                at a time, then add the missing spare here.
+              </p>
+            </div>
+          ) : (
+            <div className="space-y-3">
+              <p className="text-xs font-medium text-muted">Copies of each part</p>
+              <Stepper
+                label="Load balancers"
+                value={setup.lbCopies}
+                min={1}
+                max={MAX_COPIES.lb}
+                onChange={(value) => setCopies('lbCopies', 'lb', value)}
+              />
+              <Stepper
+                label="App servers"
+                value={setup.appCopies}
+                min={1}
+                max={MAX_COPIES.app}
+                onChange={(value) => setCopies('appCopies', 'app', value)}
+                hint={`Each serves up to ${APP_CAPACITY} req/s (simplified). N+1 means one can die and the rest still carry the traffic.`}
+              />
+              <Stepper
+                label="Config service"
+                value={setup.configCopies}
+                min={1}
+                max={MAX_COPIES.config}
+                onChange={(value) => setCopies('configCopies', 'cfg', value)}
+                hint="Feature flags and settings every app server reads. Easy to forget, and every request needs it."
+              />
+              <Toggle
+                label="Standby database"
+                checked={setup.standby}
+                onChange={setStandby}
+                description="A second copy that takes over when the primary dies"
+              />
+            </div>
+          )}
           <div className="space-y-2">
             <p className="text-xs font-medium text-muted">Failure domains</p>
             <SegmentedControl
@@ -924,13 +933,13 @@ export function RedundancyLab({ focus }: LabProps<'redundancy'>) {
       return reached ? (
         <>
           Target reached: {formatAvailability(model.total)} against {formatAvailability(HA_TARGET)}, at most{' '}
-          {formatDuration(model.downtimeSecPerYear)} of downtime a year. Now prove it: kill zone A and a random part and
+          {formatSeconds(model.downtimeSecPerYear)} of downtime a year. Now prove it: kill zone A and a random part and
           check that traffic keeps flowing.
         </>
       ) : (
         <>
-          Reach {formatAvailability(HA_TARGET)} ({formatDuration(downtimeFor(HA_TARGET))} of downtime a year). This design
-          is at {formatAvailability(model.total)} ({formatDuration(model.downtimeSecPerYear)}). Look at the tier-by-tier
+          Reach {formatAvailability(HA_TARGET)} ({formatSeconds(downtimeFor(HA_TARGET))} of downtime a year). This design
+          is at {formatAvailability(model.total)} ({formatSeconds(model.downtimeSecPerYear)}). Look at the tier-by-tier
           list: the biggest downtime is where to spend next.
         </>
       );
@@ -938,9 +947,9 @@ export function RedundancyLab({ focus }: LabProps<'redundancy'>) {
     if (!s.spofFound) {
       return (
         <>
-          This design looks redundant: two load balancers, three app servers, a standby database, two zones. One part
-          still has no spare. Kill parts one at a time (click a box, then repair it) until a single kill stops every
-          request.
+          This design looks redundant: spares, a standby, two zones. Yet one part that every request depends on has no
+          spare. Kill parts one at a time (click a box, then repair it) and watch Served now: find the single kill that
+          drops it to zero.
         </>
       );
     }
@@ -963,7 +972,7 @@ export function RedundancyLab({ focus }: LabProps<'redundancy'>) {
         <>
           The primary is down and failover is manual, so every request that needs the database fails until someone
           presses Promote standby. The clock is running: in a real incident a page, a login and a diagnosis take tens of
-          minutes, which is why the model charges {formatDuration(MANUAL_FAILOVER_SEC)} for every manual failover.
+          minutes, which is why the model charges {formatSeconds(MANUAL_FAILOVER_SEC)} for every manual failover.
         </>
       );
     }
@@ -996,24 +1005,22 @@ export function RedundancyLab({ focus }: LabProps<'redundancy'>) {
         </>
       );
     }
+    if (focus === 'single-point-of-failure' && !s.spofFound) {
+      return (
+        <>
+          A spare only protects the part it copies: the design is no more available than its least redundant part, and
+          a box drawn in a row of copies is not the only kind a request needs. Ask of every box: if this one disappears
+          right now, does any request still get through?
+        </>
+      );
+    }
     switch (focus) {
-      case 'single-point-of-failure':
-        if (!s.spofFound) {
-          return (
-            <>
-              Every request travels Users, load balancer, app server, database, and each app server also needs the
-              config service. Redundancy only helps a tier that has a spare: the design is no more available than its
-              least redundant part. Ask of every box: what happens if this one disappears right now?
-            </>
-          );
-        }
-        break;
       case 'availability':
         return (
           <>
             Each part is up {formatAvailability(setup.partAvailability)}, and a request needs all of them, so their
             availabilities multiply: this design reaches {formatAvailability(model.total)}, which allows{' '}
-            {formatDuration(model.downtimeSecPerYear)} of downtime a year. Switch Each part is up between 99% and 99.9%:
+            {formatSeconds(model.downtimeSecPerYear)} of downtime a year. Switch Each part is up between 99% and 99.9%:
             every extra nine is ten times less downtime. Then add spares and see which moves the number more.
           </>
         );
@@ -1037,14 +1044,14 @@ export function RedundancyLab({ focus }: LabProps<'redundancy'>) {
       default:
         return singlePoints.length ? (
           <>
-            This design reaches {formatAvailability(model.total)} ({formatDuration(model.downtimeSecPerYear)} down a
+            This design reaches {formatAvailability(model.total)} ({formatSeconds(model.downtimeSecPerYear)} down a
             year). Single points of failure: {singlePoints.join(', ')}. Add a copy to a tier and its chance of being down
             squares - 0.1% becomes 0.0001% - as long as the copies do not fail together. Then kill a part and watch the
             spare take over.
           </>
         ) : (
           <>
-            No single part stops the service: {formatAvailability(model.total)}, {formatDuration(model.downtimeSecPerYear)}{' '}
+            No single part stops the service: {formatAvailability(model.total)}, {formatSeconds(model.downtimeSecPerYear)}{' '}
             down a year. What is left is mostly detection and failover time - each failure still costs {setup.detectSec} s
             before the spare takes over.
           </>

@@ -6,7 +6,7 @@ import { Insight, LabShell, MetricsPanel } from '@/components/learning';
 import { Button, Meter, SegmentedControl, Slider, Toggle } from '@/components/ui';
 import { advanceParticles, nextParticleId, useEventLog, useTicker, type Particle } from '@/simulations/engine';
 import { useRerender } from '@/hooks/useRerender';
-import { formatNumber } from '@/utils/format';
+import { formatHours, formatNumber } from '@/utils/format';
 import type { LabFocus, LabProps, RequestOutcome } from '@/types';
 import {
   INCIDENT_ERROR,
@@ -636,7 +636,7 @@ export function SloLab({ focus }: LabProps<'slo'>) {
       return (
         <>
           Paged: the budget is burning at {burn1h.toFixed(0)}x over the last hour (rule {alerts.rule?.label}). At that
-          speed a whole month of budget lasts {formatDuration((30 * 24) / Math.max(burn1h, 1e-6))}. A brief blip would not
+          speed a whole month of budget lasts {formatHours((30 * 24) / Math.max(burn1h, 1e-6))}. A brief blip would not
           page - both the long and the short window must burn fast, so the alert means a real, ongoing problem.
         </>
       );
@@ -704,13 +704,6 @@ function Group({ title, children }: { title: string; children: ReactNode }) {
       {children}
     </div>
   );
-}
-
-/** Hours to "36 min", "5.0 h" or "2.1 days". */
-function formatDuration(hours: number) {
-  if (hours < 1) return `${Math.round(hours * 60)} min`;
-  if (hours < 48) return `${hours.toFixed(1)} h`;
-  return `${(hours / 24).toFixed(1)} days`;
 }
 
 export default SloLab;
