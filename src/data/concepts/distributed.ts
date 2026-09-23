@@ -8,12 +8,13 @@ export const distributedConcepts: Concept[] = [
     category: 'distributed',
     difficulty: 'Intermediate',
     lab: 'cap-theorem',
+    labFocus: 'cap-theorem',
     keywords: ['consistency', 'availability', 'partition', 'cp', 'ap', 'pacelc'],
     what: 'CAP states that a distributed data store cannot simultaneously guarantee consistency, availability and partition tolerance. Since networks do partition, the real choice is between consistency (CP) and availability (AP) while a partition lasts.',
     why: 'It names the decision every replicated system must make in advance: when two nodes cannot talk to each other, does a write succeed and risk divergence, or fail and preserve a single truth?',
     how: [
       'Consistency here means linearizability: every read sees the latest acknowledged write.',
-      'Availability means every non-failing node answers every request.',
+      'Availability means every request that reaches a non-failing node gets a non-error response.',
       'Partition tolerance means the system keeps working when messages between nodes are lost.',
       'Partitions are not optional, so systems land on CP or AP - and the choice can differ per operation.',
     ],
@@ -52,7 +53,7 @@ write arrives at A:
     ],
     realWorld: [
       'ZooKeeper, etcd and Spanner behave as CP - they refuse rather than diverge.',
-      'Cassandra and DynamoDB are tunable: per-query quorum settings move you along the spectrum.',
+      'Cassandra is tunable per query (ONE, QUORUM, ALL); DynamoDB lets each read choose eventually or strongly consistent.',
     ],
     related: ['strong-consistency', 'eventual-consistency', 'consensus', 'replication'],
     quiz: [
@@ -67,20 +68,145 @@ write arrives at A:
         ],
         answer: 1,
         explanation:
-          'Money requires a single truth. A CP system rejects writes it cannot make safely rather than accepting conflicting ones.',
+          'Money needs a single truth, so a CP system refuses the writes it cannot make safely. Accepting on both sides and merging later is the tempting answer, but by then the same balance may have been spent twice. Shutting down everything is not needed: the majority side can keep serving.',
       },
       {
         id: 'cap-2',
-        prompt: 'What does the "A" in CAP actually promise?',
+        prompt:
+          'Your store has a 99.99% uptime SLA, so the team calls it "AP". During a partition, one live replica answers writes it cannot replicate with a 503. In CAP terms, what is that 503?',
         options: [
-          'The system is up 99.99% of the time',
-          'Every request to a non-failing node receives a non-error response, even during a partition',
-          'There is no downtime during deploys',
-          'Reads are always fast',
+          'Still CAP-available, because the SLA allows a few errors',
+          'A loss of partition tolerance',
+          'A loss of CAP availability: a non-failing node answered with an error',
+          'Proof that the replica crashed',
+        ],
+        answer: 2,
+        explanation:
+          'CAP availability means every request to a non-failing node gets a non-error response. A live replica returning 503 is exactly the CP choice. An uptime SLA is a different, statistical promise - meeting it does not make a system AP.',
+      },
+      {
+        id: 'cap-3',
+        prompt:
+          'In the Lab, 3 replicas are split 2 | 1 and the store is in CP mode. Client B keeps sending reads and writes to side B. What does client B get?',
+        options: [
+          'A 503 for every request, while side A keeps serving',
+          'Its writes are queued and applied on side B at once',
+          'Stale reads, but its writes succeed',
+          'The same answers as client A, only slower',
+        ],
+        answer: 0,
+        explanation:
+          'Side B holds 1 of 3 replicas and cannot reach a majority, so in CP mode it refuses reads and writes alike. "Stale reads but writes succeed" describes neither mode: AP would accept both, CP refuses both.',
+      },
+      {
+        id: 'cap-4',
+        prompt:
+          'In the Lab you switch to AP mid-partition, both clients write several times, then you heal the partition. What happens to the writes?',
+        options: [
+          'Both sides keep their own value until an operator decides',
+          'The heal fails until the conflict is resolved by hand',
+          'All writes from both sides are merged into one value',
+          'Last-write-wins keeps the newest version and silently drops the writes the other side acknowledged',
+        ],
+        answer: 3,
+        explanation:
+          'A single value cannot hold both histories, so last-write-wins keeps the newest one and discards the rest - the Lab counts them under "Writes lost at heal". A merge of both sides only happens if you choose a data type that can merge, such as a CRDT or a set union for a cart.',
+      },
+      {
+        id: 'cap-5',
+        prompt:
+          'A colleague says: "We run in one cloud region, so partitions cannot happen - our database is CA." What do you answer?',
+        options: [
+          'Agreed - CA is the right label inside one region',
+          'Partitions happen inside a region too (a switch, a firewall rule, a long pause), so a multi-node store still chooses CP or AP',
+          'CA is fine as long as backups are taken every hour',
+          'Partition tolerance only matters for multi-cloud setups',
         ],
         answer: 1,
         explanation:
-          'CAP availability is a formal property about answering during partitions - it is not the same as an uptime SLA.',
+          'Any two machines talking over a network can be cut off from each other, in one region or not. A multi-node system cannot opt out of partitions; only its behaviour during one is a choice. CA only describes a single node, which is not a distributed system.',
+      },
+      {
+        id: 'cap-6',
+        prompt:
+          'The network is healthy, yet each write to your 3-region store takes 120 ms more than a single-region write, because it waits for a quorum across regions. Which framing explains this?',
+        options: [
+          'CAP: the store is behaving as AP',
+          'A partition that nobody has noticed',
+          'PACELC: without a partition you still trade latency for consistency',
+          'The network is misconfigured; consistent writes are free when it is healthy',
+        ],
+        answer: 2,
+        explanation:
+          'CAP says nothing about the healthy network. PACELC adds the everyday half: Else, choose Latency or Consistency. The 120 ms is the price of the quorum round trip, not a fault to fix.',
+      },
+      {
+        id: 'cap-7',
+        prompt: 'A shop has a like counter, a shopping cart and the stock count for the last unit of an item. Which assignment fits?',
+        options: [
+          'All three CP, to be safe',
+          'All three AP, to stay fast',
+          'Likes CP, cart CP, stock AP',
+          'Likes AP, cart AP with a merge, last-unit stock CP',
+        ],
+        answer: 3,
+        explanation:
+          'CAP is decided per operation. A stale like count harms nobody and a lost cart item costs a sale, so both stay available; selling the last unit twice needs one truth. Making everything CP pays latency and errors where nothing is at risk.',
+      },
+      {
+        id: 'cap-8',
+        prompt: 'Your team chooses AP for the shopping cart. What else must be decided before shipping?',
+        options: [
+          'Nothing - AP stores resolve conflicts correctly by themselves',
+          'How conflicting cart changes from both sides are merged when the partition heals',
+          'Which side of a partition should return errors',
+          'How to make every read linearizable',
+        ],
+        answer: 1,
+        explanation:
+          'Choosing AP invites conflicting writes, so it also means choosing how they are reconciled - for a cart, usually the union of items. Leaving it to the store default often means last-write-wins, which silently drops an item. Returning errors is the CP choice, not part of AP.',
+      },
+      {
+        id: 'cap-9',
+        prompt:
+          'In CP mode, the minority side of a partition refuses reads as well as writes. A developer asks why it does not at least serve reads from its own copy. What do you answer?',
+        options: [
+          'It cannot know whether the majority side accepted newer writes, so its copy may be stale',
+          'Reading would corrupt its data',
+          'Reads need a leader, and the leader is always on the majority side',
+          'It could - refusing reads is just a performance optimisation',
+        ],
+        answer: 0,
+        explanation:
+          'A linearizable read must return the latest acknowledged write. Cut off from the majority, the minority side cannot tell whether it has it, so it refuses. A system may choose to serve such reads, but then they are no longer consistent in the CAP sense.',
+      },
+      {
+        id: 'cap-10',
+        prompt:
+          'In the Lab, CP mode, partitioned: side A shows v7 and side B shows v4, yet the "Consistent" metric says Yes. How can that be?',
+        options: [
+          'The metric is only updated after the partition heals',
+          'v4 and v7 hold the same data',
+          'Side B refuses every request, so no client can read v4',
+          'Side B forwards its reads to side A across the partition',
+        ],
+        answer: 2,
+        explanation:
+          'Consistency is about what clients can observe. Side B still stores the old v4, but in CP mode it answers every request with a 503, so the stale copy is never served. Forwarding across the partition is impossible - that is what a partition means.',
+      },
+      {
+        id: 'cap-11',
+        prompt:
+          'A Cassandra table has 3 replicas and uses QUORUM for reads and writes. One replica is cut off from the other two, and a client reaches only that replica. What happens?',
+        options: [
+          'The request succeeds with the local value',
+          'The request fails: 2 of 3 replicas cannot be reached; at consistency level ONE it would succeed, possibly stale',
+          'Cassandra waits until the partition heals, however long it takes',
+          'Cassandra promotes that replica to leader',
+        ],
+        answer: 1,
+        explanation:
+          'QUORUM needs 2 of 3 replicas to answer, and only 1 is reachable, so the request fails - CP behaviour for that query. At ONE the same request succeeds from one replica and may be stale - AP behaviour. Cassandra has no leader to promote; the consistency level is chosen per query.',
       },
     ],
   },
@@ -90,14 +216,22 @@ write arrives at A:
     tagline: 'What a reader is promised about what a writer did.',
     category: 'distributed',
     difficulty: 'Intermediate',
-    keywords: ['linearizability', 'monotonic reads', 'read your writes', 'models'],
+    lab: 'cap-theorem',
+    labFocus: 'consistency',
+    keywords: ['linearizability', 'monotonic reads', 'read your writes', 'causal', 'models'],
     what: 'A consistency model is the contract between the store and its clients about which values a read may return given the writes that happened before it.',
     why: 'Most real bugs in distributed systems are a mismatch between the model people assume and the one the system provides.',
     how: [
       'Linearizable: reads always see the latest committed write. Strongest and most expensive.',
+      'Causal: if one write caused another, nobody sees the effect without the cause.',
       'Read-your-writes: a client sees its own writes, but not necessarily others.',
       'Monotonic reads: a client never sees time go backwards.',
       'Eventual: replicas converge if writes stop - with no bound on when.',
+    ],
+    when: [
+      'Linearizable for the few operations that must never be wrong: moving money, the last unit of stock, a unique username, a lock.',
+      'Read-your-writes, monotonic reads or causal for most user-facing data - they remove the bugs users notice at a fraction of the cost.',
+      'Eventual for counters, feeds and analytics, where a value a few seconds old harms nobody.',
     ],
     diagram: `write(x=2) ack
    |
@@ -106,13 +240,181 @@ write arrives at A:
    +-- eventual:          everyone sees 2 ... eventually`,
     tradeoffs: [
       {
-        approach: 'Stronger model',
-        gains: ['Simple application code', 'No surprising stale data'],
-        costs: ['Coordination on every operation', 'Latency and reduced availability'],
+        approach: 'Stronger model (linearizable)',
+        gains: ['Simple application code', 'No surprising stale data', 'Invariants like "never oversell" can be enforced'],
+        costs: ['Coordination on every operation (a quorum round trip)', 'Errors on the minority side during a partition'],
+      },
+      {
+        approach: 'Middle models (causal, read-your-writes, monotonic reads)',
+        gains: ['Remove the anomalies users notice', 'Little coordination - often just routing a session'],
+        costs: ['Other users may still see older data', 'Cannot enforce a global invariant such as a unique username'],
+      },
+      {
+        approach: 'Weaker model (eventual)',
+        gains: ['Lowest latency', 'Every replica keeps answering during a partition'],
+        costs: ['Stale reads with no time bound', 'Conflicting writes must be reconciled'],
       },
     ],
-    mistakes: ['Specifying consistency once for the whole system instead of per operation.'],
+    mistakes: [
+      'Specifying consistency once for the whole system instead of per operation.',
+      'Reading from a lagging replica right after a write, so users think their change did not save.',
+      'Confusing ACID consistency (constraints hold) with replica consistency (copies agree).',
+    ],
     related: ['strong-consistency', 'eventual-consistency', 'cap-theorem'],
+    quiz: [
+      {
+        id: 'consistency-1',
+        prompt:
+          'A user changes their avatar. The page reloads and still shows the old one; after another refresh it is correct. What is missing, and what is the cheap fix?',
+        options: [
+          'Linearizability - make every read in the product go through a quorum',
+          'Read-your-writes - route reads of that user to the primary for a few seconds after a write',
+          'Causal consistency - put avatars and posts in one partition',
+          'Nothing - this is correct eventual behaviour and cannot be improved',
+        ],
+        answer: 1,
+        explanation:
+          'The read after the write hit a replica that had not caught up yet. Read-your-writes only needs the writer to see its own change, so pinning that user to the primary briefly is enough. Making every read linearizable fixes it too, but pays a quorum round trip on every read in the product.',
+      },
+      {
+        id: 'consistency-2',
+        prompt: 'An unread badge shows 3, then 5, then 3 again on consecutive page loads. Which guarantee is being violated?',
+        options: [
+          'Read-your-writes',
+          'Linearizability of writes',
+          'Monotonic reads - consecutive requests hit replicas with different lag',
+          'ACID consistency',
+        ],
+        answer: 2,
+        explanation:
+          'Time went backwards for one reader: two requests landed on replicas lagging by different amounts. Keeping the session on one replica fixes it. Read-your-writes is about seeing your own writes; here the user wrote nothing.',
+      },
+      {
+        id: 'consistency-3',
+        prompt:
+          'In a chat app, a reply sometimes appears before the message it answers. The two messages live in different partitions. Which model would prevent this?',
+        options: [
+          'Causal consistency - the effect is never shown without its cause',
+          'Monotonic reads',
+          'Eventual consistency with a shorter replication delay',
+          'A bigger cache in front of the database',
+        ],
+        answer: 0,
+        explanation:
+          'The reply was caused by the message, and causal consistency guarantees nobody sees the effect first. A shorter delay only makes the bug rarer - eventual consistency still allows any order while replicas catch up.',
+      },
+      {
+        id: 'consistency-4',
+        prompt:
+          'Two customers in different regions both buy the last concert ticket, and both get a confirmation. Which fix matches the problem?',
+        options: [
+          'Monotonic reads for the ticket page',
+          'Read-your-writes for each customer',
+          'A longer cache TTL on the stock count',
+          'A linearizable operation for the stock decrement, such as a compare-and-set',
+        ],
+        answer: 3,
+        explanation:
+          'Both buyers read "1 left" and both decremented. Preventing it needs one agreed order of the two operations - linearizability - for this operation only. Session guarantees like read-your-writes only protect one user from themselves; they say nothing about two users racing.',
+      },
+      {
+        id: 'consistency-5',
+        prompt:
+          'In the Lab (AP, partitioned, client A writes and client B reads), client B reads v1 although side A has already acknowledged v3. Which model is the store giving client B?',
+        options: [
+          'Linearizable - the read happened before the write',
+          'Eventual - the sides converge only once the partition heals',
+          'Read-your-writes',
+          'Causal',
+        ],
+        answer: 1,
+        explanation:
+          'The write was acknowledged before the read, so a linearizable store would have to return v3. Side B answers from its own copy and catches up only after the heal - that is eventual consistency. Read-your-writes does not apply: client B never wrote anything.',
+      },
+      {
+        id: 'consistency-6',
+        prompt: 'Now you switch the same Lab to CP. What does client B get instead of the stale v1?',
+        options: [
+          'v3, fetched across the partition',
+          'v1, marked as stale',
+          'A 503: side B cannot reach a majority, so it refuses rather than return a value that may be old',
+          'A random value from either side',
+        ],
+        answer: 2,
+        explanation:
+          'Linearizable reads cost availability on the minority side: side B cannot confirm it has the latest value, so it refuses. It cannot fetch v3 because the partition is exactly what stops it talking to side A.',
+      },
+      {
+        id: 'consistency-7',
+        prompt:
+          'Your database rejects an insert because it would break a foreign key. A colleague says: "That is the consistency CAP is about." Is it?',
+        options: [
+          'No - that is the C of ACID (constraints hold); CAP consistency is about replicas agreeing on the latest value',
+          'Yes - both mean the data is correct',
+          'Yes - foreign keys are how replicas stay in sync',
+          'No - CAP consistency is about transactions being isolated',
+        ],
+        answer: 0,
+        explanation:
+          'The two words share a name and nothing else. ACID consistency means the database never breaks its own rules; distributed consistency is a promise about which value a read returns. Isolation is the I of ACID, a third idea again.',
+      },
+      {
+        id: 'consistency-8',
+        prompt:
+          'Your store is linearizable across 3 regions and every write pays about 150 ms for the cross-region quorum. Product wants likes to feel instant. What do you propose?',
+        options: [
+          'Keep likes linearizable and buy faster servers',
+          'Make the whole store eventually consistent',
+          'Remove one region so the quorum is smaller',
+          'Use a weaker model for likes and keep linearizable writes for the few operations that need them',
+        ],
+        answer: 3,
+        explanation:
+          'Consistency is chosen per operation. A like count a second old harms nobody, so it can skip the quorum; payments and stock keep it. Faster servers do not shorten the speed of light between regions, and weakening the whole store gives up the guarantees that money needs.',
+      },
+      {
+        id: 'consistency-9',
+        prompt:
+          'A store promises "eventual consistency" and writes arrive non-stop, many per second. What does the promise tell you about when a reader will see a given write?',
+        options: [
+          'Within one second',
+          'Nothing bounded - it only promises replicas converge once writes stop',
+          'After the next write',
+          'Immediately, on the replica that took the write, and never on the others',
+        ],
+        answer: 1,
+        explanation:
+          'Eventual consistency has no time bound. In practice lag is usually small, but "usually small" is a measurement, not a guarantee. If you need a bound, measure replication lag and alert on it, or ask for a stronger model.',
+      },
+      {
+        id: 'consistency-10',
+        prompt:
+          'A user edits a document on a laptop, then opens it on a phone a second later and sees the old version. The phone reads from a replica. What fixes it without making every read linearizable?',
+        options: [
+          'Ask the user to wait before switching devices',
+          'Sticky routing of the phone to one replica',
+          'Carry the version of the last write in the user session, and let the replica wait until it has at least that version',
+          'Disable caching on the phone',
+        ],
+        answer: 2,
+        explanation:
+          'Read-your-writes across devices needs the read to know what the user already wrote. A version (logical timestamp) carried with the session lets the replica wait until it has caught up. Sticky routing only gives monotonic reads for one device - the phone was never on the replica the laptop wrote to.',
+      },
+      {
+        id: 'consistency-11',
+        prompt:
+          'To be safe, a team configures strong consistency as one global setting for the whole product. What does that cost?',
+        options: [
+          'Nothing - stronger is always safe',
+          'Only disk space',
+          'It weakens durability of writes',
+          'Every operation pays coordination latency and becomes unavailable on the minority side of a partition, even where stale data is harmless',
+        ],
+        answer: 3,
+        explanation:
+          'Linearizability is paid on every operation: a quorum round trip, and errors when a quorum cannot be reached. That is worth it for money and stock, and pure cost for a view counter. Durability is a separate property and is not weakened.',
+      },
+    ],
   },
   {
     slug: 'availability',
@@ -289,13 +591,20 @@ Redundant DB (two independent 99.9 nodes)   -> ~99.9999% for that tier,
     tagline: 'The network will split. Your system still has to do something sensible.',
     category: 'distributed',
     difficulty: 'Intermediate',
-    keywords: ['network partition', 'split brain', 'quorum', 'fencing'],
+    lab: 'cap-theorem',
+    labFocus: 'partition-tolerance',
+    keywords: ['network partition', 'split brain', 'quorum', 'fencing', 'witness'],
     what: 'Partition tolerance is the ability to keep operating when messages between nodes are delayed or lost, splitting the cluster into groups that cannot talk to each other.',
-    why: 'Partitions are a fact of networks - a switch fails, a cable is cut, a security group changes. A design that ignores them fails in the worst possible way: two halves both believing they are in charge.',
+    why: 'Partitions are a fact of networks - a switch fails, a cable is cut, a firewall rule changes, a node pauses. A design that ignores them fails in the worst possible way: two halves both believing they are in charge.',
     how: [
       'Use quorums: only a majority group may accept writes, so two halves cannot both proceed.',
       'Fence the old leader (revoke its access or lease) before promoting a new one.',
       'Decide explicitly what the minority side does: read-only, queue locally, or return errors.',
+      'Size clusters with an odd number of nodes (3 or 5), so a split usually leaves one side with a majority.',
+    ],
+    when: [
+      'Always, in any system with more than one node: the only choice is what happens during a partition, not whether one happens.',
+      'Add a witness (a voter that holds no data) when a deployment spans exactly two data centres.',
     ],
     diagram: `Node A | Node B   <- partition
 5 nodes: {A,B,C} majority -> accepts writes
@@ -314,10 +623,152 @@ Without quorum: both sides accept writes -> split brain -> divergent data`,
       },
     ],
     mistakes: [
-      'Two-node clusters, where a partition gives neither side a majority (or both sides one).',
+      'Two-node clusters: a partition leaves neither side a majority, so the cluster either stops or risks split brain.',
+      'Adding a fourth node for safety: a majority of 4 is 3, so it tolerates the same single failure as 3 nodes.',
       'Promoting a new primary without fencing the old one.',
+      'Failure-detection timeouts shorter than the worst GC pause, so a paused node is declared dead.',
     ],
     related: ['cap-theorem', 'consensus', 'leader-election', 'failover'],
+    quiz: [
+      {
+        id: 'partition-1',
+        prompt: 'A 5-node cluster splits into a group of 3 and a group of 2. Clients are connected to both groups. Which group may accept writes?',
+        options: [
+          'Both, and they reconcile after the partition heals',
+          'Only the group of 3, because it holds a majority',
+          'Only the group of 2, because it has less load',
+          'Neither, until an operator decides',
+        ],
+        answer: 1,
+        explanation:
+          'Only one majority can exist, so letting only the group of 3 write guarantees that two sides never both act. Letting both write is the AP choice - it keeps everyone working but invites split brain and conflicts to reconcile.',
+      },
+      {
+        id: 'partition-2',
+        prompt:
+          'You run a database as a 2-node cluster with automatic failover. The link between the two nodes fails. What are your options?',
+        options: [
+          'Both nodes keep writing safely, because each holds a full copy',
+          'Each node checks whether the other is alive, and safely takes over if it is not',
+          'Either both stop accepting writes, or one or both proceed and risk split brain - a third voter (a witness) removes the dilemma',
+          'Nothing happens, because 2 nodes is a majority',
+        ],
+        answer: 2,
+        explanation:
+          'A majority of 2 is 2, so a 1 | 1 split gives neither side a majority. Stopping is safe but unavailable; proceeding risks two primaries. "Take over if the other looks dead" is exactly how both become primary, since each sees the other as dead. A witness is the cheap third vote.',
+      },
+      {
+        id: 'partition-3',
+        prompt:
+          'To be safer, the team grows a 3-node cluster to 4. In the Lab, you set 4 replicas and partition the network. What do you see, and what does it teach?',
+        options: [
+          'A 2 | 2 split with no majority anywhere: in CP mode both sides refuse. A 4th node adds cost, not failure tolerance',
+          'Side A keeps serving, because 4 nodes always leave a majority',
+          'Both sides keep serving, because 4 nodes tolerate 2 failures',
+          'The Lab adds a leader to break the tie',
+        ],
+        answer: 0,
+        explanation:
+          'A majority of 4 is 3, so 4 nodes tolerate one failure - the same as 3 - and an even split leaves no side able to act. That is why clusters use 3 or 5 nodes. Tolerating 2 failures needs 5.',
+      },
+      {
+        id: 'partition-4',
+        prompt:
+          'A primary pauses for 9 seconds in garbage collection. After 5 seconds the other nodes elect a new primary. The old one wakes up and tries to write to shared storage. What prevents corrupted data?',
+        options: [
+          'A longer heartbeat interval',
+          'The old primary notices the pause and stops itself',
+          'Quorum alone - the old primary is outvoted',
+          'A fencing token: the storage has seen a newer epoch and rejects the write carrying the old one',
+        ],
+        answer: 3,
+        explanation:
+          'Quorum decided the new leader, but the old one does not know it was deposed - from its own view nothing happened. The resource itself must refuse stale leaders, and a monotonically increasing fencing token lets it do that.',
+      },
+      {
+        id: 'partition-5',
+        prompt: 'Node A stops receiving heartbeats from node B. What can node A know for certain?',
+        options: [
+          'Node B has crashed',
+          'Nothing certain: node B may have crashed, paused, or be alive behind a broken network',
+          'The network is broken, because nodes rarely crash',
+          'Node B will be back within the timeout',
+        ],
+        answer: 1,
+        explanation:
+          'A crashed node and an unreachable one look exactly the same from outside. That is why safe designs decide with a majority vote and fencing, not by guessing which one happened.',
+      },
+      {
+        id: 'partition-6',
+        prompt:
+          'The failure-detection timeout is 2 seconds, and the database regularly has 6-second garbage collection pauses. What will you see?',
+        options: [
+          'Nothing - GC pauses are not partitions',
+          'Faster recovery from real crashes, with no downside',
+          'False failovers: paused nodes are declared dead and replaced while still alive',
+          'The pauses shrink to fit the timeout',
+        ],
+        answer: 2,
+        explanation:
+          'To the rest of the cluster a paused node is indistinguishable from a partitioned one. With a timeout below the worst pause, healthy nodes are voted out and leadership flaps. Raise the timeout above the worst pause, or cut the pauses.',
+      },
+      {
+        id: 'partition-7',
+        prompt:
+          'In a 3 | 2 split, product wants the 2-node minority side to keep showing product pages. Which minority behaviour allows that while keeping writes safe?',
+        options: [
+          'Read-only: serve reads from the local copy (possibly stale) and refuse writes',
+          'Accept writes locally and replay them later',
+          'Return an error for every request',
+          'Promote one of the two to leader',
+        ],
+        answer: 0,
+        explanation:
+          'Serving possibly stale reads keeps pages up, and refusing writes keeps the majority as the only side that changes data. Accepting writes on the minority is the AP choice and brings conflicts; promoting a leader there creates two leaders.',
+      },
+      {
+        id: 'partition-8',
+        prompt:
+          'In the Lab, with the partition in place, you switch from CP to AP and both clients keep writing. Which real failure does this reproduce if a cluster has no quorum rule?',
+        options: [
+          'A cache stampede',
+          'A slow disk',
+          'A retry storm',
+          'Split brain: both sides accept writes, the copies diverge, and the heal has to discard or merge writes',
+        ],
+        answer: 3,
+        explanation:
+          'Two sides acting as the authority is split brain. The Lab shows the bill at heal time: last-write-wins silently drops the writes one side acknowledged, counted under "Writes lost at heal".',
+      },
+      {
+        id: 'partition-9',
+        prompt:
+          'A misapplied firewall rule blocks traffic between two subnets of your cluster for 3 minutes. Every process stays up and healthy. Is this a partition?',
+        options: [
+          'No - a partition needs a cut cable',
+          'No - it is a crash, because nodes stopped answering',
+          'Yes - live nodes that cannot reach each other is exactly a partition',
+          'Only if it lasts longer than 5 minutes',
+        ],
+        answer: 2,
+        explanation:
+          'Most partitions are soft: a firewall rule, a saturated link, a routing change. What makes it a partition is live nodes that cannot talk, not the cause. Nothing crashed here.',
+      },
+      {
+        id: 'partition-10',
+        prompt:
+          'A company runs 2 nodes in data centre X and 2 in data centre Y. The link between X and Y fails. The cluster uses majority quorum. What happens, and what is the usual fix?',
+        options: [
+          'X keeps working because it was first',
+          'Neither side has 3 of 4 votes, so writes stop; a witness in a third location gives one side the majority',
+          'Both sides keep working because each has 2 nodes',
+          'The cluster automatically removes one node from each side',
+        ],
+        answer: 1,
+        explanation:
+          'With 4 voters a majority is 3, and a 2 | 2 split leaves both sides at 2. A light witness in a third site breaks the tie: whichever side still reaches it has 3 of 5 votes. Letting both sides continue would be split brain.',
+      },
+    ],
   },
   {
     slug: 'strong-consistency',
