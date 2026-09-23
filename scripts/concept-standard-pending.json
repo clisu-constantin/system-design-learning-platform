@@ -6,10 +6,6 @@
     "message-queues",
     "background-workers",
     "task-queues",
-    "monolith",
-    "modular-monolith",
-    "microservices",
-    "service-oriented-architecture",
     "backpressure",
     "producer-consumer",
     "request-response"

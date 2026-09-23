@@ -240,7 +240,7 @@ must be idempotent, and it can fail too.`,
           'A team splits into 8 services. Six months later, deploys are slower than before the split and incidents have doubled.',
         walkthrough: [
           'Symptom 1: all 8 services read and write the same database. A schema change requires coordinating 8 deploys - worse than the monolith, which needed one.',
-          'Symptom 2: a single user request traverses 6 services synchronously. Availability is now the product of six numbers, and p99 latency is the sum of six tails.',
+          'Symptom 2: a single user request traverses 6 services synchronously. Availability is now the product of six numbers, and every request waits on six latency tails, so its p99 is worse than the p99 of any single hop.',
           'Symptom 3: services must be deployed in a specific order because of shared contracts, so "independent deployment" does not exist.',
           'Symptom 4: nobody can run the system locally, so development requires a shared staging environment and a queue to use it.',
           'Diagnosis: they distributed the code without distributing the data or the coupling - the definition of a distributed monolith.',
