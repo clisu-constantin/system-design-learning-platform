@@ -51,7 +51,7 @@ const DEFAULT_SETUP: Setup = {
 };
 
 const ATTACKS: { value: Attack; label: string; blurb: string }[] = [
-  { value: 'none', label: 'Honest flow', blurb: 'The user signs in and the app calls the API.' },
+  { value: 'none', label: 'No attack', blurb: 'The honest flow: the user signs in and the app calls the API.' },
   { value: 'stolen-code', label: 'Stolen authorization code', blurb: 'A malicious app catches the redirect.' },
   { value: 'redirect', label: 'Tampered redirect_uri', blurb: 'A phishing link sends the code elsewhere.' },
   { value: 'csrf', label: 'Forged callback (CSRF)', blurb: 'The victim browser delivers the attacker code.' },
@@ -78,6 +78,9 @@ const VERIFIER = 'dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk';
 const CHALLENGE = 'E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM';
 const ACCESS_TOKEN = '2YotnFZFEjr1zCsicMWpAA';
 const REFRESH_TOKEN = 'tGzv3JOkF0XG5Qx2TlKWIA';
+/** Tokens for the account the attacker controls (the access token is the RFC 6750 example). */
+const ATTACKER_ACCESS_TOKEN = 'mF_9.B5f-4.1JqM';
+const ATTACKER_REFRESH_TOKEN = 'Hk3pQ9vLx2Rt7WcZ0bNm4A';
 /** Example access token lifetime in seconds - a common choice, not a rule. */
 const TOKEN_LIFETIME_S = 3600;
 
@@ -131,14 +134,14 @@ const tokenRequest = (code: string, redirect: string, verifier: string | null) =
     .filter(Boolean)
     .join('\n');
 
-const tokenResponse = (scope: Scope) =>
+const tokenResponse = (scope: Scope, access = ACCESS_TOKEN, refresh = REFRESH_TOKEN) =>
   [
     '200 OK',
     '{',
-    `  "access_token": "${ACCESS_TOKEN}",`,
+    `  "access_token": "${access}",`,
     '  "token_type": "Bearer",',
     `  "expires_in": ${TOKEN_LIFETIME_S},`,
-    `  "refresh_token": "${REFRESH_TOKEN}",`,
+    `  "refresh_token": "${refresh}",`,
     `  "scope": "${scope}"`,
     '}',
   ].join('\n');
@@ -416,7 +419,7 @@ function buildRun(setup: Setup): Run {
             to: 'auth',
             title: 'Code plus this session verifier',
             wire: tokenRequest(ATTACKER_CODE, REDIRECT, '<verifier of this browser session>'),
-            note: 'The attacker code is bound to the attacker challenge. The verifier this browser session holds does not hash to it.',
+            note: 'The attacker code is bound to the attacker challenge. Whatever verifier this browser session holds - if it holds one at all - does not hash to it.',
             outcome: 'success',
           },
           {
@@ -452,23 +455,47 @@ function buildRun(setup: Setup): Run {
           from: 'auth',
           to: 'app',
           title: 'Tokens for the attacker account',
-          wire: tokenResponse(scope).replace(ACCESS_TOKEN, 'tokens-for-the-attacker-account'),
-          note: 'Valid tokens - for the account the attacker controls.',
+          wire: tokenResponse(scope, ATTACKER_ACCESS_TOKEN, ATTACKER_REFRESH_TOKEN),
+          note: 'Valid tokens - for the account the attacker controls, not for the victim. The app now ties them to the browser session of the victim.',
           outcome: 'success',
         },
         {
           from: 'app',
           to: 'user',
           title: 'Victim linked to attacker account',
-          wire: '302 Found\nLocation: /photos\n(session linked to the attacker account)',
-          note: 'Photos the victim uploads now land in an account the attacker can read.',
+          wire: '302 Found\nLocation: /prints\n(session signed in to the attacker account)',
+          note: 'The victim sees a normal print app page. Nothing says the account is not theirs.',
+          outcome: 'warning',
+        },
+        {
+          from: 'user',
+          to: 'app',
+          title: 'Victim saves card and address',
+          wire: 'POST /account/billing\ncard=**** **** **** 4242\naddress=12 Elm Street\n(saved to the attacker account)',
+          note: 'The victim believes this is their own account and saves payment details to order prints.',
+          outcome: 'warning',
+        },
+        {
+          from: 'attacker',
+          to: 'app',
+          title: 'Attacker opens own account',
+          wire: 'GET /account/billing\n(the attacker signs in to that account the normal way)',
+          note: 'No stolen credential is needed: this is the account of the attacker. The attacker never got a token or the password of the victim.',
+          outcome: 'warning',
+        },
+        {
+          from: 'app',
+          to: 'attacker',
+          title: 'Victim card and address shown',
+          wire: '200 OK\ncard **** 4242 (saved by the victim)\naddress 12 Elm Street',
+          note: 'This is the harm of login CSRF (RFC 6749, section 10.12): the victim acted inside the account of the attacker, and the attacker reads - and can order prints with - what the victim left there.',
           outcome: 'warning',
         },
       ],
       verdict: 'breached',
       headline: 'The forged callback worked',
       summary:
-        'With neither state nor PKCE, the app redeemed a code it never asked for and linked the victim to the attacker account. Turn either one on and replay.',
+        'With neither state nor PKCE, the app redeemed a code it never asked for and signed the victim in to the attacker account. The attacker got no victim tokens and no password - the harm is what the victim does next, inside an account the attacker can open. Turn state or PKCE on and replay.',
     };
   }
 
@@ -578,7 +605,10 @@ const ATTACK_WIRES: Record<Attack, [Party, Party][]> = {
     ['attacker', 'auth'],
     ['attacker', 'res'],
   ],
-  csrf: [['attacker', 'user']],
+  csrf: [
+    ['attacker', 'user'],
+    ['attacker', 'app'],
+  ],
 };
 
 const BASE_WIRES: [Party, Party][] = [
@@ -722,9 +752,11 @@ export function OAuthLab() {
     if (finished && run.rejectedBy === party) return { status: 'healthy', label: 'Refused the request' };
     if (party === 'attacker') {
       if (finished) {
-        return run.verdict === 'breached'
-          ? { status: 'degraded', label: 'Holds victim tokens' }
-          : { status: 'down', label: 'Got nothing usable' };
+        if (run.verdict !== 'breached') return { status: 'down', label: 'Got nothing usable' };
+        // Login CSRF gives the attacker no victim tokens: the victim works inside the attacker account.
+        return attack === 'csrf'
+          ? { status: 'degraded', label: 'Reads what victim saved' }
+          : { status: 'degraded', label: 'Holds victim tokens' };
       }
       return { status: 'degraded', label: 'Attacker' };
     }
@@ -752,6 +784,21 @@ export function OAuthLab() {
       </ArchNode>
     );
   };
+
+  /** What the attacker holds and gets - login CSRF never yields the tokens of the victim. */
+  const breached = finished && run.verdict === 'breached';
+  const attackerRows: [string, string, string?][] = [
+    [
+      'holds',
+      breached ? (attack === 'csrf' ? 'own account only' : 'victim tokens') : attack === 'csrf' ? 'own account code' : 'no victim tokens',
+      breached && attack !== 'csrf' ? 'text-danger' : 'text-faint',
+    ],
+    [
+      'gets',
+      !finished ? '-' : breached ? (attack === 'csrf' ? 'victim card, address' : 'victim photos') : 'nothing',
+      breached ? 'text-danger' : 'text-faint',
+    ],
+  ];
 
   const defences: { attack: Attack; label: string; defence: string; holds: boolean }[] = [
     { attack: 'stolen-code', label: 'Stolen code', defence: 'PKCE', holds: pkce },
@@ -782,7 +829,7 @@ export function OAuthLab() {
         <div className="space-y-1">
           <ParticleLegend outcomes={['success', 'warning', 'failure']} />
           <p className="text-[11px] text-faint">
-            Here a triangle is a message sent by or to the attacker, and a cross is a message that refuses the request.
+            Here a triangle is a message the attack sends or causes, and a cross is a message that refuses the request.
             Dashed red wires are the ones the attacker uses.
           </p>
         </div>
@@ -874,7 +921,7 @@ export function OAuthLab() {
                       </span>
                     </span>
                     <Badge tone={item.outcome === 'failure' ? 'danger' : item.outcome === 'warning' ? 'warn' : 'brand'}>
-                      {item.outcome === 'failure' ? 'refused' : item.outcome === 'warning' ? 'attacker' : 'flow'}
+                      {item.outcome === 'failure' ? 'refused' : item.outcome === 'warning' ? 'attack' : 'flow'}
                     </Badge>
                   </li>
                 );
@@ -886,7 +933,7 @@ export function OAuthLab() {
       controls={
         <>
           <div className="space-y-2">
-            <p className="text-xs font-medium text-muted">Scenario</p>
+            <p className="text-xs font-medium text-muted">Attack</p>
             <div className="space-y-1.5">
               {ATTACKS.map((item) => (
                 <button
@@ -983,9 +1030,7 @@ export function OAuthLab() {
           ['call needs', call === 'read' ? 'photos.read' : 'photos.write'],
         ])}
         {attack !== 'none'
-          ? node('attacker', 'client', 'Attacker', ATTACKS.find((item) => item.value === attack)?.label ?? '', [
-              ['holds', finished && run.verdict === 'breached' ? 'victim tokens' : 'no tokens', finished && run.verdict === 'breached' ? 'text-danger' : 'text-faint'],
-            ])
+          ? node('attacker', 'client', 'Attacker', ATTACKS.find((item) => item.value === attack)?.label ?? '', attackerRows)
           : null}
       </DiagramCanvas>
     </LabShell>
