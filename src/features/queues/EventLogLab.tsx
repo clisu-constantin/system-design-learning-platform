@@ -2,7 +2,7 @@ import { useCallback, useRef, useState, type ReactNode } from 'react';
 import { RefreshCcw, Rewind } from 'lucide-react';
 import { ArchNode, DiagramCanvas, NodeStatRow, type DiagramEdge, type Layout, type ParticleView } from '@/components/architecture';
 import { Insight, LabShell, MetricsPanel } from '@/components/learning';
-import { Button, Slider, Stepper, Toggle } from '@/components/ui';
+import { Button, SegmentedControl, Slider, Stepper, Toggle } from '@/components/ui';
 import { advanceParticles, nextParticleId, useEventLog, useTicker, visualShare, type Particle } from '@/simulations/engine';
 import { useRerender } from '@/hooks/useRerender';
 import { cn } from '@/utils/cn';
@@ -23,7 +23,9 @@ import {
   lagOf,
   ownedBy,
   partitionOf,
+  previewSeek,
   readLagSeconds,
+  seekBilling,
   skipDeleted,
   startRebuild,
   stepMember,
@@ -31,6 +33,8 @@ import {
   write,
   wrongAccounts,
   type LogState,
+  type OffsetReset,
+  type SeekResult,
 } from './eventLogModel';
 
 interface Setup {
@@ -41,6 +45,10 @@ interface Setup {
   members: number;
   /** Records per second one billing member can process. */
   memberRate: number;
+  /** The offset Rewind billing commits on every partition. */
+  replayFrom: number;
+  /** Where billing goes when its offset was deleted by retention (auto.offset.reset). */
+  offsetReset: OffsetReset;
   /** Records per second the projector can apply. */
   projectorRate: number;
   /** How old a record must be before the projector sees it: transport plus batching. */
@@ -59,6 +67,8 @@ const DEFAULT_SETUP: Setup = {
   partitions: 3,
   members: 2,
   memberRate: 6,
+  replayFrom: 0,
+  offsetReset: 'earliest',
   projectorRate: 30,
   delayMs: 300,
   bug: false,
@@ -149,7 +159,8 @@ export function EventLogLab({ focus }: LabProps<'event-log'>) {
     <K extends keyof Setup>(key: K) =>
     (value: Setup[K]) =>
       setSetup((current) => ({ ...current, [key]: value }));
-  const { writeRate, partitions, members, memberRate, projectorRate, delayMs, bug, snapshots, retention } = setup;
+  const { writeRate, partitions, members, memberRate, replayFrom, offsetReset, projectorRate, delayMs, bug, snapshots, retention } =
+    setup;
 
   const [running, setRunning] = useState(true);
   const state = useRef<State>(createState(start));
@@ -176,12 +187,17 @@ export function EventLogLab({ focus }: LabProps<'event-log'>) {
 
     // Billing group: each member reads the partitions it owns, at its own pace.
     if (members > 0 && model.clock >= model.billing.pausedUntil) {
-      const skipped = skipDeleted(model.billing.offsets, model);
+      const skipped = skipDeleted(model, offsetReset);
       if (skipped > 0) {
-        model.billing.skipped += skipped;
         if (model.clock - current.warnedAt.billing > 4) {
           current.warnedAt.billing = model.clock;
-          log(`Billing fell behind retention: ${formatNumber(skipped)} records were deleted before it read them`, 'danger');
+          log(
+            `Billing fell behind retention: ${formatNumber(skipped)} records were ` +
+              (offsetReset === 'earliest'
+                ? 'deleted before it read them - auto.offset.reset=earliest restarts it at the oldest kept record'
+                : 'deleted or jumped over - auto.offset.reset=latest sends it to the log end'),
+            'danger',
+          );
         }
       }
       const readShare = visualShare(memberRate, PARTICLES_PER_FLOW / 2);
@@ -299,12 +315,27 @@ export function EventLogLab({ focus }: LabProps<'event-log'>) {
 
   const rewindBilling = () => {
     const model = state.current.log;
-    model.billing.offsets = model.partitions.map((partitionLog) => partitionLog.start);
-    const toRead = lagOf(model.billing.offsets, model);
+    const target = Math.min(replayFrom, maxEndOf(model));
+    const results = seekBilling(model, target, offsetReset);
+    const replay = results.reduce((sum, result) => sum + result.replay, 0);
+    const skipped = results.reduce((sum, result) => sum + result.skipped, 0);
+    const deleted = results.filter((result) => result.outcome === 'deleted');
+    const pastEnd = results.filter((result) => result.outcome === 'past-end');
     log(
-      `Billing rewound to the oldest kept offset: it will read ${formatNumber(toRead)} records again. A real billing consumer must be idempotent, or it charges twice`,
+      `Billing rewound to offset ${formatNumber(target)}: it will read ${formatNumber(replay)} records again. A real billing consumer must be idempotent, or it charges twice`,
       'warn',
     );
+    if (deleted.length) {
+      log(
+        `Offset ${formatNumber(target)} is gone from ${listPartitions(deleted)}: retention deleted it, so no one can read it again. ` +
+          (offsetReset === 'earliest'
+            ? 'auto.offset.reset=earliest starts there at the oldest kept offset instead'
+            : 'auto.offset.reset=latest jumps there to the log end, so nothing is replayed'),
+        'danger',
+      );
+    }
+    if (pastEnd.length) log(`${listPartitions(pastEnd)} ${pastEnd.length === 1 ? 'ends' : 'end'} before offset ${formatNumber(target)}: billing lands on the log end`, 'info');
+    if (skipped > 0) log(`${formatNumber(skipped)} records billing had not read yet were jumped over and will never be billed`, 'danger');
   };
 
   const rebuild = () => {
@@ -341,6 +372,9 @@ export function EventLogLab({ focus }: LabProps<'event-log'>) {
   const rebuilding = projector.rebuild;
   const rebuildDone = rebuilding ? clamp(1 - projectorLag / Math.max(rebuilding.events, 1), 0, 1) : 1;
   const logStart = Math.max(...model.partitions.map((partitionLog) => partitionLog.start));
+  const maxEnd = maxEndOf(model);
+  const replayTarget = Math.min(replayFrom, maxEnd);
+  const seekPreview = previewSeek(model, replayTarget, offsetReset);
 
   const edges: DiagramEdge[] = [
     ...Array.from({ length: partitions }, (_, index) => ({ from: 'producer', to: `p${index}`, tone: 'brand' as const })),
@@ -510,6 +544,30 @@ export function EventLogLab({ focus }: LabProps<'event-log'>) {
               disabled={members === 0}
               format={(value) => `${value} records/s`}
             />
+            <Slider
+              label="Replay from offset"
+              value={replayTarget}
+              min={0}
+              max={Math.max(maxEnd, 1)}
+              onChange={change('replayFrom')}
+              disabled={members === 0}
+              format={(value) => `offset ${formatNumber(value)}`}
+              scale={['0', `${formatNumber(maxEnd)} (newest end)`]}
+              hint="Rewind billing commits this offset on every partition, like kafka-consumer-groups --reset-offsets --to-offset. Offsets of different partitions are unrelated numbers; the Lab uses one slider for all of them to keep it simple."
+            />
+            <div className="space-y-1.5">
+              <p className="text-xs font-medium text-muted">If that offset was deleted (auto.offset.reset)</p>
+              <SegmentedControl
+                size="sm"
+                value={offsetReset}
+                onChange={change('offsetReset')}
+                options={[
+                  { value: 'earliest', label: 'earliest' },
+                  { value: 'latest', label: 'latest' },
+                ]}
+              />
+            </div>
+            {members > 0 ? <SeekPreview results={seekPreview} model={model} reread={model.billing.reread} /> : null}
           </ControlGroup>
           <ControlGroup title="Projector and read model">
             <Slider
@@ -547,8 +605,8 @@ export function EventLogLab({ focus }: LabProps<'event-log'>) {
           </ControlGroup>
           <p className="text-[11px] text-faint">
             Simplified model: one event is one record, a key goes to partition account mod partitions, partitions go to
-            members round robin, and a rebalance pauses the group for {REBALANCE_SECONDS} s. Rates are not broker
-            benchmarks.
+            members round robin, and a rebalance pauses the group for {REBALANCE_SECONDS} s. Rewind billing applies
+            auto.offset.reset at once; a real consumer does it on its next fetch. Rates are not broker benchmarks.
           </p>
         </>
       }
@@ -686,6 +744,48 @@ const keysOf = (partition: number, partitions: number) =>
   Array.from({ length: ACCOUNTS }, (_, account) => account).filter((account) => partitionOf(account, partitions) === partition);
 
 const sumOffsets = (offsets: number[]) => offsets.reduce((sum, offset) => sum + offset, 0);
+
+/** The highest log end offset over all partitions: the top of the Replay from slider. */
+const maxEndOf = (model: LogState) => Math.max(...model.partitions.map(endOffset));
+
+const listPartitions = (results: SeekResult[]) => results.map((result) => `P${result.partition}`).join(', ');
+
+/**
+ * Where Rewind billing would land on each partition with the offset picked now:
+ * the kept range is written out, so an offset older than retention reads as
+ * "deleted", never as a silent jump.
+ */
+function SeekPreview({ results, model, reread }: { results: SeekResult[]; model: LogState; reread: number }) {
+  return (
+    <div className="space-y-1 rounded-lg border border-line bg-elevated/60 p-2 text-[11px]">
+      {results.map((result) => {
+        const log = model.partitions[result.partition];
+        return (
+          <div key={result.partition} className="flex items-baseline justify-between gap-2">
+            <span className="shrink-0 text-faint">
+              P{result.partition} keeps {formatNumber(log.start)}-{formatNumber(Math.max(endOffset(log) - 1, 0))}
+            </span>
+            <span
+              className={cn(
+                'text-right font-mono tabular-nums',
+                result.outcome === 'deleted' ? 'text-danger' : result.outcome === 'past-end' ? 'text-muted' : 'text-ink',
+              )}
+            >
+              {result.outcome === 'deleted'
+                ? `deleted, lands on ${formatNumber(result.landed)}`
+                : result.outcome === 'past-end'
+                  ? 'past its end, lands on end'
+                  : result.skipped > 0
+                    ? `skips ${formatNumber(result.skipped)} unread`
+                    : `re-reads ${formatNumber(result.replay)}`}
+            </span>
+          </div>
+        );
+      })}
+      <p className="text-faint">Records billing read twice so far: {formatNumber(reread)}</p>
+    </div>
+  );
+}
 
 /** Records shown on an offset track: the newest ones, so a small lag is still visible. */
 const TRACK_WINDOW = 60;
@@ -867,8 +967,11 @@ function insightFor({
     return (
       <>
         Two consumer groups read the same {partitions} partition{partitions === 1 ? '' : 's'}: billing and the projector.
-        Each keeps its own offset per partition, and reading deletes nothing. Press Rewind billing: it reads everything
-        again while the projector carries on untouched.{retention ? '' : ' Then turn on Size retention and make billing fall behind.'}
+        Each keeps its own offset per partition, and reading deletes nothing. Pick an offset under Replay from offset and
+        press Rewind billing: it reads from there again while the projector carries on untouched.
+        {retention
+          ? ' An offset below the kept range is gone for good - auto.offset.reset decides whether billing starts at the oldest kept record or skips to the end.'
+          : ' Then turn on Size retention and ask for an offset it already deleted.'}
       </>
     );
   }
