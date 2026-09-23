@@ -182,12 +182,14 @@ export const systemVisuals: Record<string, VisualSpec> = {
   'tcp-vs-udp': {
     width: 760,
     height: 280,
-    caption: 'TCP retransmits and reorders. UDP just keeps sending.',
+    caption: 'TCP resends and delivers in order. UDP just keeps sending.',
+    // The two middle boxes are the same network, drawn once per transport so each
+    // protocol keeps its own lane; the Network icon says they are the path, not a server.
     nodes: [
       { id: 'send', kind: 'client', label: 'Sender', x: 40, y: 100, w: 150, h: 76 },
-      { id: 'tcp', kind: 'server', label: 'TCP', sub: 'ordered, retried', x: 300, y: 25, w: 170, h: 80 },
-      { id: 'udp', kind: 'server', label: 'UDP', sub: 'no guarantees', x: 300, y: 175, w: 170, h: 80 },
-      { id: 'recv', kind: 'client', label: 'Receiver', x: 570, y: 100, w: 150, h: 76 },
+      { id: 'tcp', kind: 'cdn', label: 'Over TCP', sub: 'ordered, resent', x: 300, y: 25, w: 170, h: 80 },
+      { id: 'udp', kind: 'cdn', label: 'Over UDP', sub: 'no guarantees', x: 300, y: 175, w: 170, h: 80 },
+      { id: 'recv', kind: 'server', label: 'Receiver', x: 570, y: 100, w: 150, h: 76 },
     ],
     edges: [
       { from: 'send', to: 'tcp', tone: 'ok', rate: 2 },
@@ -196,11 +198,13 @@ export const systemVisuals: Record<string, VisualSpec> = {
       { from: 'udp', to: 'recv', tone: 'warn', rate: 2.8, outcome: 'warning' },
     ],
     steps: [
-      { from: 'send', to: 'tcp', label: 'TCP: handshake, then numbered bytes' },
-      { from: 'tcp', to: 'recv', label: 'Every byte acknowledged, in order' },
+      { from: 'send', to: 'tcp', label: 'TCP: handshake first, one round trip' },
+      { from: 'tcp', to: 'recv', label: 'Numbered bytes arrive in order' },
+      { from: 'recv', to: 'tcp', label: 'Receiver ACKs what arrived' },
       { from: 'tcp', to: 'recv', label: 'Lost packet resent: late, not missing', outcome: 'warning' },
       { from: 'send', to: 'udp', label: 'UDP: no handshake, just send' },
       { from: 'udp', to: 'recv', label: 'Lost datagram stays lost', outcome: 'failure' },
+      { from: 'udp', to: 'recv', label: 'Next datagram still arrives on time' },
     ],
   },
 

@@ -110,37 +110,252 @@ Content-Type: application/json`,
     tagline: 'Ordered and reliable, or fast and lossy.',
     category: 'networking',
     difficulty: 'Beginner',
-    keywords: ['transport', 'handshake', 'packet loss', 'quic'],
-    what: 'TCP provides an ordered, reliable byte stream with connection setup, retransmission and congestion control. UDP sends independent datagrams with none of those guarantees.',
-    why: 'Reliability is not free: retransmission and ordering add latency. Some workloads prefer a lost packet over a late one.',
+    lab: 'transport',
+    keywords: ['transport', 'handshake', 'packet loss', 'head-of-line blocking', 'retransmission', 'quic'],
+    what: 'TCP gives the app an ordered, reliable byte stream: it sets up a connection with a handshake, numbers and acknowledges every byte, resends what is lost and slows down when the network is congested. UDP sends independent datagrams with none of those guarantees.',
+    why: 'Reliability is not free: the handshake, the resends and the in-order rule all cost time. Some workloads would rather lose a packet than get it late.',
     how: [
-      'TCP: three-way handshake, sequence numbers, acknowledgements, retransmit on loss, flow control.',
-      'UDP: fire and forget, no handshake, no ordering, no congestion control unless you add it.',
-      'QUIC (HTTP/3) is built on UDP and implements its own reliability and streams to avoid head-of-line blocking.',
+      'TCP: a three-way handshake (SYN, SYN-ACK, ACK) costs one round trip before the first byte of data.',
+      'TCP numbers every byte. The receiver ACKs what arrived; a lost packet is resent after 3 duplicate ACKs or a timeout, so it arrives at least one round trip late.',
+      'TCP hands bytes to the app strictly in order, so everything behind a lost packet waits for its resend: head-of-line blocking.',
+      'UDP: no handshake, no ACKs, no resends and no ordering. Each datagram arrives whole, late, out of order or not at all, and the app decides what to do.',
+      'QUIC (the transport under HTTP/3) runs over UDP and builds its own reliability per stream, so one lost packet stalls only its own stream.',
     ],
     when: [
-      'TCP: APIs, databases, file transfer - anything where correctness beats latency.',
-      'UDP: live voice and video, gaming, metrics shipping, DNS queries.',
+      'TCP: APIs, databases, file transfer, messaging - anything where every byte must arrive and a little extra latency is fine.',
+      'UDP: live voice and video, game state, metrics samples and small DNS queries - anything where late data is worthless or the next update replaces the lost one.',
+      'UDP as a base for your own protocol, as QUIC does, when you want reliability without the single ordered stream of TCP.',
     ],
-    diagram: `TCP                        UDP
-SYN ->                     data ->
-   <- SYN/ACK              data ->
-ACK ->                     data ->   (one lost, nobody notices)
-data (ordered, retried)
-ordering guaranteed        no ordering, no retries`,
+    advantages: [
+      'TCP: the app never sees a missing, duplicated or reordered byte, and congestion control protects the network.',
+      'UDP: no setup round trip, and a lost datagram never holds up the ones behind it.',
+    ],
+    diagram: `TCP                           UDP
+SYN ->                        data ->
+   <- SYN-ACK                 data ->
+ACK + data ->                 data ->  (lost: nobody resends)
+   <- ACK                     data ->
+lost data resent, 1 RTT late  the rest keep arriving
+ordered, complete, later      unordered, lossy, on time`,
     tradeoffs: [
       {
         approach: 'TCP',
-        gains: ['No lost or reordered data', 'Congestion control protects the network'],
-        costs: ['Handshake latency', 'Head-of-line blocking: one lost packet stalls the stream'],
+        gains: ['No lost, duplicated or reordered data reaches the app', 'Congestion control protects the network without app code'],
+        costs: [
+          'One round trip of handshake before any data',
+          'Head-of-line blocking: one lost packet delays everything behind it by at least a round trip',
+        ],
       },
       {
         approach: 'UDP',
-        gains: ['Minimal latency', 'Loss of one datagram does not stall the rest'],
-        costs: ['You must handle loss, ordering and congestion yourself', 'More likely to be blocked by middleboxes'],
+        gains: ['No handshake: the first datagram carries data', 'Loss of one datagram does not stall the rest'],
+        costs: [
+          'The app must handle loss, ordering and congestion itself',
+          'Some networks block or quickly time out UDP, so a TCP fallback is often needed',
+        ],
+      },
+      {
+        approach: 'QUIC (reliability built on UDP)',
+        gains: [
+          'Reliable, ordered streams where one lost packet stalls only its own stream',
+          'Transport and TLS 1.3 set up together in one round trip',
+        ],
+        costs: [
+          'Runs in user space, so it costs more CPU per byte than kernel TCP today',
+          'Still needs a TCP fallback where UDP is blocked',
+        ],
       },
     ],
-    related: ['http-https', 'websockets', 'dns'],
+    mistakes: [
+      'Sending live voice or game state over TCP, so each lost packet turns into a stutter while everything behind it waits.',
+      'Moving a file transfer to UDP for speed, then finding files with holes - and rebuilding ACKs, resends and ordering badly in the app.',
+      'Opening a new TCP connection per request instead of reusing one, paying the handshake every time and piling up sockets in TIME_WAIT.',
+      'Sending UDP datagrams bigger than the path MTU (about 1,500 bytes), so they fragment and one lost fragment loses the whole datagram.',
+    ],
+    related: ['http-https', 'websockets', 'dns', 'connection-pooling'],
+    quiz: [
+      {
+        id: 'tcpudp-1',
+        prompt:
+          'Your video call app sends audio over TCP. On hotel Wi-Fi with about 3% packet loss, users hear short stutters several times a minute, yet no audio is ever missing. What is going on?',
+        options: [
+          'The audio codec is too slow for the phone CPU',
+          'Each lost packet is resent a round trip later, and the audio behind it waits to be delivered in order, so several frames miss their playout time',
+          'UDP would lose the same frames and stutter in exactly the same way',
+          'TCP has no congestion control, so the Wi-Fi gets overloaded',
+        ],
+        answer: 1,
+        explanation:
+          'TCP never loses the audio, but the resend comes at least a round trip later and TCP will not hand over the frames behind it until the gap is filled. In the Lab, a Voice call on TCP shows one drop turning into several "Too late to play" frames. UDP would not stutter the same way: it loses one 20 ms frame, which the codec can hide, and plays everything after it on time.',
+      },
+      {
+        id: 'tcpudp-2',
+        prompt:
+          'To make firmware downloads faster, a team sends the 1,000-packet image over plain UDP. The network loses 1% of packets. What happens?',
+        options: [
+          'Every download arrives complete, just a little slower',
+          'Every download arrives complete and about 1% faster',
+          'Almost every download is missing some packets, so the device must add its own ACKs and resends - rebuilding part of TCP',
+          'UDP resends each lost datagram up to three times, so only a few downloads fail',
+        ],
+        answer: 2,
+        explanation:
+          'The chance that all 1,000 packets survive 1% loss is 0.99 to the power 1,000, about 0.004%. UDP never resends, so nearly every image has holes, and a firmware image with a hole is useless. The Lab shows the same with File over UDP: most files finish with packets missing. "UDP resends three times" is the tempting wrong answer - resending is exactly what UDP does not do.',
+      },
+      {
+        id: 'tcpudp-3',
+        prompt:
+          'Your service opens a new TCP connection for every call to a dependency 40 ms away (one way), with no TLS. How long before the request bytes can even leave?',
+        options: [
+          'One round trip, 80 ms, for the three-way handshake',
+          'Nothing: TCP sends the request with the first packet',
+          'Three round trips, 240 ms, one for each handshake packet',
+          '40 ms, half a round trip',
+        ],
+        answer: 0,
+        explanation:
+          'SYN goes out, SYN-ACK comes back - one round trip, 80 ms - and the client sends its request along with the final ACK. Three packets is not three round trips: the third one already carries data. The Lab shows this as "Handshake: 1 round trip" on the TCP client. Reusing connections (keep-alive, pooling) pays it once instead of on every call.',
+      },
+      {
+        id: 'tcpudp-4',
+        prompt:
+          'A TCP receiver already holds packets #11 to #15 in its buffer. Packet #10 was lost and has not been resent yet. The app calls read(). What does it get?',
+        options: [
+          'Packets #11 to #15 right away, and #10 later',
+          'An error saying #10 is missing',
+          'Packets #11 to #15 with a gap marker where #10 should be',
+          'Nothing until the resend of #10 arrives; then #10 to #15 together, in order',
+        ],
+        answer: 3,
+        explanation:
+          'TCP promises an in-order byte stream, so it cannot hand over #11 before #10. The Server node in the Lab shows this as "Held back" and "Waiting for #10": head-of-line blocking. Handing over #11 to #15 first is what UDP does - there each datagram goes to the app the moment it arrives.',
+      },
+      {
+        id: 'tcpudp-5',
+        prompt:
+          'A multiplayer game sends each player position 30 times a second over UDP. One position update is lost. What should the game do?',
+        options: [
+          'Resend it until the server acknowledges it',
+          'Ignore it: the next update arrives about 33 ms later and replaces it, and the client can smooth the gap',
+          'Switch the connection to TCP until the loss stops',
+          'Pause the game until the lost update arrives',
+        ],
+        answer: 1,
+        explanation:
+          'A position is only useful while it is fresh, and the next one supersedes it in 33 ms. Resending the old one wastes bandwidth and delivers a stale position late. Switching to TCP would make it worse: every later update would wait behind the lost one.',
+      },
+      {
+        id: 'tcpudp-6',
+        prompt:
+          'A DNS answer for a domain with many records is too large for the UDP response the resolver accepts. What happens?',
+        options: [
+          'The answer is silently cut and the resolver uses the part it got',
+          'The query fails and the name cannot be resolved',
+          'The resolver switches to QUIC',
+          'The server sets the truncated (TC) flag and the resolver asks again over TCP',
+        ],
+        answer: 3,
+        explanation:
+          'DNS uses UDP for small, fast queries and falls back to TCP when the answer does not fit: the server marks the reply truncated and the resolver retries over TCP (RFC 7766 requires DNS servers to support TCP). Using a cut answer would be wrong - the TC flag exists so the resolver knows it is incomplete.',
+      },
+      {
+        id: 'tcpudp-7',
+        prompt:
+          'A page loads 20 images over one HTTP/2 connection, which runs over TCP. One packet carrying part of image 3 is lost. What happens to the other 19 images?',
+        options: [
+          'The data behind the gap stalls too until the packet is resent, because TCP delivers one ordered byte stream and knows nothing about the HTTP/2 streams inside it',
+          'Only image 3 waits; the others keep flowing',
+          'The other images are resent as well',
+          'The connection resets and all 20 images start again',
+        ],
+        answer: 0,
+        explanation:
+          'HTTP/2 multiplexes streams, but TCP underneath sees only bytes in order, so a gap stalls every stream whose bytes come after it. "Only image 3 waits" is what HTTP/3 over QUIC gives you: QUIC orders bytes per stream, so a loss stalls only its own stream.',
+      },
+      {
+        id: 'tcpudp-8',
+        prompt:
+          'In the Lab you set Packet loss to 0% and raise Jitter to 100 ms, with the voice call over UDP and its 60 ms playout buffer. What do you see?',
+        options: [
+          'Nothing changes, because UDP drops nothing',
+          'UDP starts resending the late frames',
+          'Frames arrive out of order and some arrive after their playout time, so they count as too late to play although none was dropped',
+          'Every frame is lost',
+        ],
+        answer: 2,
+        explanation:
+          'Jitter delays some packets more than others, so later ones overtake earlier ones, and any frame delayed more than the 60 ms buffer misses its turn to play. Loss is not the only enemy of real-time audio - lateness is. UDP never resends, so the "resending" option cannot happen.',
+      },
+      {
+        id: 'tcpudp-9',
+        prompt:
+          'Voice over TCP, 2% packet loss. You raise the one-way delay from 20 ms to 100 ms. What happens to the damage each lost packet does?',
+        options: [
+          'Nothing: the loss rate is the same, so the damage is the same',
+          'It gets worse: the resend takes a longer round trip, so more frames pile up behind the gap and miss their playout time',
+          'It gets better, because a longer delay gives the playout buffer more room',
+          'TCP stops resending once the delay is above 100 ms',
+        ],
+        answer: 1,
+        explanation:
+          'A resend costs at least a round trip. In the Lab at 20 ms one way, a lost frame comes back about 40 ms past its playout time and makes 2 frames late; at 100 ms it comes back about 200 ms late and makes about 10 frames late. Same loss rate, five times the stutter. The playout buffer is fixed at 60 ms after the normal arrival, so it does not grow with the delay.',
+      },
+      {
+        id: 'tcpudp-10',
+        prompt: 'A colleague asks why HTTP/3 runs over UDP, when web pages must arrive complete. What is the best answer?',
+        options: [
+          'Web pages do not need reliability, so UDP is enough',
+          'UDP is faster than TCP on every network',
+          'Firewalls prefer UDP over TCP',
+          'QUIC uses UDP as a thin base and builds its own reliability, per stream and in user space, avoiding the single ordered stream of TCP and slow kernel upgrades',
+        ],
+        answer: 3,
+        explanation:
+          'HTTP/3 is fully reliable - QUIC adds numbering, ACKs and resends on top of UDP. It uses UDP because it wants to own that logic: per-stream ordering avoids head-of-line blocking across streams, and user-space code can change without waiting for every OS kernel. Firewalls do not prefer UDP; many block it, which is why browsers keep a TCP fallback.',
+      },
+      {
+        id: 'tcpudp-11',
+        prompt:
+          'Your new UDP-based video protocol works in every test, but some users on corporate networks cannot connect at all. What is the most likely cause and fix?',
+        options: [
+          'Their networks block or quickly time out UDP; keep a fallback over TCP, as QUIC implementations do',
+          'Their datagrams are too small; make them larger',
+          'Their TCP handshake fails; add a second handshake',
+          'Their machines cannot decode UDP; ship a new codec',
+        ],
+        answer: 0,
+        explanation:
+          'Many firewalls and middleboxes block UDP or drop its state after a short idle time, because most business traffic is TCP. The standard answer is a TCP fallback. Making datagrams larger makes things worse: above the path MTU they fragment.',
+      },
+      {
+        id: 'tcpudp-12',
+        prompt:
+          'A service sends 8 KB UDP datagrams over a network with 1,500-byte packets and 1% packet loss. Far more than 1% of the datagrams go missing. Why?',
+        options: [
+          'UDP drops large datagrams on purpose',
+          'The receiver rejects datagrams over 1,500 bytes',
+          'Each datagram is split into about 6 fragments, and losing any one loses the whole datagram - about 6% of datagrams',
+          'Large datagrams trigger TCP congestion control',
+        ],
+        answer: 2,
+        explanation:
+          'An 8 KB datagram does not fit one 1,500-byte packet, so IP fragments it into about 6 pieces. If any piece is lost, the whole datagram is discarded: 1 - 0.99 to the power 6 is about 6%. That is why UDP protocols keep datagrams under about 1,400 bytes. The receiver does accept large datagrams - the problem is that they arrive in pieces.',
+      },
+      {
+        id: 'tcpudp-13',
+        prompt:
+          'A service opens and closes thousands of short TCP connections per second to one backend. CPU and memory are fine, but new connections start failing. What is the likely cause?',
+        options: [
+          'The backend is out of CPU',
+          'Closed connections linger in TIME_WAIT (60 seconds on Linux) and use up the local ports; reuse connections instead',
+          'TCP limits each host to 1,000 connections',
+          'The handshake packets are lost more often at high rates',
+        ],
+        answer: 1,
+        explanation:
+          'The side that closes a TCP connection keeps it in TIME_WAIT for twice the maximum segment lifetime, 60 seconds on Linux, to catch stray packets. Thousands of connections per second times 60 seconds can use up the roughly 28,000 ephemeral ports Linux uses by default. Keep-alive and connection pooling fix it. There is no fixed 1,000-connection limit in TCP.',
+      },
+    ],
   },
   {
     slug: 'reverse-proxy',

@@ -14,7 +14,6 @@
     "auto-scaling",
     "dns",
     "http-https",
-    "tcp-vs-udp",
     "reverse-proxy",
     "forward-proxy",
     "cdn",
