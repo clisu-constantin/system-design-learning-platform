@@ -1269,22 +1269,24 @@ export const systemVisuals: Record<string, VisualSpec> = {
 
   'secrets-management': {
     width: 760,
-    height: 270,
+    height: 290,
     caption: 'Short-lived credentials issued at runtime - nothing static in the repo or the image.',
     nodes: [
-      { id: 'wl', kind: 'server', label: 'Workload', sub: 'IAM identity', x: 40, y: 95, w: 170, h: 80 },
-      { id: 'vault', kind: 'storage', label: 'Secret manager', sub: 'rotates automatically', x: 290, y: 90, w: 200, h: 88 },
-      { id: 'db', kind: 'sql', label: 'Database', sub: 'credential valid 15 min', x: 560, y: 90, w: 180, h: 88 },
+      { id: 'wl', kind: 'server', label: 'Workload', sub: 'workload identity', x: 40, y: 180, w: 180, h: 88 },
+      { id: 'vault', kind: 'storage', label: 'Secret manager', sub: 'audits every read', x: 280, y: 16, w: 200, h: 88 },
+      { id: 'db', kind: 'sql', label: 'Database', sub: 'user valid 1 hour', x: 540, y: 180, w: 180, h: 88 },
     ],
     edges: [
-      { from: 'wl', to: 'vault', tone: 'brand', rate: 1.4 },
-      { from: 'vault', to: 'db', tone: 'ok', rate: 1.4 },
+      { from: 'wl', to: 'vault', tone: 'brand', rate: 0.5 },
+      { from: 'vault', to: 'db', tone: 'violet', rate: 0.5 },
+      { from: 'wl', to: 'db', tone: 'ok', rate: 2 },
     ],
     steps: [
-      { from: 'wl', to: 'vault', label: 'Workload proves its IAM identity' },
-      { from: 'vault', to: 'db', label: 'Secret manager mints 15-minute login' },
+      { from: 'wl', to: 'vault', label: 'Workload proves its identity' },
+      { from: 'vault', to: 'db', label: 'Creates a 1-hour database user' },
       { from: 'vault', to: 'wl', label: 'Credential delivered at runtime' },
-      { from: 'vault', to: 'db', label: 'Expired login revoked automatically' },
+      { from: 'wl', to: 'db', label: 'Workload logs in with it' },
+      { from: 'vault', to: 'db', label: 'Lease ends: user dropped' },
     ],
   },
 

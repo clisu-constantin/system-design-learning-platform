@@ -616,33 +616,33 @@ and in mobile apps. Always test with an external checker.`,
     analogy: {
       title: 'A key safe with a log, not a note on the desk',
       body:
-        'Keys live in a safe that records who took what and when, and the codes are changed periodically. Nobody writes the master code on a sticky note or emails it to a colleague. Secrets management is that discipline: not merely hiding values, but controlling access, recording it, and being able to change everything quickly.',
+        'Keys live in a safe that records who took which key and when, and each person gets their own key, so a lost one is replaced without changing every lock in the building. Nobody writes the master code on a sticky note or emails it to a colleague. Secrets management is that discipline: not merely hiding values, but controlling access, recording it, and being able to change any key quickly.',
     },
     deepDive: [
       {
         heading: 'Where secrets should not be',
         paragraphs: [
           'Not in source control - git keeps history forever, so a committed secret is still there after you delete it, and it is in every clone and every fork. Removing it requires rewriting history and rotating the secret anyway, so treat any commit as permanent exposure.',
-          'Not in container images, which are pulled by many systems and often pushed to shared registries. Not in build logs or CI output, which are widely readable. Not in front-end bundles, ever. And not in plain environment variables on shared hosts, where any process and most crash reporters can read them.',
-          'Environment variables deserve a nuance: they are a reasonable delivery mechanism when injected at runtime by an orchestrator or secrets manager, and a bad storage mechanism when written into a .env file that gets committed or copied. The difference is where the value lives at rest.',
+          'Not in container images, which are pulled by many systems and often pushed to shared registries: a value set with ENV in a Dockerfile is readable by anyone who can pull the image. Not in build logs or CI output, which are widely readable. Not in front-end bundles, ever - a build variable is compiled into the JavaScript every browser downloads.',
+          'Environment variables deserve a nuance: they are a common delivery mechanism when injected at runtime by an orchestrator or secrets manager, and a bad storage mechanism when written into a .env file that gets committed or copied. Even as delivery they leak more than a mounted file or a direct fetch, because other processes, logs and crash dumps can pick them up. The difference that matters most is where the value lives at rest.',
         ],
         code: {
           caption: 'The progression most teams walk',
-          body: `0  secrets in code                 exposed forever, in every clone
-1  .env file, gitignored          better; still on disk, still copied
-2  env vars injected by the platform   no file, but static and shared
-3  secrets manager, fetched at start   central, access-controlled, audited
-4  short-lived dynamic credentials     the database password lives 1 hour
+          body: `0  secrets in code                    in every clone and image, forever
+1  .env file, gitignored              out of git; still on disk, still copied
+2  env vars injected by the platform  no file, but static and shared
+3  secrets manager, fetched at start  central, access-controlled, audited
+4  dynamic short-lived credentials    a database user that lives 1 hour
 
-each step reduces both the blast radius and the cost of rotation.`,
+each step shrinks both the blast radius and the cost of rotation.`,
         },
       },
       {
         heading: 'What a secrets manager actually buys',
         paragraphs: [
           'Central storage encrypted at rest is the least of it. The valuable parts are access control per identity (this service may read this secret and no other), an audit log of every access, versioning so a rotation can be rolled back, and an API that makes automated rotation possible.',
-          'Dynamic secrets go further: the manager creates a database user on demand with a one-hour lease and deletes it afterwards. There is then no long-lived credential to leak, and a compromised process yields a credential that expires by itself. This is the strongest available answer for database access.',
-          'Workload identity removes the bootstrapping problem - how does the service authenticate to the secrets manager without a secret? The platform vouches for the workload (a Kubernetes service account, an instance role), so no credential is provisioned by hand at all. Where available, this is the clean solution to the oldest problem in the field.',
+          'Dynamic secrets go further: the manager creates a database user on demand with a lease, for example one hour, and drops it when the lease ends. There is then no long-lived credential to leak, a compromised process yields a credential that expires by itself, and because every service has its own user, the database log names the service behind every login. The cost is that the manager is now on the critical path: if it is down when a lease ends, the service cannot log in.',
+          'Workload identity removes the bootstrapping problem - how does the service authenticate to the secrets manager without a secret? The platform vouches for the workload (a Kubernetes service account, a cloud instance role), so no credential is provisioned by hand at all.',
         ],
         bullets: [
           'Per-identity access control, so a compromised service cannot read everything.',
@@ -656,7 +656,7 @@ each step reduces both the blast radius and the cost of rotation.`,
         heading: 'Rotation is the capability that matters',
         paragraphs: [
           'The question to ask of any secret is: if this leaked right now, how long would it take us to replace it? If the answer is "we are not sure" or "it would require downtime", that is the problem to fix, ahead of most other security work.',
-          'Rotation is only painless if the system supports two valid secrets at once. Then the sequence is: create the new one, deploy it, verify traffic has moved, revoke the old one. Without overlap, rotation is a coordinated outage, which is precisely why it never happens.',
+          'Rotation is painless when two valid credentials can exist at once - a dual-key window. The sequence is: create the new one, move every holder to it, verify traffic has moved, revoke the old one. AWS Secrets Manager calls this the alternating-users strategy. Without overlap (the single-user strategy) there is a window where the old credential is dead and a holder still uses it; that window is seconds when holders fetch at runtime and retry, and an outage when every holder needs a redeploy. The overlap has a price too: a leaked credential stays valid until the last holder has moved.',
           'Support it with detection: secret scanning in repositories and CI, alerting on use from unexpected sources, and an inventory of what exists and who owns it. An unknown secret cannot be rotated, and most organisations discover during an incident that their inventory was incomplete.',
         ],
       },
@@ -665,35 +665,50 @@ each step reduces both the blast radius and the cost of rotation.`,
       {
         title: 'A key in git history, three years later',
         setup:
-          'A developer commits a cloud access key, notices within minutes, and pushes a commit removing it. Three years later the key is used to mine cryptocurrency.',
+          'A developer commits a cloud access key at 14:02, notices at 14:06 and pushes a commit that deletes it. The repository has 25 clones and 1 public fork. Three years later the key is used to mine cryptocurrency.',
         walkthrough: [
-          'The removal commit deleted the file contents but not the history. The key remained in the repository object store, in every clone, and in a fork somebody had made.',
-          'The key was never rotated, because it had been "removed". It retained full permissions the entire time.',
-          'An automated scanner found it in the public fork and used it. Detection came from the cloud bill, not from monitoring.',
-          'Correct immediate response: rotate the key first, then worry about the history. Removal without rotation is theatre.',
-          'Fix 1: pre-commit and server-side secret scanning, so the commit is blocked rather than discovered later.',
-          'Fix 2: keys issued with narrow scopes and short expiry, so a leaked key cannot do everything and cannot do it forever.',
-          'Fix 3: cloud billing and anomaly alerts, so unusual usage is noticed in hours rather than weeks.',
-          'Fix 4: move to workload identity, so no long-lived key exists to be committed at all.',
+          'The 14:06 commit changed only the newest version of the file. The 14:02 commit still holds the key, and so do all 25 clones and the fork.',
+          'The key was never rotated, because it had been "removed" - so for about 1,100 days it kept every permission it had on day one.',
+          'A scanner found it in the public fork. Detection came 3 weeks later, from a cloud bill many times the usual size.',
+          'Correct response at 14:06: revoke the key (1 minute), issue a new one, and only then clean history - optional once the key is dead.',
+          'Fix 1: push protection or a pre-commit scanner, so the 14:02 push is blocked instead of discovered.',
+          'Fix 2: keys with narrow scopes and a 90-day expiry, so a leaked key cannot do everything, and not for 3 years.',
+          'Fix 3: billing and anomaly alerts, so unusual use is noticed in hours rather than 3 weeks.',
+          'Fix 4: workload identity, so 0 long-lived keys exist to be committed.',
         ],
         result:
           'Deleting a committed secret does not unexpose it - only rotation does. The strategic fix is having fewer long-lived secrets in the first place, which is exactly what workload identity and dynamic credentials provide.',
       },
+      {
+        title: 'Rotating one shared password, with and without a dual-key window',
+        setup:
+          'Three services share one database password written in their code. A rebuild and redeploy takes 10 minutes and they are done one after another. The password leaks at 09:00 and the rotation starts at 09:30.',
+        walkthrough: [
+          'Without a window, 09:30: the new password is set, the old one stops working, and all 3 services fail to log in.',
+          'Service 1 is redeployed at 09:40, service 2 at 09:50, service 3 at 10:00: 10 + 20 + 30 = 60 service-minutes of outage.',
+          'The attacker had the password from 09:00 to 09:30: 30 minutes of access.',
+          'With a window, 09:30: a second password (or a cloned user) is added and the old one keeps working, so 0 minutes of outage.',
+          'The old password is revoked at 10:00, after the third redeploy: the attacker had 60 minutes of access instead of 30.',
+          'With a vault and 1 credential per service: only the Orders credential is rotated, Orders fetches the new one within seconds, and the other 2 services are not touched.',
+        ],
+        result:
+          'A dual-key window turns 60 service-minutes of outage into 0, at the cost of the old credential living until the last holder has moved. Per-service credentials delivered at runtime shrink both numbers, because only one holder has to move and moving takes seconds.',
+      },
     ],
     jargon: [
-      { term: 'Secret', plain: 'Any value that grants access: passwords, API keys, tokens, private keys, certificates.' },
-      { term: 'Secrets manager', plain: 'A service storing secrets with access control, auditing and rotation support.' },
+      { term: 'Secrets manager', plain: 'A service storing secrets with access control, auditing and rotation support. Vault is one.' },
       { term: 'Dynamic secret', plain: 'A credential created on demand with a short lease and then deleted.' },
+      { term: 'Lease', plain: 'How long a dynamic credential is valid. When it ends, the manager revokes the credential.' },
       { term: 'Workload identity', plain: 'The platform vouching for a service so it needs no bootstrap credential.' },
-      { term: 'Rotation', plain: 'Replacing a secret. Painless only if two are valid at once.' },
+      { term: 'Dual-key window', plain: 'The time during a rotation when the old and the new credential both work.' },
       { term: 'Envelope encryption', plain: 'Encrypting data with a key that is itself encrypted by a managed master key.' },
     ],
     remember: [
       'A committed secret is exposed permanently - rotate first, clean history second.',
-      'Environment variables are an acceptable delivery mechanism, not a storage mechanism.',
+      'Environment variables can deliver a secret; they are a poor place to store one.',
       'The value of a secrets manager is access control, auditing and rotation, not just encryption.',
-      'Design for two valid secrets at once, or rotation will never happen.',
-      'Short-lived dynamic credentials beat protecting long-lived ones.',
+      'Design for two valid credentials at once, or rotation becomes an outage that never happens.',
+      'One credential per service, short-lived where possible: a leak then speaks for one service, briefly.',
     ],
   },
 

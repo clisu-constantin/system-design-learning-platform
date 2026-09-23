@@ -40,7 +40,6 @@
     "jwt",
     "rate-limiting",
     "tls-https",
-    "secrets-management",
     "monolith",
     "modular-monolith",
     "microservices",
