@@ -10,7 +10,7 @@ import {
 } from '@/components/architecture';
 import { LiveChart } from '@/components/charts';
 import { Insight, LabShell, MetricsPanel, RequestInspector } from '@/components/learning';
-import { Meter, Slider, Toggle } from '@/components/ui';
+import { Meter, SegmentedControl, Slider, Toggle } from '@/components/ui';
 import {
   advanceParticles,
   MetricWindow,
@@ -26,9 +26,16 @@ import { computeLoad } from '@/simulations/models/load';
 import { useRerender } from '@/hooks/useRerender';
 import { clamp, sampleArrivals } from '@/utils/math';
 import { formatLatency, formatNumber, formatPercent } from '@/utils/format';
-import type { SimulatedRequest } from '@/types';
+import type { LabFocus, LabProps, SimulatedRequest } from '@/types';
 
-const CACHE_LATENCY = 4;
+/**
+ * Simplified numbers, chosen to match the table in the Caching Lesson (hit 1 ms,
+ * miss 50 ms): a Redis GET is microseconds of work plus a network hop inside the
+ * data centre, and the database query is a typical uncached read. The database
+ * latency then grows with load through the computeLoad queueing model.
+ */
+const CACHE_LATENCY = 1;
+const DB_BASE_LATENCY = 50;
 const DB_CAPACITY = 900;
 
 /** Requests animated per second, independent of how much traffic is counted. */
@@ -40,8 +47,8 @@ const INSPECTABLE_REQUESTS = 140;
 const LAYOUT: Layout = {
   users: { x: 60, y: 210, w: 150, h: 70 },
   api: { x: 280, y: 200, w: 170, h: 92 },
-  cache: { x: 520, y: 90, w: 190, h: 128 },
-  db: { x: 520, y: 320, w: 190, h: 128 },
+  cache: { x: 520, y: 60, w: 210, h: 160 },
+  db: { x: 520, y: 320, w: 210, h: 128 },
 };
 
 const EDGES: DiagramEdge[] = [
@@ -51,6 +58,56 @@ const EDGES: DiagramEdge[] = [
   // the row. A cache -> db edge would describe read-through instead, which the
   // Cache Strategies lab teaches as a different pattern.
   { from: 'api', to: 'db', tone: 'violet', label: 'on miss' },
+];
+
+/**
+ * The two Redis maxmemory policies the lab models. allkeys-lru is the usual
+ * choice for a cache; noeviction is the Redis default, and it refuses new writes
+ * once memory is full instead of making room.
+ */
+type EvictionPolicy = 'allkeys-lru' | 'noeviction';
+
+interface Setup {
+  enabled: boolean;
+  traffic: number;
+  ttl: number;
+  /** maxmemory, counted in keys: the lab treats every value as the same size. */
+  size: number;
+  keyspace: number;
+  skew: number;
+  policy: EvictionPolicy;
+}
+
+/** What the lab opens on at /labs/caching, with no Lab focus. */
+const DEFAULT_SETUP: Setup = {
+  enabled: true,
+  traffic: 1000,
+  ttl: 60,
+  size: 100,
+  keyspace: 500,
+  skew: 0.6,
+  policy: 'allkeys-lru',
+};
+
+/**
+ * The Lab focus of each Concept that hosts this lab.
+ *
+ * Caching opens on a cache that holds the hottest 100 of 500 keys: about 60% of
+ * requests hit and 40% miss, so both paths are on screen at once.
+ *
+ * Redis opens on its memory limit: 150 keys of room for 2,000 distinct keys and
+ * a 10 s TTL, so the Memory meter is full, evictions climb and entries expire -
+ * and switching the policy to noeviction shows what the Redis default does.
+ */
+const FOCUS_SETUPS: Record<LabFocus<'caching'>, Setup> = {
+  // The same as the default today, on purpose: spelled out so it stays a hit-and-miss mix if the default moves.
+  caching: { ...DEFAULT_SETUP },
+  redis: { ...DEFAULT_SETUP, ttl: 10, size: 150, keyspace: 2000, policy: 'allkeys-lru' },
+};
+
+const POLICIES: { value: EvictionPolicy; label: string }[] = [
+  { value: 'allkeys-lru', label: 'allkeys-lru' },
+  { value: 'noeviction', label: 'noeviction' },
 ];
 
 interface CacheEntry {
@@ -71,6 +128,10 @@ interface State {
   hits: RateCounter;
   misses: RateCounter;
   evictions: number;
+  expired: number;
+  /** SETs refused because memory was full under noeviction (Redis answers with an OOM error). */
+  rejected: number;
+  lastOomLog: number;
   dbQueries: RateCounter;
   latency: MetricWindow;
 }
@@ -82,6 +143,9 @@ const createState = (): State => ({
   hits: new RateCounter(3000),
   misses: new RateCounter(3000),
   evictions: 0,
+  expired: 0,
+  rejected: 0,
+  lastOomLog: -Infinity,
   dbQueries: new RateCounter(2000),
   latency: new MetricWindow(400),
 });
@@ -95,14 +159,18 @@ function pickKey(keyspace: number, skew: number) {
   return `product:${Math.floor(random * keyspace) + 1}`;
 }
 
-export function CachingLab() {
+export function CachingLab({ focus }: LabProps<'caching'>) {
+  // The page keys this lab by Concept, so the focus never changes under a mounted lab.
+  const start = focus ? FOCUS_SETUPS[focus] : DEFAULT_SETUP;
+  // Every control lives in one object, so Reset cannot miss one.
+  const [setup, setSetup] = useState(start);
+  const { enabled, traffic, ttl, size, keyspace, skew, policy } = setup;
+  const change =
+    <K extends keyof Setup>(key: K) =>
+    (value: Setup[K]) =>
+      setSetup((current) => ({ ...current, [key]: value }));
+
   const [running, setRunning] = useState(true);
-  const [enabled, setEnabled] = useState(true);
-  const [traffic, setTraffic] = useState(1000);
-  const [ttl, setTtl] = useState(60);
-  const [size, setSize] = useState(100);
-  const [keyspace, setKeyspace] = useState(500);
-  const [skew, setSkew] = useState(0.6);
   const [inspected, setInspected] = useState<SimulatedRequest | null>(null);
 
   const state = useRef<State>(createState());
@@ -111,55 +179,60 @@ export function CachingLab() {
   const { points, push, reset: resetSeries } = useSeries(50, 500);
 
   const reset = useCallback(() => {
+    // Back to this Concept's starting setup, not the lab's global default.
+    setSetup(start);
     state.current = createState();
     clear();
     resetSeries();
     setInspected(null);
-  }, [clear, resetSeries]);
+  }, [start, clear, resetSeries]);
 
   const flush = useCallback(() => {
     state.current.entries.clear();
-    log('Cache flushed - every request now misses until it warms up again', 'warn');
+    log('Cache flushed (FLUSHALL) - every request now misses until it warms up again', 'warn');
     rerender();
   }, [log, rerender]);
 
   useTicker(running, (dt) => {
     const current = state.current;
     const now = performance.now();
-    const dbLoad = computeLoad(current.dbQueries.rate(now), DB_CAPACITY, { baseLatencyMs: 110, kneeAt: 0.6 });
+    const dbLoad = computeLoad(current.dbQueries.rate(now), DB_CAPACITY, { baseLatencyMs: DB_BASE_LATENCY, kneeAt: 0.6 });
 
     // Every request is counted, so the database sees the traffic the slider
     // actually asks for. Only a sample of them is animated.
     const arrivals = sampleArrivals(traffic, dt);
     const share = visualShare(traffic, ANIMATED_PER_SECOND);
 
-    // Shrinking the cache-size slider must shrink the cache now. Evicting one
-    // entry per miss (and then inserting one) never brought an over-full cache
-    // back under its limit, so a 10-item cache kept ~500 keys and a 99% hit rate.
-    while (current.entries.size > size) {
-      const lru = current.entries.keys().next().value;
-      if (lru === undefined) break;
-      current.entries.delete(lru);
-      current.evictions += 1;
+    // Lowering the memory limit under allkeys-lru makes room at once. Under
+    // noeviction Redis never evicts: it only refuses writes until TTLs bring
+    // memory back under the limit.
+    if (policy === 'allkeys-lru') {
+      while (current.entries.size > size) {
+        const lru = current.entries.keys().next().value;
+        if (lru === undefined) break;
+        current.entries.delete(lru);
+        current.evictions += 1;
+      }
     }
 
     for (let index = 0; index < arrivals; index += 1) {
       const key = pickKey(keyspace, skew);
       const entry = current.entries.get(key);
-      const fresh = entry && entry.expiresAt > now;
-      const hit = enabled && Boolean(fresh);
+      const fresh = Boolean(entry && entry.expiresAt > now);
+      const hit = enabled && fresh;
 
       let latency: number;
       let note: string;
+      let stored = false;
 
-      if (hit) {
+      if (hit && entry) {
         current.hits.add(1, now);
-        entry!.lastUsed = now;
+        entry.lastUsed = now;
         // A Map iterates in insertion order, so re-inserting the key moves it
         // to the most-recently-used end. That turns eviction below into an O(1)
         // lookup instead of a scan of every entry on every miss.
         current.entries.delete(key);
-        current.entries.set(key, entry!);
+        current.entries.set(key, entry);
         latency = CACHE_LATENCY * (0.8 + Math.random() * 0.5);
         note = 'Cache HIT - no database query';
       } else {
@@ -167,17 +240,35 @@ export function CachingLab() {
         current.dbQueries.add(1, now);
         // With the cache off there is no cache lookup to pay for first.
         latency = (enabled ? CACHE_LATENCY : 0) + dbLoad.latencyMs * (0.8 + Math.random() * 0.5);
-        note = enabled ? 'Cache MISS - loaded from database and stored' : 'Cache disabled - straight to database';
+        note = enabled ? 'Cache MISS - loaded from the database' : 'Cache disabled - straight to the database';
         if (enabled) {
-          if (current.entries.size >= size && !current.entries.has(key)) {
-            const lru = current.entries.keys().next().value;
-            if (lru !== undefined) {
-              current.entries.delete(lru);
-              current.evictions += 1;
+          if (entry) {
+            // Found but past its TTL: Redis deletes an expired key when it is touched.
+            current.entries.delete(key);
+            current.expired += 1;
+          }
+          if (current.entries.size >= size) {
+            if (policy === 'allkeys-lru') {
+              const lru = current.entries.keys().next().value;
+              if (lru !== undefined) {
+                current.entries.delete(lru);
+                current.evictions += 1;
+              }
             }
           }
-          current.entries.delete(key);
-          current.entries.set(key, { key, expiresAt: now + ttl * 1000, lastUsed: now });
+          if (current.entries.size < size) {
+            current.entries.set(key, { key, expiresAt: now + ttl * 1000, lastUsed: now });
+            stored = true;
+          } else {
+            // noeviction and full: the SET fails with an OOM error. Cache-aside
+            // still answers from the database, it just cannot cache the row.
+            current.rejected += 1;
+            note = 'Cache MISS - loaded from the database, but the SET was refused (OOM, noeviction)';
+            if (now - current.lastOomLog > 2500) {
+              current.lastOomLog = now;
+              log('Redis at maxmemory with noeviction - SET refused with an OOM error, the row is not cached', 'warn');
+            }
+          }
         }
       }
 
@@ -213,17 +304,21 @@ export function CachingLab() {
         path: hit
           ? ['Client', 'API', 'Redis (HIT)']
           : enabled
-            ? ['Client', 'API', 'Redis (MISS)', 'API', 'PostgreSQL', 'API', 'Redis (store)']
+            ? ['Client', 'API', 'Redis (MISS)', 'API', 'PostgreSQL', 'API', stored ? 'Redis (SET)' : 'Redis (SET refused)']
             : ['Client', 'API', 'PostgreSQL'],
         method: 'GET',
         endpoint: `/api/${key.replace(':', '/')}`,
-        notes: [note, `Key: ${key}`, `TTL: ${ttl}s`],
+        notes: [note, `Key: ${key}`, `TTL: ${ttl}s`, `Policy: ${policy}`],
       });
     }
 
-    // Expire entries lazily so the cache size metric stays honest.
+    // Expire entries so the Keys and Memory figures stay honest. Redis does the
+    // same with lazy expiry on access plus a background sweep.
     for (const [key, entry] of current.entries) {
-      if (entry.expiresAt <= now) current.entries.delete(key);
+      if (entry.expiresAt <= now) {
+        current.entries.delete(key);
+        current.expired += 1;
+      }
     }
 
     const { alive } = advanceParticles(current.particles, dt);
@@ -252,8 +347,10 @@ export function CachingLab() {
   const servedQps = current.hits.rate(now) + current.misses.rate(now);
   const hitRate = servedQps ? current.hits.rate(now) / servedQps : 0;
   const dbQps = current.dbQueries.rate(now);
-  const dbLoad = computeLoad(dbQps, DB_CAPACITY, { baseLatencyMs: 110, kneeAt: 0.6 });
+  const dbLoad = computeLoad(dbQps, DB_CAPACITY, { baseLatencyMs: DB_BASE_LATENCY, kneeAt: 0.6 });
   const snapshot = current.latency.snapshot(now);
+  const memoryUsed = clamp(current.entries.size / size, 0, 1);
+  const full = enabled && current.entries.size >= size;
 
   const particleViews: ParticleView[] = current.particles.map((particle) => ({
     id: particle.id,
@@ -270,7 +367,7 @@ export function CachingLab() {
   return (
     <LabShell
       title="Caching Lab"
-      description="Watch two request paths: a hit that returns from memory, and a miss that pays for the database round trip - then stores the result."
+      description="Watch two request paths: a hit that returns from memory, and a miss that pays for the database round trip - then stores the result, if Redis has room for it."
       running={running}
       onToggleRun={() => setRunning((value) => !value)}
       onReset={reset}
@@ -284,11 +381,26 @@ export function CachingLab() {
               saturates at about {DB_CAPACITY} queries/sec, after which latency climbs sharply. Turn the cache on and
               watch database load fall by roughly the hit rate.
             </>
+          ) : policy === 'noeviction' && full ? (
+            <>
+              Redis is at its memory limit of {formatNumber(size)} keys with noeviction, the Redis default. It does not
+              make room: every SET for a new key fails with an OOM error ({formatNumber(current.rejected)} so far), so
+              the cache only learns a key when a TTL frees a slot. Reads still work, because cache-aside falls back to
+              the database. For a cache, set maxmemory-policy to allkeys-lru.
+            </>
+          ) : focus === 'redis' && full ? (
+            <>
+              Redis is at maxmemory: {formatNumber(size)} keys of room for {formatNumber(keyspace)} distinct keys. With
+              allkeys-lru it evicts the least recently used key to store each new one ({formatNumber(current.evictions)}{' '}
+              evicted), while the {ttl} s TTL removes entries that went stale ({formatNumber(current.expired)} expired).
+              Hit rate is {formatPercent(hitRate)}. Switch the policy to noeviction to see what the Redis default does
+              when memory is full.
+            </>
           ) : hitRate < 0.5 && servedQps > 50 ? (
             <>
-              Hit rate is only {formatPercent(hitRate)}. With {keyspace} distinct keys and room for {size}, most
-              requests find nothing cached. Either raise the cache size, raise the TTL, or accept that this access
-              pattern is not cacheable.
+              Hit rate is only {formatPercent(hitRate)}. With {formatNumber(keyspace)} distinct keys and room for{' '}
+              {formatNumber(size)}, most requests find nothing cached. Either raise the memory limit, raise the TTL, or
+              accept that this access pattern is not cacheable.
             </>
           ) : (
             <>
@@ -310,7 +422,7 @@ export function CachingLab() {
                 key: 'latency',
                 label: 'Avg latency',
                 value: formatLatency(snapshot.avg),
-                hint: 'Driven by a queueing model of the database, meant to show the shape of the curve.',
+                hint: 'Hit about 1 ms, miss about 50 ms plus queueing in the database, meant to show the shape of the curve.',
                 simulated: true,
               },
               {
@@ -320,7 +432,20 @@ export function CachingLab() {
                 hint: '95% of requests finished faster than this.',
                 simulated: true,
               },
-              { key: 'evictions', label: 'Evictions', value: formatNumber(current.evictions), tone: current.evictions > 0 ? 'warn' : 'neutral' },
+              { key: 'evictions', label: 'Evicted', value: formatNumber(current.evictions), tone: current.evictions > 0 ? 'warn' : 'neutral' },
+              {
+                key: 'expired',
+                label: 'Expired',
+                value: formatNumber(current.expired),
+                hint: 'Entries removed because their TTL ran out, not because memory was full.',
+              },
+              {
+                key: 'rejected',
+                label: 'SET refused',
+                value: formatNumber(current.rejected),
+                tone: current.rejected > 0 ? 'danger' : 'neutral',
+                hint: 'Writes Redis refused with an OOM error because memory was full and the policy is noeviction.',
+              },
             ]}
           />
           <div className="card p-4">
@@ -350,7 +475,7 @@ export function CachingLab() {
             label="Cache enabled"
             checked={enabled}
             onChange={(value) => {
-              setEnabled(value);
+              change('enabled')(value);
               log(value ? 'Cache enabled' : 'Cache disabled - all reads go to the database', value ? 'ok' : 'warn');
             }}
             description="Turn off to send every read to the database"
@@ -361,7 +486,7 @@ export function CachingLab() {
             min={100}
             max={5000}
             step={100}
-            onChange={setTraffic}
+            onChange={change('traffic')}
             format={(value) => `${formatNumber(value)} req/sec`}
           />
           <Slider
@@ -369,27 +494,49 @@ export function CachingLab() {
             value={ttl}
             min={1}
             max={300}
-            onChange={setTtl}
+            onChange={change('ttl')}
             format={(value) => `${value} s`}
             hint="How long a cached value stays valid. Longer TTL means higher hit rate and staler data."
           />
           <Slider
-            label="Cache size"
+            label="Memory limit (maxmemory)"
             value={size}
             min={10}
             max={1000}
             step={10}
-            onChange={setSize}
-            format={(value) => `${formatNumber(value)} items`}
-            hint="Maximum entries. When full, the least recently used entry is evicted."
+            onChange={change('size')}
+            format={(value) => `${formatNumber(value)} keys`}
+            hint="Simplified: every value is the same size, so the limit is counted in keys. Real Redis counts bytes."
           />
+          <div className="space-y-2">
+            <p className="text-xs font-medium text-muted">Eviction policy (maxmemory-policy)</p>
+            <SegmentedControl
+              value={policy}
+              size="sm"
+              options={POLICIES}
+              onChange={(value) => {
+                change('policy')(value);
+                log(
+                  value === 'allkeys-lru'
+                    ? 'Policy allkeys-lru - when memory is full, the least recently used key is evicted'
+                    : 'Policy noeviction - when memory is full, new writes are refused',
+                  'info',
+                );
+              }}
+              className="w-full"
+            />
+            <p className="text-[11px] leading-snug text-faint">
+              allkeys-lru makes room by evicting. noeviction, the Redis default, refuses the write instead. Real Redis
+              approximates LRU by sampling a few keys; the lab evicts the exact least recently used one.
+            </p>
+          </div>
           <Slider
             label="Distinct keys"
             value={keyspace}
             min={20}
             max={5000}
             step={20}
-            onChange={setKeyspace}
+            onChange={change('keyspace')}
             format={(value) => `${formatNumber(value)} keys`}
             hint="Size of the working set. A cache only helps when the hot subset fits."
           />
@@ -399,7 +546,7 @@ export function CachingLab() {
             min={0}
             max={1}
             step={0.05}
-            onChange={setSkew}
+            onChange={change('skew')}
             format={(value) => (value < 0.2 ? 'uniform' : value > 0.7 ? 'very hot keys' : 'moderate')}
             hint="How concentrated traffic is on popular keys. Real traffic is highly skewed."
           />
@@ -420,15 +567,20 @@ export function CachingLab() {
         </ArchNode>
         <ArchNode
           kind="cache"
-          title="Redis Cache"
-          subtitle={enabled ? `TTL ${ttl}s - LRU` : 'disabled'}
+          title="Redis"
+          subtitle={enabled ? `TTL ${ttl}s - ${policy}` : 'disabled'}
           placed={LAYOUT.cache}
-          status={enabled ? 'healthy' : 'down'}
+          status={enabled ? (policy === 'noeviction' && full ? 'degraded' : 'healthy') : 'down'}
         >
-          <Meter label="Fill" value={clamp(current.entries.size / size, 0, 1)} tone="danger" size="xs" />
+          <Meter label="Memory" value={memoryUsed} tone="danger" size="xs" />
+          <NodeStatRow label="Keys" value={`${formatNumber(current.entries.size)} / ${formatNumber(size)}`} />
           <NodeStatRow label="Hit rate" value={formatPercent(hitRate)} tone="text-ok" />
-          <NodeStatRow label="Keys" value={formatNumber(current.entries.size)} />
-          <NodeStatRow label="Hit latency" value={`${CACHE_LATENCY} ms`} />
+          <NodeStatRow
+            label={policy === 'noeviction' ? 'SET refused' : 'Evicted'}
+            value={formatNumber(policy === 'noeviction' ? current.rejected : current.evictions)}
+            tone={policy === 'noeviction' && current.rejected > 0 ? 'text-danger' : undefined}
+          />
+          <NodeStatRow label="Hit latency" value={`~${CACHE_LATENCY} ms`} />
         </ArchNode>
         <ArchNode
           kind="sql"

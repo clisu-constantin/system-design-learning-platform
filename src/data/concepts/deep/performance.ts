@@ -91,7 +91,7 @@ That second column is usually the real reason to cache.`,
     analogy: {
       title: 'Who fetches the file, and who files it back',
       body:
-        'When you need a document, either you walk to the archive yourself and keep a copy (cache-aside), or you ask an assistant who always does that for you (read-through). When you change it, you can update the archive and your copy together (write-through), hand it to the assistant to file later (write-behind), or just throw your copy away and let the next reader fetch it fresh (write-invalidate). Each choice moves work and risk somewhere different.',
+        'When you need a document, either you walk to the archive yourself and keep a copy (cache-aside), or you ask an assistant who always does that for you (read-through). When you change it, you can update the archive and your copy together (write-through), hand it to the assistant to file later (write-behind), or update only the archive, throw your copy away and let the next reader fetch it fresh (write-around). Each choice moves work and risk somewhere different.',
     },
     deepDive: [
       {
@@ -121,12 +121,12 @@ because the cache is down.`,
         paragraphs: [
           'Write-through updates the cache and the database together on every write. Reads after a write are always correct, and the cache is always warm for recently written data. It makes writes a little slower and fills the cache with entries nobody may ever read.',
           'Write-behind (write-back) writes to the cache and acknowledges immediately, flushing to the database asynchronously. It gives dramatic write throughput and absorbs bursts - and it is the only pattern that can lose acknowledged data, because a cache node crash takes the not-yet-flushed writes with it. Use it for metrics, counters and view tallies; never for money.',
-          'Write-invalidate (write-around) is the quiet favourite: write to the database and simply delete the cache key. The next read repopulates it. It avoids caching write-heavy data that is rarely read, and it sidesteps the hardest bug in the write-through family - two concurrent writers filling the cache in the wrong order.',
+          'Write-around with invalidation (sometimes called write-invalidate) is the quiet favourite, and the usual partner of cache-aside: write to the database and simply delete the cache key. The next read repopulates it. It avoids caching write-heavy data that is rarely read, and it sidesteps the hardest bug in the write-through family - two concurrent writers filling the cache in the wrong order.',
         ],
         bullets: [
           'Write-through - correct reads, slower writes, cache full of unread entries.',
           'Write-behind - fastest writes, can lose data on crash, good for counters.',
-          'Write-invalidate - simplest and safest default; the next read pays one miss.',
+          'Write-around plus delete - simplest and safest default; the next read pays one miss.',
           'Whatever you choose, deleting a key is safer than updating it, because delete is idempotent and order-independent.',
         ],
       },
@@ -215,7 +215,7 @@ HLL      PFADD uniques "ana"           count distinct in 12 KB, ~0.8% error`,
       {
         heading: 'Memory management is the operational story',
         paragraphs: [
-          'Redis is bounded by RAM, so maxmemory and an eviction policy are mandatory settings, not tuning. With allkeys-lru it evicts the least recently used key when full and behaves like a proper cache. With noeviction (the default) it starts rejecting writes when full, which for a cache is an outage and for a session store may be exactly what you want.',
+          'Redis is bounded by RAM, so maxmemory and an eviction policy are mandatory settings, not tuning. On 64-bit systems maxmemory defaults to 0, which means no limit at all: a cache with no TTLs grows until the machine runs out of memory. With a limit and allkeys-lru it evicts the least recently used key when full and behaves like a proper cache (the LRU is approximated by sampling a few keys, which is close enough in practice). With noeviction (the default policy) it answers new writes with an OOM error when full while reads keep working - for a cache that means it stops learning new keys, and for a session store it may be exactly what you want.',
           'Big keys are the other recurring problem. A single list with ten million elements makes every operation on it slow and blocks the one thread, and deleting it can stall the server for seconds - use UNLINK for asynchronous deletion. Keep collections bounded deliberately, by trimming or by splitting keys.',
           'For scale beyond one machine there are two paths. Replication plus Sentinel gives failover with read replicas but one writable node. Cluster mode shards keys across nodes by hash slot, which multiplies capacity but restricts multi-key operations to keys in the same slot - so you plan key naming with hash tags from the start.',
         ],
@@ -249,7 +249,7 @@ HLL      PFADD uniques "ana"           count distinct in 12 KB, ~0.8% error`,
       'Single-threaded means atomic commands - and one slow command blocks everyone.',
       'It is a data structure server; picking the right structure is the skill.',
       'Persistence exists but is weaker than a database - decide what losing it costs.',
-      'Set maxmemory and an eviction policy explicitly; the default rejects writes.',
+      'Set maxmemory and an eviction policy explicitly: by default there is no limit, and the default policy refuses writes.',
       'Use SCAN not KEYS, and keep collections bounded.',
     ],
   },

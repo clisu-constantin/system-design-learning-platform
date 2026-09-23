@@ -103,7 +103,7 @@ export const LABS: LabDefinition[] = [
   {
     id: 'caching',
     title: 'Caching Lab',
-    blurb: 'Hit and miss paths, TTL, eviction, and the database load that disappears.',
+    blurb: 'Hit and miss paths, TTL, a Redis memory limit and eviction policy, and the database load that disappears.',
     category: 'performance',
     difficulty: 'Beginner',
     concept: 'caching',
