@@ -101,14 +101,17 @@ Fix: more workers, faster workers, or fewer messages.`,
     tagline: 'A partitioned, replayable log - not a traditional queue.',
     category: 'async',
     difficulty: 'Advanced',
+    lab: 'event-log',
+    labFocus: 'kafka',
     keywords: ['log', 'partition', 'offset', 'consumer group', 'retention', 'ordering'],
     what: 'Kafka stores records in an append-only log split into partitions. Consumers track their own offset, so data is replayable and multiple independent consumer groups can read the same stream.',
     why: 'When several systems need the same events, and you want to reprocess history after a bug or a new feature, a retained log beats a queue that deletes on acknowledgement.',
     how: [
       'Producers write to a topic; the partition is chosen by key (same key = same partition = ordered).',
       'Each partition is replicated; a leader handles writes and in-sync replicas follow.',
-      'Consumer groups divide partitions among members - parallelism is capped by partition count.',
-      'Retention is time- or size-based, independent of whether anyone consumed the data.',
+      'Consumer groups divide partitions among members - each partition goes to exactly one member, so parallelism is capped by partition count.',
+      'Each group commits its own offset per partition, so reading deletes nothing and a group can rewind to replay.',
+      'Retention is time- or size-based (7 days by default), independent of whether anyone consumed the data.',
     ],
     when: ['Event streaming between many teams.', 'High-throughput ingestion.', 'Event sourcing and stream processing.'],
     diagram: `topic: orders   (6 partitions)
@@ -118,14 +121,21 @@ Fix: more workers, faster workers, or fewer messages.`,
  group B reads the same partitions independently at its own offsets
 
 Ordering is guaranteed within a partition, not across the topic.`,
+    advantages: [
+      'Many consumer groups read the same events without the producer knowing about them.',
+      'Replay is routine: rewind a group offset to reprocess after a bug, or start a new service from the oldest record kept.',
+      'Very high throughput from sequential appends, batching and one offset per partition instead of per-message state.',
+      'Ordering per key, because one key always lands on one partition.',
+    ],
     tradeoffs: [
       {
         approach: 'Kafka log',
-        gains: ['Replay and multiple consumers', 'Very high throughput', 'Ordering per key'],
+        gains: ['Replay and multiple consumer groups', 'Very high throughput', 'Ordering per key'],
         costs: [
           'Operationally heavy compared to a managed queue',
-          'No per-message acknowledgement or delay',
-          'Parallelism limited by partitions; repartitioning is disruptive',
+          'A classic consumer group tracks one offset per partition: no per-message acknowledgement, retry or delay (share groups, production-ready in Kafka 4.2, add per-record acknowledgement)',
+          'Parallelism capped by partition count; partitions can be added but never removed, and adding them moves keys to new partitions',
+          'A consumer slower than retention loses the records deleted before it read them',
         ],
       },
       {
@@ -136,10 +146,167 @@ Ordering is guaranteed within a partition, not across the topic.`,
     ],
     mistakes: [
       'Using one partition and wondering why consumers cannot scale.',
+      'Running more consumers in a group than there are partitions - the extra ones sit idle.',
+      'A key that concentrates traffic, such as country, so one partition and one consumer take most of the load.',
       'Treating a topic as a database because retention is long.',
       'Assuming global ordering across partitions.',
     ],
     related: ['message-queues', 'event-driven-architecture', 'pub-sub', 'event-sourcing'],
+    quiz: [
+      {
+        id: 'kafka-1',
+        prompt:
+          'A topic has 6 partitions. To go faster, the team runs 8 consumers in the same consumer group. What happens?',
+        options: [
+          'All 8 share the load evenly, so throughput rises by a third',
+          'Kafka splits each partition so every consumer gets a share',
+          'Only 6 consumers get a partition; the other 2 sit idle until a member leaves',
+          'The group is rejected because it has more members than partitions',
+        ],
+        answer: 2,
+        explanation:
+          'Inside one group each partition goes to exactly one member, so 6 partitions means at most 6 busy consumers. The tempting answer - even sharing - would need more partitions, not more members. In the Lab, 4 billing members over 3 partitions leaves Billing 4 idle.',
+      },
+      {
+        id: 'kafka-2',
+        prompt:
+          'OrderCreated, OrderPaid and OrderShipped for the same order must be processed in that order, but you also need many consumers in parallel. How do you produce the events?',
+        options: [
+          'Use the order id as the key, so every event of one order lands on the same partition',
+          'Use a single partition for the whole topic',
+          'Use a random key so the load spreads evenly',
+          'Rely on Kafka ordering the whole topic by timestamp',
+        ],
+        answer: 0,
+        explanation:
+          'Kafka orders records within a partition only, and the same key always maps to the same partition. Keying by order id orders each order while different orders run in parallel. One partition would also be ordered, but caps the group at one busy consumer; a random key breaks the per-order order; there is no topic-wide ordering.',
+      },
+      {
+        id: 'kafka-3',
+        prompt:
+          'Billing and analytics are two consumer groups on the same topic. Analytics is down for two hours; retention is 7 days. What happens to billing, and to analytics when it returns?',
+        options: [
+          'Billing stalls, because records cannot be removed until every group has read them',
+          'Billing is unaffected, and analytics resumes from its own committed offset and catches up',
+          'Billing is unaffected, but analytics lost the two hours because billing already consumed them',
+          'Both groups restart from the newest record',
+        ],
+        answer: 1,
+        explanation:
+          'Each group keeps its own offset per partition, and reading deletes nothing - records leave only by retention. So billing carries on, and analytics picks up where it stopped. The tempting third option is how a queue that deletes on acknowledgement behaves, not a log. In the Lab, the projector keeps going while billing lags, and the other way round.',
+      },
+      {
+        id: 'kafka-4',
+        prompt:
+          'For three days the search consumer indexed the wrong price field. Retention is 7 days. What is the cleanest fix?',
+        options: [
+          'Ask every producer to send the last three days of events again',
+          'Write a migration script that patches the search index row by row',
+          'Delete the topic and recreate it, so every consumer starts clean',
+          'Deploy the fixed consumer and reset only the search group offsets to three days ago, so it reprocesses that range',
+        ],
+        answer: 3,
+        explanation:
+          'The records are still in the log, so replay is a normal operation: move one group back and let it read again. Producers and the other groups are untouched. Resending from producers or patching by hand is the work a retained log saves you, and recreating the topic throws away the history you need.',
+      },
+      {
+        id: 'kafka-5',
+        prompt:
+          'A slow consumer group falls further and further behind. The topic uses size-based retention. What eventually happens to that group?',
+        options: [
+          'Records older than retention are deleted before it reads them, so it skips them and they are lost to it',
+          'Kafka pauses the producers until the slow group catches up',
+          'Kafka keeps the unread records past retention until the group reads them',
+          'The group is moved to a faster broker automatically',
+        ],
+        answer: 0,
+        explanation:
+          'Retention does not look at consumers. Once the group offset points at a deleted record it can only continue from the oldest record still kept (or the newest, depending on auto.offset.reset). Kafka does not apply backpressure to producers for a slow group. In the Lab, turn on Size retention and slow billing down: the log says it fell behind retention.',
+      },
+      {
+        id: 'kafka-6',
+        prompt:
+          'Events are keyed by country, and 70% of users are in one country. One consumer is at 100% while the others idle, and adding consumers does not help. What do you change?',
+        options: [
+          'Add more partitions - the hot country will spread across them',
+          'Add more consumers until the hot one gets help',
+          'Pick a key with many more distinct values, such as user id, that still keeps together what must stay ordered',
+          'Turn on log compaction',
+        ],
+        answer: 2,
+        explanation:
+          'One key always maps to one partition, and one partition goes to one consumer, so a key that concentrates traffic creates a hot partition no matter how many partitions or consumers you add. A higher-cardinality key spreads the load; choose it so the events that need ordering still share a key.',
+      },
+      {
+        id: 'kafka-7',
+        prompt: 'A topic was created with 48 partitions but 12 would do. The team wants to reduce it in place. What do you tell them?',
+        options: [
+          'Run the partition reassignment tool with the new count',
+          'Kafka cannot remove partitions: create a new topic with 12 and move producers and consumers to it',
+          'Delete 36 partitions; their records move to the remaining ones',
+          'Set the partition count to 12; keys keep their old partitions',
+        ],
+        answer: 1,
+        explanation:
+          'Kafka can add partitions but not remove them, and even adding them changes which partition a key maps to. So the partition count is chosen with headroom up front, and shrinking means a new topic and a migration.',
+      },
+      {
+        id: 'kafka-8',
+        prompt:
+          'A billing consumer charges a card, then crashes before it commits its offset. It restarts. What happens, and what must the consumer do about it?',
+        options: [
+          'Nothing is read twice - Kafka tracks every processed record',
+          'The record is lost, because it was already delivered once',
+          'Kafka skips the record because it was delivered to a member that crashed',
+          'It reads the record again from the last committed offset, so charging must be idempotent',
+        ],
+        answer: 3,
+        explanation:
+          'Progress is the committed offset, not the work done. Everything after the last commit is read again - at-least-once delivery - so the side effect needs an idempotency key. In the Lab, Rewind billing does the same on purpose and counts every re-read.',
+      },
+      {
+        id: 'kafka-9',
+        prompt:
+          'In the Lab, Billing 1 owns P0 and P2 and its lag keeps growing. The projector reads the same partitions and has no lag. Why is the projector not slowed down?',
+        options: [
+          'It is its own consumer group with its own offsets, so a slow member of another group does not hold it back',
+          'The projector reads a copy of the partitions made for it',
+          'The projector has priority on the broker',
+          'Billing and the projector take turns reading each record',
+        ],
+        answer: 0,
+        explanation:
+          'Consumer groups are independent readers of the same log: no data is copied and no group waits for another. A lagging group only hurts itself - until retention deletes records it has not read yet.',
+      },
+      {
+        id: 'kafka-10',
+        prompt:
+          'A small team needs thumbnail jobs: one kind of consumer, per-job retry with a delay, no replay, and nobody to run a cluster. What fits best?',
+        options: [
+          'A self-run Kafka cluster with one partition',
+          'A Kafka topic with a compacted log',
+          'A managed traditional queue such as SQS, with per-message acknowledgement and retry built in',
+          'Writing jobs to a database table and never deleting them',
+        ],
+        answer: 2,
+        explanation:
+          'Nothing here needs what a log adds - replay or many independent groups - while the team does need per-message retry and little operations. That is the job a managed queue is built for. Kafka could be made to do it, at the cost of running a distributed system for a feature they do not use.',
+      },
+      {
+        id: 'kafka-11',
+        prompt:
+          'A new fraud service is deployed a month after the order topic started. Retention is 7 days. What can it read on its first day?',
+        options: [
+          'Only events written after it subscribed',
+          'The last 7 days, by starting a new group at the oldest record kept, with no change to any producer',
+          'The whole month, because Kafka keeps every record a group has not read',
+          'Nothing until an existing group shares its offsets',
+        ],
+        answer: 1,
+        explanation:
+          'A new group can start at the earliest offset still in the log and build its state from history. Retention decides what is still there - 7 days here - not whether anyone read it. Starting only from new events is a choice (auto.offset.reset=latest), not a limit.',
+      },
+    ],
   },
   {
     slug: 'rabbitmq-concepts',
