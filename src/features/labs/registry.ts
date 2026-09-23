@@ -140,7 +140,7 @@ export const LABS: LabDefinition[] = [
   {
     id: 'indexing',
     title: 'Database Indexing Lab',
-    blurb: 'Scan 8,000 rows, then build a B-tree and do it in thirteen.',
+    blurb: 'Scan 80 pages to find one row, then build a B-tree and read three.',
     category: 'data',
     difficulty: 'Beginner',
     concept: 'database-indexing',

@@ -38,7 +38,7 @@ const SHARD_KEYS: { value: ShardKey; label: string }[] = [
 
 const KEY_NOTE: Record<ShardKey, string> = {
   'user-id':
-    'A hash of user_id spreads both data and traffic evenly, and almost every query already knows the user. This is the default choice for a reason.',
+    'A hash of user_id spreads both data and traffic evenly, and almost every query already knows the user. The cost: a range query, such as users who signed up last week, must ask every shard.',
   country:
     'Country looks natural but traffic is wildly skewed: one large market can send most of your requests to a single shard while the others idle.',
   tenant:
@@ -53,6 +53,17 @@ const WEIGHTS: Record<ShardKey, number[]> = {
   country: [0.62, 0.18, 0.12, 0.08],
   tenant: [0.46, 0.24, 0.18, 0.12],
   'created-at': [0.04, 0.08, 0.18, 0.7],
+};
+
+/**
+ * Share of the 10M rows each shard holds (simplified). Data follows the key
+ * too: a big country or a big tenant is a big shard, not only a busy one.
+ */
+const DATA_SHARE: Record<ShardKey, number[]> = {
+  'user-id': [0.25, 0.25, 0.25, 0.25],
+  country: [0.55, 0.2, 0.15, 0.1],
+  tenant: [0.4, 0.25, 0.2, 0.15],
+  'created-at': [0.24, 0.28, 0.3, 0.18],
 };
 
 const SHARD_CAPACITY = 900;
@@ -405,7 +416,7 @@ export function ShardingLab() {
             <NodeStatRow label="Latency" value={formatLatency(loads[index].latencyMs)} />
             <NodeStatRow
               label="Rows"
-              value={sharded ? `${(10 / shardCount).toFixed(1)}M` : '10M'}
+              value={sharded ? `${(10 * DATA_SHARE[shardKey][index]).toFixed(1)}M` : '10M'}
             />
           </ArchNode>
         ))}

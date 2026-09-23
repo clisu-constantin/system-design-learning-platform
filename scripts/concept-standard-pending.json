@@ -17,9 +17,7 @@
     "tcp-vs-udp",
     "cdn",
     "api-gateway",
-    "database-indexing",
     "replication",
-    "sharding",
     "read-replicas",
     "caching",
     "cache-strategies",
@@ -76,7 +74,6 @@
     "requirements",
     "capacity",
     "url-journey",
-    "indexing",
     "retry-backoff",
     "tracing"
   ]

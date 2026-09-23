@@ -665,57 +665,73 @@ Shard deliberately        Shard key is a modelling decision`,
     category: 'data',
     difficulty: 'Beginner',
     lab: 'indexing',
-    keywords: ['b-tree', 'full scan', 'query plan', 'composite index', 'selectivity'],
-    what: 'An index is an auxiliary data structure - usually a B-tree - that lets the database find rows matching a predicate without scanning the whole table.',
-    why: 'Without an index, finding one row in ten million means reading ten million rows. With a B-tree index it means a handful of page reads, because each step discards most of the remaining rows.',
+    keywords: ['b-tree', 'full scan', 'query plan', 'composite index', 'selectivity', 'page', 'covering index'],
+    what: 'An index is an extra, sorted data structure - usually a B-tree - that lets the database find rows matching a condition without scanning the whole table.',
+    why: 'Without an index, finding one row in ten million means reading every page of the table. With a B-tree index it means a handful of page reads - one per level of the tree, then the page that holds the row.',
     how: [
-      'A B-tree keeps keys sorted; each node narrows the search range, giving O(log n) lookups.',
-      'The planner uses table statistics to decide whether the index is cheaper than a scan.',
+      'A database reads pages, not rows: fixed blocks of 8 KB in PostgreSQL, each holding many rows.',
+      'A B-tree keeps keys sorted in pages that each hold hundreds of keys, so even a huge table is only 3-4 levels deep - O(log n) lookups.',
+      'The planner uses table statistics to decide whether the index is cheaper than a scan, and EXPLAIN shows which one it picked.',
       'A composite index on (a, b) serves queries filtering on a, or on a and b - but not on b alone.',
-      'Covering indexes include the selected columns so the table itself is never touched.',
+      'A covering index also holds the selected columns, so the database can answer from the index and skip the table.',
     ],
     when: [
-      'Columns used in WHERE, JOIN and ORDER BY clauses.',
+      'Columns used in WHERE, JOIN and ORDER BY clauses of frequent queries.',
       'High-selectivity columns (email, user_id) - an index on a boolean rarely helps.',
+      'Not on write-heavy tables that are rarely read, where every index is a cost on every insert.',
     ],
     diagram: `WITHOUT INDEX (sequential scan)
-row 1, row 2, row 3 ... row 8247 -> FOUND
-rows scanned: 8,247      time: ~350 ms
+page 1, page 2, page 3 ... page 50,000
+every page read (5,000,000 rows)      ~1,200 ms
 
 WITH B-TREE INDEX ON email
-        [ m ]
-       /     \\
-   [ f ]     [ s ]
-   /   \\     /   \\
- ...   [john@example.com] -> row pointer
-rows inspected: ~13      time: ~4 ms`,
+          [ root ]                    level 1
+         /   |    \\
+  [ branch ] ... [ branch ]           level 2
+      |
+  [ leaf: ana@example.com -> row ]    level 3
+      |
+  table page holding the row          + 1 page
+pages read: 4                         ~0.3 ms`,
     advantages: [
-      'Turns linear scans into logarithmic lookups.',
+      'Turns linear scans into logarithmic lookups: one page per level instead of every page.',
       'Speeds up sorting and range queries when the order matches the index.',
       'Unique indexes enforce correctness, not just speed.',
     ],
     tradeoffs: [
       {
-        approach: 'Adding an index',
-        gains: ['Much faster reads for matching queries', 'Cheaper sorts and joins'],
+        approach: 'No index (sequential scan)',
+        gains: ['No extra write work and no extra storage', 'Fine for small tables and for queries that read most of the rows anyway'],
+        costs: ['Every lookup reads every page, so cost grows with the table', 'A missing row costs a full scan to prove it is missing'],
+      },
+      {
+        approach: 'A B-tree index on the filtered column',
+        gains: ['A lookup reads one page per level plus the row, about 4 pages for 5 million rows', 'Cheaper sorts, range queries and joins on that column'],
         costs: [
-          'Every INSERT, UPDATE and DELETE must maintain it',
-          'Extra storage, often 10-30% of the table per index',
-          'More indexes means a slower write path and more cache pressure',
+          'Every INSERT, UPDATE of the column and DELETE must also update the index',
+          'Extra storage, and memory to keep its pages cached',
+          'Useless for queries that filter on another column or wrap this one in a function',
         ],
+      },
+      {
+        approach: 'A covering index (key plus the selected columns)',
+        gains: ['Answers the query from the index alone, skipping the table page', 'Fastest option for one hot read path'],
+        costs: ['A wider index: more storage and more memory', 'Any change to the included columns now also rewrites the index'],
       },
     ],
     mistakes: [
-      'Indexing every column "just in case" and halving write throughput.',
-      'Wrapping the indexed column in a function (LOWER(email)) so the index cannot be used.',
+      'Indexing every column "just in case" - every write then updates every index, and most are never read.',
+      'Wrapping the indexed column in a function (LOWER(email)) so the index cannot be used - index the expression instead.',
       'Creating (b, a) when queries filter on a - column order in composite indexes matters.',
-      'Forgetting that adding an index to a huge table can lock writes unless built concurrently.',
+      'Forgetting that a plain CREATE INDEX on a huge table blocks writes until it finishes - build it concurrently.',
+      'Forcing an index on a low-selectivity column when the planner correctly chose a scan.',
     ],
     realWorld: [
       'EXPLAIN / EXPLAIN ANALYZE is how you check whether an index is actually used.',
       'Write-heavy tables (event logs) are often deliberately under-indexed.',
+      'PostgreSQL CREATE INDEX CONCURRENTLY builds an index without blocking writes, at the cost of a slower build.',
     ],
-    related: ['sql-databases', 'read-replicas', 'denormalization', 'caching'],
+    related: ['sql-databases', 'read-replicas', 'denormalization', 'caching', 'partitioning'],
     quiz: [
       {
         id: 'idx-1',
@@ -728,20 +744,161 @@ rows inspected: ~13      time: ~4 ms`,
         ],
         answer: 1,
         explanation:
-          'A composite index is usable from the leftmost column onwards. Filtering on created_at alone skips the leading column, and wrapping a column in a function prevents index use.',
+          'A composite index is usable from the leftmost column onwards, so country = ? narrows it and created_at > ? is a range inside that country. Filtering on created_at alone skips the leading column - the dates are only sorted within each country - and wrapping a column in a function hides it from the index.',
       },
       {
         id: 'idx-2',
-        prompt: 'What is the main cost of adding an index?',
+        prompt:
+          'An events table takes 20,000 inserts per second and is read once a night by a batch report. A teammate adds six indexes to speed up that report. What changes during the day?',
         options: [
-          'Reads become slower',
-          'Writes become slower and storage grows, because the index must be maintained',
-          'The database can no longer use transactions',
-          'Replication stops working',
+          'Nothing - indexes only matter when something reads them',
+          'Daytime reads get slower, because the planner now has more plans to consider',
+          'Every insert now updates the table plus six indexes, so the write path does about seven times the work for a query that runs once a day',
+          'The table stops accepting transactions while the indexes exist',
+        ],
+        answer: 2,
+        explanation:
+          'Every index is maintained on every insert, whether or not anyone reads it. On a write-heavy table that is the difference between comfortable and saturated - the Lab shows it as the write path meter doubling with one index. It is tempting to think unused indexes are free, but they cost writes, storage and memory all day.',
+      },
+      {
+        id: 'idx-3',
+        prompt:
+          'In the Lab you grow the users table from 8,000 to 50,000 rows. A full scan goes from 80 to 500 pages. What happens to the index lookup?',
+        options: [
+          'It also grows about six times, to around 20 pages',
+          'It becomes slower than the scan, because the tree is bigger',
+          'It stays exactly the same at any table size',
+          'It goes from 2 to 3 index levels - about one more page read',
+        ],
+        answer: 3,
+        explanation:
+          'Each index page holds hundreds of keys, so a level multiplies the reach of the tree by that much. A table six times larger adds one level at most. The scan is linear in table size; the index is logarithmic. It is not exactly constant - a big enough jump adds a level - but it barely moves.',
+      },
+      {
+        id: 'idx-4',
+        prompt:
+          "A login query runs WHERE LOWER(email) = 'ana@example.com'. There is an index on email, yet EXPLAIN shows a Seq Scan. What is the fix?",
+        options: [
+          'Create an index on the expression LOWER(email), or store emails already lowercased and query the column directly',
+          'REINDEX the email index - it is probably corrupted',
+          'Add more memory so the index fits in RAM',
+          'Add a second plain index on email',
+        ],
+        answer: 0,
+        explanation:
+          'The index is sorted by email, not by LOWER(email), so the planner cannot use it for that condition and scans instead. An expression index sorts by exactly what the query compares. Nothing is corrupted, and another plain index on email has the same problem.',
+      },
+      {
+        id: 'idx-5',
+        prompt:
+          'A users table has an index on is_active. 95% of rows are active. WHERE is_active = true uses a Seq Scan, and a teammate wants to force the index. What do you tell them?',
+        options: [
+          'Force it - an index is always faster than a scan',
+          'Drop the table statistics so the planner stops guessing',
+          'The planner is right: the query needs almost every row, so jumping from the index to nearly every table page costs more than one straight scan',
+          'Add the index a second time so the planner notices it',
+        ],
+        answer: 2,
+        explanation:
+          'An index pays off when it narrows the rows a lot (high selectivity). For 95% of the table it adds index reads on top of reading almost every table page. If the rare case (is_active = false) is what you query, a partial index on those rows is the useful one.',
+      },
+      {
+        id: 'idx-6',
+        prompt:
+          'A dashboard query is WHERE tenant_id = 7 AND created_at > now() - 7 days ORDER BY created_at DESC LIMIT 50, on 80 million rows. The only index is on (created_at), and EXPLAIN shows 4 million rows read and filtered. Which index fixes it?',
+        options: [
+          'An index on (created_at, tenant_id)',
+          'An index on tenant_id alone, dropping the created_at index',
+          'No index can help an ORDER BY query',
+          'An index on (tenant_id, created_at)',
+        ],
+        answer: 3,
+        explanation:
+          'Equality columns first, range or sort column last. With (tenant_id, created_at) the database seeks to tenant 7 and walks its dates in order, stopping after 50 rows. (created_at, tenant_id) looks similar but still starts from every row in the date range, because tenants are only sorted within each timestamp.',
+      },
+      {
+        id: 'idx-7',
+        prompt:
+          'You need an index on a 400 GB orders table in PostgreSQL, and the shop takes orders all day. What happens if you run a plain CREATE INDEX at noon?',
+        options: [
+          'Nothing noticeable - index builds run in the background by default',
+          'Inserts and updates on orders wait until the build finishes, which can be a long time on 400 GB - use CREATE INDEX CONCURRENTLY instead',
+          'Reads are blocked but writes continue',
+          'The build fails because the table is too large',
         ],
         answer: 1,
         explanation:
-          'Indexes are a read/write trade. Every mutation updates every affected index, and each index occupies storage and cache.',
+          'A plain CREATE INDEX in PostgreSQL blocks writes to the table for the whole build, while reads continue. CREATE INDEX CONCURRENTLY avoids blocking writes at the cost of a slower build that scans the table twice. Assuming it runs in the background is how people take a shop down at lunchtime.',
+      },
+      {
+        id: 'idx-8',
+        prompt:
+          'SELECT status FROM orders WHERE id = ? runs 50,000 times a second. There is an index on id, and every lookup still reads one table page. How can you remove that last page read?',
+        options: [
+          'A covering index: an index on id that also includes status, so the answer comes from the index alone',
+          'A second index on status',
+          'Drop the index on id - a scan avoids the extra hop',
+          'Nothing - every query must read the table',
+        ],
+        answer: 0,
+        explanation:
+          'In the Lab, the index path ends with one table page to fetch the row. A covering index stores status next to the key, so the database can answer without that page (an index-only scan). An index on status does not help find an id, and dropping the id index turns 4 page reads into a full scan.',
+      },
+      {
+        id: 'idx-9',
+        prompt:
+          'Over a year the indexes on a database grow to three times the RAM of the server. Index lookups that took 0.3 ms now take 5 ms. What is the most likely cause?',
+        options: [
+          'The B-trees grew dozens of levels deeper',
+          'The index pages no longer fit in memory, so lookups that used to hit cached pages now wait for disk',
+          'The planner stopped using the indexes',
+          'Indexes slow down automatically after a year and must be recreated',
+        ],
+        answer: 1,
+        explanation:
+          'An index is fast because its pages - especially the upper levels - stay cached in memory. Once the indexes outgrow RAM, lookups start reading from disk. The tree only gains a level when the data grows hundreds of times, so depth is not the cause. Dropping unused indexes and adding memory are the usual fixes.',
+      },
+      {
+        id: 'idx-10',
+        prompt:
+          'A feed query is SELECT * FROM posts ORDER BY created_at DESC LIMIT 20 on 10 million rows. It takes 900 ms. After adding an index on created_at it takes 1 ms. Why?',
+        options: [
+          'The index caches the whole table in memory',
+          'The index makes the sort algorithm faster',
+          'LIMIT only works when an index exists',
+          'The index is already in created_at order, so the database walks it from the newest end and stops after 20 rows, instead of reading and sorting all 10 million',
+        ],
+        answer: 3,
+        explanation:
+          'A B-tree keeps keys sorted, so ORDER BY on the indexed column needs no sort at all - the database reads the first 20 entries and stops. Without it, it must read every row and sort them before LIMIT can apply. The index does not cache the table and does not change how sorting works.',
+      },
+      {
+        id: 'idx-11',
+        prompt:
+          'In the Lab you search for "a row that does not exist". Without an index the scan reads every page. With the index it stops after the index levels. Why the difference?',
+        options: [
+          'The index remembers which queries failed before',
+          'The index is sorted: the leaf page where the email would be shows it is absent. The scan has no order to rely on, so it must check every row to be sure',
+          'The scan is slowed down on purpose by the planner',
+          'The index stores only the emails that exist, so it never searches',
+        ],
+        answer: 1,
+        explanation:
+          'A sorted structure can prove absence by looking at the one place the key would be. An unsorted table can only prove absence by checking everything, which is why LIMIT 1 cannot help a scan for a missing row. The index does not remember past queries; it is just sorted.',
+      },
+      {
+        id: 'idx-12',
+        prompt:
+          'Index usage statistics show idx_orders_legacy has not been read once in three months. The orders table takes 5,000 writes a second. What should you do?',
+        options: [
+          'Keep it - an unused index costs nothing',
+          'Rebuild it so the planner starts using it',
+          'Confirm no rare job or constraint depends on it, then drop it - it costs a write on every insert and memory, and returns nothing',
+          'Add a second index next to it so one of them gets used',
+        ],
+        answer: 2,
+        explanation:
+          'An index is maintained on every write whether or not anyone reads it, and its pages compete for memory with useful ones. Checking first matters - a unique index enforces correctness even if it is never scanned, and a quarterly report may be the one reader - but a truly unused index is pure cost.',
       },
     ],
   },
@@ -841,19 +998,21 @@ Primary DOWN -> promote Replica 1 -> repoint writes`,
     category: 'data',
     difficulty: 'Advanced',
     lab: 'sharding',
-    keywords: ['shard key', 'hot shard', 'partition', 'routing', 'resharding'],
+    keywords: ['shard key', 'hot shard', 'partition', 'routing', 'resharding', 'scatter-gather', 'consistent hashing'],
     what: 'Sharding splits a dataset horizontally across independent database instances. A shard key decides which shard owns each row, and a router sends each query to the right shard.',
     why: 'Replication scales reads, but every replica still holds the whole dataset and every write still goes through one primary. Sharding is how you scale writes and data volume beyond one machine.',
     how: [
       'Choose a shard key present in almost every query - user_id, tenant_id, or a hash of it.',
       'Map key to shard by range, by hash, or through a lookup/directory service.',
-      'Route queries: single-shard queries are fast; cross-shard queries must scatter and gather.',
-      'Plan resharding before you need it - consistent hashing or virtual buckets reduce the pain.',
+      'Route queries: single-shard queries are fast; cross-shard queries must scatter to every shard and gather the answers.',
+      'Give each shard its own replicas - sharding splits the load, replication keeps each slice available.',
+      'Plan resharding before you need it - consistent hashing or many virtual shards mean adding a node moves only a small part of the data.',
     ],
     when: [
       'The working set no longer fits on the largest reasonable machine.',
       'Write throughput exceeds what one primary can absorb.',
       'Regulatory requirements force data to live in specific regions.',
+      'Not before vertical scaling, read replicas, caching and query tuning have run out - they are far cheaper to undo.',
     ],
     diagram: `                Shard Router
         +------------+------------+
@@ -861,43 +1020,54 @@ Primary DOWN -> promote Replica 1 -> repoint writes`,
     Shard A      Shard B      Shard C
    users 1-3M   users 3-6M   users 6-10M
 
-BAD SHARD KEY (country, skewed traffic)
-Shard A  ################# 90%   <- hot shard
-Shard B  #####             20%
-Shard C  #####             18%`,
+BAD SHARD KEY (skewed traffic)
+Shard A  ##################  90% load  <- hot shard
+Shard B  ####                20% load
+Shard C  ####                18% load`,
     advantages: [
-      'Write capacity and storage grow with shard count.',
-      'Failure of one shard affects only part of the users.',
+      'Write capacity and storage grow with shard count - if the key spreads the load.',
+      'Failure of one shard affects only the users on it.',
       'Enables data residency per region.',
     ],
     tradeoffs: [
       {
+        approach: 'No sharding (one primary, plus replicas)',
+        gains: ['Joins, transactions and unique constraints just work', 'One database to back up, migrate and operate'],
+        costs: ['All writes go through one primary', 'Data size is capped by one machine'],
+      },
+      {
         approach: 'Hash sharding',
-        gains: ['Even distribution', 'No hot ranges from sequential keys'],
-        costs: ['Range queries must hit every shard', 'Resharding moves data unless you use consistent hashing'],
+        gains: ['Even distribution of data and traffic', 'No hot ranges from sequential keys'],
+        costs: [
+          'Range queries must hit every shard',
+          'With hash % N, changing N moves most keys; consistent hashing or virtual shards cut that to about 1/N',
+        ],
       },
       {
         approach: 'Range sharding',
-        gains: ['Efficient range scans', 'Simple to reason about and rebalance by split'],
-        costs: ['Sequential keys create a hot shard at the end', 'Uneven growth needs active rebalancing'],
+        gains: ['Efficient range scans', 'Simple to reason about and rebalance by splitting a range'],
+        costs: ['Sequential keys (ids, timestamps) send every new row to the last shard', 'Uneven growth needs active rebalancing'],
       },
       {
         approach: 'Directory / lookup sharding',
-        gains: ['Full control over placement', 'Easy to move a single tenant'],
-        costs: ['The directory is an extra dependency and a single point of failure', 'One more lookup per query'],
+        gains: ['Full control over placement', 'Easy to move a single big tenant to its own shard'],
+        costs: ['The directory must be fast and highly available, or it becomes a single point of failure', 'One more lookup per query'],
       },
     ],
     mistakes: [
       'Sharding by something skewed (country, "enterprise customer") and creating a hot shard.',
       'Designing queries that need joins across shards - they become scatter-gather with the slowest shard setting latency.',
-      'Sharding before exhausting vertical scaling, replicas and caching. It is a one-way door.',
+      'Sharding before exhausting vertical scaling, replicas and caching. It is very hard to undo.',
       'Forgetting that cross-shard transactions need sagas or two-phase commit.',
+      'Using hash % N and discovering that adding one shard remaps almost every key.',
+      'Keeping one auto-increment sequence per shard, so two shards hand out the same id.',
     ],
     realWorld: [
       'Multi-tenant SaaS often shards by tenant_id, which keeps almost every query single-shard.',
-      'Instagram-style systems shard by user id and generate globally unique ids that embed the shard.',
+      'Instagram shards by user id onto thousands of logical shards, and generates 64-bit ids that embed the shard number.',
+      'Vitess (MySQL) and Citus (PostgreSQL) add a shard router in front of ordinary databases.',
     ],
-    related: ['partitioning', 'replication', 'nosql-databases'],
+    related: ['partitioning', 'replication', 'nosql-databases', 'vertical-scaling', 'saga-pattern'],
     quiz: [
       {
         id: 'sh-1',
@@ -910,20 +1080,147 @@ Shard C  #####             18%`,
         ],
         answer: 1,
         explanation:
-          'A shard key must distribute both data and traffic. Skewed keys mean one shard becomes the bottleneck and adding shards does not help.',
+          'A shard key must distribute both data and traffic. With country as the key, 70% of requests go to one shard, which saturates while the others idle, and adding shards does not help because that country still maps to one of them. In the Lab, pick Country and watch the load skew.',
       },
       {
         id: 'sh-2',
-        prompt: 'What should you usually try before sharding?',
+        prompt:
+          'Your PostgreSQL primary holds 400 GB, serves 5,000 reads and 300 writes a second, and runs at 60% CPU. A teammate proposes sharding now. What do you suggest first?',
         options: [
-          'Nothing - shard as early as possible',
-          'Vertical scaling, read replicas, caching and query tuning',
-          'Switching programming language',
-          'Adding more application servers',
+          'Shard now - it only gets harder later',
+          'Move to a NoSQL database, which shards automatically',
+          'Add more application servers',
+          'Read replicas, caching, query and index tuning, and a bigger machine - the load is mostly reads and fits one machine',
+        ],
+        answer: 3,
+        explanation:
+          'Sharding permanently complicates queries, transactions and operations, and it mainly buys write capacity and data size. Here reads dominate and the data fits one machine, so replicas and caching attack the actual load. More application servers would only send more queries to the same database.',
+      },
+      {
+        id: 'sh-3',
+        prompt:
+          'In the Lab you pick "Range on created_at". The 2026 shard takes about 70% of the traffic. Why does adding more shards not fix it?',
+        options: [
+          'Every new row has a current timestamp, so all new writes still land on the newest range, whatever the shard count',
+          'The router is too slow for more shards',
+          'Range sharding does not allow more than four shards',
+          'Old shards are read-only',
+        ],
+        answer: 0,
+        explanation:
+          'A range on a key that only grows (time, auto-increment ids) sends every new row to the last range. More shards only add more cold history. Hashing the key, or a composite key that spreads current writes, removes the hotspot at the cost of range queries.',
+      },
+      {
+        id: 'sh-4',
+        prompt:
+          'Rows are placed with hash(user_id) % 4. Traffic grows and you add a fifth shard, changing the formula to % 5. Roughly how much data moves?',
+        options: [
+          'None - existing rows stay where they are',
+          'About a fifth, only the rows the new shard needs',
+          'About four fifths - most keys give a different remainder mod 5 than mod 4',
+          'Exactly half',
+        ],
+        answer: 2,
+        explanation:
+          'Changing N in a modulo scheme changes the answer for most keys: only about 1 in 5 keys keeps the same shard, so about 80% move. Moving only about a fifth is what consistent hashing or many virtual shards give you - which is why they are worth the extra complexity.',
+      },
+      {
+        id: 'sh-5',
+        prompt:
+          'Users are sharded by user_id across 16 shards. The login page looks users up by email. What happens to that query, and what is the usual fix?',
+        options: [
+          'The router hashes the email and finds the right shard',
+          'It must scatter to all 16 shards and wait for the slowest; the fix is a lookup table from email to user_id, or a global index',
+          'It fails - sharded databases cannot query other columns',
+          'It is fast, because each shard is small',
         ],
         answer: 1,
         explanation:
-          'Sharding permanently complicates queries, transactions and operations. Cheaper options usually buy years of headroom.',
+          'The router can only route by the shard key. A query without it asks every shard, and its latency is set by the slowest one. A small email-to-user_id lookup (itself sharded by email) turns login back into two single-shard queries. Hashing the email finds the wrong shard, because rows were placed by user_id.',
+      },
+      {
+        id: 'sh-6',
+        prompt:
+          'In the Lab you run 2,000 queries a second across 4 shards, then raise cross-shard queries from 5% to 30%. How many requests per second do the shards receive in total?',
+        options: [
+          '2,000 - the traffic did not change',
+          '1,400 - cross-shard queries are cheaper',
+          '2,600',
+          '3,800 - each cross-shard query becomes 4 shard requests: 1,400 + 600 x 4',
+        ],
+        answer: 3,
+        explanation:
+          '70% of 2,000 is 1,400 single-shard queries. The other 600 each fan out to all 4 shards, adding 2,400. Scatter-gather multiplies load by the shard count, which is why queries without the shard key must stay off the hot path.',
+      },
+      {
+        id: 'sh-7',
+        prompt:
+          'A payment app is sharded by user_id. Ana (shard 2) sends 50 euros to Ben (shard 7). How do you make the debit and the credit happen together?',
+        options: [
+          'A saga with compensating steps, or two-phase commit across the two shards - one local transaction cannot span them',
+          'A normal BEGIN ... COMMIT, since both shards run PostgreSQL',
+          'Write both rows to shard 2',
+          'Retry until both writes succeed',
+        ],
+        answer: 0,
+        explanation:
+          'A local transaction lives inside one database. Across shards you need a distributed protocol (two-phase commit) or a saga that can undo the debit if the credit fails. Blind retries can double-apply a step, and writing Ben to the wrong shard breaks routing for every later read.',
+      },
+      {
+        id: 'sh-8',
+        prompt:
+          'A SaaS product hashes tenant_id across 8 nodes. Three enterprise tenants are each bigger than a thousand small ones, and their nodes run hot. What is the common fix?',
+        options: [
+          'Switch to range sharding on tenant_id',
+          'Add more nodes to the hash ring and hope the big tenants land apart',
+          'A directory override that pins each big tenant to a dedicated node, while hashing still places everyone else',
+          'Split each big tenant randomly across all nodes',
+        ],
+        answer: 2,
+        explanation:
+          'Hashing spreads many small tenants well but cannot split one huge tenant, because all its rows share one key. A directory entry for the few outliers gives them their own capacity. Scattering one tenant randomly makes every one of its queries cross-shard.',
+      },
+      {
+        id: 'sh-9',
+        prompt:
+          'Writes reach 40,000 a second and the single primary is saturated. A teammate suggests adding five read replicas. What happens to write capacity?',
+        options: [
+          'It grows about six times',
+          'Nothing - every replica applies every write, and all writes still go through the one primary; spreading writes needs sharding',
+          'It halves, because replicas slow the primary down',
+          'It grows, but only for small rows',
+        ],
+        answer: 1,
+        explanation:
+          'Replication copies the whole dataset: it adds read capacity and failover targets, but each replica replays every write. Only splitting the data so each node owns and accepts writes for a slice raises write capacity.',
+      },
+      {
+        id: 'sh-10',
+        prompt:
+          'After sharding, each shard keeps its own auto-increment id for orders. Support reports two different orders with id 1042. What should the id scheme be?',
+        options: [
+          'Keep per-shard sequences and hope they never collide',
+          'One central sequence database that every insert calls',
+          'Random 32-bit integers',
+          'Globally unique ids that do not depend on one sequence - UUIDv7, Snowflake-style ids, or ids that embed the shard number',
+        ],
+        answer: 3,
+        explanation:
+          'Independent sequences on each shard produce the same numbers. A central sequence works but puts one service on every insert. Time-ordered unique ids such as UUIDv7 or Snowflake need no coordination and stay roughly sorted, which is kind to B-tree indexes. Random 32-bit values collide by the birthday paradox.',
+      },
+      {
+        id: 'sh-11',
+        prompt:
+          'Users are sharded across 4 shards, and each shard is a single database with no replica. The Shard C machine dies. What do users see?',
+        options: [
+          'Users whose rows live on Shard C get errors; users on A, B and D are unaffected - each shard still needs its own replica and failover',
+          'Everyone is down, because the cluster is one system',
+          'Nothing - the router sends Shard C traffic to the other shards',
+          'Shard C data is rebuilt automatically from the other shards',
+        ],
+        answer: 0,
+        explanation:
+          'Sharding limits the blast radius to one slice, but it does not copy data. The other shards do not hold Shard C rows, so the router has nowhere to send those queries. That is why real deployments shard and replicate: each shard is a primary with replicas.',
       },
     ],
   },

@@ -1,11 +1,20 @@
 import { useCallback, useMemo, useRef, useState } from 'react';
 import { Database, Search, Trash2, Zap } from 'lucide-react';
+import {
+  ArchNode,
+  DiagramCanvas,
+  NodeStatRow,
+  ParticleLegend,
+  type DiagramEdge,
+  type Layout,
+  type ParticleView,
+} from '@/components/architecture';
 import { Insight, LabShell, MetricsPanel } from '@/components/learning';
 import { Button, Meter, Select, Slider } from '@/components/ui';
-import { useTicker } from '@/simulations/engine';
+import { nextParticleId, useEventLog, useTicker, visualShare, type Particle } from '@/simulations/engine';
 import { computeLoad } from '@/simulations/models/load';
 import { useRerender } from '@/hooks/useRerender';
-import { mulberry32 } from '@/utils/math';
+import { clamp, mulberry32, sampleArrivals } from '@/utils/math';
 import { formatLatency, formatNumber } from '@/utils/format';
 import { cn } from '@/utils/cn';
 
@@ -39,26 +48,77 @@ function buildTable(size: number): Row[] {
   });
 }
 
-/**
- * Cost model: a sequential scan reads rows one at a time; the index lookup is
- * modelled as a binary search, log2(n) steps. Simplified on purpose: a real
- * B-tree node holds hundreds of keys, so 50,000 rows sit about 3 levels deep.
- * The O(log n) shape is the lesson, and halving is easier to follow.
+/*
+ * Cost model - simplified numbers, not measurements. A database reads pages,
+ * not rows: PostgreSQL stores a table in 8 KB pages, and a B-tree index is a
+ * tree of pages too.
+ * - ROWS_PER_PAGE: about 100 rows of this users table fit in one 8 KB page.
+ * - INDEX_FANOUT: one index page holds about 200 email keys. Real fan-out is
+ *   "hundreds", which is why a B-tree stays 2-4 levels deep for huge tables.
+ * - Times per page are chosen so 5 million rows scan in about 1.2 s and an
+ *   index lookup takes about 0.3 ms, the numbers the Lesson quotes.
  */
-const SCAN_MS_PER_1000_ROWS = 42;
-const BTREE_MS_PER_LEVEL = 0.28;
+const ROWS_PER_PAGE = 100;
+const INDEX_FANOUT = 200;
+const SEQ_PAGE_MS = 0.025;
+const INDEX_PAGE_MS = 0.05;
+const QUERY_OVERHEAD_MS = 0.1;
+
+/** Pages per level of the B-tree, root first: [1, 2, 250] for 50,000 rows. */
+function indexShape(rows: number): number[] {
+  const levels = [Math.max(1, Math.ceil(rows / INDEX_FANOUT))];
+  while (levels[0] > 1) levels.unshift(Math.ceil(levels[0] / INDEX_FANOUT));
+  return levels;
+}
+
+const LEVEL_NAME = (level: number, count: number) =>
+  level === count - 1 ? (count === 1 ? 'Root (also leaf)' : 'Leaf level') : level === 0 ? 'Root' : 'Branch level';
+
+type Mode = 'scan' | 'index';
 
 type Result = {
-  mode: 'scan' | 'index';
+  mode: Mode;
   rowsInspected: number;
+  pagesRead: number;
   timeMs: number;
   found: Row | null;
 };
 
 /** Structure updates per second one machine sustains before writes queue. */
 const WRITE_CAPACITY = 3000;
+/** Read particles emitted per second: a sample of the same SELECT, repeated. */
+const READS_PER_SECOND = 2.5;
+/** Write particles emitted per second at most, however high the write rate. */
+const WRITES_ANIMATED_PER_SECOND = 5;
+const PARTICLE_BUDGET = 60;
+
+interface Moving extends Particle {
+  /** The leg that crawls: the scan reading every page of the table. */
+  slowLeg?: number;
+  slowSpeed?: number;
+  /** A write that must also update the index once it reaches the planner. */
+  forkToIndex?: boolean;
+}
+
+interface State {
+  particles: Moving[];
+  scan: { position: number; total: number } | null;
+}
+
+const createState = (): State => ({ particles: [], scan: null });
+
+const LAYOUT: Layout = {
+  app: { x: 20, y: 160, w: 180, h: 120 },
+  db: { x: 280, y: 150, w: 210, h: 140 },
+  index: { x: 570, y: 30, w: 360, h: 170 },
+  table: { x: 570, y: 250, w: 360, h: 160 },
+};
+
+/** Cells in the page strip drawn inside the table node. */
+const STRIP_CELLS = 40;
 
 export function IndexingLab() {
+  const [running, setRunning] = useState(true);
   const [tableSize, setTableSize] = useState(8000);
   const [hasIndex, setHasIndex] = useState(false);
   const [target, setTarget] = useState('');
@@ -66,7 +126,7 @@ export function IndexingLab() {
   // until the table size or the target changes. lastMode picks which one the
   // metrics strip and the insight describe.
   const [results, setResults] = useState<{ scan: Result | null; index: Result | null }>({ scan: null, index: null });
-  const [lastMode, setLastMode] = useState<Result['mode'] | null>(null);
+  const [lastMode, setLastMode] = useState<Mode | null>(null);
   const result = lastMode ? results[lastMode] : null;
   const clearResults = () => {
     setResults({ scan: null, index: null });
@@ -74,80 +134,195 @@ export function IndexingLab() {
   };
   const [writeRate, setWriteRate] = useState(200);
 
-  const scan = useRef<{ position: number; total: number; targetIndex: number } | null>(null);
+  const state = useRef<State>(createState());
   const rerender = useRerender(30);
+  const { events, log, clear } = useEventLog();
 
   const rows = useMemo(() => buildTable(tableSize), [tableSize]);
   const sample = rows[Math.floor(tableSize * 0.78)];
   const email = target || sample.email;
+  const targetIndex = useMemo(() => rows.findIndex((row) => row.email === email), [rows, email]);
+
+  const tablePages = Math.ceil(tableSize / ROWS_PER_PAGE);
+  const shape = indexShape(tableSize);
+  const indexLevels = shape.length;
+  // An index lookup reads one page per level, then one table page for the row.
+  const indexPages = indexLevels + (targetIndex >= 0 ? 1 : 0);
+  // The query has LIMIT 1, so a scan can stop at the row. A missing row has
+  // nothing to stop at, and reads every page.
+  const scanRows = targetIndex >= 0 ? targetIndex + 1 : tableSize;
+  const scanPages = Math.ceil(scanRows / ROWS_PER_PAGE);
 
   const runQuery = useCallback(
-    (mode: 'scan' | 'index') => {
-      const index = rows.findIndex((row) => row.email === email);
-      const found = index >= 0 ? rows[index] : null;
-      const rowsInspected = mode === 'scan' ? (index >= 0 ? index + 1 : rows.length) : Math.ceil(Math.log2(rows.length));
-      const timeMs =
-        mode === 'scan'
-          ? (rowsInspected / 1000) * SCAN_MS_PER_1000_ROWS
-          : rowsInspected * BTREE_MS_PER_LEVEL + 1.4;
+    (mode: Mode) => {
+      const found = targetIndex >= 0 ? rows[targetIndex] : null;
+      const rowsInspected = mode === 'scan' ? scanRows : found ? 1 : 0;
+      const pagesRead = mode === 'scan' ? scanPages : indexPages;
+      const timeMs = QUERY_OVERHEAD_MS + pagesRead * (mode === 'scan' ? SEQ_PAGE_MS : INDEX_PAGE_MS);
 
-      scan.current =
-        mode === 'scan' ? { position: 0, total: index >= 0 ? index + 1 : rows.length, targetIndex: index } : null;
+      state.current.scan = mode === 'scan' ? { position: 0, total: scanRows } : null;
 
       setResults((previous) => ({
         ...previous,
-        [mode]: { mode, rowsInspected, timeMs, found },
+        [mode]: { mode, rowsInspected, pagesRead, timeMs, found },
       }));
       setLastMode(mode);
+      log(
+        mode === 'scan'
+          ? `Seq Scan read ${formatNumber(pagesRead)} pages (${formatNumber(rowsInspected)} rows)`
+          : `Index Scan read ${pagesRead} pages: ${indexLevels} index + ${found ? 1 : 0} table`,
+        mode === 'scan' ? 'warn' : 'ok',
+      );
       rerender();
     },
-    [email, rows, rerender],
+    [targetIndex, rows, scanRows, scanPages, indexPages, indexLevels, log, rerender],
   );
 
-  const scanning = scan.current !== null && scan.current.position < scan.current.total;
-  const scanPosition = scan.current?.position ?? 0;
+  const scanState = state.current.scan;
+  const scanning = scanState !== null && scanState.position < scanState.total;
+  const scanPosition = scanState?.position ?? 0;
 
   // Animate the scanned-row counter so the cost of a full scan is felt, not just read.
   useTicker(scanning, (dt) => {
-    const current = scan.current;
+    const current = state.current.scan;
     if (!current) return;
     const step = Math.max(1, Math.round(current.total * dt * 0.9));
     current.position = Math.min(current.total, current.position + step);
     rerender();
   });
 
-  const btreeLevels = Math.ceil(Math.log2(Math.max(2, tableSize)));
-  // Derived from the same model as the write-path meter: each write touches
-  // the table plus one structure per index. A fixed +35% here contradicted the
-  // meter, which showed the index doubling the structures updated.
+  // Every write touches the table plus one structure per index, so the index
+  // doubles the structures updated and halves the write headroom.
   const structuresPerWrite = hasIndex ? 2 : 1;
   const writeOverhead = structuresPerWrite - 1;
+  // About 40 bytes per entry: the email key plus a pointer to the row. Simplified.
   const indexStorageMb = (tableSize * 40) / 1_000_000;
-
-  // The write-rate slider has to cost something, or the trade-off this lab
-  // teaches is only a sentence. Every write updates the table and each index,
-  // so the index doubles the structures touched and halves the write headroom.
   const structuresPerSecond = writeRate * structuresPerWrite;
   const writeLoad = computeLoad(structuresPerSecond, WRITE_CAPACITY, { baseLatencyMs: 4, kneeAt: 0.65 });
 
-  const visibleRows = useMemo(() => {
-    if (scanning) {
-      const start = Math.max(0, scanPosition - 6);
-      return rows.slice(start, start + 12);
+  // Background traffic: the same SELECT repeated, and the write stream.
+  useTicker(running, (dt) => {
+    const current = state.current;
+
+    const reads = sampleArrivals(READS_PER_SECOND, dt);
+    for (let index = 0; index < reads; index += 1) {
+      if (hasIndex) {
+        current.particles.push({
+          id: nextParticleId(),
+          route: targetIndex >= 0 ? ['app', 'db', 'index', 'table', 'db', 'app'] : ['app', 'db', 'index', 'db', 'app'],
+          leg: 0,
+          t: 0,
+          speed: 1.8,
+          outcome: 'success',
+        });
+      } else {
+        // Illustrative speed: the table leg crawls longer the more pages it reads.
+        current.particles.push({
+          id: nextParticleId(),
+          route: ['app', 'db', 'table', 'db', 'app'],
+          leg: 0,
+          t: 0,
+          speed: 1.8,
+          slowLeg: 1,
+          slowSpeed: clamp(1.6 / Math.sqrt(scanPages / 10), 0.22, 1.6),
+          outcome: 'warning',
+        });
+      }
     }
-    return rows.slice(0, 12);
-  }, [rows, scanning, scanPosition]);
+
+    const writes = sampleArrivals(writeRate, dt);
+    const share = visualShare(writeRate, WRITES_ANIMATED_PER_SECOND);
+    for (let index = 0; index < writes; index += 1) {
+      if (Math.random() >= share) continue;
+      const rejected = Math.random() < writeLoad.errorRate;
+      current.particles.push({
+        id: nextParticleId(),
+        route: rejected ? ['app', 'db'] : ['app', 'db', 'table'],
+        leg: 0,
+        t: 0,
+        speed: 1.5,
+        outcome: rejected ? 'failure' : 'success',
+        forkToIndex: !rejected && hasIndex,
+      });
+    }
+
+    const alive: Moving[] = [];
+    for (const particle of current.particles) {
+      const speed = particle.slowLeg === particle.leg ? (particle.slowSpeed ?? particle.speed) : particle.speed;
+      particle.t += speed * dt;
+      if (particle.t < 1) {
+        alive.push(particle);
+        continue;
+      }
+      if (particle.leg >= particle.route.length - 2) continue;
+      particle.leg += 1;
+      particle.t = 0;
+      // A write reaching the planner updates the index as well as the table.
+      if (particle.forkToIndex && particle.route[particle.leg] === 'db') {
+        alive.push({ id: nextParticleId(), route: ['db', 'index'], leg: 0, t: 0, speed: 1.5, outcome: 'success' });
+      }
+      alive.push(particle);
+    }
+    current.particles = alive.length > PARTICLE_BUDGET ? alive.slice(-PARTICLE_BUDGET) : alive;
+    rerender();
+  });
+
+  const reset = () => {
+    clearResults();
+    state.current = createState();
+    setHasIndex(false);
+    setTarget('');
+    setTableSize(8000);
+    setWriteRate(200);
+    clear();
+  };
+
+  const edges = useMemo<DiagramEdge[]>(
+    () => [
+      { from: 'app', to: 'db', tone: 'brand', width: 2 },
+      // Writes always land in the table; without an index, every read scans it too.
+      { from: 'db', to: 'table', tone: hasIndex ? 'default' : 'warn', width: hasIndex ? 1.5 : 2.5 },
+      // No index yet: the part is drawn, dashed, and no request travels it.
+      { from: 'db', to: 'index', tone: hasIndex ? 'ok' : 'muted', dashed: !hasIndex, width: hasIndex ? 2 : 1.5 },
+      { from: 'index', to: 'table', tone: hasIndex ? 'ok' : 'muted', dashed: !hasIndex, width: hasIndex ? 2 : 1.5 },
+    ],
+    [hasIndex],
+  );
+
+  const particleViews: ParticleView[] = state.current.particles.map((particle) => ({
+    id: particle.id,
+    from: particle.route[particle.leg],
+    to: particle.route[particle.leg + 1],
+    t: particle.t,
+    outcome: particle.outcome ?? 'success',
+  }));
+
+  // Page strip: which table pages the last query read.
+  const pagesPerCell = Math.max(1, tablePages / STRIP_CELLS);
+  const cells = Math.min(STRIP_CELLS, tablePages);
+  const scanPagesSoFar = scanning ? Math.ceil(scanPosition / ROWS_PER_PAGE) : (results.scan?.pagesRead ?? 0);
+  const showScan = lastMode === 'scan' || scanning;
+  const heapCell = targetIndex >= 0 ? Math.floor(Math.floor(targetIndex / ROWS_PER_PAGE) / pagesPerCell) : -1;
+
+  const plan = hasIndex ? 'Index Scan' : 'Seq Scan';
+  const pagesPerRead = hasIndex ? indexPages : scanPages;
 
   return (
     <LabShell
       title="Database Indexing Lab"
-      description={`A users table with ${formatNumber(tableSize)} rows. Find one row with and without an index, and see what the index costs on writes.`}
-      onReset={() => {
-        clearResults();
-        scan.current = null;
-        setHasIndex(false);
-        rerender();
-      }}
+      description={`A users table with ${formatNumber(tableSize)} rows in ${formatNumber(tablePages)} pages. Find one row with and without an index, and see what the index costs on writes.`}
+      running={running}
+      onToggleRun={() => setRunning((value) => !value)}
+      onReset={reset}
+      events={events}
+      legend={
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5">
+          <ParticleLegend outcomes={['success', 'warning', 'failure']} />
+          <span className="text-[11px] text-faint">
+            Circle: an index read or a write. Triangle: a read doing a full scan. Cross: a write rejected over capacity.
+          </span>
+        </div>
+      }
       actions={
         <>
           <Button variant="secondary" onClick={() => runQuery('scan')}>
@@ -157,7 +332,10 @@ export function IndexingLab() {
           <Button
             variant={hasIndex ? 'primary' : 'secondary'}
             onClick={() => {
-              if (!hasIndex) setHasIndex(true);
+              if (!hasIndex) {
+                setHasIndex(true);
+                log('CREATE INDEX idx_users_email - reads switch to the index path', 'info');
+              }
               runQuery('index');
             }}
           >
@@ -169,6 +347,7 @@ export function IndexingLab() {
               variant="danger"
               onClick={() => {
                 setHasIndex(false);
+                log('DROP INDEX idx_users_email - reads fall back to a full scan', 'warn');
                 // The index is gone, so its result no longer describes anything.
                 // The scan result still does, and stays.
                 setResults((previous) => ({ ...previous, index: null }));
@@ -185,21 +364,21 @@ export function IndexingLab() {
         <Insight>
           {result?.mode === 'index' ? (
             <>
-              The index lookup inspected about {result.rowsInspected} nodes instead of {formatNumber(rows.length)}{' '}
-              rows - each step discards half the remaining candidates (a binary search, simplified - a real B-tree
-              packs hundreds of keys per node and is only 2-3 levels deep here). The cost is on the other side: every
-              INSERT, UPDATE and DELETE must now also maintain this index, and it occupies roughly{' '}
-              {indexStorageMb.toFixed(1)} MB.
+              The index lookup read {result.pagesRead} pages: one per index level ({indexLevels}), then{' '}
+              {result.found ? 'one table page to fetch the row' : 'nothing more, because the key is not in the index'}.
+              The full scan reads up to {formatNumber(tablePages)} pages. The cost is on the other side: every INSERT,
+              UPDATE and DELETE must now also maintain this index, and it takes roughly {indexStorageMb.toFixed(1)} MB.
             </>
           ) : result?.mode === 'scan' ? (
             <>
-              A sequential scan read {formatNumber(result.rowsInspected)} rows to find one. Doubling the table doubles
-              the work - this is O(n). An index turns it into O(log n), which is {btreeLevels} steps at this size.
+              A sequential scan read {formatNumber(result.pagesRead)} pages ({formatNumber(result.rowsInspected)} rows) to
+              find one row. Doubling the table doubles the work - this is O(n). An index needs {indexLevels}{' '}
+              index pages at this size, and one more level only when the table grows about {INDEX_FANOUT} times.
             </>
           ) : (
             <>
-              Run the query both ways. The interesting number is not the milliseconds but the growth rate: a scan is
-              linear in table size, a B-tree lookup grows logarithmically.
+              Run the query both ways. The interesting number is not the milliseconds but the growth: a scan reads more
+              pages with every row added, a B-tree lookup reads one page per level, and levels are added very rarely.
             </>
           )}
         </Insight>
@@ -209,9 +388,17 @@ export function IndexingLab() {
           <MetricsPanel
             items={[
               {
+                key: 'pagesRead',
+                label: 'Pages read',
+                value: result ? formatNumber(scanning && result.mode === 'scan' ? scanPagesSoFar : result.pagesRead) : '-',
+                tone: result?.mode === 'index' ? 'ok' : result ? 'danger' : 'neutral',
+                hint: 'The database reads 8 KB pages, not rows. About 100 rows per table page here (simplified).',
+                simulated: true,
+              },
+              {
                 key: 'rowsScanned',
                 label: 'Rows inspected',
-                value: result ? formatNumber(scanning ? scanPosition : result.rowsInspected) : '-',
+                value: result ? formatNumber(scanning && result.mode === 'scan' ? scanPosition : result.rowsInspected) : '-',
                 tone: result?.mode === 'index' ? 'ok' : result ? 'danger' : 'neutral',
               },
               {
@@ -219,15 +406,16 @@ export function IndexingLab() {
                 label: 'Query time',
                 value: result ? formatLatency(result.timeMs) : '-',
                 tone: result?.mode === 'index' ? 'ok' : result ? 'danger' : 'neutral',
-                hint: 'Estimated from rows read - the shape of the curve is what matters.',
+                hint: 'Estimated from pages read - the shape of the curve is what matters, not the exact number.',
                 simulated: true,
               },
               { key: 'tableSize', label: 'Table rows', value: formatNumber(tableSize), hint: 'Rows in the users table.' },
               {
-                key: 'btree',
-                label: 'Lookup steps',
-                value: hasIndex ? btreeLevels : '-',
-                hint: 'log2(rows), a binary search. Simplified - a real B-tree has hundreds of keys per node, so it is much shallower (about 3 levels for 50,000 rows).',
+                key: 'levels',
+                label: 'Index levels',
+                value: hasIndex ? indexLevels : '-',
+                hint: `One page read per level. About ${INDEX_FANOUT} keys per index page (simplified), so each level multiplies the reach by ${INDEX_FANOUT}.`,
+                simulated: true,
               },
               {
                 key: 'writeCost',
@@ -250,7 +438,8 @@ export function IndexingLab() {
                 label: 'Index storage',
                 value: hasIndex ? `${indexStorageMb.toFixed(1)} MB` : '0 MB',
                 tone: hasIndex ? 'warn' : 'neutral',
-                hint: 'Indexes are additional data that must fit in memory to stay fast.',
+                hint: 'About 40 bytes per row (key plus row pointer, simplified). Indexes must fit in memory to stay fast.',
+                simulated: true,
               },
             ]}
           />
@@ -259,7 +448,9 @@ export function IndexingLab() {
             <div className="flex items-center justify-between border-b border-line px-4 py-2.5">
               <p className="label">users table</p>
               <p className="font-mono text-[11px] text-faint">
-                {scanning ? `scanning row ${formatNumber(scanPosition)} / ${formatNumber(scan.current?.total ?? 0)}` : 'idle'}
+                {scanning
+                  ? `scanning row ${formatNumber(scanPosition)} / ${formatNumber(scanState?.total ?? 0)}`
+                  : 'idle'}
               </p>
             </div>
             <div className="overflow-x-auto">
@@ -274,42 +465,11 @@ export function IndexingLab() {
                   </tr>
                 </thead>
                 <tbody>
-                  {visibleRows.map((row) => {
-                    const isTarget = row.email === email;
-                    const isCurrent = scanning && row.id === scanPosition;
-                    return (
-                      <tr
-                        key={row.id}
-                        className={cn(
-                          'border-t border-line',
-                          isCurrent && 'bg-warn/15',
-                          isTarget && result && !scanning && 'bg-ok/15',
-                        )}
-                      >
-                        <td className="px-4 py-1.5 text-faint">{row.id}</td>
-                        <td className="px-4 py-1.5 text-muted">{row.name}</td>
-                        <td className={cn('px-4 py-1.5', isTarget ? 'text-ok' : 'text-ink')}>{row.email}</td>
-                        <td className="px-4 py-1.5 text-muted">{row.country}</td>
-                        <td className="px-4 py-1.5 text-faint">{row.createdAt}</td>
-                      </tr>
-                    );
-                  })}
+                  <VisibleRows rows={rows} scanning={scanning} scanPosition={scanPosition} email={email} showHit={Boolean(result)} />
                 </tbody>
               </table>
             </div>
           </div>
-
-          {hasIndex ? (
-            <div className="card p-4">
-              <p className="label mb-3">Index on users(email), drawn as a binary search</p>
-              <BTreeView levels={Math.min(4, btreeLevels)} email={email} />
-              <p className="mt-3 text-xs text-faint">
-                Each level halves the search space. {formatNumber(tableSize)} rows need {btreeLevels} levels, so a
-                lookup reads about {btreeLevels} nodes instead of {formatNumber(tableSize)} rows. Simplified: a real
-                B-tree node holds hundreds of keys, so the same table is only 2-3 levels deep.
-              </p>
-            </div>
-          ) : null}
         </>
       }
       controls={
@@ -327,7 +487,7 @@ export function IndexingLab() {
               // the query silently searched for a row that is gone.
               setTarget('');
               clearResults();
-              scan.current = null;
+              state.current.scan = null;
             }}
             format={(value) => `${formatNumber(value)} rows`}
             hint="Scan cost grows with this number. Index cost barely moves."
@@ -344,9 +504,9 @@ export function IndexingLab() {
             onChange={(value) => {
               setTarget(value);
               clearResults();
-              scan.current = null;
+              state.current.scan = null;
             }}
-            hint="A missing row forces a full scan - there is nothing to stop early at."
+            hint="LIMIT 1 lets a scan stop at the row. A missing row forces a full scan - there is nothing to stop at."
           />
           <Slider
             label="Write rate"
@@ -367,7 +527,7 @@ export function IndexingLab() {
             />
             <p className="mt-2 font-mono text-[11px] text-muted">
               {formatNumber(writeRate)} writes/sec {'->'} {formatNumber(structuresPerSecond)} structures updated/sec of{' '}
-              {formatNumber(WRITE_CAPACITY)}
+              {formatNumber(WRITE_CAPACITY)} (simplified)
             </p>
             {writeLoad.saturated ? (
               <p className="mt-1 text-[11px] text-danger">
@@ -386,30 +546,132 @@ export function IndexingLab() {
         </>
       }
     >
+      <DiagramCanvas
+        layout={LAYOUT}
+        edges={edges}
+        particles={particleViews}
+        height={430}
+        className="bg-canvas"
+        underlay={
+          <g>
+            <rect
+              x={250}
+              y={10}
+              width={700}
+              height={412}
+              rx={16}
+              fill="none"
+              strokeDasharray="6 5"
+              strokeWidth={1.5}
+              className="stroke-[rgb(var(--c-line))]"
+            />
+            <text x={266} y={30} className="fill-[rgb(var(--c-faint))] font-mono" style={{ fontSize: 11 }}>
+              One PostgreSQL database
+            </text>
+          </g>
+        }
+      >
+        <ArchNode kind="server" title="App server" subtitle="SELECT by email, LIMIT 1" placed={LAYOUT.app}>
+          <NodeStatRow label="Reads" value="repeated" />
+          <NodeStatRow label="Writes" value={`${formatNumber(writeRate)}/s`} />
+        </ArchNode>
+        <ArchNode
+          kind="sql"
+          title="Query planner"
+          subtitle={hasIndex ? 'picks Index Scan' : 'no index: Seq Scan'}
+          placed={LAYOUT.db}
+          alert={writeLoad.saturated}
+          status={writeLoad.saturated ? 'degraded' : 'healthy'}
+        >
+          <NodeStatRow label="Plan" value={plan} tone={hasIndex ? 'text-ok' : 'text-warn'} />
+          <NodeStatRow label="Pages per read" value={formatNumber(pagesPerRead)} tone={hasIndex ? 'text-ok' : 'text-warn'} />
+          <NodeStatRow
+            label="Write latency"
+            value={formatLatency(writeLoad.latencyMs)}
+            tone={writeLoad.saturated ? 'text-danger' : 'text-ink'}
+          />
+        </ArchNode>
+        <ArchNode
+          kind="search"
+          title="idx_users_email"
+          subtitle={hasIndex ? `B-tree, about ${INDEX_FANOUT} keys per page` : 'not created yet'}
+          placed={LAYOUT.index}
+          status={hasIndex ? 'healthy' : 'down'}
+          statusLabel={hasIndex ? 'In use' : 'Not created'}
+        >
+          {shape.map((pages, level) => (
+            <NodeStatRow
+              key={level}
+              label={LEVEL_NAME(level, shape.length)}
+              value={`read 1 of ${formatNumber(pages)} ${pages === 1 ? 'page' : 'pages'}`}
+              tone={hasIndex ? 'text-ok' : 'text-faint'}
+            />
+          ))}
+          <NodeStatRow
+            label="Then the row"
+            value={targetIndex >= 0 ? '1 table page' : 'key not found, stop'}
+            tone={hasIndex ? 'text-ok' : 'text-faint'}
+          />
+        </ArchNode>
+        <ArchNode
+          kind="storage"
+          title="users table"
+          subtitle={`${formatNumber(tablePages)} pages of ${ROWS_PER_PAGE} rows`}
+          placed={LAYOUT.table}
+          alert={!hasIndex}
+        >
+          <div className="flex flex-wrap gap-[3px]" aria-label="Table pages read by the last query">
+            {Array.from({ length: cells }, (_, cell) => {
+              const read = showScan && cell < Math.ceil(scanPagesSoFar / pagesPerCell);
+              const fetched = !showScan && lastMode === 'index' && cell === heapCell;
+              return (
+                <span
+                  key={cell}
+                  className={cn('h-2.5 w-[5px] rounded-[2px]', read ? 'bg-warn' : fetched ? 'bg-ok' : 'bg-line')}
+                />
+              );
+            })}
+          </div>
+          <NodeStatRow
+            label={pagesPerCell > 1 ? `1 bar = ${formatNumber(pagesPerCell)} pages` : '1 bar = 1 page'}
+            value={
+              showScan
+                ? `${formatNumber(scanPagesSoFar)} pages scanned`
+                : lastMode === 'index'
+                  ? result?.found
+                    ? '1 page fetched'
+                    : 'no page fetched'
+                  : 'run a query'
+            }
+            tone={showScan ? 'text-warn' : lastMode === 'index' ? 'text-ok' : 'text-faint'}
+          />
+        </ArchNode>
+      </DiagramCanvas>
+
       <div className="grid gap-4 p-5 lg:grid-cols-2">
         <QueryPanel
           title="Without index"
           subtitle="Sequential scan"
-          sql={`SELECT * FROM users\nWHERE email = '${email}';`}
-          plan={`Seq Scan on users\n  Filter: (email = '...')\n  Rows Removed by Filter: ${formatNumber(
+          sql={`SELECT * FROM users\nWHERE email = '${email}'\nLIMIT 1;`}
+          plan={`Limit\n  -> Seq Scan on users\n       Filter: (email = '...')\n       Rows Removed by Filter: ${formatNumber(
             results.scan
               ? Math.max(0, results.scan.rowsInspected - (results.scan.found ? 1 : 0))
-              : Math.max(0, tableSize - 1),
+              : Math.max(0, scanRows - (targetIndex >= 0 ? 1 : 0)),
           )}`}
-          rows={results.scan ? (scanning ? scanPosition : results.scan.rowsInspected) : null}
+          pages={results.scan ? (scanning ? scanPagesSoFar : results.scan.pagesRead) : null}
           time={results.scan ? results.scan.timeMs : null}
           tone="danger"
         />
         <QueryPanel
           title="With index"
           subtitle={hasIndex ? 'Index scan on users(email)' : 'No index created yet'}
-          sql={`CREATE INDEX idx_users_email\n  ON users (email);\n\nSELECT * FROM users\nWHERE email = '${email}';`}
+          sql={`CREATE INDEX idx_users_email\n  ON users (email);\n\nSELECT * FROM users\nWHERE email = '${email}'\nLIMIT 1;`}
           plan={
             hasIndex
-              ? `Index Scan using idx_users_email\n  Index Cond: (email = '...')\n  Heap Fetches: 1`
+              ? `Limit\n  -> Index Scan using idx_users_email on users\n       Index Cond: (email = '...')`
               : 'Create the index to see the plan change.'
           }
-          rows={results.index ? results.index.rowsInspected : null}
+          pages={results.index ? results.index.pagesRead : null}
           time={results.index ? results.index.timeMs : null}
           tone="ok"
         />
@@ -418,12 +680,48 @@ export function IndexingLab() {
   );
 }
 
+function VisibleRows({
+  rows,
+  scanning,
+  scanPosition,
+  email,
+  showHit,
+}: {
+  rows: Row[];
+  scanning: boolean;
+  scanPosition: number;
+  email: string;
+  showHit: boolean;
+}) {
+  const start = scanning ? Math.max(0, scanPosition - 6) : 0;
+  return (
+    <>
+      {rows.slice(start, start + 12).map((row) => {
+        const isTarget = row.email === email;
+        const isCurrent = scanning && row.id === scanPosition;
+        return (
+          <tr
+            key={row.id}
+            className={cn('border-t border-line', isCurrent && 'bg-warn/15', isTarget && showHit && !scanning && 'bg-ok/15')}
+          >
+            <td className="px-4 py-1.5 text-faint">{row.id}</td>
+            <td className="px-4 py-1.5 text-muted">{row.name}</td>
+            <td className={cn('px-4 py-1.5', isTarget ? 'text-ok' : 'text-ink')}>{row.email}</td>
+            <td className="px-4 py-1.5 text-muted">{row.country}</td>
+            <td className="px-4 py-1.5 text-faint">{row.createdAt}</td>
+          </tr>
+        );
+      })}
+    </>
+  );
+}
+
 function QueryPanel({
   title,
   subtitle,
   sql,
   plan,
-  rows,
+  pages,
   time,
   tone,
 }: {
@@ -431,7 +729,7 @@ function QueryPanel({
   subtitle: string;
   sql: string;
   plan: string;
-  rows: number | null;
+  pages: number | null;
   time: number | null;
   tone: 'ok' | 'danger';
 }) {
@@ -445,9 +743,9 @@ function QueryPanel({
       <pre className="ascii mt-2 text-[10px]">{plan}</pre>
       <div className="mt-3 grid grid-cols-2 gap-2">
         <div className="rounded-lg border border-line bg-elevated px-3 py-2">
-          <p className="label">Rows inspected</p>
+          <p className="label">Pages read</p>
           <p className={cn('font-mono text-lg font-semibold', tone === 'ok' ? 'text-ok' : 'text-danger')}>
-            {rows === null ? '-' : formatNumber(rows)}
+            {pages === null ? '-' : formatNumber(pages)}
           </p>
         </div>
         <div className="rounded-lg border border-line bg-elevated px-3 py-2">
@@ -457,36 +755,6 @@ function QueryPanel({
           </p>
         </div>
       </div>
-    </div>
-  );
-}
-
-/** Binary-search drawing of the index - enough to show that each level halves the range. A real B-tree is far wider and shallower. */
-function BTreeView({ levels, email }: { levels: number; email: string }) {
-  const letter = email.charAt(0).toLowerCase();
-  return (
-    <div className="space-y-2 overflow-x-auto">
-      {Array.from({ length: levels }, (_, level) => {
-        const nodes = 2 ** level;
-        return (
-          <div key={level} className="flex min-w-max justify-center gap-2">
-            {Array.from({ length: Math.min(nodes, 8) }, (_, node) => {
-              const onPath = node === Math.min(nodes - 1, Math.floor((letter.charCodeAt(0) - 97) / (26 / nodes)));
-              return (
-                <span
-                  key={node}
-                  className={cn(
-                    'rounded-md border px-2.5 py-1 font-mono text-[10px]',
-                    onPath ? 'border-brand bg-brand/10 text-brand' : 'border-line text-faint',
-                  )}
-                >
-                  {level === levels - 1 ? (onPath ? email.slice(0, 12) : 'leaf') : `node ${node + 1}`}
-                </span>
-              );
-            })}
-          </div>
-        );
-      })}
     </div>
   );
 }
