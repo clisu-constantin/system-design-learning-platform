@@ -8,36 +8,49 @@ export const networkingConcepts: Concept[] = [
     category: 'networking',
     difficulty: 'Beginner',
     lab: 'url-journey',
-    keywords: ['resolution', 'ttl', 'records', 'anycast'],
+    labFocus: 'dns',
+    keywords: ['resolution', 'ttl', 'records', 'anycast', 'resolver', 'cname'],
     what: 'DNS is the distributed directory that maps names such as example.com to IP addresses, using a hierarchy of resolvers, root, TLD and authoritative servers.',
     why: 'It is the first hop of every request. It is also a routing tool: DNS decides which region, CDN edge or load balancer a user talks to before a single byte of your application runs.',
     how: [
       'The browser checks its own cache, then the OS, then the configured recursive resolver.',
-      'On a miss the resolver walks root -> TLD -> authoritative nameserver.',
-      'The answer is cached for the record TTL at every level on the way back.',
+      'On a miss the resolver asks, in turn, a root server, the TLD servers (.com) and the authoritative nameserver.',
+      'Every answer is cached for its TTL - the record for its own TTL, the .com referral for two days.',
       'Record types matter: A/AAAA for addresses, CNAME for aliases, MX for mail, TXT for verification.',
     ],
     when: ['Always. The design choice is TTL length and whether you use DNS for failover or geo-routing.'],
+    advantages: [
+      'Caching at every level makes most lookups nearly free.',
+      'The same name can return different answers, which makes DNS a coarse routing tool (geo, weighted, failover).',
+      'A CNAME lets the address behind a name change without touching your records.',
+    ],
     diagram: `browser cache -> OS cache -> recursive resolver
-                                      |
-                        root -> .com TLD -> authoritative
-                                      |
-                              A record + TTL (e.g. 60s)`,
+                                 |  on a miss, asks in turn:
+                                 +-> root           "ask the .com servers"
+                                 +-> .com TLD       "ask ns1.example.com"
+                                 +-> authoritative  "A 203.0.113.10, TTL 300"`,
     tradeoffs: [
       {
         approach: 'Short TTL (30-60s)',
         gains: ['Fast failover and traffic shifts', 'Useful for blue/green cutovers'],
-        costs: ['More resolver traffic', 'Some clients ignore short TTLs anyway'],
+        costs: ['More resolver traffic, and more users pay a full lookup', 'Some clients and resolvers hold answers longer than the TTL anyway'],
       },
       {
         approach: 'Long TTL (hours)',
-        gains: ['Fewer lookups, slightly faster first byte', 'Resilient to resolver outages'],
+        gains: ['Fewer lookups, slightly faster first byte', 'Resilient to short outages of your nameservers'],
         costs: ['Changing where traffic goes takes hours', 'Bad for incident response'],
+      },
+      {
+        approach: 'DNS failover instead of a load balancer or anycast',
+        gains: ['Works across regions and providers with no extra hop', 'Nothing new to run - the DNS provider does the health checks'],
+        costs: ['Takes at least one TTL, often longer, to move clients', 'Cannot move a connection that is already open'],
       },
     ],
     mistakes: [
       'Relying on DNS as the only failover mechanism - clients and resolvers cache beyond the TTL.',
       'Forgetting that a DNS lookup is a real latency cost on a cold connection.',
+      'Lowering the TTL only at the moment of a migration - caches still hold the old, long one.',
+      'Hardcoding the IP of a managed service instead of pointing a CNAME at its name.',
     ],
     related: ['cdn', 'load-balancing', 'what-happens-when-you-type-a-url'],
     quiz: [
@@ -52,7 +65,146 @@ export const networkingConcepts: Concept[] = [
         ],
         answer: 1,
         explanation:
-          'DNS does not push changes. Caches hold the previous answer for up to the TTL, which is why cutovers use short TTLs set well in advance.',
+          'DNS does not push changes. Caches hold the previous answer for up to the TTL, which is why cutovers use short TTLs set well in advance. "Did not propagate" is the tempting answer, but nothing propagates - the record changed at once, and caches are simply waiting out the TTL.',
+      },
+      {
+        id: 'dns-2',
+        prompt:
+          'You will move your API to a new provider next Tuesday. The A record has a TTL of 86400 (one day). What do you do with the TTL?',
+        options: [
+          'Nothing - lower it on Tuesday, right before the switch',
+          'Raise it, so the new address is cached longer',
+          'Delete the record for a minute during the switch',
+          'Lower it to 60 s at least a day before Tuesday, switch, wait for traffic on the old address to reach zero, then raise it again',
+        ],
+        answer: 3,
+        explanation:
+          'Caches keep an answer for the TTL they received with it. Lowering it on Tuesday does nothing for the caches that picked up the one-day TTL on Monday - they keep the old address for up to a day. Lower it at least one old TTL in advance, so every cache holds the short one by the time you switch.',
+      },
+      {
+        id: 'dns-3',
+        prompt:
+          'In the Lab, the resolver last looked up example.com 10 minutes ago and the record TTL is 5 minutes. Which servers does the resolver ask this time?',
+        options: [
+          'The .com TLD server and the authoritative server - its copy expired, but it still knows the .com servers',
+          'None - it answers from its cache',
+          'Only the root server',
+          'Root, .com TLD and authoritative, every time',
+        ],
+        answer: 0,
+        explanation:
+          'The answer expired after 5 minutes, so the resolver must ask again. The referral to the .com servers has its own TTL of two days, so it is still cached and the root is skipped. That is why "every time" is wrong: a busy resolver almost never asks a root server.',
+      },
+      {
+        id: 'dns-4',
+        prompt:
+          'Same setup, but now the TTL is 1 hour. You change the A record right now. When do users of this resolver get the new address?',
+        options: [
+          'Immediately, because you changed the record',
+          'After the resolver restarts',
+          'In up to 50 minutes - it cached the old answer 10 minutes ago and may reuse it for the rest of the hour',
+          'Never, until they clear their browser cache',
+        ],
+        answer: 2,
+        explanation:
+          'The resolver may reuse an answer until its TTL runs out: 60 minutes minus the 10 already passed. The Lab shows the same number as the time left on the resolver cache. "Immediately" is the tempting answer, but the authoritative server is not even asked until then.',
+      },
+      {
+        id: 'dns-5',
+        prompt:
+          'A resolver has just restarted with an empty cache. A user asks it for www.example.com. Which servers does it ask, in order?',
+        options: [
+          'Only the authoritative server of example.com',
+          'A root server, then the .com TLD servers, then the authoritative nameserver of example.com',
+          'The .com TLD server, which asks the root for it',
+          'The web server at www.example.com',
+        ],
+        answer: 1,
+        explanation:
+          'With nothing cached the resolver walks the hierarchy itself: the root refers it to .com, .com refers it to the nameservers of example.com, and those answer. It could not go straight to the authoritative server because it does not yet know where that is. The servers never forward the question for it - each one only refers the resolver onward.',
+      },
+      {
+        id: 'dns-6',
+        prompt:
+          'app.example.com must point at a cloud load balancer. The provider gives you a hostname and warns that its IP addresses change. Which record do you create?',
+        options: [
+          'An A record with the IP the load balancer has today',
+          'A TXT record with the hostname',
+          'A CNAME from app.example.com to the load balancer hostname',
+          'An MX record',
+        ],
+        answer: 2,
+        explanation:
+          'A CNAME points at a name, so the provider can change the addresses behind it without your records going stale. An A record with the current IP works until the day the provider moves the load balancer - a bug that fires months later. TXT and MX do not route web traffic at all.',
+      },
+      {
+        id: 'dns-7',
+        prompt:
+          'You want the bare domain example.com to point at your CDN hostname, like www does. Your DNS provider refuses a CNAME on example.com. Why, and what do you use?',
+        options: [
+          'A CNAME cannot sit at the zone apex, next to the SOA and NS records; use the ALIAS or ANAME record (or CNAME flattening) of your provider',
+          'The CDN does not allow bare domains; use a subdomain only',
+          'CNAMEs are deprecated; use an A record for the CDN IP',
+          'The TTL is too long; lower it and try again',
+        ],
+        answer: 0,
+        explanation:
+          'A CNAME may not share its name with any other record, and the apex always holds SOA and NS records. Providers solved this with ALIAS-style records that resolve the target name themselves and return plain A records. Hardcoding a CDN IP in an A record is the tempting fix, but CDN addresses change.',
+      },
+      {
+        id: 'dns-8',
+        prompt:
+          'You use DNS failover with health checks and a TTL of 300 s. A region dies. How long until clients stop trying the dead address?',
+        options: [
+          'Under a second - DNS failover is instant',
+          'Exactly 300 s for every client',
+          'It depends on the load balancer, not on DNS',
+          'Up to about 5 minutes for most clients, longer for some that hold answers beyond the TTL - it is a minutes-scale mechanism',
+        ],
+        answer: 3,
+        explanation:
+          'Clients holding the old answer keep using it until the TTL runs out, and some resolvers and client libraries hold it longer. For failover in seconds you need a load balancer or an anycast address in front. "Exactly 300 s" is tempting, but caches picked the answer up at different times, and not all honour the TTL.',
+      },
+      {
+        id: 'dns-9',
+        prompt: 'A popular site sets a 30-second TTL on its main record "to be safe". What does it pay for that?',
+        options: [
+          'Nothing - TTL only matters during migrations',
+          'Far more queries to its authoritative servers, and more users paying a full lookup before their first byte',
+          'Its certificate must be renewed more often',
+          'Browsers refuse records with a TTL under 60 s',
+        ],
+        answer: 1,
+        explanation:
+          'Every cache has to ask again every 30 seconds, so the authoritative servers see many more queries and more requests start with a cache miss. That buys fast traffic changes. The trade-off is real, which is why TTLs are usually lowered only around planned changes - "nothing" is the tempting but wrong answer.',
+      },
+      {
+        id: 'dns-10',
+        prompt:
+          'A user clicks a second link on the same site two seconds after the first page loaded. In the Lab terms, which DNS stages happen?',
+        options: [
+          'All four, because every request needs a lookup',
+          'Only the root server',
+          'None - the browser reuses the open connection to that host, so it needs no address at all',
+          'Only the authoritative server',
+        ],
+        answer: 2,
+        explanation:
+          'Turn Warm connection on in the Lab: all DNS stages are skipped, together with TCP and TLS. The browser already has a connection to that host, and even for a new one the address would still be in its cache. A lookup happens per new host, not per request.',
+      },
+      {
+        id: 'dns-11',
+        prompt:
+          'Users in Europe get the address of your EU region and users in the US get the US region, from the same name. How does DNS do that?',
+        options: [
+          'The authoritative server returns a different answer depending on where the query comes from (geo-routing)',
+          'The browser picks the nearest address from a list it downloads',
+          'The root servers route by country',
+          'It cannot - this needs a load balancer in each country',
+        ],
+        answer: 0,
+        explanation:
+          'The authoritative server sees which resolver asked (and sometimes a hint about the client subnet) and answers with the region closest to it. It is a coarse routing tool with the same caching limits as any other answer. Root servers only refer resolvers to TLD servers; they know nothing about your regions.',
       },
     ],
   },
@@ -62,16 +214,24 @@ export const networkingConcepts: Concept[] = [
     tagline: 'The request/response protocol everything else is built on.',
     category: 'networking',
     difficulty: 'Beginner',
-    keywords: ['http2', 'http3', 'tls', 'headers', 'status codes'],
+    lab: 'url-journey',
+    labFocus: 'http-https',
+    keywords: ['http2', 'http3', 'tls', 'headers', 'status codes', 'cache-control', 'etag'],
     what: 'HTTP is a stateless request/response protocol: a method, a path, headers and an optional body in, a status code, headers and a body out. HTTPS is HTTP carried inside a TLS-encrypted connection.',
     why: 'Its semantics shape your API: which methods are safe to retry, what can be cached, and how intermediaries (proxies, CDNs) may treat your traffic.',
     how: [
       'Methods carry meaning: GET is safe and cacheable, PUT and DELETE are idempotent, POST is neither.',
       'Status codes drive client behaviour: 429 and 503 mean retry later, 4xx generally means do not retry.',
       'Cache-Control and ETag headers let browsers and CDNs avoid round trips entirely.',
-      'HTTP/2 multiplexes many requests over one connection; HTTP/3 moves to QUIC over UDP to remove head-of-line blocking.',
+      'HTTP/2 multiplexes many requests over one connection; HTTP/3 moves to QUIC over UDP to remove TCP head-of-line blocking.',
+      'HTTPS wraps all of it in TLS: encrypted, protected from changes, and sent to a server that proved its name with a certificate.',
     ],
-    when: ['Any public API or web frontend.'],
+    when: ['Any public API or web frontend - over HTTPS.', 'Plain HTTP only for a redirect to HTTPS, or inside a network you fully trust.'],
+    advantages: [
+      'Every proxy, CDN, browser and library already understands it.',
+      'Methods and status codes carry meaning that caches and clients act on without custom code.',
+      'Cache headers let intermediaries answer repeat requests with no work at your origin.',
+    ],
     diagram: `GET /api/products/42 HTTP/1.1
 Host: example.com
 Cache-Control: max-age=0
@@ -101,8 +261,165 @@ Content-Type: application/json`,
       'Using POST for everything, which makes retries unsafe and caching impossible.',
       'Returning 200 with an error body - clients, proxies and monitoring all misread it.',
       'Ignoring Cache-Control and paying for traffic a CDN could have served.',
+      'Marking a per-user response public, so a shared cache serves one user the page of another.',
     ],
-    related: ['rest-apis', 'cdn', 'idempotency', 'tls-https'],
+    related: ['rest-apis', 'cdn', 'idempotency', 'tls-https', 'what-happens-when-you-type-a-url'],
+    quiz: [
+      {
+        id: 'http-1',
+        prompt:
+          'A proxy retried POST /charge after a timeout, and a customer was charged twice. What went wrong, and what fixes it?',
+        options: [
+          'The proxy is broken - proxies must never retry anything',
+          'The server should have returned 200 faster',
+          'POST is neither safe nor idempotent, so a retry repeats the charge; send an idempotency key so the server can recognise the second attempt',
+          'The request should have been a GET',
+        ],
+        answer: 2,
+        explanation:
+          'Doing a POST twice can do the work twice. An idempotency key lets the server store the first result and return it for the retry. Changing it to GET is the tempting shortcut, but GET must have no side effects - caches and prefetchers would then charge customers too.',
+      },
+      {
+        id: 'http-2',
+        prompt:
+          'Your API answers a missing product with status 200 and the body {"error": "not found"}. What breaks?',
+        options: [
+          'Monitoring counts it as a success, clients must parse every body to spot errors, and a CDN may cache the error as a good response',
+          'Nothing - the body is clear enough',
+          'The browser refuses to show a 200 with an error body',
+          'The TLS handshake fails',
+        ],
+        answer: 0,
+        explanation:
+          'Status codes are the contract every intermediary reads; bodies are not. Return 404 and dashboards, retries and caches all behave correctly. "The body is clear enough" is tempting, but only for a human reading it - no proxy or alert reads the body.',
+      },
+      {
+        id: 'http-3',
+        prompt:
+          'A client gets 503 with a Retry-After header from one call, and 400 Bad Request from another. What should it do with each?',
+        options: [
+          'Retry both right away',
+          'Retry neither',
+          'Retry the 400 with backoff; give up on the 503',
+          'Retry the 503 after the time it was given; do not retry the 400 - fix the request instead',
+        ],
+        answer: 3,
+        explanation:
+          '5xx means the server could not handle it right now, and 503 with Retry-After says when to try again. 4xx means the request itself is wrong, and sending it again gets the same answer. Retrying both at once is how a struggling service gets buried under retries.',
+      },
+      {
+        id: 'http-4',
+        prompt:
+          'In the Lab, HTTPS is off and the request carries a login form. The user is on cafe Wi-Fi. What can someone on that network do?',
+        options: [
+          'Nothing - the password is in the body, not the URL',
+          'Read the password and the cookies, and change the page on its way back - for example inject a script',
+          'Only see which site the user visits',
+          'Only slow the request down',
+        ],
+        answer: 1,
+        explanation:
+          'Plain HTTP is readable and changeable on every hop - the triangles on the wire in the Lab. The body is just more bytes on the same wire. HTTPS gives three things: encryption, protection against changes, and a certificate proving the server name. "Only which site" is what HTTPS still leaks, not what plain HTTP leaks.',
+      },
+      {
+        id: 'http-5',
+        prompt:
+          'A response came with Cache-Control: max-age=300 and ETag "a91f". Six minutes later the browser needs it again, and it has not changed. What happens?',
+        options: [
+          'The browser uses the cached copy without asking',
+          'The server sends the whole body again',
+          'The browser asks with If-None-Match: "a91f" and the server answers 304 Not Modified with no body',
+          'The browser shows an error, because the entry expired',
+        ],
+        answer: 2,
+        explanation:
+          'After 300 s the copy is stale, so the browser revalidates instead of trusting it. The ETag lets the server say "unchanged" in a tiny 304, and the cached body is reused. Using the copy without asking is what happens within the 300 s, not after.',
+      },
+      {
+        id: 'http-6',
+        prompt:
+          'The /account page shows the name and orders of the logged-in user. Someone sets Cache-Control: public, max-age=3600 on it to reduce load. What happens behind a CDN?',
+        options: [
+          'The CDN may cache the page of the first user and serve it to other users for an hour',
+          'Load drops and nothing else changes',
+          'The browser ignores the header for logged-in pages',
+          'The CDN refuses to cache HTTPS responses',
+        ],
+        answer: 0,
+        explanation:
+          '"public" allows shared caches to store it, and nothing in the URL tells users apart. Per-user responses need Cache-Control: private (browser only) or no-store. A CDN can cache HTTPS responses - it ends the TLS connection itself, as the Lab shows - so HTTPS does not protect you here.',
+      },
+      {
+        id: 'http-7',
+        prompt:
+          'You serve index.html and app.js with max-age=31536000 (one year). You deploy a fix. What do returning users see, and what is the right setup?',
+        options: [
+          'The fix, because browsers check for updates on every deploy',
+          'The fix after they restart the browser',
+          'An error page',
+          'The old version for up to a year; give hashed file names like app.4f2a1c.js a long max-age, and give index.html no-cache so it is revalidated every time',
+        ],
+        answer: 3,
+        explanation:
+          'A fresh cached entry is used without asking the server, so nobody sees the new files. Hashed names change whenever the content does, so they can be cached forever; the HTML that points at them must be revalidated, which usually costs a cheap 304. Browsers do not learn about deploys by themselves.',
+      },
+      {
+        id: 'http-8',
+        prompt:
+          'A page loads 80 small files over HTTP/1.1, and the team spread them over four subdomains to get more parallel connections. You move to HTTP/2. What now?',
+        options: [
+          'Keep the subdomains - more connections are always faster',
+          'Serve everything from one origin: HTTP/2 multiplexes all 80 requests over one connection, and each extra subdomain costs its own DNS lookup and handshakes',
+          'Merge all files into one, since HTTP/2 allows only one request',
+          'Nothing changes between versions',
+        ],
+        answer: 1,
+        explanation:
+          'Subdomain sharding was a workaround for HTTP/1.1 sending one request at a time per connection. HTTP/2 sends many at once on one connection, so the workaround now just adds DNS lookups and TCP and TLS handshakes. More connections are not free - each one pays setup again.',
+      },
+      {
+        id: 'http-9',
+        prompt:
+          'Mobile users on a lossy network complain that a whole HTTP/2 page stalls when a few packets are lost. What does HTTP/3 change?',
+        options: [
+          'Nothing - loss hurts every protocol the same way',
+          'It resends lost packets faster over TCP',
+          'It runs over QUIC on UDP with separate delivery order per stream, so a lost packet stalls only its own stream, not every request on the connection',
+          'It turns off encryption to save time',
+        ],
+        answer: 2,
+        explanation:
+          'HTTP/2 multiplexes over one TCP connection, and TCP delivers bytes strictly in order, so one lost packet holds back every stream. QUIC keeps the order per stream. It does not remove loss, and it is always encrypted - it builds TLS 1.3 in.',
+      },
+      {
+        id: 'http-10',
+        prompt:
+          'A teammate refuses HTTPS because "it adds latency". The origin is 80 ms away and supports TLS 1.3. What does HTTPS actually cost, and how do you shrink it?',
+        options: [
+          'One extra round trip (about 80 ms) on each new connection only; connection reuse removes it for later requests, and a CDN edge nearby makes it a few milliseconds',
+          'It doubles the time of every request',
+          'About one second per page, because of the encryption',
+          'Nothing at all, ever',
+        ],
+        answer: 0,
+        explanation:
+          'In the Lab, turn HTTPS on: one TLS stage appears, one round trip to whatever ends the connection. With Warm connection on it disappears, and with the CDN on it costs the 10 ms edge round trip. The data itself is encrypted with fast symmetric keys, so "every request doubles" is wrong - the cost is the handshake, once per connection.',
+      },
+      {
+        id: 'http-11',
+        prompt:
+          'You browse https://example.com/orders/123?token=abc on an office network. Without installing anything on your laptop, what can the network admin see?',
+        options: [
+          'Everything, including the path and the token',
+          'Nothing at all',
+          'The path /orders/123, but not the token',
+          'That you connected to example.com and how much data moved - but not the path, the query string, the headers or the body',
+        ],
+        answer: 3,
+        explanation:
+          'The IP address, the DNS lookup and the hostname in the TLS handshake (SNI) are visible; everything inside the HTTP request is encrypted, including the path and the query string. "Nothing" is wrong because that metadata still leaks, which the Lesson lists under what HTTPS does not give you.',
+      },
+    ],
   },
   {
     slug: 'tcp-vs-udp',

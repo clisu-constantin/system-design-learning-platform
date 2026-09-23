@@ -293,10 +293,11 @@ Round trip California -> Netherlands ~150 ms
   {
     slug: 'what-happens-when-you-type-a-url',
     title: 'What Happens When You Type a URL?',
-    tagline: 'One request, twelve systems - the guided tour of the whole stack.',
+    tagline: 'One request, a dozen systems - the guided tour of the whole stack.',
     category: 'getting-started',
     difficulty: 'Beginner',
     lab: 'url-journey',
+    labFocus: 'what-happens-when-you-type-a-url',
     keywords: ['dns', 'tcp', 'tls', 'cdn', 'rendering', 'journey'],
     what: 'A step-by-step walk through everything that happens between pressing Enter and seeing a rendered page: name resolution, connection setup, encryption, caching layers, the backend, and rendering.',
     why: 'It is the single best map of how the pieces relate. Almost every other concept in system design appears somewhere along this path.',
@@ -306,6 +307,15 @@ Round trip California -> Netherlands ~150 ms
       'The HTTP request may be answered by a CDN edge without reaching your origin at all.',
       'At the origin, a load balancer picks a server, which checks a cache before querying the database.',
       'The response travels back and the browser parses, lays out and paints it.',
+    ],
+    when: [
+      'As the map: almost every other Concept sits somewhere on this path.',
+      'When a page is slow: find which stage the time goes to before optimising any one of them.',
+      'In a design interview, as the first sketch of the request path.',
+    ],
+    advantages: [
+      'Shows that connection setup and rendering often cost more than the server code.',
+      'Shows every place a request can be answered early: browser cache, DNS cache, CDN, application cache.',
     ],
     diagram: `Browser -> DNS -> TCP -> TLS -> HTTP request
    -> CDN edge (hit? done)
@@ -327,6 +337,147 @@ Round trip California -> Netherlands ~150 ms
       'Assuming the server is the slow part - DNS, connection setup and rendering often dominate.',
       'Forgetting that the first request on a cold connection pays DNS + TCP + TLS before any work starts.',
     ],
-    related: ['dns', 'tls-https', 'cdn', 'load-balancing', 'caching'],
+    related: ['dns', 'http-https', 'tls-https', 'cdn', 'load-balancing', 'caching'],
+    quiz: [
+      {
+        id: 'url-1',
+        prompt:
+          'A user opens your page and waits 400 ms. A few seconds later they click a link to another page on the same site, and it takes 150 ms. Same server, same code. What explains most of the difference?',
+        options: [
+          'The server was still starting up during the first request',
+          'The second page is smaller',
+          'The first request paid for a DNS lookup and the TCP and TLS handshakes; the second reused the open connection',
+          'The browser rendered the second page from its cache without asking the server',
+        ],
+        answer: 2,
+        explanation:
+          'A new connection pays DNS + TCP + TLS before the request is even sent; a reused one skips all three. In the Lab, turn Warm connection on and watch those stages turn to skipped. The server warming up is the tempting answer, but the Lesson shows the setup cost alone is often 150 ms or more.',
+      },
+      {
+        id: 'url-2',
+        prompt:
+          'Your only origin is in Virginia. Users in Singapore see slow first loads, although the handler takes 30 ms. Which change cuts their time the most?',
+        options: [
+          'Put a CDN in front, so the TCP and TLS handshakes end at an edge near them and static files are served there',
+          'Add a database index',
+          'Double the number of app servers',
+          'Move from TLS 1.3 back to TLS 1.2',
+        ],
+        answer: 0,
+        explanation:
+          'Every handshake costs a full round trip, and the round trip to Virginia is the big number. In the Lab, set the round trip to the origin to 200 ms and toggle the CDN: the TCP and TLS stages drop to the 10 ms edge round trip. An index or more servers only touch the 30 ms of backend work, and TLS 1.2 adds a round trip instead of removing one.',
+      },
+      {
+        id: 'url-3',
+        prompt:
+          'A cold page load takes 1.2 s. Profiling shows your server code runs for 40 ms. The team plans a sprint to make the handler twice as fast. What should you say?',
+        options: [
+          'Good plan - the handler is the only part you control',
+          'Make the database faster first, it is always the slowest part',
+          'Buy bigger servers instead, it is quicker',
+          'It saves 20 ms of 1,200. Look at the handshakes, the transfer and the rendering first - that is where the time is',
+        ],
+        answer: 3,
+        explanation:
+          'The worked example in the Lesson is exactly this: 40 ms of server time in about 1.19 s. Halving the handler saves under 2 percent, while a CDN and a smaller JavaScript bundle save more than half. "It is the only part we control" is wrong - you control connection reuse, the CDN, cache headers and the bundle too.',
+      },
+      {
+        id: 'url-4',
+        prompt:
+          'After a deploy the cache hit rate drops from 95% to 50%. What does the path of a request that misses look like now?',
+        options: [
+          'Load balancer, app server, then an error, because the cache failed',
+          'Load balancer, app server, cache (miss), database, then the result is stored in the cache and the response goes back',
+          'Load balancer straight to the database, skipping the app server',
+          'CDN edge, then the database',
+        ],
+        answer: 1,
+        explanation:
+          'A miss is not an error: the app server asks the cache, and on a miss it queries the database and fills the cache for the next request. In the Lab, turn Cache hit off and the Database query stage appears. Half the requests now pay the 35 ms query, which is why the drop hurts.',
+      },
+      {
+        id: 'url-5',
+        prompt:
+          'A page loads fonts, scripts and images from eight different domains. Every one of those servers answers in under 10 ms, yet the page is slow on a first visit. Why?',
+        options: [
+          'Browsers can only download one file at a time',
+          'The servers must be overloaded',
+          'Each new domain needs its own DNS lookup, TCP handshake and TLS handshake before its first file arrives',
+          'Images are always slower than HTML',
+        ],
+        answer: 2,
+        explanation:
+          'Connection setup is paid per origin. Eight domains means up to eight lookups and sixteen handshake round trips on a cold visit, and no server optimisation can remove them. Serving from fewer origins, and reusing one connection with HTTP/2, removes them. The servers being overloaded does not fit: each one answers in under 10 ms.',
+      },
+      {
+        id: 'url-6',
+        prompt:
+          'A user on cafe Wi-Fi types example.com without https:// for the first time. Your site redirects HTTP to HTTPS. What is the risk, and what closes it?',
+        options: [
+          'The first request goes out as plain HTTP and can be intercepted before the redirect; HSTS, and the HSTS preload list for first visits, make the browser use HTTPS from the start',
+          'There is no risk, because the redirect happens before any data is sent',
+          'The risk is DNS, and a shorter TTL closes it',
+          'The risk is the CDN, and turning it off closes it',
+        ],
+        answer: 0,
+        explanation:
+          'The browser only learns about HTTPS from the redirect, and that redirect arrives over plain HTTP that anyone on the Wi-Fi can read or replace. HSTS tells the browser to never try plain HTTP again, and preloading ships that rule inside the browser, so even the first visit is protected. "No risk" is wrong because the request carrying the redirect is itself unprotected.',
+      },
+      {
+        id: 'url-7',
+        prompt:
+          'A CDN sits in front of your site. Which requests does the edge answer on its own, without contacting your origin?',
+        options: [
+          'Every request, because that is what a CDN is for',
+          'None - a CDN only speeds up the network, it never answers',
+          'Only POST requests',
+          'Cacheable files it already holds, such as images, scripts and styles; a page built for each user is forwarded to the origin',
+        ],
+        answer: 3,
+        explanation:
+          'The edge can only answer with a response it may cache and has cached. A personalised page has to come from your servers, so the edge forwards it - that is the "miss, forward" you see on the CDN edge in the Lab. It still helps that page, because the handshakes end at the nearby edge.',
+      },
+      {
+        id: 'url-8',
+        prompt:
+          'You moved the site to a new server and updated the A record an hour ago. Some users still reach the old server. At which stage of the journey does that happen?',
+        options: [
+          'The TLS handshake, because the old certificate is still valid',
+          'DNS resolution: resolvers and browsers still hold the old answer until its TTL runs out',
+          'The load balancer, because it has not been restarted',
+          'Rendering, because the browser cached the old page',
+        ],
+        answer: 1,
+        explanation:
+          'Nothing is pushed to DNS caches. Each one keeps the old address until the TTL of the record runs out, so a 24-hour TTL can mean a day of traffic to the old server. The certificate is the tempting answer, but it does not choose which address the browser connects to - DNS does.',
+      },
+      {
+        id: 'url-9',
+        prompt:
+          'A user reports that your site does not load and their browser says the name could not be resolved. From your office, the site works. Which part of the journey failed for them?',
+        options: [
+          'DNS resolution - their browser never got an IP address, so it never even contacted your servers',
+          'The TLS handshake',
+          'The database',
+          'Rendering',
+        ],
+        answer: 0,
+        explanation:
+          'A name that cannot be resolved stops the journey at the first network stage: no address, so no TCP, no TLS and no request. Your servers saw nothing, which is why they look healthy. A TLS failure would show a certificate or connection error instead, after the address was found.',
+      },
+      {
+        id: 'url-10',
+        prompt: 'In the Lab, with the CDN on, where does the TLS connection of the browser end?',
+        options: [
+          'At the app server',
+          'At the database',
+          'At the load balancer, always',
+          'At the CDN edge, which holds a certificate for your domain and opens its own connection to the origin',
+        ],
+        answer: 3,
+        explanation:
+          'The browser handshakes with whatever it connects to, and with a CDN that is the edge. That is why the TLS stage costs the 10 ms edge round trip, not the origin round trip. With the CDN off, the load balancer shows "ends here" instead - so "always the load balancer" is only true without a CDN.',
+      },
+    ],
   },
 ];

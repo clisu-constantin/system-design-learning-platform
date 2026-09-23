@@ -12,7 +12,7 @@ export const networkingDepth: DepthMap = {
         heading: 'The lookup is a hierarchy, and every level caches',
         paragraphs: [
           'A lookup for shop.example.com walks down a tree. The resolver asks a root server, which says "ask the .com servers". The .com servers say "ask the nameservers for example.com". Those authoritative servers hold the actual record and answer with an IP. That full walk costs several round trips, which is why it almost never happens.',
-          'Caching is everywhere on this path: the browser has a cache, the operating system has one, the resolver has the biggest one, and each level honours the TTL on the record. In practice, popular names are answered from a nearby cache in under a millisecond, and only the unlucky first request pays the full walk.',
+          'Caching is everywhere on this path: the browser has a cache, the operating system has one, the resolver has the biggest one, and each level honours the TTL on the record. The resolver even caches the referrals: the list of .com servers comes with a TTL of two days, so a busy resolver almost never asks a root server. In practice, popular names are answered from a nearby cache in under a millisecond, and only the unlucky first request pays the full walk.',
           'The practical consequence is that DNS changes are not instant and are not uniform. After you change a record, some clients see the new value immediately and others keep the old one until their cached copy expires. You are never in a state where "everyone" has switched.',
         ],
         code: {
@@ -20,7 +20,7 @@ export const networkingDepth: DepthMap = {
           body: `browser -> OS cache -> resolver
 resolver -> root         "try .com at 192.5.6.30"
 resolver -> .com         "try ns1.example.com"
-resolver -> ns1.example  "shop.example.com = 93.184.216.34, TTL 300"
+resolver -> ns1.example  "shop.example.com = 203.0.113.10, TTL 300"
 resolver caches for 300 s, answers the browser
 
 warm lookup: browser or OS cache, ~0 ms`,
@@ -125,14 +125,14 @@ ETag: "a3f9"
           'Confidentiality - the bytes are unreadable in transit.',
           'Integrity - the bytes cannot be modified without detection.',
           'Authentication - you are talking to the server the certificate names.',
-          'Not included: the server itself is not made trustworthy, and the URL you typed is still visible via DNS and SNI.',
+          'Not included: the server itself is not made trustworthy, and the hostname you visit is still visible via DNS and SNI (the path and query string are not).',
         ],
       },
       {
         heading: 'HTTP/1.1, /2 and /3 in one paragraph each',
         paragraphs: [
           'HTTP/1.1 sends one request at a time per connection. Browsers worked around it by opening six connections per host, which is why asset sharding and sprite sheets were once good ideas. Head-of-line blocking is at the request level: one slow response holds up everything behind it on that connection.',
-          'HTTP/2 multiplexes many streams over a single TCP connection, adds header compression and server push. The old workarounds became counterproductive - six connections now hurt. But head-of-line blocking moved down a layer: one lost TCP packet stalls every stream in that connection, because TCP insists on delivering bytes in order.',
+          'HTTP/2 multiplexes many streams over a single TCP connection and adds header compression (it also added server push, which browsers have since dropped). The old workarounds became counterproductive - six connections now hurt. But head-of-line blocking moved down a layer: one lost TCP packet stalls every stream in that connection, because TCP insists on delivering bytes in order.',
           'HTTP/3 replaces TCP with QUIC over UDP, giving each stream its own delivery order, so a lost packet only stalls the stream it belonged to. It also folds the transport and TLS handshakes together, cutting setup to one round trip - and resuming a connection can cost zero. On lossy mobile networks the difference is large; on a clean wired link it is modest.',
         ],
       },

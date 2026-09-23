@@ -529,7 +529,7 @@ audit    alert on keys unused for 90 days and on first use from a new IP`,
         heading: 'The handshake, and why 1.3 matters',
         paragraphs: [
           'A TLS handshake agrees on a cipher suite, verifies the server certificate, and establishes a shared symmetric key. TLS 1.2 needed two round trips; TLS 1.3 removed legacy options and cut it to one, with session resumption able to send data on the first flight (0-RTT). On a 60 ms link that is 60 ms saved on every new connection.',
-          'The asymmetric cryptography is used only to establish the key; the actual data is protected with fast symmetric encryption. That is why TLS is not slow at scale - the expensive part happens once per connection, which is another reason connection reuse matters so much.',
+          'The asymmetric cryptography is used only to establish the key and to prove the server identity; the actual data is protected with fast symmetric encryption. That is why TLS is not slow at scale - the expensive part happens once per connection, which is another reason connection reuse matters so much.',
           'TLS 1.3 also made forward secrecy mandatory: the session key is ephemeral, so recording traffic today and stealing the server private key later does not decrypt it. Disabling old versions (1.0 and 1.1) and weak cipher suites is routine hardening, and modern defaults from your web server or cloud load balancer are usually correct out of the box.',
         ],
         code: {
@@ -541,7 +541,7 @@ audit    alert on keys unused for 90 days and on first use from a new IP`,
       signs -> your certificate (example.com, valid 90 days)
 
 verification: name matches, not expired, chain reaches a trusted root,
-              not revoked (OCSP stapling), signature valid
+              not revoked (CRL or OCSP), signature valid
 
 serving an incomplete chain is the classic misconfiguration:
 it works in browsers that cache the intermediate, and fails in curl
