@@ -228,9 +228,9 @@ These are editorial rules, not style preferences. They are the reason the app is
   clips its label or overlaps the node below. `npm run check:visuals` catches both; it runs as part
   of `npm run build`. Minimum height is 62 + 12 (subtitle) + 16 (stat row); minimum width is
   52 + the per-letter title width table in `scripts/check-visuals.mjs` (about 7px a letter).
-- Everything persists to `localStorage` only (`sdi:theme`, `sdi:progress:v1`, `sdi:layout` - which
-  side panels the learner folded). No backend, no auth,
-  no network calls at runtime — keep it that way.
+- Everything persists to `localStorage` only (`sdi:theme`, `sdi:progress:v1`, and `sdi:layout` for
+  which side panels the learner folded). No backend, no auth, no network calls at runtime — keep it
+  that way.
 
 ## Agent skills
 

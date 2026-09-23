@@ -3,6 +3,7 @@ import { Menu, Moon, PanelLeftClose, PanelLeftOpen, Search, Sun } from 'lucide-r
 import { Button, Select } from '@/components/ui';
 import { useTheme } from '@/app/providers/ThemeProvider';
 import { useProgress } from '@/app/providers/ProgressProvider';
+import { LG_QUERY, useMediaQuery } from '@/hooks/useMediaQuery';
 import type { Difficulty } from '@/types';
 
 interface TopBarProps {
@@ -24,6 +25,8 @@ const DIFFICULTY_OPTIONS: { value: Difficulty | 'all'; label: string }[] = [
 export function TopBar({ onOpenSearch, onToggleSidebar, sidebarExpanded, difficulty, onDifficultyChange }: TopBarProps) {
   const { theme, toggle } = useTheme();
   const { overall } = useProgress();
+  // Only the wide-screen sidebar folds; below lg the same button opens a drawer, as it always did.
+  const canFold = useMediaQuery(LG_QUERY);
 
   return (
     <header className="sticky top-0 z-30 flex h-14 items-center gap-3 border-b border-line bg-surface/85 px-3 backdrop-blur lg:px-5">
@@ -33,7 +36,7 @@ export function TopBar({ onOpenSearch, onToggleSidebar, sidebarExpanded, difficu
         onClick={onToggleSidebar}
         aria-label="Toggle navigation"
         aria-expanded={sidebarExpanded}
-        title={sidebarExpanded ? 'Fold navigation' : 'Open navigation'}
+        title={canFold ? (sidebarExpanded ? 'Fold navigation' : 'Open navigation') : undefined}
       >
         <Menu className="h-5 w-5 lg:hidden" />
         {sidebarExpanded ? (
