@@ -91,7 +91,7 @@ That second column is usually the real reason to cache.`,
     analogy: {
       title: 'Who fetches the file, and who files it back',
       body:
-        'When you need a document, either you walk to the archive yourself and keep a copy (cache-aside), or you ask an assistant who always does that for you (read-through). When you change it, you can update the archive and your copy together (write-through), hand it to the assistant to file later (write-behind), or just throw your copy away and let the next reader fetch it fresh (write-invalidate). Each choice moves work and risk somewhere different.',
+        'When you need a document, either you walk to the archive yourself and keep a copy (cache-aside), or you ask an assistant who always does that for you (read-through). When you change it, you can update the archive and your copy together (write-through), hand it to the assistant to file later (write-behind), or update only the archive, throw your copy away and let the next reader fetch it fresh (write-around). Each choice moves work and risk somewhere different.',
     },
     deepDive: [
       {
@@ -121,12 +121,12 @@ because the cache is down.`,
         paragraphs: [
           'Write-through updates the cache and the database together on every write. Reads after a write are always correct, and the cache is always warm for recently written data. It makes writes a little slower and fills the cache with entries nobody may ever read.',
           'Write-behind (write-back) writes to the cache and acknowledges immediately, flushing to the database asynchronously. It gives dramatic write throughput and absorbs bursts - and it is the only pattern that can lose acknowledged data, because a cache node crash takes the not-yet-flushed writes with it. Use it for metrics, counters and view tallies; never for money.',
-          'Write-invalidate (write-around) is the quiet favourite: write to the database and simply delete the cache key. The next read repopulates it. It avoids caching write-heavy data that is rarely read, and it sidesteps the hardest bug in the write-through family - two concurrent writers filling the cache in the wrong order.',
+          'Write-around with invalidation (sometimes called write-invalidate) is the quiet favourite, and the usual partner of cache-aside: write to the database and simply delete the cache key. The next read repopulates it. It avoids caching write-heavy data that is rarely read, and it sidesteps the hardest bug in the write-through family - two concurrent writers filling the cache in the wrong order.',
         ],
         bullets: [
           'Write-through - correct reads, slower writes, cache full of unread entries.',
           'Write-behind - fastest writes, can lose data on crash, good for counters.',
-          'Write-invalidate - simplest and safest default; the next read pays one miss.',
+          'Write-around plus delete - simplest and safest default; the next read pays one miss.',
           'Whatever you choose, deleting a key is safer than updating it, because delete is idempotent and order-independent.',
         ],
       },
@@ -215,7 +215,7 @@ HLL      PFADD uniques "ana"           count distinct in 12 KB, ~0.8% error`,
       {
         heading: 'Memory management is the operational story',
         paragraphs: [
-          'Redis is bounded by RAM, so maxmemory and an eviction policy are mandatory settings, not tuning. With allkeys-lru it evicts the least recently used key when full and behaves like a proper cache. With noeviction (the default) it starts rejecting writes when full, which for a cache is an outage and for a session store may be exactly what you want.',
+          'Redis is bounded by RAM, so maxmemory and an eviction policy are mandatory settings, not tuning. On 64-bit systems maxmemory defaults to 0, which means no limit at all: a cache with no TTLs grows until the machine runs out of memory. With a limit and allkeys-lru it evicts the least recently used key when full and behaves like a proper cache (the LRU is approximated by sampling a few keys, which is close enough in practice). With noeviction (the default policy) it answers new writes with an OOM error when full while reads keep working - for a cache that means it stops learning new keys, and for a session store it may be exactly what you want.',
           'Big keys are the other recurring problem. A single list with ten million elements makes every operation on it slow and blocks the one thread, and deleting it can stall the server for seconds - use UNLINK for asynchronous deletion. Keep collections bounded deliberately, by trimming or by splitting keys.',
           'For scale beyond one machine there are two paths. Replication plus Sentinel gives failover with read replicas but one writable node. Cluster mode shards keys across nodes by hash slot, which multiplies capacity but restricts multi-key operations to keys in the same slot - so you plan key naming with hash tags from the start.',
         ],
@@ -249,7 +249,7 @@ HLL      PFADD uniques "ana"           count distinct in 12 KB, ~0.8% error`,
       'Single-threaded means atomic commands - and one slow command blocks everyone.',
       'It is a data structure server; picking the right structure is the skill.',
       'Persistence exists but is weaker than a database - decide what losing it costs.',
-      'Set maxmemory and an eviction policy explicitly; the default rejects writes.',
+      'Set maxmemory and an eviction policy explicitly: by default there is no limit, and the default policy refuses writes.',
       'Use SCAN not KEYS, and keep collections bounded.',
     ],
   },
@@ -264,7 +264,7 @@ HLL      PFADD uniques "ana"           count distinct in 12 KB, ~0.8% error`,
       {
         heading: 'The headers that actually control an edge cache',
         paragraphs: [
-          'Cache-Control is the instruction the origin gives to every cache on the path. max-age is how long a browser may reuse it; s-maxage overrides that for shared caches like a CDN, which is how you tell browsers to revalidate often while the edge holds a copy for an hour. public and private decide whether a shared cache may store it at all - private means browser only.',
+          'Cache-Control is the instruction the origin gives to every cache on the path. max-age is how long any cache may reuse it; s-maxage overrides that for shared caches like a CDN only, which is how you tell browsers to revalidate often while the edge holds a copy for an hour. public and private decide whether a shared cache may store it at all - private means browser only.',
           'no-cache does not mean do not cache; it means store it but revalidate before each use, which is usually what you want for HTML. no-store is the real prohibition, for anything genuinely secret. immutable tells the browser not even to revalidate, which is correct for hashed asset filenames.',
           'ETag and Last-Modified enable revalidation: the client sends the fingerprint back and the server can answer 304 Not Modified with no body. A 304 still costs a round trip, so it is much better than a full transfer and much worse than a cache hit - which is why long max-age on immutable assets beats frequent revalidation.',
         ],
@@ -290,7 +290,7 @@ Images that may change
         heading: 'The cache key decides your hit rate',
         paragraphs: [
           'An edge stores one object per cache key. By default the key is the URL, and everything you add to it multiplies the number of stored copies. Add the Cookie header and every visitor gets a private copy, so the hit rate collapses to near zero - the single most common CDN misconfiguration.',
-          'Vary is the polite way to say "this response differs by that header". Vary: Accept-Encoding is fine and necessary (two copies, gzip and brotli). Vary: User-Agent is close to catastrophic, because there are millions of distinct user agent strings and therefore millions of copies of the same page.',
+          'Vary is the polite way to say "this response differs by that header". Vary: Accept-Encoding is fine and necessary (a handful of copies: brotli, gzip and uncompressed). Vary: User-Agent is close to catastrophic, because there are millions of distinct user agent strings and therefore millions of copies of the same page.',
           'Query strings deserve the same scrutiny. Marketing parameters like utm_source make every shared link a unique cache key even though the response is identical, so configure the CDN to ignore them. Conversely, a parameter that genuinely changes the response - ?page=2 - must be in the key or you will serve page 1 to everyone.',
         ],
         bullets: [
@@ -304,9 +304,9 @@ Images that may change
       {
         heading: 'Invalidation, staleness and dynamic content',
         paragraphs: [
-          'A purge is a message to hundreds of locations and takes seconds to minutes to complete. Designs that require instant global invalidation are fragile; designs built on immutable URLs never need it. Where you must purge, prefer tag-based or surrogate-key purging so one product update clears exactly the objects containing it.',
+          'A purge is a message to hundreds of locations. The large vendors now complete one in seconds, but the locations never drop their copies at the same instant, and browsers keep the copies they already hold. Designs that require instant global invalidation are fragile; designs built on immutable URLs never need it. Where you must purge, prefer tag-based or surrogate-key purging so one product update clears exactly the objects containing it.',
           'stale-while-revalidate is the most underused directive on the list. It lets the edge serve a slightly stale copy immediately while refreshing in the background, so users never wait for a revalidation and the origin sees one request instead of a burst. stale-if-error does the same for outages: when the origin returns 5xx, the edge keeps serving the old copy and your incident becomes invisible to most users.',
-          'Even genuinely dynamic responses benefit from short edge TTLs. A public product list cached for 10 seconds at the edge, under 5,000 requests per second, means the origin serves one request every 10 seconds instead of 50,000 - and users see data that is at most 10 seconds old, which almost always matches the product requirement.',
+          'Even genuinely dynamic responses benefit from short edge TTLs. A public product list cached for 10 seconds at the edge, under 5,000 requests per second, means each edge location asks the origin once every 10 seconds instead of passing on 50,000 requests - and users see data that is at most 10 seconds old, which almost always matches the product requirement.',
         ],
       },
     ],
@@ -319,7 +319,7 @@ Images that may change
           'The page is identical for all logged-out users and changes at most every few minutes. The only dynamic part is a small logged-in header.',
           'Step 1: split the response. The page becomes cacheable HTML; the user-specific header is fetched by a separate small API call marked private, no-store.',
           'Step 2: set Cache-Control: public, s-maxage=30, stale-while-revalidate=120 on the page.',
-          'The edge now serves the same copy to everyone for 30 seconds. Origin traffic falls from 5,000 requests per second to roughly 1 per 30 seconds per edge location.',
+          'The edge now serves the same copy to everyone for 30 seconds. Origin traffic falls from 5,000 requests per second to roughly 1 per 30 seconds per edge location - with about 150 locations serving readers, about 5 requests per second in total.',
           'During revalidation, stale-while-revalidate means readers keep getting instant responses; only one background request per edge goes to the origin.',
           'When the story is updated, an explicit purge by surrogate key clears just that page, and the next request repopulates it within a second.',
         ],
@@ -355,8 +355,8 @@ Images that may change
         heading: 'The cache you already have: the buffer pool',
         paragraphs: [
           'Every relational database keeps recently used data and index pages in a memory area - the buffer pool in MySQL, shared_buffers plus the OS page cache in Postgres. A read served from there is a memory access; a read that misses goes to disk and is one to two orders of magnitude slower. The buffer cache hit ratio is therefore one of the most informative metrics on a database.',
-          'This is why a database that was fast yesterday is slow today after the dataset grew past memory: nothing in your code changed, but the working set no longer fits. It is also why the first query after a restart is slow and the next thousand are fast, and why a big analytics scan can wreck latency for everybody by evicting the hot pages.',
-          'The practical lever is to keep the working set small enough to fit: narrower rows, partial and covering indexes, archiving old data, or partitioning so that the hot partition indexes stay resident. Adding RAM works too, and is often the cheapest fix available.',
+          'This is why a database that was fast yesterday is slow today after the dataset grew past memory: nothing in your code changed, but the working set no longer fits. It is also why the first queries after a restart are slow and the next thousand are fast: the buffer pool starts empty and has to be read back in from disk. Databases work hard to keep one big scan from pushing the hot pages out - PostgreSQL reads a large table through a small ring of buffers, and InnoDB puts newly read pages in the middle of its LRU list instead of the front.',
+          'The practical lever is to keep the working set small enough to fit: narrower rows, partial and covering indexes, archiving old data, or partitioning so that the hot partition indexes stay resident. Adding RAM works too, and is often the cheapest fix available. How much to give the database is engine-specific: PostgreSQL also relies on the OS page cache, so its docs start shared_buffers at 25 percent of RAM and rarely go above 40 percent, while InnoDB servers often give up to 80 percent of RAM to the buffer pool.',
         ],
         code: {
           caption: 'Metrics that tell you where you stand',
@@ -375,12 +375,12 @@ Order of attack:
         heading: 'Query result caching, and why databases stopped doing it',
         paragraphs: [
           'MySQL once had a query cache that stored full result sets keyed by the SQL text. It was removed in 8.0 because invalidation was coarse - any write to a table invalidated every cached query touching it - and the internal lock around it made it a bottleneck on multi-core machines. The lesson generalises: result caching close to the data is hard to invalidate correctly.',
-          'So result caching moved into the application layer, usually Redis, where you control the key, the TTL and the invalidation, and can cache the assembled object rather than a raw row set. Materialised views are the database-side survivor: an explicitly stored query result you refresh on a schedule or on demand, which is honest about being stale rather than pretending to be live.',
+          'So result caching moved into the application layer, usually Redis, where you control the key, the TTL and the invalidation, and can cache the assembled object rather than a raw row set. Materialized views are the database-side survivor: an explicitly stored query result, which is honest about being stale rather than pretending to be live. In PostgreSQL you refresh one with REFRESH MATERIALIZED VIEW, on a schedule or on demand; it recomputes every row, and without CONCURRENTLY (which needs a unique index on the view) it blocks readers while it runs. Some databases can maintain a view incrementally on every write - Oracle fast refresh, SQL Server indexed views - which trades freshness for slower writes.',
           'Prepared statements are a different and quieter win. They let the database reuse a query plan instead of parsing and planning every time, which matters for short queries executed thousands of times per second - the planning can otherwise cost more than the execution.',
         ],
         bullets: [
           'Buffer pool - automatic, biggest effect, tune by making the working set fit.',
-          'Materialised view - stored result of an expensive aggregate, refreshed deliberately.',
+          'Materialized view - stored result of an expensive aggregate, refreshed deliberately.',
           'Prepared statement - reuses the plan; saves parsing on hot short queries.',
           'Application cache - full control over key and TTL, at the cost of owning invalidation.',
         ],
@@ -403,7 +403,7 @@ Order of attack:
           'Before caching, read the plan: a sequential scan over the whole table, filtering by tenant and date in memory.',
           'Add an index on (tenant_id, created_at). Runtime drops from 6 s to 300 ms - the query was never expensive, it was unindexed.',
           'Still 300 ms because it aggregates a million rows for a large tenant. This part is genuinely expensive and legitimately worth precomputing.',
-          'Create a materialised view of daily totals per tenant, refreshed every 10 minutes. The dashboard query reads 90 rows instead of a million: about 4 ms.',
+          'Create a materialized view of daily totals per tenant, refreshed every 10 minutes. The dashboard query reads 90 rows instead of a million: about 4 ms.',
           'No Redis needed. The data is at most 10 minutes old, which the product owner confirms is fine for a dashboard, and there is one source of truth with a documented refresh.',
           'If the requirement had been real-time, the answer would have been an incrementally maintained counter table updated on write - not a cache.',
         ],
@@ -415,15 +415,15 @@ Order of attack:
       { term: 'Buffer pool / shared_buffers', plain: 'The database memory area holding recently used pages. Your biggest cache by far.' },
       { term: 'Working set', plain: 'The data actually being touched. If it fits in RAM, everything feels fast.' },
       { term: 'Cache hit ratio', plain: 'Share of page reads served from memory rather than disk. Under 95 percent deserves attention.' },
-      { term: 'Materialised view', plain: 'A stored, refreshable result of an expensive query.' },
+      { term: 'Materialized view', plain: 'A stored, refreshable result of an expensive query. It lives on disk like a table and is stale between refreshes.' },
       { term: 'Prepared statement', plain: 'A parsed and planned query reused with different parameters.' },
-      { term: 'Plan cache', plain: 'The database keeping query plans so it does not re-plan identical queries.' },
+      { term: 'Plan cache', plain: 'Query plans kept for reuse. SQL Server and Oracle share one cache across sessions; PostgreSQL keeps plans only for prepared statements, per connection.' },
     ],
     remember: [
       'Your biggest database cache is the buffer pool, and it is already running.',
       'Slowness that appears with no code change usually means the working set outgrew RAM.',
       'Fix the query and the index before adding any cache - a cached bad query is still a bad query.',
-      'Materialised views are honest, refreshable denormalisation with one source of truth.',
+      'Materialized views are honest, refreshable denormalisation with one source of truth.',
       'Cache assembled objects rather than raw rows; the serialisation is often the cost.',
     ],
   },
@@ -439,7 +439,7 @@ Order of attack:
         heading: 'In-process caches are the fastest and the trickiest',
         paragraphs: [
           'A value in a local dictionary or an LRU map costs nanoseconds - no serialisation, no network, no other process involved. For data read thousands of times per second, that is unbeatable, and it removes load from the shared cache as well.',
-          'The catch is that with N instances you have N independent caches. They fill at different times, expire at different times, and can hold different values simultaneously. A user refreshing a page can see a flag on, then off, then on again, depending on which instance answered. That is acceptable for some data and unacceptable for others, and the distinction has to be made deliberately.',
+          'The catch is that with N instances you have N independent caches. They fill at different times, expire at different times, and can hold different values simultaneously. A user refreshing a page can see a flag on, then off, then on again, depending on which instance answered. That is acceptable for some data and unacceptable for others, and the distinction has to be made deliberately. A write does not fix it either: the instance that handled the write can drop its own copy, but the other instances are not told and keep theirs until it expires.',
           'Memory is the second catch. An unbounded in-process cache is a slow memory leak that ends in an out-of-memory kill, usually at peak traffic. Always bound the size, always set a TTL, and remember that the cache competes with your application for the same heap.',
         ],
         bullets: [
@@ -454,7 +454,7 @@ Order of attack:
         paragraphs: [
           'The common production shape is L1 in-process plus L2 shared. A read checks local memory, then Redis, then the database, populating on the way back. Very hot keys are served in nanoseconds, moderately hot keys cost one millisecond, and only genuine misses reach the database.',
           'Keep the local TTL short - seconds, not minutes - so the window of disagreement between instances is bounded and small. The shared TTL can be much longer, because there is only one copy and it can be invalidated precisely.',
-          'For the cases where a few seconds of divergence is not acceptable, a pub/sub invalidation channel closes the gap: when a value changes, publish the key and every instance drops its local entry. It is not instant and it is not guaranteed, so treat it as an optimisation on top of the TTL, never as a replacement for it.',
+          'For the cases where a few seconds of divergence is not acceptable, a pub/sub invalidation channel closes the gap: when a value changes, publish the key and every instance drops its local entry. It is not instant and it is not guaranteed - Redis Pub/Sub delivers each message at most once, so an instance that is reconnecting simply misses it - so treat it as an optimisation on top of the TTL, never as a replacement for it. Redis 6 and later can send these invalidations itself (client-side caching with tracking), and its docs still advise a maximum TTL on every local key.',
         ],
         code: {
           caption: 'Two-level read, with the numbers that justify it',
@@ -482,7 +482,7 @@ Invalidation: write -> redis.delete(key) -> publish("invalidate", key)
     ],
     examples: [
       {
-        title: 'Feature flags: from 40,000 Redis calls per second to 12',
+        title: 'Feature flags: from 40,000 Redis calls per second to 4',
         setup:
           'Feature flags are checked about 20 times per request. At 2,000 requests per second across 20 instances, that is 40,000 Redis GETs per second just for flags.',
         walkthrough: [

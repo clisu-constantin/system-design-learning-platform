@@ -14,8 +14,10 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-// compact ArchNode chrome: 16 padding + 28 icon + 8 gap
-const CHROME_X = 52;
+// compact ArchNode chrome: 16 padding (p-2) + 2 border + 28 icon (w-7) + 8 gap (gap-2).
+// The border was once left out, and "WHERE created_at >= Sep" passed at 210px
+// while the browser clipped it by a fraction of a pixel.
+const CHROME_X = 54;
 // A "new" badge sits on the title row and pushes the title into its truncation:
 // chip padding 20 + border 2 + ~19 of text + 6 gap. Without this, a node with a
 // badge silently renders as "Replic..." instead of "Replica 1".
@@ -91,7 +93,11 @@ try {
   // The evolution stages use a different shape (title + placed box) and a taller
   // canvas, so normalise both sources into one list before checking.
   const specs = [
-    ...Object.entries({ ...VISUALS, 'home hero': HERO_VISUAL }).map(([slug, spec]) => ({
+    // Concept Diagrams show a Walkthrough; the home hero does not.
+    ...[
+      ...Object.entries(VISUALS).map(([slug, spec]) => [slug, spec, true]),
+      ['home hero', HERO_VISUAL, false],
+    ].map(([slug, spec, walkthrough]) => ({
       name: slug,
       width: spec.width ?? 760,
       height: spec.height ?? 320,
@@ -99,6 +105,7 @@ try {
       edges: spec.edges,
       steps: spec.steps ?? [],
       asymmetric: spec.asymmetric,
+      walkthrough,
     })),
     ...STAGES.map((stage) => ({
       name: `evolution ${stage.id}`,
@@ -143,6 +150,24 @@ try {
       }
       if (step.label.split(' ').length > 6) {
         problems.push(`${name}: step caption longer than six words - "${step.label}"`);
+      }
+      // The Walkthrough is read as the story of the drawn system, so a step may
+      // only travel a wire the Diagram draws (either way: a response goes back).
+      const drawn = spec.edges.some(
+        (edge) => (edge.from === step.from && edge.to === step.to) || (edge.from === step.to && edge.to === step.from),
+      );
+      if (!drawn) problems.push(`${name}: step ${step.from} -> ${step.to} follows no drawn edge`);
+    }
+
+    // Every concept Diagram carries a Walkthrough, and the Walkthrough visits every
+    // node: a box the story never reaches is a part the learner is never told about.
+    // A part that is deliberately not reached gets a `skipped` step, not a request.
+    if (spec.walkthrough && spec.steps.length < 2) {
+      problems.push(`${name}: needs a Walkthrough of at least 2 steps`);
+    } else if (spec.walkthrough) {
+      const visited = new Set(spec.steps.flatMap((step) => [step.from, step.to]));
+      for (const node of spec.nodes) {
+        if (!visited.has(node.id)) problems.push(`${name}: ${node.id} ("${node.label}") is never visited by a step`);
       }
     }
 

@@ -1,182 +1,471 @@
-import { useCallback, useState } from 'react';
+import { useRef, useState } from 'react';
 import { CloudOff, Cloud } from 'lucide-react';
-import { ArchNode, DiagramCanvas, NodeStatRow, type DiagramEdge, type Layout } from '@/components/architecture';
+import {
+  ArchNode,
+  DiagramCanvas,
+  NodeStatRow,
+  ParticleLegend,
+  type DiagramEdge,
+  type Layout,
+  type ParticleView,
+} from '@/components/architecture';
 import { Insight, LabShell, MetricsPanel } from '@/components/learning';
 import { Badge, Button, SegmentedControl } from '@/components/ui';
-import { useEventLog } from '@/simulations/engine';
+import { advanceParticles, nextParticleId, useEventLog, useTicker, type Particle } from '@/simulations/engine';
+import { useLabSetup } from '@/hooks/useLabSetup';
+import { useRerender } from '@/hooks/useRerender';
 import { cn } from '@/utils/cn';
+import type { LabFocus, LabProps, RequestOutcome } from '@/types';
 
+/**
+ * CAP: two clients, each talking to its own side of a replicated store. Split
+ * the network between the sides and the store must choose, per request, between
+ * refusing (CP) and answering from what this side has (AP).
+ *
+ * Simplified model, not a measurement:
+ * - Each side stands for a group of replicas. With N replicas, side A holds
+ *   ceil(N/2) and side B holds floor(N/2), so side A has a majority only when N
+ *   is odd.
+ * - With no partition a write reaches both sides before it is acknowledged
+ *   (synchronous replication), so every read sees the latest write.
+ * - In CP mode only a side holding a majority serves reads and writes; a side
+ *   without one refuses both, because it cannot prove its copy is the latest.
+ * - Versions come from one counter that stands in for a write timestamp, so
+ *   last-write-wins at heal keeps the higher version.
+ */
+
+type Side = 'a' | 'b';
 type Choice = 'cp' | 'ap';
+type Op = 'write' | 'read';
+type Replicas = '2' | '3' | '4' | '5';
+/** What the two clients send on their own. */
+type Traffic = 'mixed' | 'write-a-read-b';
 
-interface WriteResult {
-  /** Attempt number - unique even for rejected writes, which never get a version. */
-  attempt: number;
-  /** Version the write created, or null when it was rejected. */
-  version: number | null;
-  node: 'a' | 'b';
-  accepted: boolean;
-  note: string;
+interface Setup {
+  choice: Choice;
+  partitioned: boolean;
+  replicas: Replicas;
+  traffic: Traffic;
 }
 
-/** Writes each side accepted while the partition was up - a conflict needs both. */
-interface SideWrites {
-  a: number;
-  b: number;
-}
+/** What the lab opens on at /labs/cap-theorem: a healthy network, no dilemma yet. */
+const DEFAULT_SETUP: Setup = { choice: 'cp', partitioned: false, replicas: '3', traffic: 'mixed' };
 
-const NO_SIDE_WRITES: SideWrites = { a: 0, b: 0 };
-
-const LAYOUT: Layout = {
-  clientA: { x: 70, y: 40, w: 160, h: 70 },
-  clientB: { x: 730, y: 40, w: 160, h: 70 },
-  nodeA: { x: 110, y: 210, w: 210, h: 140 },
-  nodeB: { x: 640, y: 210, w: 210, h: 140 },
+/**
+ * The Lab focus of each Concept that hosts this lab.
+ * - CAP Theorem opens mid-partition in CP mode: side B already refuses, and one
+ *   click on AP shows the other answer to the same dilemma.
+ * - Consistency opens mid-partition in AP mode with client A writing and client
+ *   B reading, so the first reads on side B return a value older than the write
+ *   side A just acknowledged.
+ * - Partition Tolerance opens mid-partition with 5 replicas split 3 | 2, the
+ *   quorum picture of its Diagram; 2 or 4 replicas show a split with no majority.
+ */
+const FOCUS_SETUPS: Record<LabFocus<'cap-theorem'>, Setup> = {
+  'cap-theorem': { choice: 'cp', partitioned: true, replicas: '3', traffic: 'mixed' },
+  consistency: { choice: 'ap', partitioned: true, replicas: '3', traffic: 'write-a-read-b' },
+  'partition-tolerance': { choice: 'cp', partitioned: true, replicas: '5', traffic: 'mixed' },
 };
 
-export function CapTheoremLab() {
-  const [choice, setChoice] = useState<Choice>('cp');
-  const [partitioned, setPartitioned] = useState(false);
-  const [valueA, setValueA] = useState(1);
-  const [valueB, setValueB] = useState(1);
-  const [version, setVersion] = useState(1);
-  const [writes, setWrites] = useState<WriteResult[]>([]);
-  const [attempts, setAttempts] = useState(0);
-  const [sideWrites, setSideWrites] = useState<SideWrites>(NO_SIDE_WRITES);
+const REPLICA_OPTIONS: { value: Replicas; label: string }[] = [
+  { value: '2', label: '2' },
+  { value: '3', label: '3' },
+  { value: '4', label: '4' },
+  { value: '5', label: '5' },
+];
+
+/** Simulated seconds. */
+const REQUEST_INTERVAL_S = 1.8;
+const LEG_SPEED = 1.3;
+const DROP_VISIBLE_S = 0.7;
+
+const LAYOUT: Layout = {
+  clientA: { x: 110, y: 30, w: 170, h: 70 },
+  clientB: { x: 680, y: 30, w: 170, h: 70 },
+  a: { x: 90, y: 200, w: 230, h: 150 },
+  b: { x: 640, y: 200, w: 230, h: 150 },
+};
+
+const CLIENT: Record<Side, string> = { a: 'clientA', b: 'clientB' };
+const OTHER: Record<Side, Side> = { a: 'b', b: 'a' };
+const NAME: Record<Side, string> = { a: 'A', b: 'B' };
+
+type Status = 'ok' | 'stale' | 'refused';
+
+interface Msg {
+  kind: Op | 'replicate' | 'answer';
+  side: Side;
+  /** Replication that the partition drops halfway along the wire. */
+  lost?: boolean;
+  droppedAt?: number;
+}
+
+interface RequestRow {
+  id: number;
+  side: Side;
+  op: Op;
+  status: Status;
+  version: number;
+  latest: number;
+}
+
+interface Stats {
+  writesOk: number;
+  readsOk: number;
+  staleReads: number;
+  refused: number;
+  conflicts: number;
+  lostWrites: number;
+}
+
+interface SimState {
+  clock: number;
+  next: Record<Side, number>;
+  /** How many requests each client has sent, to alternate reads and writes. */
+  sent: Record<Side, number>;
+  value: Record<Side, number>;
+  /** Highest version handed out; stands in for a write timestamp. */
+  version: number;
+  /** Writes each side accepted during the current partition - a conflict needs both. */
+  sideWrites: Record<Side, number>;
+  particles: Particle[];
+  rows: RequestRow[];
+  nextRow: number;
+  lastRead: Record<Side, RequestRow | null>;
+  stats: Stats;
+}
+
+const createState = (): SimState => ({
+  clock: 0,
+  next: { a: 0.3, b: 0.3 + REQUEST_INTERVAL_S / 2 },
+  sent: { a: 0, b: 0 },
+  value: { a: 1, b: 1 },
+  version: 1,
+  sideWrites: { a: 0, b: 0 },
+  particles: [],
+  rows: [],
+  nextRow: 0,
+  lastRead: { a: null, b: null },
+  stats: { writesOk: 0, readsOk: 0, staleReads: 0, refused: 0, conflicts: 0, lostWrites: 0 },
+});
+
+const msgOf = (particle: Particle) => particle.meta as unknown as Msg;
+
+/** Replicas on each side of the split: side A gets the larger half. */
+const splitOf = (replicas: Replicas) => {
+  const total = Number(replicas);
+  const a = Math.ceil(total / 2);
+  return { total, a, b: total - a };
+};
+
+export function CapTheoremLab({ focus }: LabProps<'cap-theorem'>) {
+  // The page keys this lab by Concept, so the focus never changes under a mounted lab.
+  const start = focus ? FOCUS_SETUPS[focus] : DEFAULT_SETUP;
+  // Every control lives in one object, so Reset cannot miss one.
+  const { setup, setSetup, change } = useLabSetup(start);
+  const { choice, partitioned, replicas, traffic } = setup;
+  const [running, setRunning] = useState(true);
+  const sim = useRef<SimState>(createState());
+  const rerender = useRerender(30);
   const { events, log, clear } = useEventLog(30);
 
-  const reset = useCallback(() => {
-    setPartitioned(false);
-    setValueA(1);
-    setValueB(1);
-    setVersion(1);
-    setWrites([]);
-    setAttempts(0);
-    setSideWrites(NO_SIDE_WRITES);
-    clear();
-  }, [clear]);
+  const split = splitOf(replicas);
+  const hasMajority: Record<Side, boolean> = {
+    a: split.a * 2 > split.total,
+    b: split.b * 2 > split.total,
+  };
+  /** Whether a side answers requests right now. */
+  const serves = (side: Side) => !partitioned || choice === 'ap' || hasMajority[side];
 
-  const write = useCallback(
-    (node: 'a' | 'b') => {
-      const next = version + 1;
-      const attempt = attempts + 1;
-      setAttempts(attempt);
-      const record = (entry: Omit<WriteResult, 'attempt' | 'node'>) =>
-        setWrites((list) => [{ attempt, node, ...entry }, ...list].slice(0, 8));
-      const countSide = () => setSideWrites((sides) => ({ ...sides, [node]: sides[node] + 1 }));
+  const spawn = (route: string[], outcome: RequestOutcome, msg: Msg) => {
+    sim.current.particles.push({
+      id: nextParticleId(),
+      route,
+      leg: 0,
+      t: 0,
+      speed: LEG_SPEED,
+      outcome,
+      meta: msg as unknown as Record<string, unknown>,
+    });
+  };
 
+  const send = (side: Side, op: Op) => {
+    spawn([CLIENT[side], side], 'success', { kind: op, side });
+  };
+
+  const record = (row: Omit<RequestRow, 'id'>) => {
+    const state = sim.current;
+    state.nextRow += 1;
+    const full = { id: state.nextRow, ...row };
+    state.rows = [full, ...state.rows].slice(0, 8);
+    return full;
+  };
+
+  /** A request reached its side: the store decides what to do with it. */
+  const handle = (side: Side, op: Op) => {
+    const state = sim.current;
+    const latest = Math.max(state.value.a, state.value.b);
+
+    if (!serves(side)) {
+      state.stats.refused += 1;
+      record({ side, op, status: 'refused', version: state.value[side], latest });
+      if (op === 'read') state.lastRead[side] = { id: 0, side, op, status: 'refused', version: state.value[side], latest };
+      spawn([side, CLIENT[side]], 'failure', { kind: 'answer', side });
+      log(
+        hasMajority.a || hasMajority.b
+          ? `${op === 'write' ? 'Write' : 'Read'} on side ${NAME[side]} refused (503) - it cannot reach a majority`
+          : `${op === 'write' ? 'Write' : 'Read'} on side ${NAME[side]} refused (503) - neither side holds a majority`,
+        'danger',
+      );
+      return;
+    }
+
+    if (op === 'write') {
+      state.version += 1;
+      const version = state.version;
+      state.value[side] = version;
+      state.stats.writesOk += 1;
       if (!partitioned) {
-        setValueA(next);
-        setValueB(next);
-        setVersion(next);
-        record({ version: next, accepted: true, note: 'replicated to both nodes' });
-        log(`Write v${next} on node ${node.toUpperCase()} - replicated normally`, 'ok');
-        return;
-      }
-
-      if (choice === 'cp') {
-        const isMajority = node === 'a';
-        if (isMajority) {
-          setValueA(next);
-          setVersion(next);
-          countSide();
-          record({ version: next, accepted: true, note: 'majority side accepted' });
-          log(`Write v${next} accepted on node A (majority side)`, 'ok');
-        } else {
-          record({ version: null, accepted: false, note: 'rejected: minority side cannot reach quorum' });
-          log('Write on node B REJECTED - minority side cannot guarantee consistency', 'danger');
-        }
+        state.value[OTHER[side]] = version;
+        spawn([side, OTHER[side]], 'success', { kind: 'replicate', side });
+        log(`Write v${version} on side ${NAME[side]} - replicated to both sides`, 'ok');
       } else {
-        if (node === 'a') setValueA(next);
-        else setValueB(next);
-        setVersion(next);
-        countSide();
-        record({ version: next, accepted: true, note: 'accepted locally - will need reconciliation' });
-        log(`Write v${next} accepted on node ${node.toUpperCase()} - the two sides now disagree`, 'warn');
+        state.sideWrites[side] += 1;
+        spawn([side, OTHER[side]], 'failure', { kind: 'replicate', side, lost: true });
+        log(
+          choice === 'ap'
+            ? `Write v${version} accepted on side ${NAME[side]} only - side ${NAME[OTHER[side]]} never hears of it`
+            : `Write v${version} accepted on side ${NAME[side]} (majority) - side ${NAME[OTHER[side]]} is behind but refuses requests`,
+          choice === 'ap' ? 'warn' : 'ok',
+        );
       }
-    },
-    [attempts, choice, partitioned, version, log],
-  );
+      record({ side, op, status: 'ok', version, latest: version });
+      spawn([side, CLIENT[side]], 'success', { kind: 'answer', side });
+      return;
+    }
 
-  const heal = useCallback(() => {
-    setPartitioned(false);
-    setSideWrites(NO_SIDE_WRITES);
-    const winner = Math.max(valueA, valueB);
-    setValueA(winner);
-    setValueB(winner);
+    const version = state.value[side];
+    const stale = version < latest;
+    const row = record({ side, op, status: stale ? 'stale' : 'ok', version, latest });
+    state.lastRead[side] = row;
+    if (stale) {
+      state.stats.staleReads += 1;
+      log(`Read on side ${NAME[side]} returned v${version}, but v${latest} was already acknowledged - a stale read`, 'warn');
+    } else {
+      state.stats.readsOk += 1;
+    }
+    spawn([side, CLIENT[side]], stale ? 'warning' : 'success', { kind: 'answer', side });
+  };
+
+  useTicker(running, (dt) => {
+    const state = sim.current;
+    state.clock += dt;
+
+    for (const side of ['a', 'b'] as Side[]) {
+      if (state.clock < state.next[side]) continue;
+      state.next[side] = state.clock + REQUEST_INTERVAL_S;
+      state.sent[side] += 1;
+      const op: Op =
+        traffic === 'write-a-read-b' ? (side === 'a' ? 'write' : 'read') : state.sent[side] % 2 === 1 ? 'write' : 'read';
+      send(side, op);
+    }
+
+    // Replication across a partition never arrives: the dot stops halfway along the cut wire.
+    for (const particle of state.particles) {
+      const msg = msgOf(particle);
+      if (msg.lost && msg.droppedAt === undefined && particle.t >= 0.5) {
+        msg.droppedAt = state.clock;
+        particle.speed = 0;
+      }
+    }
+
+    const { alive, finished } = advanceParticles(state.particles, dt);
+    state.particles = alive
+      .filter((particle) => {
+        const dropped = msgOf(particle).droppedAt;
+        return dropped === undefined || state.clock - dropped < DROP_VISIBLE_S;
+      })
+      .slice(-60);
+    for (const particle of finished) {
+      const msg = msgOf(particle);
+      if (msg.kind === 'write' || msg.kind === 'read') handle(msg.side, msg.kind);
+    }
+    rerender();
+  });
+
+  const partition = () => {
+    const state = sim.current;
+    state.sideWrites = { a: 0, b: 0 };
+    setSetup((current) => ({ ...current, partitioned: true }));
+    log('Network partition: side A and side B can no longer reach each other', 'danger');
+  };
+
+  const heal = () => {
+    const state = sim.current;
+    const { a, b } = state.value;
+    const winner = Math.max(a, b);
+    const winnerSide: Side = a >= b ? 'a' : 'b';
+    const loserSide = OTHER[winnerSide];
     // A conflict needs writes on BOTH sides. If only one side wrote, the other is
     // merely behind and catches up - nothing is thrown away. This is decided by
     // what happened, not by the current CP/AP choice, which can change mid-partition.
-    if (sideWrites.a > 0 && sideWrites.b > 0) {
-      const loser = Math.min(valueA, valueB);
-      log(`Partition healed. Conflict resolved by last-write-wins: v${winner} kept, v${loser} silently discarded`, 'danger');
-    } else if (valueA !== valueB) {
-      const behind = valueA < valueB ? 'A' : 'B';
-      log(`Partition healed. Node ${behind} catches up to v${winner} - only one side took writes, so nothing conflicts`, 'ok');
+    if (state.sideWrites.a > 0 && state.sideWrites.b > 0) {
+      const lost = state.sideWrites[loserSide];
+      state.stats.conflicts += 1;
+      state.stats.lostWrites += lost;
+      log(
+        `Partition healed. Both sides took writes: last-write-wins keeps v${winner} from side ${NAME[winnerSide]} and silently discards the ${lost} write${lost === 1 ? '' : 's'} side ${NAME[loserSide]} acknowledged`,
+        'danger',
+      );
+    } else if (a !== b) {
+      log(`Partition healed. Side ${NAME[loserSide]} catches up to v${winner} - only one side took writes, so nothing conflicts`, 'ok');
     } else {
-      log('Partition healed. Both nodes converge - no conflicts to resolve', 'ok');
+      log('Partition healed. Both sides already agree - no conflicts to resolve', 'ok');
     }
-  }, [sideWrites, valueA, valueB, log]);
+    if (a !== b) spawn([winnerSide, loserSide], 'success', { kind: 'replicate', side: winnerSide });
+    state.value = { a: winner, b: winner };
+    state.sideWrites = { a: 0, b: 0 };
+    setSetup((current) => ({ ...current, partitioned: false }));
+    rerender();
+  };
 
-  // A CP system refuses every request on the minority side, so its stale copy is
-  // never served - no client can read two different values. Only a stale copy
-  // that is still being served (AP, or before the partition heals) is an
-  // inconsistency a client can observe.
-  const minorityRefuses = partitioned && choice === 'cp';
-  const diverged = valueA !== valueB && !minorityRefuses;
-  const staleHidden = valueA !== valueB && minorityRefuses;
+  const reset = () => {
+    sim.current = createState();
+    // Back to this Concept's starting setup, not the lab's global default.
+    setSetup(start);
+    clear();
+    rerender();
+  };
+
+  const state = sim.current;
+  const { stats, value } = state;
+  const refusing: Record<Side, boolean> = { a: !serves('a'), b: !serves('b') };
+  // A copy that refuses every request cannot be read, so it is not an
+  // inconsistency a client can observe. Only two serving sides that disagree are.
+  const diverged = value.a !== value.b && !refusing.a && !refusing.b;
+  const noMajority = !hasMajority.a && !hasMajority.b;
+  const lastB = state.lastRead.b;
+
+  const particleViews: ParticleView[] = state.particles.map((particle) => ({
+    id: particle.id,
+    from: particle.route[particle.leg],
+    to: particle.route[particle.leg + 1],
+    t: particle.t,
+    outcome: particle.outcome ?? 'success',
+  }));
 
   const edges: DiagramEdge[] = [
-    { from: 'clientA', to: 'nodeA', tone: 'brand' },
-    { from: 'clientB', to: 'nodeB', tone: partitioned && choice === 'cp' ? 'danger' : 'brand' },
+    { from: 'clientA', to: 'a', tone: refusing.a ? 'danger' : 'brand' },
+    { from: 'clientB', to: 'b', tone: refusing.b ? 'danger' : 'brand' },
     {
-      from: 'nodeA',
-      to: 'nodeB',
+      from: 'a',
+      to: 'b',
       tone: partitioned ? 'danger' : 'ok',
       dashed: partitioned,
-      label: partitioned ? 'X NETWORK PARTITION X' : 'replication',
+      label: partitioned ? undefined : 'replication',
     },
   ];
+
+  const sideLabel = (side: Side) => {
+    const count = split[side];
+    const role = hasMajority[side] ? 'majority' : noMajority ? 'no majority' : 'minority';
+    return `${count} of ${split.total} replicas - ${role}`;
+  };
+
+  const sideStatus = (side: Side) =>
+    !partitioned ? 'healthy' : refusing[side] ? 'down' : 'degraded';
+
+  const renderSide = (side: Side) => {
+    const read = state.lastRead[side];
+    return (
+      <ArchNode
+        kind="sql"
+        title={`Side ${NAME[side]}`}
+        subtitle={sideLabel(side)}
+        placed={LAYOUT[side]}
+        status={sideStatus(side)}
+        statusLabel={!partitioned ? undefined : refusing[side] ? 'Refusing' : 'Serving alone'}
+        alert={diverged}
+      >
+        <NodeStatRow label="Value" value={`v${value[side]}`} tone={diverged ? 'text-danger' : 'text-brand'} />
+        <NodeStatRow
+          label="Writes"
+          value={refusing[side] ? 'refused' : 'accepted'}
+          tone={refusing[side] ? 'text-danger' : 'text-ok'}
+        />
+        <NodeStatRow
+          label="Last read"
+          value={!read ? '-' : read.status === 'refused' ? '503' : read.status === 'stale' ? `v${read.version} stale` : `v${read.version}`}
+          tone={!read ? 'text-muted' : read.status === 'ok' ? 'text-ok' : read.status === 'stale' ? 'text-warn' : 'text-danger'}
+        />
+      </ArchNode>
+    );
+  };
 
   return (
     <LabShell
       title="CAP Theorem Lab"
-      description="Partition the network, then try to write on both sides. The system must pick: refuse the write, or accept it and diverge."
+      description="Two clients read and write through the two sides of a replicated store. Split the network and the store must pick: refuse the request, or answer from what this side has and let the sides diverge."
+      running={running}
+      onToggleRun={() => setRunning((current) => !current)}
       onReset={reset}
       events={events}
+      legend={
+        <div className="space-y-1">
+          <ParticleLegend outcomes={['success', 'warning', 'failure']} />
+          <p className="text-[11px] text-faint">
+            Triangle: a stale read. Cross: a refused request (503), or replication the partition drops.
+          </p>
+        </div>
+      }
       actions={
-        <Button
-          variant={partitioned ? 'success' : 'danger'}
-          onClick={() => {
-            if (partitioned) heal();
-            else {
-              setPartitioned(true);
-              log('Network partition: node A and node B can no longer reach each other', 'danger');
-            }
-          }}
-        >
+        <Button variant={partitioned ? 'success' : 'danger'} onClick={partitioned ? heal : partition}>
           {partitioned ? <Cloud className="h-4 w-4" /> : <CloudOff className="h-4 w-4" />}
           {partitioned ? 'Heal partition' : 'Create partition'}
         </Button>
       }
       insight={
-        <Insight title={partitioned ? `Partitioned - behaving as ${choice.toUpperCase()}` : 'Healthy network'}>
+        <Insight
+          title={
+            !partitioned
+              ? 'Healthy network'
+              : choice === 'ap'
+                ? 'Partitioned - behaving as AP'
+                : noMajority
+                  ? 'Partitioned - CP with no majority anywhere'
+                  : 'Partitioned - behaving as CP'
+          }
+        >
           {!partitioned ? (
             <>
-              With no partition there is no dilemma: writes replicate and every reader sees the same value. CAP only
-              forces a choice while the network is split - which is why it describes behaviour during failure, not a
-              permanent label for a system.
+              With no partition there is no dilemma: every write reaches both sides before it is acknowledged, so every
+              read returns the latest write and every request gets an answer. CAP only forces a choice while the network
+              is split - it describes behaviour during a failure, not a permanent label for a system. Press Create
+              partition.
             </>
-          ) : choice === 'cp' ? (
+          ) : choice === 'ap' ? (
             <>
-              A CP system keeps one truth: only the majority side accepts writes, and the minority side returns errors.
-              Clients on node B are unavailable, but nothing diverges and no write is ever lost or contradicted. This is
-              what you want for payments, inventory and unique constraints.
+              An AP system keeps answering on both sides, so nobody sees an error - but side B never hears about writes
+              made on side A, and the reverse. {stats.staleReads > 0 ? `${stats.staleReads} read${stats.staleReads === 1 ? '' : 's'} so far returned a value older than a write the system had already acknowledged. ` : ''}
+              {lastB?.status === 'stale'
+                ? `Client B last read v${lastB.version} while v${lastB.latest} already existed on side A. `
+                : ''}
+              When the partition heals, last-write-wins keeps the newest version and silently throws away the writes
+              of the other side. Switch to CP to trade those stale reads for errors.
+            </>
+          ) : noMajority ? (
+            <>
+              {split.total} replicas split {split.a} | {split.b}: neither side holds a majority, so a CP system refuses
+              every read and every write on both sides - the whole store is unavailable until the partition heals.
+              Nothing diverges, but nothing works either. This is why clusters use an odd number of replicas: try 3 or
+              5.
             </>
           ) : (
             <>
-              An AP system keeps answering on both sides. Nobody sees an error - but the two nodes now hold different
-              values, and someone has to decide which one wins when the partition heals. Last-write-wins is simple and
-              silently throws away the other update.
+              A CP system keeps one truth. Side A holds {split.a} of {split.total} replicas, a majority, so it keeps
+              serving reads and writes. Side B holds {split.b} and cannot prove its copy is the latest, so it refuses
+              both with a 503 - client B is unavailable, but no client ever reads a stale value and no write is lost.
+              Switch to AP to see the other answer to the same partition.
             </>
           )}
         </Insight>
@@ -185,30 +474,43 @@ export function CapTheoremLab() {
         <>
           <MetricsPanel
             items={[
-              { key: 'a', label: 'Node A value', value: `v${valueA}`, tone: 'brand', hint: 'Value stored on the majority side.' },
+              { key: 'a', label: 'Side A value', value: `v${value.a}`, tone: 'brand', hint: 'Latest version side A holds.' },
               {
                 key: 'b',
-                label: 'Node B value',
-                value: `v${valueB}`,
-                unit: staleHidden ? 'not served' : undefined,
-                tone: diverged ? 'danger' : staleHidden ? 'warn' : 'brand',
-                hint: 'Value stored on the minority side. In CP mode it refuses every request during a partition, so a stale copy is never read.',
+                label: 'Side B value',
+                value: `v${value.b}`,
+                unit: refusing.b && value.b !== value.a ? 'not served' : undefined,
+                tone: diverged ? 'danger' : value.a !== value.b ? 'warn' : 'brand',
+                hint: 'Latest version side B holds. A side that refuses every request never serves its stale copy.',
               },
               {
                 key: 'consistent',
                 label: 'Consistent',
                 value: diverged ? 'No' : 'Yes',
                 tone: diverged ? 'danger' : 'ok',
-                hint: 'Could two clients read two different values right now? A copy that refuses requests cannot be read.',
+                hint: 'Could two clients read two different values right now? A side that refuses requests cannot be read.',
               },
               {
-                key: 'available',
-                label: 'Both sides writable',
-                value: partitioned && choice === 'cp' ? 'No' : 'Yes',
-                tone: partitioned && choice === 'cp' ? 'warn' : 'ok',
-                hint: 'Can a client on either node complete a write right now?',
+                key: 'stale',
+                label: 'Stale reads',
+                value: stats.staleReads,
+                tone: stats.staleReads > 0 ? 'warn' : 'ok',
+                hint: 'Reads that returned a version older than one the system had already acknowledged.',
               },
-              { key: 'writes', label: 'Writes attempted', value: attempts },
+              {
+                key: 'refused',
+                label: 'Refused (503)',
+                value: stats.refused,
+                tone: stats.refused > 0 ? 'danger' : 'ok',
+                hint: 'Requests a side answered with an error because it could not reach a majority.',
+              },
+              {
+                key: 'lost',
+                label: 'Writes lost at heal',
+                value: stats.lostWrites,
+                tone: stats.lostWrites > 0 ? 'danger' : 'ok',
+                hint: 'Acknowledged writes that last-write-wins discarded when both sides had written during a partition.',
+              },
             ]}
           />
 
@@ -228,23 +530,37 @@ distributed system - you are choosing CP or AP.`}</pre>
           </div>
 
           <div className="card p-4">
-            <p className="label mb-3">Write attempts</p>
-            {writes.length === 0 ? (
-              <p className="text-sm text-muted">Send a write on either node to see what the system does.</p>
+            <p className="label mb-3">Recent requests</p>
+            {state.rows.length === 0 ? (
+              <p className="text-sm text-muted">The clients send a request every {REQUEST_INTERVAL_S} s, or use the buttons.</p>
             ) : (
               <ul className="space-y-1.5 font-mono text-[11px]">
-                {writes.map((item) => (
-                  <li key={item.attempt} className={item.accepted ? 'text-muted' : 'text-danger'}>
-                    <span className="text-faint">node {item.node.toUpperCase()}</span>{' '}
-                    {item.version === null ? 'write' : `write v${item.version}`}{' '}
-                    <Badge tone={item.accepted ? 'ok' : 'danger'} className="ml-1">
-                      {item.accepted ? '200 OK' : '503 Unavailable'}
+                {state.rows.map((row) => (
+                  <li key={row.id} className={row.status === 'refused' ? 'text-danger' : 'text-muted'}>
+                    <span className="text-faint">client {NAME[row.side]}</span> {row.op}{' '}
+                    {row.status === 'refused' ? '' : `v${row.version}`}{' '}
+                    <Badge tone={row.status === 'ok' ? 'ok' : row.status === 'stale' ? 'warn' : 'danger'} className="ml-1">
+                      {row.status === 'refused' ? '503 Unavailable' : row.status === 'stale' ? '200 stale' : '200 OK'}
                     </Badge>{' '}
-                    <span className="text-faint">{item.note}</span>
+                    <span className="text-faint">
+                      {row.status === 'stale'
+                        ? `v${row.latest} already acknowledged`
+                        : row.status === 'refused'
+                          ? 'no majority on this side'
+                          : row.op === 'write'
+                            ? partitioned
+                              ? 'this side only'
+                              : 'on both sides'
+                            : 'latest value'}
+                    </span>
                   </li>
                 ))}
               </ul>
             )}
+            <p className="mt-3 text-xs text-faint">
+              Simplified model: each side stands for a group of replicas, versions come from one counter that stands in for
+              a write timestamp, and with no partition replication is instant.
+            </p>
           </div>
         </>
       }
@@ -260,77 +576,91 @@ distributed system - you are choosing CP or AP.`}</pre>
                 { value: 'cp', label: 'CP - consistency' },
                 { value: 'ap', label: 'AP - availability' },
               ]}
-              onChange={(value) => {
-                setChoice(value);
+              onChange={(next) => {
+                change('choice')(next);
                 log(
-                  value === 'cp'
-                    ? 'CP: reject writes the system cannot make safely'
-                    : 'AP: accept writes everywhere and reconcile later',
+                  next === 'cp'
+                    ? 'CP: refuse what cannot be answered safely'
+                    : 'AP: answer everywhere and reconcile later',
                   'info',
                 );
               }}
             />
             <p className="text-[11px] text-faint">
               {choice === 'cp'
-                ? 'Reject the request and preserve a single truth.'
-                : 'Accept the request and allow temporary inconsistency.'}
+                ? 'Refuse the request and keep a single truth.'
+                : 'Answer the request and allow the sides to disagree.'}
             </p>
           </div>
 
           <div className="space-y-2">
-            <p className="text-xs font-medium text-muted">Send a write</p>
-            <Button className="w-full justify-center" onClick={() => write('a')}>
-              Write on node A (majority)
-            </Button>
-            <Button className="w-full justify-center" onClick={() => write('b')}>
-              Write on node B (minority)
-            </Button>
+            <p className="text-xs font-medium text-muted">Replicas in the cluster</p>
+            <SegmentedControl
+              value={replicas}
+              className="w-full"
+              size="sm"
+              options={REPLICA_OPTIONS}
+              onChange={change('replicas')}
+            />
+            <p className="text-[11px] text-faint">
+              A partition splits them {split.a} | {split.b}.{' '}
+              {noMajority ? 'Neither side has a majority.' : `Side A has a majority (${split.a} of ${split.total}).`}
+            </p>
+          </div>
+
+          <div className="space-y-2">
+            <p className="text-xs font-medium text-muted">What the clients send</p>
+            <SegmentedControl
+              value={traffic}
+              className="w-full"
+              size="sm"
+              options={[
+                { value: 'mixed', label: 'Reads and writes' },
+                { value: 'write-a-read-b', label: 'A writes, B reads' },
+              ]}
+              onChange={change('traffic')}
+            />
+          </div>
+
+          <div className="space-y-2">
+            <p className="text-xs font-medium text-muted">Send one request now</p>
+            <div className="grid grid-cols-2 gap-2">
+              <Button className="justify-center" onClick={() => send('a', 'write')}>
+                Write on A
+              </Button>
+              <Button className="justify-center" onClick={() => send('b', 'write')}>
+                Write on B
+              </Button>
+              <Button className="justify-center" onClick={() => send('a', 'read')}>
+                Read on A
+              </Button>
+              <Button className="justify-center" onClick={() => send('b', 'read')}>
+                Read on B
+              </Button>
+            </div>
           </div>
 
           <div className="rounded-xl border border-line bg-elevated p-3 text-[11px] text-muted">
             <p className="label mb-2">Where this shows up</p>
             <ul className="space-y-1">
-              <li>CP: ZooKeeper, etcd, Spanner, most relational primaries</li>
-              <li>AP: Cassandra and DynamoDB at low quorum, DNS, CDNs</li>
-              <li>Tunable: many stores let you choose per query</li>
+              <li>CP: ZooKeeper, etcd, Spanner - they refuse rather than diverge</li>
+              <li>AP: Cassandra at consistency level ONE, DNS, CDN caches</li>
+              <li>Tunable: Cassandra per query, DynamoDB per read</li>
             </ul>
           </div>
         </>
       }
     >
-      <DiagramCanvas layout={LAYOUT} edges={edges} height={400} className="bg-canvas">
-        <ArchNode kind="client" title="Client (region A)" placed={LAYOUT.clientA} compact />
-        <ArchNode kind="client" title="Client (region B)" placed={LAYOUT.clientB} compact />
-        <ArchNode
-          kind="sql"
-          title="Node A"
-          subtitle="majority side (2 of 3 replicas)"
-          placed={LAYOUT.nodeA}
-          status={partitioned ? 'degraded' : 'healthy'}
-        >
-          <NodeStatRow label="Value" value={`v${valueA}`} tone="text-brand" />
-          <NodeStatRow label="Writes" value={partitioned && choice === 'cp' ? 'accepted' : 'accepted'} tone="text-ok" />
-        </ArchNode>
-        <ArchNode
-          kind="sql"
-          title="Node B"
-          subtitle="minority side (1 of 3 replicas)"
-          placed={LAYOUT.nodeB}
-          status={partitioned ? (choice === 'cp' ? 'down' : 'degraded') : 'healthy'}
-          alert={diverged}
-        >
-          <NodeStatRow label="Value" value={`v${valueB}`} tone={diverged ? 'text-danger' : 'text-brand'} />
-          <NodeStatRow
-            label="Writes"
-            value={partitioned && choice === 'cp' ? 'rejected' : 'accepted'}
-            tone={partitioned && choice === 'cp' ? 'text-danger' : 'text-ok'}
-          />
-        </ArchNode>
+      <DiagramCanvas layout={LAYOUT} edges={edges} particles={particleViews} height={400} className="bg-canvas">
+        <ArchNode kind="client" title="Client A" placed={LAYOUT.clientA} compact />
+        <ArchNode kind="client" title="Client B" placed={LAYOUT.clientB} compact />
+        {renderSide('a')}
+        {renderSide('b')}
 
         {partitioned ? (
           <div
             className={cn(
-              'absolute left-1/2 top-[250px] -translate-x-1/2 rounded-lg border border-danger bg-surface px-3 py-1.5',
+              'absolute left-1/2 top-[222px] -translate-x-1/2 rounded-lg border border-danger bg-surface px-3 py-1.5',
               'font-mono text-[11px] font-semibold text-danger',
             )}
           >

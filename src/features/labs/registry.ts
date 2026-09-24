@@ -1,9 +1,9 @@
 import type { LazyExoticComponent, ComponentType } from 'react';
 import { lazyWithRetry } from '@/utils/lazyWithRetry';
-import type { CategoryId, Difficulty, LabId } from '@/types';
+import type { CategoryId, Difficulty, LabId, LabProps } from '@/types';
 
-export interface LabDefinition {
-  id: LabId;
+interface LabDefinitionFor<Id extends LabId> {
+  id: Id;
   title: string;
   blurb: string;
   category: CategoryId;
@@ -12,20 +12,24 @@ export interface LabDefinition {
   concept: string;
   /** Shown on the home page as a featured lab. */
   featured?: boolean;
-  Component: LazyExoticComponent<ComponentType>;
+  /** Takes the Lab focus ids listed for this Lab in `LabFocusIds`, and no others. */
+  Component: LazyExoticComponent<ComponentType<LabProps<Id>>>;
 }
+
+export type LabDefinition = { [Id in LabId]: LabDefinitionFor<Id> }[LabId];
 
 /**
  * Every interactive lab in one registry.
  *
  * Adding a lab is: build the component, add a row here, and set `lab: '<id>'`
- * on the concept that should host it. Nothing else needs to change.
+ * on the concept that should host it. Nothing else needs to change. A shared
+ * lab can also open on a Lab focus per host: see `LabFocusIds`.
  */
 export const LABS: LabDefinition[] = [
   {
     id: 'requirements',
     title: 'Requirements Lab',
-    blurb: 'Pick what a system must do, set how well it must do it, and see the architecture that follows.',
+    blurb: 'Pick what a system must do, set how well it must do it, and watch each choice add the parts it forces.',
     category: 'getting-started',
     difficulty: 'Beginner',
     concept: 'functional-requirements',
@@ -34,7 +38,7 @@ export const LABS: LabDefinition[] = [
   {
     id: 'capacity',
     title: 'Capacity Estimation Playground',
-    blurb: 'Turn daily active users into requests per second, storage and bandwidth, step by step.',
+    blurb: 'Turn daily active users into requests per second, servers, storage and bandwidth - exact or rounded to powers of ten - on the parts they size.',
     category: 'getting-started',
     difficulty: 'Beginner',
     concept: 'capacity-estimation',
@@ -43,7 +47,7 @@ export const LABS: LabDefinition[] = [
   {
     id: 'url-journey',
     title: 'What Happens When You Type a URL?',
-    blurb: 'Twelve stages from Enter to painted pixels, each one clickable.',
+    blurb: 'One request walks the resolver, root, TLD, CDN edge and origin, stage by stage, from Enter to painted pixels.',
     category: 'networking',
     difficulty: 'Beginner',
     concept: 'what-happens-when-you-type-a-url',
@@ -62,7 +66,7 @@ export const LABS: LabDefinition[] = [
   {
     id: 'horizontal-scaling',
     title: 'Horizontal Scaling Lab',
-    blurb: 'Add servers behind a load balancer and watch load, latency and errors redistribute.',
+    blurb: 'Add servers behind a load balancer, fail one, and find the shared database limit.',
     category: 'scaling',
     difficulty: 'Beginner',
     concept: 'horizontal-scaling',
@@ -99,7 +103,7 @@ export const LABS: LabDefinition[] = [
   {
     id: 'caching',
     title: 'Caching Lab',
-    blurb: 'Hit and miss paths, TTL, eviction, and the database load that disappears.',
+    blurb: 'Hit and miss paths, TTL, a Redis memory limit and eviction policy, and the database load that disappears.',
     category: 'performance',
     difficulty: 'Beginner',
     concept: 'caching',
@@ -118,7 +122,7 @@ export const LABS: LabDefinition[] = [
   {
     id: 'cdn',
     title: 'CDN Lab',
-    blurb: 'Three regions, one origin, and the speed of light as a hard constraint.',
+    blurb: 'Three regions, one origin: beat distance with edges, then tune TTLs, cache keys and purges.',
     category: 'networking',
     difficulty: 'Beginner',
     concept: 'cdn',
@@ -136,7 +140,7 @@ export const LABS: LabDefinition[] = [
   {
     id: 'indexing',
     title: 'Database Indexing Lab',
-    blurb: 'Scan 8,000 rows, then build a B-tree and do it in thirteen.',
+    blurb: 'Scan 80 pages to find one row, then build a B-tree and read three.',
     category: 'data',
     difficulty: 'Beginner',
     concept: 'database-indexing',
@@ -146,7 +150,7 @@ export const LABS: LabDefinition[] = [
   {
     id: 'replication',
     title: 'Database Replication Lab',
-    blurb: 'Replication lag, stale reads, and what a failover costs you.',
+    blurb: 'Leader and followers: replication lag, stale reads, sync versus async, and what a failover costs you.',
     category: 'data',
     difficulty: 'Intermediate',
     concept: 'replication',
@@ -165,7 +169,7 @@ export const LABS: LabDefinition[] = [
   {
     id: 'queue',
     title: 'Message Queue Lab',
-    blurb: 'Producers, workers, queue depth and backpressure you can watch grow.',
+    blurb: 'Producers, workers, queue depth and backpressure you can watch grow - plus retries into a dead-letter queue, or no queue at all.',
     category: 'async',
     difficulty: 'Beginner',
     concept: 'message-queues',
@@ -210,8 +214,8 @@ export const LABS: LabDefinition[] = [
   },
   {
     id: 'monolith-microservices',
-    title: 'Monolith vs Microservices Lab',
-    blurb: 'Same product, two architectures, and an honest comparison of both.',
+    title: 'Monolith to Microservices Lab',
+    blurb: 'One product as a monolith, a modular monolith, SOA with a bus and microservices - break a part and compare.',
     category: 'architecture',
     difficulty: 'Advanced',
     concept: 'microservices',
@@ -220,16 +224,269 @@ export const LABS: LabDefinition[] = [
   {
     id: 'tracing',
     title: 'Distributed Tracing Lab',
-    blurb: 'A waterfall of spans that shows exactly where the time went.',
+    blurb: 'One checkout across five services: a waterfall of spans, and the hop each span lights up on the diagram.',
     category: 'observability',
     difficulty: 'Intermediate',
     concept: 'distributed-tracing',
     Component: lazyWithRetry(() => import('@/features/observability/TracingLab')),
   },
+  {
+    id: 'proxy',
+    title: 'Proxy Lab',
+    blurb: 'One proxy on the client side or the server side, and what each side hides.',
+    category: 'networking',
+    difficulty: 'Beginner',
+    concept: 'reverse-proxy',
+    Component: lazyWithRetry(() => import('@/features/networking/ProxyLab')),
+  },
+  {
+    id: 'transport',
+    title: 'TCP vs UDP Lab',
+    blurb: 'A file and a voice stream over a lossy network, sent with TCP and with UDP.',
+    category: 'networking',
+    difficulty: 'Intermediate',
+    concept: 'tcp-vs-udp',
+    Component: lazyWithRetry(() => import('@/features/networking/TransportLab')),
+  },
+  {
+    id: 'data-models',
+    title: 'Data Models Lab',
+    blurb: 'The same shop data in a relational database and a partitioned document store, under four workloads.',
+    category: 'data',
+    difficulty: 'Beginner',
+    concept: 'relational-vs-non-relational',
+    Component: lazyWithRetry(() => import('@/features/databases/DataModelsLab')),
+  },
+  {
+    id: 'schema-design',
+    title: 'Schema Design Lab',
+    blurb: 'Normalize or denormalize one schema and watch reads, writes and anomalies change.',
+    category: 'data',
+    difficulty: 'Intermediate',
+    concept: 'database-normalization',
+    Component: lazyWithRetry(() => import('@/features/databases/SchemaDesignLab')),
+  },
+  {
+    id: 'partitioning',
+    title: 'Partitioning Lab',
+    blurb: 'Split one big table by range, list or hash, watch partition pruning, then drop an old month instead of deleting it.',
+    category: 'data',
+    difficulty: 'Intermediate',
+    concept: 'partitioning',
+    Component: lazyWithRetry(() => import('@/features/databases/PartitioningLab')),
+  },
+  {
+    id: 'connection-pool',
+    title: 'Connection Pool Lab',
+    blurb: 'App instances, a pool and a database: size the pool and watch the waits.',
+    category: 'data',
+    difficulty: 'Intermediate',
+    concept: 'connection-pooling',
+    Component: lazyWithRetry(() => import('@/features/databases/ConnectionPoolLab')),
+  },
+  {
+    id: 'cache-layers',
+    title: 'Cache Layers Lab',
+    blurb: 'In-process caches, the buffer pool and a materialized view, one layer at a time.',
+    category: 'performance',
+    difficulty: 'Intermediate',
+    concept: 'application-caching',
+    Component: lazyWithRetry(() => import('@/features/caching/CacheLayersLab')),
+  },
+  {
+    id: 'consensus',
+    title: 'Consensus Lab',
+    blurb: 'Elect a leader and commit writes on a majority, then crash, pause or partition the nodes.',
+    category: 'distributed',
+    difficulty: 'Advanced',
+    concept: 'consensus',
+    Component: lazyWithRetry(() => import('@/features/distributed/ConsensusLab')),
+  },
+  {
+    id: 'distributed-lock',
+    title: 'Distributed Lock Lab',
+    blurb: 'Two workers, one lock with a TTL, and the fencing token that saves the data.',
+    category: 'distributed',
+    difficulty: 'Advanced',
+    concept: 'distributed-locks',
+    Component: lazyWithRetry(() => import('@/features/distributed/DistributedLockLab')),
+  },
+  {
+    id: 'idempotency',
+    title: 'Idempotency Lab',
+    blurb: 'Retry a payment over a lossy network, with and without idempotency keys.',
+    category: 'distributed',
+    difficulty: 'Intermediate',
+    concept: 'idempotency',
+    Component: lazyWithRetry(() => import('@/features/distributed/IdempotencyLab')),
+  },
+  {
+    id: 'api-styles',
+    title: 'API Styles Lab',
+    blurb: 'Fetch one screen with REST, GraphQL or gRPC and count the round trips.',
+    category: 'communication',
+    difficulty: 'Beginner',
+    concept: 'rest-apis',
+    Component: lazyWithRetry(() => import('@/features/communication/ApiStylesLab')),
+  },
+  {
+    id: 'realtime',
+    title: 'Realtime Lab',
+    blurb: 'Polling, long polling, SSE and WebSockets delivering the same updates.',
+    category: 'communication',
+    difficulty: 'Beginner',
+    concept: 'websockets',
+    Component: lazyWithRetry(() => import('@/features/communication/RealtimeLab')),
+  },
+  {
+    id: 'event-log',
+    title: 'Event Log Lab',
+    blurb: 'An append-only log with offsets, consumers, replays and read models.',
+    category: 'async',
+    difficulty: 'Intermediate',
+    concept: 'kafka',
+    Component: lazyWithRetry(() => import('@/features/queues/EventLogLab')),
+  },
+  {
+    id: 'broker-routing',
+    title: 'Broker Routing Lab',
+    blurb: 'Pick direct, fanout or topic routing, change bindings, and take subscribers down to see who gets each event.',
+    category: 'async',
+    difficulty: 'Intermediate',
+    concept: 'pub-sub',
+    Component: lazyWithRetry(() => import('@/features/queues/BrokerRoutingLab')),
+  },
+  {
+    id: 'redundancy',
+    title: 'Redundancy Lab',
+    blurb: 'Add spares to each tier, fail parts, and watch availability change.',
+    category: 'reliability',
+    difficulty: 'Beginner',
+    concept: 'redundancy',
+    Component: lazyWithRetry(() => import('@/features/reliability/RedundancyLab')),
+  },
+  {
+    id: 'disaster-recovery',
+    title: 'Disaster Recovery Lab',
+    blurb: 'Lose a whole region and measure the data lost and the time to recover.',
+    category: 'reliability',
+    difficulty: 'Advanced',
+    concept: 'disaster-recovery',
+    Component: lazyWithRetry(() => import('@/features/reliability/DisasterRecoveryLab')),
+  },
+  {
+    id: 'auth',
+    title: 'Auth Lab',
+    blurb: 'Send a request as different callers and see where 401 and 403 come from: sessions, API keys, roles and a leaked key.',
+    category: 'security',
+    difficulty: 'Beginner',
+    concept: 'authentication',
+    Component: lazyWithRetry(() => import('@/features/security/AuthLab')),
+  },
+  {
+    id: 'oauth',
+    title: 'OAuth Lab',
+    blurb: 'Step through the authorization code flow with PKCE, then try to attack it.',
+    category: 'security',
+    difficulty: 'Advanced',
+    concept: 'oauth',
+    Component: lazyWithRetry(() => import('@/features/security/OAuthLab')),
+  },
+  {
+    id: 'secrets',
+    title: 'Secrets Lab',
+    blurb: 'Secrets in code, in env files and in a vault - then leak one and rotate it.',
+    category: 'security',
+    difficulty: 'Intermediate',
+    concept: 'secrets-management',
+    Component: lazyWithRetry(() => import('@/features/security/SecretsLab')),
+  },
+  {
+    id: 'waf',
+    title: 'WAF Lab',
+    blurb: 'Real users and attacks through one firewall: turn the strictness dial and count blocked attacks, missed attacks and blocked users.',
+    category: 'security',
+    difficulty: 'Intermediate',
+    concept: 'waf',
+    Component: lazyWithRetry(() => import('@/features/security/WafLab')),
+  },
+  {
+    id: 'serverless',
+    title: 'Serverless Lab',
+    blurb: 'Scale to zero, cold starts and cost per request against an always-on server.',
+    category: 'architecture',
+    difficulty: 'Intermediate',
+    concept: 'serverless',
+    Component: lazyWithRetry(() => import('@/features/architecture/ServerlessLab')),
+  },
+  {
+    id: 'monitoring',
+    title: 'Monitoring Lab',
+    blurb: 'Inject faults and watch logs, metrics and alerts come out of every part.',
+    category: 'observability',
+    difficulty: 'Beginner',
+    concept: 'monitoring',
+    Component: lazyWithRetry(() => import('@/features/observability/MonitoringLab')),
+  },
+  {
+    id: 'slo',
+    title: 'SLO Lab',
+    blurb: 'Measure an SLI, set an SLO, spend the error budget, and honour the SLA.',
+    category: 'observability',
+    difficulty: 'Intermediate',
+    concept: 'slo',
+    Component: lazyWithRetry(() => import('@/features/observability/SloLab')),
+  },
+  {
+    id: 'fan-out',
+    title: 'Fan-out Lab',
+    blurb: 'A post reaches its followers on write, on read or hybrid - from 150 followers up to a 50M celebrity.',
+    category: 'patterns',
+    difficulty: 'Intermediate',
+    concept: 'fan-out',
+    Component: lazyWithRetry(() => import('@/features/patterns/FanOutLab')),
+  },
+  {
+    id: 'bulkhead',
+    title: 'Bulkhead Lab',
+    blurb: 'One slow dependency takes every thread - unless the pools are separate.',
+    category: 'patterns',
+    difficulty: 'Intermediate',
+    concept: 'bulkhead',
+    Component: lazyWithRetry(() => import('@/features/patterns/BulkheadLab')),
+  },
+  {
+    id: 'saga',
+    title: 'Saga Lab',
+    blurb: 'One order across four services: fail a step and watch the compensations undo the rest.',
+    category: 'patterns',
+    difficulty: 'Advanced',
+    concept: 'saga-pattern',
+    Component: lazyWithRetry(() => import('@/features/patterns/SagaLab')),
+  },
+  {
+    id: 'outbox',
+    title: 'Outbox Lab',
+    blurb: 'Crash between the database write and the publish, then fix it with an outbox.',
+    category: 'patterns',
+    difficulty: 'Advanced',
+    concept: 'outbox-pattern',
+    Component: lazyWithRetry(() => import('@/features/patterns/OutboxLab')),
+  },
 ];
 
-export const LAB_BY_ID = new Map(LABS.map((lab) => [lab.id, lab]));
+/**
+ * A lab as a page renders it. `LABS` checks each component against its own
+ * focus ids; a page only forwards a focus that the Concept type already paired
+ * with this lab (or none), so it gets one wide props type. That also spares
+ * TypeScript rendering a union of 49 component types.
+ */
+export type HostedLab = Omit<LabDefinition, 'Component'> & {
+  Component: LazyExoticComponent<ComponentType<LabProps>>;
+};
 
-export const getLab = (id: string | undefined) => (id ? LAB_BY_ID.get(id as LabId) : undefined);
+const LAB_BY_ID = new Map<string, HostedLab>(LABS.map((lab) => [lab.id, lab as HostedLab]));
+
+export const getLab = (id: string | undefined) => (id ? LAB_BY_ID.get(id) : undefined);
 
 export const FEATURED_LABS = LABS.filter((lab) => lab.featured);

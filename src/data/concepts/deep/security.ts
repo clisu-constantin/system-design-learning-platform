@@ -18,7 +18,7 @@ export const securityDepth: DepthMap = {
         bullets: [
           'Something you know, have, or are - MFA means two different kinds.',
           'SMS is better than nothing and worse than an app; passkeys beat both.',
-          'Account recovery is an authentication path too, and usually the weakest one.',
+          'Account recovery is an authentication path too, and usually the weakest one - secure it as carefully as login.',
           'Rate limit and monitor login attempts; credential stuffing is automated and constant.',
         ],
       },
@@ -31,15 +31,18 @@ export const securityDepth: DepthMap = {
         ],
         code: {
           caption: 'Why the algorithm choice is not a detail',
-          body: `attacker with one modern GPU, guessing a leaked hash
+          body: `attacker with one RTX 4090, guessing a leaked hash
+(hashcat benchmark figures)
 
-SHA-256 (fast, wrong tool)   ~10,000,000,000 guesses/sec
-bcrypt cost 12               ~     10,000 guesses/sec
-Argon2id (64 MB, t=3)        ~      1,000 guesses/sec
+SHA-256 (fast, wrong tool)   ~22,000,000,000 guesses/sec
+bcrypt cost 12               ~         1,400 guesses/sec
 
-an 8-char password from a common wordlist:
-  SHA-256   cracked in seconds
-  Argon2id  cracked in months
+a list of 1,000,000,000 likely passwords, one user:
+  SHA-256       under 0.1 seconds
+  bcrypt 12     about 8 days
+
+Argon2id is slower still on a GPU: every guess needs
+its own block of memory (19 MiB or more).
 
 same password, same leak, different storage decision.`,
         },
@@ -49,7 +52,8 @@ same password, same leak, different storage decision.`,
         paragraphs: [
           'After a successful login you must remember the user across requests. A server-side session stores state in Redis or a database and gives the browser an opaque id in a cookie. Revocation is instant - delete the row - and the cookie carries no information. The cost is a lookup per request and a dependency on that store.',
           'A stateless token (typically a JWT) puts the claims in the token itself, signed. No lookup and no shared store, which is attractive at scale, but revoking before expiry is not possible without adding a denylist - and once you add one you have reintroduced the lookup for the cases that matter.',
-          'Whichever you use, the cookie settings do most of the security work: HttpOnly so JavaScript cannot read it, Secure so it is never sent over plain HTTP, SameSite=Lax or Strict to blunt CSRF, and a sensible expiry. For sensitive actions, re-authenticate rather than trusting a session issued hours ago.',
+          'Whichever you use, the cookie settings do most of the security work: HttpOnly so JavaScript cannot read it, Secure so it is never sent over plain HTTP, SameSite=Lax or Strict to blunt CSRF, and a sensible expiry - OWASP suggests an idle timeout of 15-30 minutes for low-risk applications. For sensitive actions, re-authenticate rather than trusting a session issued hours ago.',
+          'When a request arrives with no credential, or one that is expired, unknown or revoked, the answer is 401 Unauthorized, with a WWW-Authenticate header saying how to authenticate. It means "we do not know who you are - prove it and try again". That is a different answer from 403 Forbidden, which means "we know who you are, and you may not", and mixing them up sends clients to a login screen that cannot help, or keeps them away from one that would.',
         ],
       },
     ],
@@ -59,13 +63,13 @@ same password, same leak, different storage decision.`,
         setup:
           'An attacker has 5 million email and password pairs from an unrelated breach and tries them against your login endpoint.',
         walkthrough: [
-          'Without defences: a few percent of users reuse passwords, so thousands of accounts are taken over within hours, and the logins look completely legitimate.',
-          'Defence 1 - rate limiting per IP: attackers distribute across thousands of IPs, so this helps but is not sufficient on its own.',
-          'Defence 2 - rate limiting per account: after 5 failures for one email, add increasing delays. This caps the attack on any single account regardless of source IP.',
-          'Defence 3 - breached-password checks at registration and at login: if the password appears in a known breach corpus, force a change. This removes most of the reused credentials the attack depends on.',
-          'Defence 4 - MFA: even a correct password is no longer sufficient. This is the control that actually ends the attack class.',
-          'Defence 5 - anomaly detection: a login from a new device, country or user agent triggers a verification email rather than a silent success.',
-          'Defence 6 - identical error messages and timing for "no such user" and "wrong password", so the endpoint cannot be used to enumerate which emails exist.',
+          'Without defences: if only 0.2% of the 5,000,000 pairs match a user here, that is 10,000 accounts taken over, and every one of those logins looks completely legitimate.',
+          'Defence 1 - rate limiting per IP at 10 attempts a minute: spread over 10,000 IPs the attacker still makes 100,000 attempts a minute. It slows the attack; it does not stop it.',
+          'Defence 2 - rate limiting per account: after 5 failures on one email, add increasing delays. That stops guessing many passwords for one account, but stuffing tries each email only once or twice, so it barely touches this attack.',
+          'Defence 3 - breached-password checks at registration and at login (NIST SP 800-63B requires a blocklist check): a password found in a known breach corpus must be changed. Most of the 10,000 reused passwords are exactly those, so the fuel runs out.',
+          'Defence 4 - MFA: the 10,000 correct passwords now each need a second factor the attacker does not have - zero takeovers from a password alone. This is the control that ends the attack class.',
+          'Defence 5 - anomaly detection: a login from a new device and a new country triggers a verification email. For the attacker that is nearly 100% of logins; for a real user it is a rare trip abroad.',
+          'Defence 6 - one error message and similar timing for "no such user" and "wrong password", so the 5,000,000 emails cannot be sorted into accounts that exist and accounts that do not.',
         ],
         result:
           'Rate limiting slows the attack, breach checking removes its fuel, and MFA removes its value. Layered controls matter because each one alone is bypassable.',
@@ -84,7 +88,7 @@ same password, same leak, different storage decision.`,
       'Hash with Argon2id or bcrypt, salted, tuned to hundreds of milliseconds.',
       'MFA is the single highest-impact control; passkeys are the strongest common form.',
       'HttpOnly, Secure and SameSite carry most of the session security.',
-      'Account recovery is an authentication path - secure it as carefully as login.',
+      '401 means "prove who you are"; 403 means "known, and not allowed".',
     ],
   },
 
@@ -127,6 +131,7 @@ start with RBAC; move to ReBAC when sharing and hierarchy appear.`,
           'Enforce on the server. Hiding a button is a UI nicety, not a control.',
           'Re-check on every request; a permission may have been revoked since login.',
           'Test authorisation explicitly: for each endpoint, assert that another user gets 403 or 404.',
+          'Answer 403 to a known caller who lacks permission, never 401 - a 401 asks for a login that cannot help.',
         ],
       },
       {
@@ -149,7 +154,7 @@ start with RBAC; move to ReBAC when sharing and hierarchy appear.`,
           'Weak fix: load the invoice, compare invoice.account_id with the caller, return 403 otherwise. Correct, but it relies on every future handler remembering.',
           'Better fix: query scoped to the caller - SELECT ... WHERE id = ? AND account_id = ?. A wrong id simply returns nothing, and the handler returns 404.',
           'Structural fix: a repository layer that requires an account scope for every query, so an unscoped query does not compile or fails a lint rule.',
-          'Return 404 rather than 403 for objects the caller may not see - a 403 confirms the object exists, which itself leaks information.',
+          'Return 404 rather than 403 for objects the caller may not see - a 403 confirms the object exists, which itself leaks information. RFC 9110 explicitly allows a server to answer 404 to hide a forbidden resource.',
           'Regression test: for each resource endpoint, a test asserts that user B receives 404 for user A object. This is cheap and catches the class permanently.',
         ],
         result:
@@ -189,9 +194,9 @@ start with RBAC; move to ReBAC when sharing and hierarchy appear.`,
         ],
         code: {
           caption: 'What a token contains, and what to verify',
-          body: `header   {"alg":"RS256","kid":"2026-09"}
+          body: `header   {"alg":"RS256","kid":"2023-09"}
 payload  {"sub":"user_42","iss":"https://auth.example.com",
-          "aud":"api.example.com","exp":1695034800,
+          "aud":"api.example.com","exp":1695032100,
           "iat":1695031200,"scope":"read:orders"}
 signature RS256(base64(header) + "." + base64(payload), private_key)
 
@@ -253,8 +258,8 @@ verify: signature with the key for kid
     remember: [
       'The payload is readable by anyone - signed, not encrypted.',
       'Validate signature, expiry, issuer and audience, and pin the algorithm.',
-      'A JWT cannot be revoked; short lifetimes plus refresh tokens bound the damage.',
-      'HttpOnly cookies beat localStorage for browsers; never put a token in a URL.',
+      'A JWT cannot be revoked without extra state; short lifetimes plus refresh tokens bound the damage.',
+      'An HttpOnly cookie hides the token from XSS but needs CSRF defence; never put a token in a URL.',
       'Rotating refresh tokens with reuse detection is what catches a stolen one.',
     ],
   },
@@ -292,7 +297,8 @@ left the app. Required for mobile and SPAs, recommended everywhere.`,
         paragraphs: [
           'Authorization code with PKCE is the answer for web applications, single-page applications and mobile apps. Client credentials is the answer for machine-to-machine access, where there is no user at all. Device code is for input-constrained devices such as TVs, where the user authorises on a phone instead.',
           'The implicit flow returned tokens directly in the URL fragment and is deprecated - tokens leaked through browser history, referrers and logs. The resource owner password credentials grant, where the app collects the users password and exchanges it, defeats the entire purpose and is also deprecated. If a tutorial shows either, it predates current guidance.',
-          'Two parameters do essential work in the code flow. state is a random value you send and verify on return, protecting against CSRF on the callback. PKCE protects against an intercepted authorisation code being redeemed by an attacker. Both are cheap and both are required by current best practice.',
+          'Two parameters do essential work in the code flow. state is a random value you send and verify on return, protecting against CSRF on the callback - without it, an attacker can make the browser of a victim deliver a code for the account of the attacker, and the victim ends up signed in to an account the attacker can read. PKCE protects against an intercepted authorisation code being redeemed by an attacker. Note that state never protects the code: it travels in the same redirect, so whoever steals one has both.',
+          'Current best practice (RFC 9700, 2025) requires PKCE for public clients - mobile and single-page apps, which cannot keep a secret - and recommends it for all clients. PKCE also blocks the callback CSRF above, and a client may rely on it instead of state once it knows the server enforces PKCE. Both are cheap, so most clients send both.',
         ],
         bullets: [
           'Web / SPA / mobile: authorization code + PKCE.',
@@ -305,9 +311,10 @@ left the app. Required for mobile and SPAs, recommended everywhere.`,
       {
         heading: 'Scopes, consent and the mistakes that leak accounts',
         paragraphs: [
-          'Scopes are the granularity of delegation, and they should be narrow: read:contacts rather than full account access. Users grant what they are asked for, so over-broad scope requests both lower consent rates and increase the damage when a token leaks. Request the minimum, and request more only when the feature needs it.',
-          'Redirect URI handling is where real vulnerabilities cluster. The authorisation server must match the registered URI exactly - open redirects and wildcard matching have repeatedly allowed attackers to have codes delivered to their own endpoints. Never allow a user-supplied redirect target.',
-          'And keep the token types straight. The id_token proves identity to the client, the access token authorises API calls at the resource server, and the refresh token obtains new access tokens. Sending an id_token to an API, or treating an access token as proof of who is logged in, are the two mix-ups that cause authentication bypasses.',
+          'Scopes are the granularity of delegation, and they should be narrow: read:contacts rather than full account access. Users grant what they are asked for, so over-broad scope requests both lower consent rates and increase the damage when a token leaks. Request the minimum, and request more only when the feature needs it. The resource server enforces them on every call: a valid token without the needed scope gets 403 with error insufficient_scope (RFC 6750), not 401, because the token itself is fine.',
+          'Redirect URI handling is where real vulnerabilities cluster. The authorisation server must match the registered URI exactly - open redirects and wildcard matching have repeatedly allowed attackers to have codes delivered to their own endpoints. Never allow a user-supplied redirect target. PKCE does not help here: the attacker builds the /authorize link, so the attacker made the code_challenge and holds the matching verifier. Only exact matching stops the code from leaving.',
+          'And keep the token types straight. The id_token proves identity to the client, the access token authorises API calls at the resource server, and the refresh token obtains new access tokens. Sending an id_token to an API, or treating an access token as proof of who is logged in, are the two mix-ups that cause authentication bypasses: an access token is not bound to your app, so one issued to another app for the same user could be replayed to log in as them.',
+          'Revoking access - the user clicks Remove access - kills the refresh token at the authorisation server at once. An access token that the API verifies locally, such as a JWT, keeps working until it expires unless the API asks the server about it (token introspection). That is why access tokens live minutes to an hour and refresh tokens carry the long-lived part of the grant.',
         ],
       },
     ],
@@ -316,16 +323,16 @@ left the app. Required for mobile and SPAs, recommended everywhere.`,
         title: 'Adding "sign in with Google" correctly',
         setup: 'A web app wants Google sign-in plus read-only access to the users calendar.',
         walkthrough: [
-          'Register the app, set the exact redirect URI, and request scopes openid, email, profile and calendar.readonly - nothing more.',
-          'On sign-in, generate state and a PKCE verifier, store both in the server session, and redirect the browser to Google.',
-          'Google authenticates the user, shows a consent screen listing exactly those scopes, and redirects back with a code.',
-          'The server verifies state matches, exchanges the code plus verifier for tokens, and validates the id_token: signature against Google JWKS, iss, aud equal to the client id, exp, and the nonce.',
-          'Identity comes from the id_token sub claim - stable per user - not from the email, which can change. A local user record is linked by that sub.',
-          'The access token is stored server-side and used only for calendar calls. It is never sent to the browser.',
-          'The refresh token is stored encrypted, allowing background calendar sync. Revocation is handled by deleting it and calling the Google revoke endpoint when the user disconnects.',
+          'Register the app with 1 exact redirect URI, https://app.example/cb, and request 4 scopes: openid, email, profile and calendar.readonly - nothing more.',
+          'On sign-in, generate state, a nonce and a 43-character code_verifier (RFC 7636 allows 43 to 128), store all 3 in the server session, and redirect the browser to Google with the SHA-256 code_challenge.',
+          'Google authenticates the user, shows a consent screen listing exactly those 4 scopes, and redirects back with a single-use code - RFC 6749 recommends a code lifetime of 10 minutes at most.',
+          'The server checks that state matches, then makes 1 direct call to the token endpoint with the code plus verifier. The response carries an access token with expires_in of about 3600 seconds (1 hour), a refresh token and an id_token.',
+          'It validates the id_token in 5 checks: signature against the Google JWKS, iss, aud equal to the client id, exp, and the nonce from step 2. Identity comes from the sub claim - stable per user - not from the email, which can change.',
+          'The access token stays server-side and is used only for calendar calls. After about 60 minutes it expires and the refresh token gets a new one, so background sync needs 0 further consent screens.',
+          'When the user disconnects, the app calls the Google revoke endpoint and deletes the stored refresh token: from then on 0 new access tokens can be minted, and the last one runs out within the hour.',
         ],
         result:
-          'The app never sees a password, the user can revoke access from their Google account at any time, and the scope is limited to reading a calendar. That combination is the entire point of OAuth.',
+          'The app never saw a password, held 1 read-only calendar scope, and lost access within at most 1 hour of the user saying no. That combination - no password, narrow scope, revocable - is the entire point of OAuth.',
       },
     ],
     jargon: [
@@ -340,32 +347,32 @@ left the app. Required for mobile and SPAs, recommended everywhere.`,
       'OAuth delegates access; OIDC adds identity. Do not use an access token as proof of login.',
       'Authorization code with PKCE is the flow; implicit and password grants are deprecated.',
       'state protects the callback, PKCE protects the code. Use both.',
-      'Exact redirect URI matching - wildcards and open redirects leak accounts.',
+      'Exact redirect URI matching - wildcards and prefix checks leak codes, and PKCE does not stop that.',
       'Request the narrowest scopes that make the feature work.',
     ],
   },
 
   'rate-limiting': {
     analogy: {
-      title: 'A doorman with a counter',
+      title: 'A doorman with a pouch of wristbands',
       body:
-        'The club holds 300 people. The doorman counts, and when it is full, the next person waits rather than being let in to make the place unusable for everyone inside. It is not hostility - it is the only way the people already inside have a good evening. A system without a doorman does not serve everyone; it fails everyone at once.',
+        'Every guest needs a wristband to get in. The doorman holds at most 10, and is handed one new wristband every 6 seconds. A group of 10 arriving together walks straight in if the pouch is full; the 11th is told "come back in 6 seconds". Over an hour no more than 610 get in, however they arrive. That is a token bucket: the pouch is the burst, the steady supply is the rate, and "come back in 6 seconds" is a 429 with Retry-After.',
     },
     deepDive: [
       {
         heading: 'Four algorithms, and what each gets wrong',
         paragraphs: [
-          'Fixed window counts requests per calendar minute. It is trivial to implement with one counter and one expiry, and it allows a burst of double the limit at a window boundary: 100 requests at 10:00:59 and 100 more at 10:01:00 both pass.',
-          'Sliding window log stores a timestamp per request and counts those within the last 60 seconds. Perfectly accurate, and the memory cost grows with the request rate - potentially large for high-volume clients. Sliding window counter approximates it by weighting the previous window, which is accurate enough for almost everything at a fraction of the cost.',
-          'Token bucket is the one most systems end up using. Tokens refill at a steady rate up to a maximum; each request consumes one. It enforces an average rate while permitting a burst up to the bucket size, which matches how real clients behave. Leaky bucket is its sibling, smoothing output to a constant rate instead of allowing bursts.',
+          'Fixed window counts requests per calendar minute. It is trivial to implement with one counter and one expiry, and it allows a burst of double the limit at a window boundary. With a limit of 100 per minute, for example, 100 requests at 10:00:59.9 and 100 more at 10:01:00.1 all pass: each batch lands in its own window with a fresh counter, so 200 get through within 0.2 seconds.',
+          'Sliding window log stores a timestamp per request and counts those within the last 60 seconds. Perfectly accurate, and the memory cost grows with the request rate - potentially large for high-volume clients. Sliding window counter approximates it with two counters: 15 seconds into the current minute, it counts the previous minute at 75% plus the current one. It assumes the previous minute was evenly spread; Cloudflare measured only 0.003% of requests wrongly allowed or limited with it.',
+          'Token bucket is the one many systems end up using - Stripe and Amazon API Gateway both describe theirs as token buckets. Tokens refill at a steady rate up to a maximum; each request consumes one. It enforces an average rate while permitting a burst up to the bucket size, which matches how real clients behave. Leaky bucket is its sibling: requests queue and drain at a constant rate, so bursts wait instead of passing.',
         ],
         code: {
           caption: 'Token bucket, which covers most needs',
           body: `capacity 100 tokens, refill 10 tokens/sec
 
 t=0    bucket 100   burst of 100 requests -> all pass, bucket 0
-t=1    bucket 10    10 requests pass, 11th is rejected
-t=10   bucket 100   full again if idle
+t=1    bucket 10    10 requests pass, 11th is rejected, bucket 0
+t=11   bucket 100   full again after 10 idle seconds
 
 allows a legitimate burst, enforces 10/sec sustained.
 Redis: one hash per key (tokens, last_refill) updated in a Lua script
@@ -377,7 +384,7 @@ so the check-and-decrement is atomic across all app instances.`,
         paragraphs: [
           'The key determines fairness. Per API key or user id is the most meaningful for authenticated traffic. Per IP is the fallback for anonymous traffic, but it punishes users behind a shared NAT and is trivially evaded with a proxy pool. Many systems layer several: a global limit, a per-user limit, and a tighter limit on expensive endpoints.',
           'Different endpoints deserve different limits. A login endpoint should be far stricter than a product listing, because the threat is credential stuffing rather than load. Expensive operations - search, export, report generation - should be counted more heavily, sometimes literally by assigning them a cost in tokens.',
-          'When you reject, return 429 with a Retry-After header, and expose the limit in headers (RateLimit-Limit, RateLimit-Remaining, RateLimit-Reset) so well-behaved clients can pace themselves. Silent throttling produces clients that retry harder, which is the opposite of the goal.',
+          'When you reject, return 429 Too Many Requests (RFC 6585) with a Retry-After header, and expose the allowance in headers so well-behaved clients can pace themselves. GitHub sends x-ratelimit-limit, x-ratelimit-remaining and x-ratelimit-reset; an IETF draft is standardising RateLimit and RateLimit-Policy fields. Silent throttling produces clients that retry harder, which is the opposite of the goal.',
         ],
         bullets: [
           'Per user or API key for authenticated traffic; per IP only as a fallback.',
@@ -405,7 +412,7 @@ so the check-and-decrement is atomic across all app instances.`,
           'Problem 1 - credential stuffing: an attacker distributes across 5,000 IPs and stays under the limit on every one. Fix: a per-account limit on login attempts, 5 per 15 minutes, regardless of source IP.',
           'Problem 2 - corporate users: an entire office behind one NAT address shares the 1,000 and gets throttled during normal work. Fix: authenticate first, then limit per user rather than per IP.',
           'Problem 3 - an expensive export endpoint: 1,000 exports per minute would destroy the database, although it is within the limit. Fix: per-endpoint costs, with export counted as 50 tokens.',
-          'Problem 4 - a legitimate client synchronising at startup sends 200 requests in two seconds and is blocked, although its hourly average is tiny. Fix: token bucket with a burst capacity of 300 and a refill of 16 per second.',
+          'Problem 4 - a legitimate client synchronising at startup sends 1,500 requests in 30 seconds, gets 500 of them rejected, and fails its sync, although its hourly average is tiny. Fix: a token bucket with a capacity of 2,000 and a refill of about 16 per second (1,000 per minute sustained): the full bucket covers all 1,500.',
           'Implementation: a Lua script in Redis updates the bucket atomically, keyed by user id plus endpoint class.',
           'Failure policy: if Redis is unavailable, general endpoints fail open (serve the request) while login fails closed (reject), because the consequences differ.',
         ],
@@ -456,7 +463,7 @@ so the check-and-decrement is atomic across all app instances.`,
         paragraphs: [
           'Generate from a cryptographically secure random source with at least 128 bits of entropy, and give the key a visible prefix identifying its type and environment - sk_live_, pk_test_. Prefixes make accidental leaks detectable by secret scanners and stop people pasting a production key into a staging config.',
           'Store only a hash, exactly as you would a password. A database dump should not hand an attacker working credentials. Because keys are high-entropy random strings rather than guessable passwords, a fast hash such as SHA-256 is acceptable here - the brute-force argument that requires bcrypt for passwords does not apply.',
-          'Show the full key exactly once, at creation. Afterwards display only the prefix and last four characters, enough to identify which key is which in a list. If a user loses it, they rotate rather than retrieve - which is the same model every major API provider uses, because it is the only one that survives a database compromise.',
+          'Show the full key exactly once, at creation. Afterwards display only the prefix and last four characters, enough to identify which key is which in a list. If a user loses it, they rotate rather than retrieve - the model Stripe uses for the secret keys you create, because it is the only one that survives a database compromise.',
         ],
         code: {
           caption: 'The lifecycle worth implementing',
@@ -477,7 +484,7 @@ audit    alert on keys unused for 90 days and on first use from a new IP`,
         heading: 'Leaks are the normal failure, so plan for them',
         paragraphs: [
           'Keys end up in git repositories, CI logs, error reports, screenshots and support tickets. Assume it will happen and build for fast detection and fast rotation: secret scanning on your repositories, alerting on use from an unexpected IP or country, and a rotation procedure that does not require downtime.',
-          'Supporting two active keys per integration is what makes rotation painless - create the new one, deploy it, verify traffic has moved, then revoke the old one. Without that, rotation means a coordinated outage, which is why so many teams never rotate at all.',
+          'Supporting two active keys per integration is what makes rotation painless - create the new one, deploy it, verify traffic has moved, then revoke the old one. Stripe, for example, keeps a rotated key working for up to 7 days for exactly this. Without an overlap, revoking a leaked key cuts off the legitimate client in the same moment as the attacker, which is why so many teams never rotate at all.',
           'Add expiry dates even when it feels inconvenient. A key that expires in a year is a key that cannot still be valid in a repository five years later. And log usage per key so that when a leak is suspected, you can see exactly what that key did.',
         ],
       },
@@ -489,11 +496,11 @@ audit    alert on keys unused for 90 days and on first use from a new IP`,
           'A mobile app calls a third-party maps API directly using a key compiled into the binary. Within weeks the monthly bill triples.',
         walkthrough: [
           'Anyone can extract the key from the app package in minutes; there is no way to hide a string that the app itself must send.',
-          'The key was scraped and reused by other applications, all billed to your account.',
-          'Mitigation 1 (partial): restrict the key at the provider to your app bundle id and signing certificate. This helps, and is bypassable by a determined attacker.',
-          'Mitigation 2 (partial): restrict by referrer or platform, and set a hard spending cap so the blast radius is bounded.',
+          'The key was scraped and reused by other applications: monthly calls went from 2 million to 6 million, all billed to your account.',
+          'Mitigation 1 (partial): restrict the key at the provider to your app bundle id and signing certificate. This helps, and is bypassable by a determined attacker who replays those 2 identifiers.',
+          'Mitigation 2 (partial): set a hard quota - say 100,000 calls a day - so the worst month is bounded at about 3 million calls instead of open-ended.',
           'Proper fix: the app calls your backend, and your backend calls the maps API with a key that never leaves your servers. You authenticate your own users, apply your own rate limits, and can cache responses.',
-          'Added benefit: you can now switch providers, cache aggressively and see per-user usage - none of which was possible when the app called the third party directly.',
+          'Added benefit: if 40% of lookups repeat, a cache in your backend cuts the 2 million billed calls to about 1.2 million, and you can switch providers and see per-user usage.',
         ],
         result:
           'A secret that ships to a client is not a secret. Proxying through your own backend is the only structural fix, and it usually brings caching and observability benefits that justify it on their own.',
@@ -527,7 +534,7 @@ audit    alert on keys unused for 90 days and on first use from a new IP`,
         heading: 'The handshake, and why 1.3 matters',
         paragraphs: [
           'A TLS handshake agrees on a cipher suite, verifies the server certificate, and establishes a shared symmetric key. TLS 1.2 needed two round trips; TLS 1.3 removed legacy options and cut it to one, with session resumption able to send data on the first flight (0-RTT). On a 60 ms link that is 60 ms saved on every new connection.',
-          'The asymmetric cryptography is used only to establish the key; the actual data is protected with fast symmetric encryption. That is why TLS is not slow at scale - the expensive part happens once per connection, which is another reason connection reuse matters so much.',
+          'The asymmetric cryptography is used only to establish the key and to prove the server identity; the actual data is protected with fast symmetric encryption. That is why TLS is not slow at scale - the expensive part happens once per connection, which is another reason connection reuse matters so much.',
           'TLS 1.3 also made forward secrecy mandatory: the session key is ephemeral, so recording traffic today and stealing the server private key later does not decrypt it. Disabling old versions (1.0 and 1.1) and weak cipher suites is routine hardening, and modern defaults from your web server or cloud load balancer are usually correct out of the box.',
         ],
         code: {
@@ -539,7 +546,7 @@ audit    alert on keys unused for 90 days and on first use from a new IP`,
       signs -> your certificate (example.com, valid 90 days)
 
 verification: name matches, not expired, chain reaches a trusted root,
-              not revoked (OCSP stapling), signature valid
+              not revoked (CRL or OCSP), signature valid
 
 serving an incomplete chain is the classic misconfiguration:
 it works in browsers that cache the intermediate, and fails in curl
@@ -609,33 +616,33 @@ and in mobile apps. Always test with an external checker.`,
     analogy: {
       title: 'A key safe with a log, not a note on the desk',
       body:
-        'Keys live in a safe that records who took what and when, and the codes are changed periodically. Nobody writes the master code on a sticky note or emails it to a colleague. Secrets management is that discipline: not merely hiding values, but controlling access, recording it, and being able to change everything quickly.',
+        'Keys live in a safe that records who took which key and when, and each person gets their own key, so a lost one is replaced without changing every lock in the building. Nobody writes the master code on a sticky note or emails it to a colleague. Secrets management is that discipline: not merely hiding values, but controlling access, recording it, and being able to change any key quickly.',
     },
     deepDive: [
       {
         heading: 'Where secrets should not be',
         paragraphs: [
           'Not in source control - git keeps history forever, so a committed secret is still there after you delete it, and it is in every clone and every fork. Removing it requires rewriting history and rotating the secret anyway, so treat any commit as permanent exposure.',
-          'Not in container images, which are pulled by many systems and often pushed to shared registries. Not in build logs or CI output, which are widely readable. Not in front-end bundles, ever. And not in plain environment variables on shared hosts, where any process and most crash reporters can read them.',
-          'Environment variables deserve a nuance: they are a reasonable delivery mechanism when injected at runtime by an orchestrator or secrets manager, and a bad storage mechanism when written into a .env file that gets committed or copied. The difference is where the value lives at rest.',
+          'Not in container images, which are pulled by many systems and often pushed to shared registries: a value set with ENV in a Dockerfile is readable by anyone who can pull the image. Not in build logs or CI output, which are widely readable. Not in front-end bundles, ever - a build variable is compiled into the JavaScript every browser downloads.',
+          'Environment variables deserve a nuance: they are a common delivery mechanism when injected at runtime by an orchestrator or secrets manager, and a bad storage mechanism when written into a .env file that gets committed or copied. Even as delivery they leak more than a mounted file or a direct fetch, because other processes, logs and crash dumps can pick them up. The difference that matters most is where the value lives at rest.',
         ],
         code: {
           caption: 'The progression most teams walk',
-          body: `0  secrets in code                 exposed forever, in every clone
-1  .env file, gitignored          better; still on disk, still copied
-2  env vars injected by the platform   no file, but static and shared
-3  secrets manager, fetched at start   central, access-controlled, audited
-4  short-lived dynamic credentials     the database password lives 1 hour
+          body: `0  secrets in code                    in every clone and image, forever
+1  .env file, gitignored              out of git; still on disk, still copied
+2  env vars injected by the platform  no file, but static and shared
+3  secrets manager, fetched at start  central, access-controlled, audited
+4  dynamic short-lived credentials    a database user that lives 1 hour
 
-each step reduces both the blast radius and the cost of rotation.`,
+each step shrinks both the blast radius and the cost of rotation.`,
         },
       },
       {
         heading: 'What a secrets manager actually buys',
         paragraphs: [
           'Central storage encrypted at rest is the least of it. The valuable parts are access control per identity (this service may read this secret and no other), an audit log of every access, versioning so a rotation can be rolled back, and an API that makes automated rotation possible.',
-          'Dynamic secrets go further: the manager creates a database user on demand with a one-hour lease and deletes it afterwards. There is then no long-lived credential to leak, and a compromised process yields a credential that expires by itself. This is the strongest available answer for database access.',
-          'Workload identity removes the bootstrapping problem - how does the service authenticate to the secrets manager without a secret? The platform vouches for the workload (a Kubernetes service account, an instance role), so no credential is provisioned by hand at all. Where available, this is the clean solution to the oldest problem in the field.',
+          'Dynamic secrets go further: the manager creates a database user on demand with a lease, for example one hour, and drops it when the lease ends. There is then no long-lived credential to leak, a compromised process yields a credential that expires by itself, and because every service has its own user, the database log names the service behind every login. The cost is that the manager is now on the critical path: if it is down when a lease ends, the service cannot log in.',
+          'Workload identity removes the bootstrapping problem - how does the service authenticate to the secrets manager without a secret? The platform vouches for the workload (a Kubernetes service account, a cloud instance role), so no credential is provisioned by hand at all.',
         ],
         bullets: [
           'Per-identity access control, so a compromised service cannot read everything.',
@@ -649,7 +656,7 @@ each step reduces both the blast radius and the cost of rotation.`,
         heading: 'Rotation is the capability that matters',
         paragraphs: [
           'The question to ask of any secret is: if this leaked right now, how long would it take us to replace it? If the answer is "we are not sure" or "it would require downtime", that is the problem to fix, ahead of most other security work.',
-          'Rotation is only painless if the system supports two valid secrets at once. Then the sequence is: create the new one, deploy it, verify traffic has moved, revoke the old one. Without overlap, rotation is a coordinated outage, which is precisely why it never happens.',
+          'Rotation is painless when two valid credentials can exist at once - a dual-key window. The sequence is: create the new one, move every holder to it, verify traffic has moved, revoke the old one. AWS Secrets Manager calls this the alternating-users strategy. Without overlap (the single-user strategy) there is a window where the old credential is dead and a holder still uses it; that window is seconds when holders fetch at runtime and retry, and an outage when every holder needs a redeploy. The overlap has a price too: a leaked credential stays valid until the last holder has moved.',
           'Support it with detection: secret scanning in repositories and CI, alerting on use from unexpected sources, and an inventory of what exists and who owns it. An unknown secret cannot be rotated, and most organisations discover during an incident that their inventory was incomplete.',
         ],
       },
@@ -658,35 +665,50 @@ each step reduces both the blast radius and the cost of rotation.`,
       {
         title: 'A key in git history, three years later',
         setup:
-          'A developer commits a cloud access key, notices within minutes, and pushes a commit removing it. Three years later the key is used to mine cryptocurrency.',
+          'A developer commits a cloud access key at 14:02, notices at 14:06 and pushes a commit that deletes it. The repository has 25 clones and 1 public fork. Three years later the key is used to mine cryptocurrency.',
         walkthrough: [
-          'The removal commit deleted the file contents but not the history. The key remained in the repository object store, in every clone, and in a fork somebody had made.',
-          'The key was never rotated, because it had been "removed". It retained full permissions the entire time.',
-          'An automated scanner found it in the public fork and used it. Detection came from the cloud bill, not from monitoring.',
-          'Correct immediate response: rotate the key first, then worry about the history. Removal without rotation is theatre.',
-          'Fix 1: pre-commit and server-side secret scanning, so the commit is blocked rather than discovered later.',
-          'Fix 2: keys issued with narrow scopes and short expiry, so a leaked key cannot do everything and cannot do it forever.',
-          'Fix 3: cloud billing and anomaly alerts, so unusual usage is noticed in hours rather than weeks.',
-          'Fix 4: move to workload identity, so no long-lived key exists to be committed at all.',
+          'The 14:06 commit changed only the newest version of the file. The 14:02 commit still holds the key, and so do all 25 clones and the fork.',
+          'The key was never rotated, because it had been "removed" - so for about 1,100 days it kept every permission it had on day one.',
+          'A scanner found it in the public fork. Detection came 3 weeks later, from a cloud bill many times the usual size.',
+          'Correct response at 14:06: revoke the key (1 minute), issue a new one, and only then clean history - optional once the key is dead.',
+          'Fix 1: push protection or a pre-commit scanner, so the 14:02 push is blocked instead of discovered.',
+          'Fix 2: keys with narrow scopes and a 90-day expiry, so a leaked key cannot do everything, and not for 3 years.',
+          'Fix 3: billing and anomaly alerts, so unusual use is noticed in hours rather than 3 weeks.',
+          'Fix 4: workload identity, so 0 long-lived keys exist to be committed.',
         ],
         result:
           'Deleting a committed secret does not unexpose it - only rotation does. The strategic fix is having fewer long-lived secrets in the first place, which is exactly what workload identity and dynamic credentials provide.',
       },
+      {
+        title: 'Rotating one shared password, with and without a dual-key window',
+        setup:
+          'Three services share one database password written in their code. A rebuild and redeploy takes 10 minutes and they are done one after another. The password leaks at 09:00 and the rotation starts at 09:30.',
+        walkthrough: [
+          'Without a window, 09:30: the new password is set, the old one stops working, and all 3 services fail to log in.',
+          'Service 1 is redeployed at 09:40, service 2 at 09:50, service 3 at 10:00: 10 + 20 + 30 = 60 service-minutes of outage.',
+          'The attacker had the password from 09:00 to 09:30: 30 minutes of access.',
+          'With a window, 09:30: a second password (or a cloned user) is added and the old one keeps working, so 0 minutes of outage.',
+          'The old password is revoked at 10:00, after the third redeploy: the attacker had 60 minutes of access instead of 30.',
+          'With a vault and 1 credential per service: only the Orders credential is rotated, Orders fetches the new one within seconds, and the other 2 services are not touched.',
+        ],
+        result:
+          'A dual-key window turns 60 service-minutes of outage into 0, at the cost of the old credential living until the last holder has moved. Per-service credentials delivered at runtime shrink both numbers, because only one holder has to move and moving takes seconds.',
+      },
     ],
     jargon: [
-      { term: 'Secret', plain: 'Any value that grants access: passwords, API keys, tokens, private keys, certificates.' },
-      { term: 'Secrets manager', plain: 'A service storing secrets with access control, auditing and rotation support.' },
+      { term: 'Secrets manager', plain: 'A service storing secrets with access control, auditing and rotation support. Vault is one.' },
       { term: 'Dynamic secret', plain: 'A credential created on demand with a short lease and then deleted.' },
+      { term: 'Lease', plain: 'How long a dynamic credential is valid. When it ends, the manager revokes the credential.' },
       { term: 'Workload identity', plain: 'The platform vouching for a service so it needs no bootstrap credential.' },
-      { term: 'Rotation', plain: 'Replacing a secret. Painless only if two are valid at once.' },
+      { term: 'Dual-key window', plain: 'The time during a rotation when the old and the new credential both work.' },
       { term: 'Envelope encryption', plain: 'Encrypting data with a key that is itself encrypted by a managed master key.' },
     ],
     remember: [
       'A committed secret is exposed permanently - rotate first, clean history second.',
-      'Environment variables are an acceptable delivery mechanism, not a storage mechanism.',
+      'Environment variables can deliver a secret; they are a poor place to store one.',
       'The value of a secrets manager is access control, auditing and rotation, not just encryption.',
-      'Design for two valid secrets at once, or rotation will never happen.',
-      'Short-lived dynamic credentials beat protecting long-lived ones.',
+      'Design for two valid credentials at once, or rotation becomes an outage that never happens.',
+      'One credential per service, short-lived where possible: a leak then speaks for one service, briefly.',
     ],
   },
 
@@ -724,12 +746,13 @@ Parameterised queries make injection structurally impossible.`,
         heading: 'False positives are the real operational cost',
         paragraphs: [
           'Generic rules match legitimate traffic surprisingly often. A user writing about SQL in a support ticket, a document containing script tags, a form field with an apostrophe, a base64 payload that happens to match a signature - all can be blocked, and the user sees an unexplained 403 with no way to proceed.',
+          'Strictness is a dial, not a switch. The OWASP Core Rule Set adds points to an anomaly score for every rule a request matches - a critical match is 5 - and blocks at a score of 5 by default. Its paranoia level, 1 to 4, decides how many rules are switched on: level 1 aims for almost no false positives, and each level above it catches more disguised attacks and blocks more real users, until level 4 can take weeks of tuning.',
           'So the deployment sequence matters: run in detection-only mode first, review what would have been blocked against real traffic for a week or two, tune or exclude the noisy rules, and only then start blocking. Turning on a full managed rule set in blocking mode on day one reliably breaks something important.',
           'Keep tuning afterwards, and make blocked requests easy to investigate. A log with the rule id, the matched content and the request id turns "some customers cannot submit the form" into a five-minute diagnosis rather than a day of guessing.',
         ],
         bullets: [
           'Start in detection mode; tune against real traffic before blocking.',
-          'Exclude specific rules per path rather than disabling whole rule sets.',
+          'Exclude one rule for one path and field rather than disabling whole rule sets - that field is then uninspected by it.',
           'Log rule id and request id, and make them visible to support.',
           'Re-tune after any significant change to your request shapes.',
         ],
@@ -737,7 +760,7 @@ Parameterised queries make injection structurally impossible.`,
       {
         heading: 'Where it genuinely helps, and where it gives false comfort',
         paragraphs: [
-          'It helps most against automated, untargeted traffic: scanners, commodity exploit kits, credential stuffing, scraping and volumetric attacks. That is the overwhelming majority of hostile traffic any public service receives, so the reduction in noise is real.',
+          'It helps most against automated, untargeted traffic: scanners, commodity exploit kits, credential stuffing, scraping and floods of HTTP requests (with rate-based rules and bot detection). A flood of packets that fills the network link never becomes a request, so it needs network-layer DDoS protection instead. That is the overwhelming majority of hostile traffic any public service receives, so the reduction in noise is real.',
           'It helps least against logic flaws, which are the vulnerabilities that actually matter in modern applications. Broken object-level authorisation - changing an id to read another account data - is a perfectly formed, legitimate-looking request. No pattern matcher can tell it from a valid one, because the problem is in your authorisation logic.',
           'So treat it as one layer. Parameterised queries prevent SQL injection; output encoding and a content security policy prevent XSS; scoped queries prevent IDOR; dependency updates prevent known CVEs. The WAF buys time and filters noise on top of those, and a team that believes it is the defence has usually stopped doing the work that matters.',
         ],
@@ -766,11 +789,11 @@ Parameterised queries make injection structurally impossible.`,
       { term: 'Detection / blocking mode', plain: 'Logging what would be blocked, versus actually blocking it.' },
       { term: 'False positive', plain: 'Legitimate traffic blocked by a rule. The main operational cost.' },
       { term: 'Virtual patch', plain: 'A rule that blocks an exploit while the real fix is developed.' },
-      { term: 'OWASP Top 10', plain: 'The reference list of common web vulnerability categories.' },
+      { term: 'Paranoia level', plain: 'How strict a rule set is, 1 to 4. Higher catches more attacks and blocks more real users.' },
     ],
     remember: [
       'A WAF filters known patterns and buys time - it is not a fix for a vulnerability.',
-      'Start in detection mode and tune, or you will block real customers.',
+      'Start in detection mode and tune, or you will block real customers - a stricter level catches more attacks and more real users.',
       'It cannot catch logic flaws like broken object-level authorisation.',
       'Its best moment is virtual patching between disclosure and deployment.',
       'Parameterised queries, output encoding and scoped queries are the actual defences.',

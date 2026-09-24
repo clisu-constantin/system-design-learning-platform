@@ -10,8 +10,8 @@ import { CATEGORIES } from '../categories';
  *
  * The lesson body is NOT here: the sidebar, search and progress need only this,
  * and it keeps ~60 KB (gzip) of lesson text out of the main bundle. A concept
- * page loads its category with `loadConcept`. The long-form "Full explanation"
- * content is separate again, in ./deep.
+ * page loads its category with `loadConcept`. The long-form Lesson (shown
+ * under the Diagram) is separate again, in ./deep.
  */
 export const CONCEPTS: ConceptSummary[] = SUMMARIES;
 

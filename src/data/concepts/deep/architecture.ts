@@ -240,7 +240,7 @@ must be idempotent, and it can fail too.`,
           'A team splits into 8 services. Six months later, deploys are slower than before the split and incidents have doubled.',
         walkthrough: [
           'Symptom 1: all 8 services read and write the same database. A schema change requires coordinating 8 deploys - worse than the monolith, which needed one.',
-          'Symptom 2: a single user request traverses 6 services synchronously. Availability is now the product of six numbers, and p99 latency is the sum of six tails.',
+          'Symptom 2: a single user request traverses 6 services synchronously. Availability is now the product of six numbers, and every request waits on six latency tails, so its p99 is worse than the p99 of any single hop.',
           'Symptom 3: services must be deployed in a specific order because of shared contracts, so "independent deployment" does not exist.',
           'Symptom 4: nobody can run the system locally, so development requires a shared staging environment and a queue to use it.',
           'Diagnosis: they distributed the code without distributing the data or the coupling - the definition of a distributed monolith.',
@@ -366,20 +366,24 @@ MICROSERVICES
       {
         heading: 'What you actually give up and gain',
         paragraphs: [
-          'Serverless means you deploy a function and the platform handles provisioning, scaling and patching. There are still servers; you simply have no say in them. You pay per invocation and per millisecond of execution, so idle costs nothing - which is transformative for spiky, low-volume or event-driven workloads.',
-          'Scaling is automatic and fast: from zero to thousands of concurrent executions without a scaling policy, a warm pool or a capacity plan. For a workload that is idle most of the day and then processes ten thousand files, this is a genuinely better model than keeping instances running.',
+          'Serverless means you deploy a function and the platform handles provisioning, scaling and patching. There are still servers; you simply have no say in them. You pay per request and per millisecond of execution, so idle costs nothing - which is transformative for spiky, low-volume or event-driven workloads.',
+          'Scaling is automatic and fast: from zero to thousands of concurrent executions without a scaling policy, a warm pool or a capacity plan. On AWS Lambda each instance serves one request at a time, so the number of instances is the number of requests in flight: 100 requests per second that take 0.5 s each keep 50 instances busy. For a workload that is idle most of the day and then processes ten thousand files, this fits far more closely than keeping instances running.',
           'What you give up is control and predictability. Execution time limits, memory limits, no persistent local state, no long-lived connections, and a runtime you cannot tune. Plus vendor coupling: the function itself may be portable, but the triggers, permissions and surrounding services rarely are.',
         ],
         code: {
           caption: 'Where the cost lines cross',
-          body: `1M requests/month, 200 ms each, 512 MB
-  serverless    ~ $5-10
-  small always-on instance ~ $15-25   -> serverless wins
+          body: `AWS Lambda list price, no free tier:
+  $0.20 per 1M requests + $0.0000166667 per GB-second
 
-100M requests/month, 200 ms each
-  serverless    ~ $400-800
-  a few instances + LB ~ $150-300     -> containers win
+1M requests/month, 200 ms each, 512 MB
+  functions   100,000 GB-s        ~ $2
+  one small always-on instance    ~ $15       -> functions cost less
 
+100M requests/month, 200 ms each, 512 MB
+  functions   10,000,000 GB-s     ~ $190
+  2 instances + load balancer     ~ $100-150  -> instances cost less
+
+an API gateway in front adds $1-3.50 per 1M requests to functions.
 steady high load favours always-on;
 spiky, low or unpredictable load favours serverless.`,
         },
@@ -387,7 +391,8 @@ spiky, low or unpredictable load favours serverless.`,
       {
         heading: 'Cold starts, and how much they actually matter',
         paragraphs: [
-          'When no warm instance exists, the platform must provision one: download the code, start the runtime, initialise the application. That is tens of milliseconds for a small Go or Rust function, a few hundred for Node or Python, and potentially seconds for a large JVM or .NET application with heavy initialisation.',
+          'When no idle instance exists, the platform must start one: download the code, start the runtime, initialise the application. That is tens of milliseconds for a small Go or Rust function, a few hundred for Node or Python, and potentially seconds for a large JVM or .NET application with heavy initialisation. On AWS Lambda that start-up time is billed like run time.',
+          'Scale to zero is the other side of the same coin. After a request the instance is kept idle for a while in case another one arrives, and then reclaimed - the platform decides when, usually after minutes, and does not promise a number. A function called every few minutes can therefore pay a cold start on almost every call, while one under steady traffic rarely does: AWS reports cold starts on under 1 percent of invocations in typical production traffic.',
           'It matters for user-facing latency and does not matter for asynchronous processing. A queue consumer that starts 800 ms late is irrelevant; an API endpoint where 5 percent of requests take an extra second is a visible product problem.',
           'Mitigations exist and have costs: provisioned concurrency keeps instances warm and reintroduces a fixed bill, smaller deployment packages and lazy initialisation reduce startup work, and choosing a lighter runtime helps most of all. Putting a function inside a VPC used to add seconds and is now much improved - but checking the current behaviour of your platform is worth it.',
         ],
@@ -414,7 +419,7 @@ spiky, low or unpredictable load favours serverless.`,
           'Users upload images that need three resized versions. Volume is 50,000 per day, arriving in bursts during business hours with near-zero traffic overnight.',
         walkthrough: [
           'Always-on design: you must size for peak. Peak is roughly 20 images per second; processing takes 2 seconds each, so about 40 concurrent workers - and they idle overnight and most of the afternoon.',
-          'Serverless design: upload to object storage triggers a function per image. Concurrency scales from 0 to 40 and back with no policy, no scaling lag and no idle cost.',
+          'Serverless design: upload to object storage triggers a function per image. Concurrency follows the bursts from 0 to about 40 and back, with no scaling policy and no idle cost.',
           'Cost: 50,000 invocations a day at 2 seconds and 1 GB is roughly 3M GB-seconds a month, about $50 - against several always-on instances sized for peak.',
           'Cold starts are irrelevant: nobody is waiting synchronously, and a 500 ms start on a 2-second job is noise.',
           'Guardrails: a concurrency limit so a bulk import cannot spawn 5,000 functions and exhaust downstream capacity, and a dead letter queue for images that fail repeatedly.',
@@ -428,12 +433,12 @@ spiky, low or unpredictable load favours serverless.`,
       { term: 'FaaS', plain: 'Functions as a service: deploy a function, the platform runs it on demand.' },
       { term: 'Cold start', plain: 'The delay when a new execution environment must be created.' },
       { term: 'Provisioned concurrency', plain: 'Paying to keep instances warm, trading the cost benefit for predictable latency.' },
-      { term: 'Concurrency limit', plain: 'A cap on simultaneous executions. Protects downstream systems and your bill.' },
-      { term: 'Vendor lock-in', plain: 'Coupling to a provider event sources, permissions and services.' },
-      { term: 'Event source', plain: 'What triggers the function: a queue, storage, a schedule, an HTTP request.' },
+      { term: 'Concurrency limit', plain: 'A cap on simultaneous executions; above it the platform throttles. Protects downstream systems and your bill.' },
+      { term: 'Scale to zero', plain: 'With no traffic, every instance is reclaimed: nothing runs and nothing is billed, and the next request cold starts.' },
+      { term: 'Vendor lock-in', plain: 'Coupling to the event sources, permissions and services of one provider.' },
     ],
     remember: [
-      'You pay per invocation, so idle is free and steady high load is expensive.',
+      'You pay per request and per busy millisecond, so idle is free and steady high load is expensive.',
       'Cold starts are noise for async work and a real problem for user-facing p99.',
       'No local state and no persistent connections - design around both.',
       'Many concurrent functions can exhaust database connections; use a pooler and a concurrency cap.',
@@ -611,96 +616,6 @@ snapshot at event 3 lets you skip replay for long streams.
       'Every query needs a projection, and every projection needs a rebuild path.',
       'Events are immutable and forever - version them and write upcasters.',
       'Apply it per aggregate where history is valuable, never to a whole system by default.',
-    ],
-  },
-
-  'event-driven-architecture-arch': {
-    analogy: {
-      title: 'A relay race versus a conductor',
-      body:
-        'In a relay, each runner knows only to start when the baton arrives - nobody holds the plan, and if a runner drops out it is unclear who should act. With a conductor, one person holds the score and cues each player, so the piece is visible and correctable, and everything depends on the conductor being there.',
-    },
-    deepDive: [
-      {
-        heading: 'The workflow has to live somewhere',
-        paragraphs: [
-          'Both choreography and orchestration use events. The difference is where the multi-step business process is described. In choreography it is implicit: each service reacts to events and emits its own, and the overall workflow exists only as the sum of those reactions. In orchestration it is explicit: a coordinator holds the sequence and issues commands.',
-          'Choreography gives the loosest coupling. Adding a participant means subscribing, with no change to anything else. The cost is that no artefact describes the process - to answer "what happens when an order is placed", you read six services and hope you found them all.',
-          'Orchestration gives you a process you can read, test, visualise and resume. The cost is a coordinator that knows about every participant, must be highly available, and becomes a place where coupling accumulates if it starts holding business rules that belong in services.',
-        ],
-        code: {
-          caption: 'The same flow, two shapes',
-          body: `CHOREOGRAPHY
-  OrderPlaced -> payment reacts    -> PaymentTaken
-              -> inventory reacts  -> StockReserved
-  shipping listens for BOTH, then ships
-  Q: what happens if payment succeeds and stock fails?
-  A: read shipping, payment and inventory, and infer.
-
-ORCHESTRATION
-  OrderWorkflow:
-    1 reserve stock   (compensate: release)
-    2 charge card     (compensate: refund)
-    3 schedule ship   (compensate: cancel)
-  Q: same question?
-  A: read one file. The compensation is written down.`,
-        },
-      },
-      {
-        heading: 'Choosing between them, per process',
-        paragraphs: [
-          'Use choreography for simple fan-out where participants are genuinely independent: one event, several unrelated reactions, no ordering requirement between them, no compensation needed. Sending a welcome email, updating analytics and warming a cache after a signup is a perfect fit.',
-          'Use orchestration when steps are ordered, when later steps depend on earlier results, when failure requires compensation, or when somebody will ask "where is order 4711 in the process right now". Payment flows, provisioning, onboarding and fulfilment almost always end up orchestrated for these reasons.',
-          'Most real systems use both, and the useful rule is: choreography between bounded contexts, orchestration within a business process. Do not choose once for the whole architecture - choose per process, based on whether the process has a lifecycle somebody needs to see.',
-        ],
-        bullets: [
-          'Fan-out with independent reactions -> choreography.',
-          'Ordered steps with compensation -> orchestration.',
-          'Anyone asking "where is it in the process?" -> orchestration.',
-          'More than about four chained reactions -> orchestration, before it becomes unfollowable.',
-        ],
-      },
-      {
-        heading: 'Keeping either one debuggable',
-        paragraphs: [
-          'Whichever you choose, distributed tracing with a correlation id on every message is not optional. Without it, following one business transaction across services is manual log archaeology, and it is the single most common complaint about event-driven systems.',
-          'For choreography specifically, invest in an event catalogue: what events exist, who publishes them, who subscribes. Generate it from code or configuration if you can, because a hand-maintained document goes stale within a release or two and then actively misleads.',
-          'For orchestration, keep the coordinator thin. It should sequence steps and handle compensation, not contain domain rules - the moment it starts deciding prices or validating business constraints, it becomes the smart pipe that SOA warned about. Durable execution engines such as Temporal exist to hold exactly this kind of state safely, and they persist workflow progress so a crash resumes mid-process.',
-        ],
-      },
-    ],
-    examples: [
-      {
-        title: 'Rewriting an unfollowable checkout flow',
-        setup:
-          'Checkout is choreographed across 7 services. A customer reports an order stuck for 3 days, and nobody can say which step it is on.',
-        walkthrough: [
-          'Investigation requires reading logs in 7 services with no shared identifier. It takes two engineers most of a day to determine that payment succeeded and inventory never received the event.',
-          'Worse, there is no compensation: the card was charged, no stock was reserved, and nothing in the system knows the order is inconsistent.',
-          'Fix 1 (immediate): a correlation id on every message and distributed tracing, so one query shows every step of an order.',
-          'Fix 2 (structural): replace the choreographed core with an orchestrated workflow - reserve stock, charge card, schedule shipment - with explicit compensation for each step.',
-          'The workflow state is persisted, so the current step of any order is a single query, and a stuck workflow is visible on a dashboard rather than discovered by a customer.',
-          'What stays choreographed: the notifications, analytics and recommendation updates that react to OrderConfirmed. They are independent, need no ordering and need no compensation.',
-          'Result: the core process is explicit and recoverable; the peripheral reactions stay loosely coupled.',
-        ],
-        result:
-          'The failure was not events - it was that a process with compensation requirements had no owner. Orchestrate the process that has a lifecycle; choreograph the reactions that do not.',
-      },
-    ],
-    jargon: [
-      { term: 'Choreography', plain: 'Services react to events independently; the workflow is implicit.' },
-      { term: 'Orchestration', plain: 'A coordinator drives the steps; the workflow is explicit.' },
-      { term: 'Saga', plain: 'A multi-step transaction with compensating actions instead of rollback.' },
-      { term: 'Compensation', plain: 'An action that undoes the business effect of a completed step.' },
-      { term: 'Correlation id', plain: 'An identifier carried through every message so one flow can be traced.' },
-      { term: 'Durable execution', plain: 'An engine persisting workflow state so a crash resumes mid-process.' },
-    ],
-    remember: [
-      'Both use events; the question is where the workflow is written down.',
-      'Choreography couples least and hides the process; orchestration shows the process and centralises it.',
-      'Choose per process: fan-out reactions choreographed, ordered flows with compensation orchestrated.',
-      'If someone needs to ask where an order is right now, you need orchestration.',
-      'Correlation ids and tracing are mandatory either way.',
     ],
   },
 };

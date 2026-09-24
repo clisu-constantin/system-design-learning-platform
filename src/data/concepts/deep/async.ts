@@ -35,7 +35,7 @@ QUEUED
         heading: 'Delivery guarantees, and the one you will actually use',
         paragraphs: [
           'At-most-once acknowledges the message before processing: if the worker crashes mid-work, the message is gone. Fast, lossy, acceptable only for disposable data such as sampled metrics. At-least-once acknowledges after processing: a crash means the message is redelivered, so work may happen twice. This is the default in virtually every broker.',
-          'Exactly-once is what everyone wants and what no distributed system truly provides, because the acknowledgement itself can be lost. What you can build is exactly-once effect: at-least-once delivery plus idempotent consumers. Deduplicate by message id, or use natural unique keys so a repeat write is a no-op.',
+          'Exactly-once is what everyone wants, and no broker can promise it for side effects outside the broker - an email sent, a card charged - because the acknowledgement itself can be lost after the work is done. What you can build is an exactly-once effect: at-least-once delivery plus idempotent consumers. Deduplicate by message id, or use natural unique keys so a repeat write is a no-op.',
           'The practical implication is simple and non-negotiable: every consumer must be safe to run twice on the same message. Design that in from the first consumer you write, because it is far harder to retrofit once messages are flowing.',
         ],
         bullets: [
@@ -58,17 +58,17 @@ QUEUED
       {
         title: 'Absorbing a flash sale without dropping orders',
         setup:
-          'Normal load is 200 orders per minute. A sale drives 12,000 orders in the first two minutes. The payment processor accepts at most 100 calls per second.',
+          'Normal load is 200 orders per minute. A sale drives 12,000 orders in the first minute - 200 per second. The payment processor accepts at most 100 calls per second.',
         walkthrough: [
-          'Synchronous design: 100 orders per second arrive against a processor limited to 100 per second, plus the database write and email. Requests time out, customers retry, and the retries make it worse.',
+          'Synchronous design: 200 orders per second arrive against a processor limited to 100 per second, so half of the requests wait behind the other half until they time out. Customers retry, and the retries make it worse.',
           'Queued design: the API validates and saves the order (about 30 ms), enqueues a payment message, and returns "order received" immediately. Users get a response in well under a second throughout.',
-          'The queue grows to about 11,000 messages. Workers drain at 100 per second, so the backlog clears in roughly two minutes and every order is processed exactly once.',
+          'The queue grows by 200 - 100 = 100 messages per second for 60 seconds, to about 6,000 payment messages. Workers keep draining at 100 per second, so after the rush the backlog clears in roughly another minute.',
           'Customers see "payment processing" rather than an error - a product decision that had to be made deliberately, and which turns a hard failure into a visible delay.',
-          'Guardrails: a dead letter queue for cards that fail permanently, alerting on oldest-message age above 5 minutes, and idempotency keys so a redelivered payment message cannot charge twice.',
+          'Guardrails: a dead letter queue for cards that fail permanently, alerting on oldest-message age above 5 minutes, and idempotency keys so a redelivered payment message cannot charge twice - every order is charged once even though delivery is at-least-once.',
           'Scaling: workers auto-scale on backlog per worker, so the drain rate rises to the processor limit and no further - the queue is also acting as a rate limiter.',
         ],
         result:
-          'The same traffic that broke the synchronous design produced a two-minute backlog instead. The queue converted an availability problem into a latency problem, which is almost always the trade you want.',
+          'The same traffic that broke the synchronous design produced a backlog of about 6,000 messages that was gone two minutes after the sale started. The queue converted an availability problem into a latency problem, which is almost always the trade you want.',
       },
     ],
     jargon: [
@@ -100,7 +100,7 @@ QUEUED
         paragraphs: [
           'A topic is split into partitions, and each partition is an ordered, append-only sequence of records on disk. Producers append; consumers read forward, tracking an offset. Nothing is removed when it is read - records are deleted by retention policy (seven days, thirty days, or never), which is why replay is a normal operation rather than a recovery procedure.',
           'Partitions are the unit of parallelism and of ordering. Order is guaranteed within a partition and nowhere else, so the partition key is the crucial design decision: keying by order_id means every event for one order is strictly ordered, while different orders process in parallel.',
-          'Consumer groups divide the partitions among their members. With 12 partitions you can run up to 12 consumers in a group, each owning some partitions exclusively. Add a thirteenth and it sits idle - partition count is the ceiling on consumer parallelism, and it is easier to increase than to decrease.',
+          'Consumer groups divide the partitions among their members. With 12 partitions you can run up to 12 consumers in a group, each owning some partitions exclusively. Add a thirteenth and it sits idle - partition count is the ceiling on consumer parallelism. It can be increased but never decreased, and increasing it moves keys to different partitions, so pick it with headroom.',
         ],
         code: {
           caption: 'Topic, partitions, offsets, groups',
@@ -118,7 +118,7 @@ Independent groups, independent progress, no copying of data.`,
         heading: 'Why teams choose it: throughput and replay',
         paragraphs: [
           'Kafka achieves very high throughput by doing simple things: sequential disk writes (which are surprisingly fast), batching, zero-copy transfer to the network, and no per-message state to track beyond an offset. Hundreds of thousands of messages per second per broker is ordinary rather than exceptional.',
-          'Replay is the feature that changes architectures. Because the log is retained, a new service can be deployed and read a month of history to build its own state, a bug in a consumer can be fixed and the affected range reprocessed, and a rebuilt search index can be repopulated without touching the source database.',
+          'Replay is the feature that changes architectures. Because the log is retained, a new service can be deployed and read the whole retained history (7 days by default) to build its own state, a bug in a consumer can be fixed and the affected range reprocessed, and a rebuilt search index can be repopulated without touching the source database.',
           'This is what makes Kafka the backbone of event-driven systems rather than merely a fast queue. Several consumer groups read the same events for different purposes - billing, analytics, search indexing, notifications - and adding a new consumer requires no change to the producer at all.',
         ],
         bullets: [
@@ -126,12 +126,14 @@ Independent groups, independent progress, no copying of data.`,
           'Multiple consumer groups read the same data independently.',
           'Replay from an offset is routine: fix a bug, reprocess the range.',
           'Compacted topics keep only the latest value per key - a durable snapshot of current state.',
+          'A group slower than retention loses the records deleted before it read them.',
+          'An offset older than retention cannot be replayed: the group lands where auto.offset.reset says - the oldest kept record (earliest) or the log end (latest).',
         ],
       },
       {
         heading: 'The costs and the common mistakes',
         paragraphs: [
-          'Operationally Kafka is a real distributed system: brokers, replication factors, in-sync replica settings, partition rebalancing and (historically) ZooKeeper. Running it yourself is a genuine commitment, which is why most teams use a managed offering - and why a smaller broker is often the right answer when you need a queue rather than a log.',
+          'Operationally Kafka is a real distributed system: brokers, replication factors, in-sync replica settings, partition rebalancing, and ZooKeeper until Kafka 4.0 replaced it with the built-in KRaft mode. Running it yourself is a genuine commitment, which is why most teams use a managed offering - and why a smaller broker is often the right answer when you need a queue rather than a log.',
           'The most common design mistake is too few or too many partitions. Too few caps your consumer parallelism and creates hot partitions; too many adds per-partition overhead, slower rebalances and more open files. Start from your target throughput divided by what one consumer can handle, and add headroom.',
           'The second is a key that concentrates traffic - keying by country when 70 percent of users are in one country, or by a constant. And the third is treating Kafka as a database: it is an ordered log, not a query engine, so "get the current state of order 42" means either consuming into a store or using a compacted topic deliberately.',
         ],
@@ -202,7 +204,7 @@ one publish, three queues receive a copy, producer knows none of them
       {
         heading: 'Reliability: acknowledgements, durability and prefetch',
         paragraphs: [
-          'Three settings decide whether a message can be lost. The queue must be durable so it survives a broker restart, the message must be persistent so it is written to disk, and the consumer must acknowledge manually after the work is done rather than on delivery. Miss any one and a crash loses messages - and the defaults are not all on the safe side.',
+          'Three settings decide whether a message can be lost. The queue must be durable so it survives a broker restart, the message must be persistent so it is written to disk, and the consumer must acknowledge manually after the work is done rather than on delivery. Miss any one and a crash loses messages - and the defaults are not all on the safe side. Durable is about broker restarts; whether a queue outlives its consumer is a separate choice. An exclusive or auto-delete queue disappears when its consumer goes, and nothing routed while it is gone is kept for it.',
           'Publisher confirms close the last gap on the producer side: without them, a publish that the broker never persisted still looks successful to the application. With them, the broker confirms asynchronously and the producer can retry what was not confirmed.',
           'Prefetch (QoS) is the setting people most often get wrong. The default sends as many messages as a consumer will take, so one consumer can grab a thousand messages and leave the others idle - and if it dies, all thousand are redelivered. Set prefetch to a small number, often 1 to 10 for slow tasks, so work is spread and redelivery is bounded.',
         ],
@@ -228,10 +230,10 @@ one publish, three queues receive a copy, producer knows none of them
         setup:
           'A payment consumer fails on transient provider errors. The team wants three retries at 1, 5 and 25 minutes, then a dead letter - without writing a scheduler.',
         walkthrough: [
-          'Main queue payments has a dead letter exchange set to retry-exchange. On a nack, the message is routed there rather than lost.',
-          'Three retry queues (retry.1m, retry.5m, retry.25m) each have a message TTL and their own dead letter exchange pointing back at the main exchange.',
+          'On a failure, the consumer republishes the message to retry-exchange with a retry count header of 1, then acks the original - the message is moved, not lost.',
+          'Three retry queues (retry.1m, retry.5m, retry.25m) each have a message TTL, plus a dead letter exchange and dead letter routing key that point back at the main payments queue.',
           'A failed message lands in retry.1m and simply sits there. After 60 seconds the TTL expires, and RabbitMQ dead-letters it back onto the main queue - which is a delayed retry with no scheduler anywhere.',
-          'A retry count in a header decides which retry queue is used next, so attempts escalate 1 -> 5 -> 25 minutes.',
+          'The retry count picks the routing key - retry.1m for 1, retry.5m for 2, retry.25m for 3 - so attempts escalate 1 -> 5 -> 25 minutes.',
           'After the third failure the message is routed to a genuine dead letter queue, which is monitored and alerted on.',
           'Consumers remain idempotent regardless, because a message can be redelivered even when processing actually succeeded and the ack was lost.',
         ],
@@ -260,7 +262,7 @@ one publish, three queues receive a copy, producer knows none of them
     analogy: {
       title: 'Announcing on the intercom instead of phoning each department',
       body:
-        'You can phone accounting, then shipping, then support - and you must know each number, and wait for each to answer. Or you announce "order 42 has been placed" and every department that cares acts on it. Adding a new department means they start listening; the announcer never learns of their existence.',
+        'You can phone accounting, then shipping, then support - and you must know each number, and wait for each to answer. Or you announce "order 42 has been placed" and every department that cares acts on it. Adding a new department means they start listening; the announcer never learns of their existence. The catch: if the order then gets stuck, nobody holds the plan - unless you also hire a coordinator who does.',
     },
     deepDive: [
       {
@@ -272,7 +274,7 @@ one publish, three queues receive a copy, producer knows none of them
         ],
         code: {
           caption: 'The coupling, before and after',
-          body: `ORCHESTRATED (order service knows everyone)
+          body: `DIRECT CALLS (order service knows everyone)
   order -> POST /payments
         -> POST /inventory
         -> POST /emails
@@ -287,17 +289,18 @@ EVENT-DRIVEN (order service knows nobody)
         },
       },
       {
-        heading: 'What you give up: the straight line',
+        heading: 'What you give up, and where the workflow lives',
         paragraphs: [
-          'In a synchronous call chain you can read the code and see what happens. In an event-driven system, publishing an event tells you nothing about what follows - the consumers are elsewhere, possibly owned by another team, and the full behaviour exists only at runtime. Distributed tracing and a documented event catalogue stop being nice-to-haves.',
-          'Debugging changes shape as well. A failure is not a stack trace; it is a message that did not arrive, or arrived twice, or arrived before another message it depended on. You need correlation ids threaded through every event, and consumer-side logging that says what was received and what was decided.',
-          'And there are no transactions across consumers. Once OrderPlaced is published, payment may succeed while inventory fails. There is no rollback - only compensation, which is what the saga pattern formalises. That is a genuine increase in design work, and it is the main reason not to make everything an event.',
+          'In a synchronous call chain you can read the code and see what happens. In an event-driven system, publishing an event tells you nothing about what follows - the consumers are elsewhere, possibly owned by another team, and the full behaviour exists only at runtime. A failure is not a stack trace; it is a message that did not arrive, or arrived twice, or arrived before another message it depended on. Correlation ids, distributed tracing and an event catalogue stop being nice-to-haves.',
+          'That matters most for a multi-step business process, because the workflow has to live somewhere. In choreography it is implicit: each service reacts to events and emits its own, and the process exists only as the sum of those reactions. Adding a participant is free, but to answer "what happens when an order is placed" you read six services and hope you found them all. In orchestration it is explicit: a coordinator holds the sequence, issues commands, and records progress, so the process can be read, tested and resumed - at the price of a component that knows every participant and must stay up.',
+          'And there are no transactions across consumers. Once OrderPlaced is published, payment may succeed while inventory fails. There is no rollback - only compensation, which is what the saga pattern formalises. Most real systems use both shapes and choose per process: choreography for independent reactions, orchestration for ordered steps that need compensation or that somebody will ask about. Keep the coordinator thin - it sequences steps and compensates, it does not decide prices.',
         ],
         bullets: [
+          'Fan-out with independent reactions -> choreography.',
+          'Ordered steps with compensation, or "where is order 4711 right now?" -> orchestration.',
+          'More than about four chained reactions -> orchestrate before it becomes unfollowable.',
           'Correlation id on every event, propagated by every consumer.',
-          'A schema registry or event catalogue, or the contract exists only in tribal memory.',
-          'Version events additively; consumers must ignore fields they do not know.',
-          'Expect out-of-order and duplicate delivery - design consumers accordingly.',
+          'Version events additively; expect out-of-order and duplicate delivery.',
         ],
       },
       {
@@ -318,28 +321,43 @@ EVENT-DRIVEN (order service knows nobody)
           'Today four consumers subscribe: payments, inventory, notifications, analytics. The order service knows about none of them.',
           'Marketing feature: a new consumer subscribes to OrderPlaced, checks whether this is the first order for the customer, and sends the email. Deployed independently in an afternoon.',
           'Legal feature: another consumer writes every event to an append-only audit store. Again, zero changes to the order service.',
-          'Contrast with the orchestrated version: both features would require modifying, testing and redeploying the order service - the most critical service in the system - for functionality that has nothing to do with orders.',
+          'Contrast with the direct-call version: both features would require modifying, testing and redeploying the order service - the most critical service in the system - for functionality that has nothing to do with orders.',
           'The cost appears during an incident: a customer complains they got no email. The investigation spans the broker, the consumer group lag, and the consumer logs, rather than one stack trace. A correlation id per order makes that tractable.',
           'The other cost: when the order service adds a field to the event, all six consumers must tolerate it. Additive-only changes and a schema registry keep that from becoming a coordination meeting.',
         ],
         result:
           'Two features shipped without touching the critical service, at the price of needing tracing, a schema discipline and idempotent consumers. That is the event-driven bargain, stated honestly.',
       },
+      {
+        title: 'Rewriting an unfollowable checkout flow',
+        setup:
+          'Checkout is choreographed across 7 services. A customer reports an order stuck for 3 days, and nobody can say which step it is on.',
+        walkthrough: [
+          'Investigation requires reading logs in 7 services with no shared identifier. It takes 2 engineers most of a day to find that payment succeeded and inventory never received the event.',
+          'Worse, there is no compensation: the card was charged 89 EUR, 0 items were reserved, and nothing in the system knows the order is inconsistent.',
+          'Fix 1 (immediate): a correlation id on every message and distributed tracing, so 1 query shows every step of an order.',
+          'Fix 2 (structural): replace the choreographed core with an orchestrated workflow of 3 steps - reserve stock, charge card, schedule shipment - each with an explicit compensation.',
+          'The workflow state is persisted, so the current step of any order is a single query, and a stuck workflow is visible on a dashboard rather than discovered by a customer 3 days later.',
+          'What stays choreographed: the 3 reactions to OrderConfirmed - notifications, analytics and recommendation updates. They are independent, need no ordering and need no compensation.',
+        ],
+        result:
+          'The failure was not events - it was that a process with compensation requirements had no owner. Orchestrate the process that has a lifecycle; choreograph the reactions that do not.',
+      },
     ],
     jargon: [
       { term: 'Event vs command', plain: 'A fact that happened versus an instruction to do something.' },
-      { term: 'Producer / consumer', plain: 'The service that publishes an event, and those that react to it.' },
+      { term: 'Choreography / orchestration', plain: 'Services react on their own and the workflow is implicit, versus a coordinator drives the steps and the workflow is explicit.' },
+      { term: 'Compensation', plain: 'An action that undoes the business effect of a completed step, since there is no rollback.' },
       { term: 'Outbox pattern', plain: 'Writing the event to your own database in the same transaction, then relaying it.' },
       { term: 'Correlation id', plain: 'An identifier carried through every event so one flow can be traced.' },
-      { term: 'Schema registry', plain: 'A shared, versioned definition of event shapes so producers and consumers agree.' },
       { term: 'Eventual consistency', plain: 'The state of the system converges after consumers catch up - inherent here.' },
     ],
     remember: [
       'Events are past-tense facts; if it reads like an instruction, it is a command.',
       'Adding consumers costs nothing - that is the entire point.',
-      'You lose the readable call chain, so tracing and an event catalogue become mandatory.',
+      'Choreograph independent reactions; orchestrate ordered steps that need compensation.',
+      'You lose the readable call chain, so correlation ids and tracing become mandatory.',
       'Dual writes are broken; use the outbox pattern.',
-      'No transactions across consumers - compensate with sagas instead of rolling back.',
     ],
   },
 
@@ -347,14 +365,14 @@ EVENT-DRIVEN (order service knows nobody)
     analogy: {
       title: 'A magazine subscription',
       body:
-        'The publisher prints one issue and has no idea who receives it. Subscribers sign up and copies arrive; cancel and they stop. Nobody on either side knows the other, which is exactly why a new subscriber costs the publisher nothing at all.',
+        'The publisher prints one issue and has no idea who receives it. Subscribers sign up and copies arrive; cancel and they stop. Nobody on either side knows the other, which is exactly why a new subscriber costs the publisher nothing at all - and also why the publisher never learns whether anyone read it.',
     },
     deepDive: [
       {
         heading: 'One message, many independent copies',
         paragraphs: [
-          'The defining property is fan-out: a single published message is delivered to every subscriber, each with its own copy and its own progress. Contrast with a work queue, where a message is delivered to exactly one consumer because the point is to divide work rather than to broadcast news.',
-          'The publisher is decoupled in three ways at once: it does not know the identity of subscribers, does not know how many there are, and does not wait for them. Subscribers can appear and disappear without any change on the publishing side.',
+          'The defining property is fan-out: a single published message is delivered to every subscriber, each with its own copy and its own progress. Contrast with a work queue, where a message is delivered to exactly one consumer because the point is to divide work rather than to broadcast news. In RabbitMQ the pub/sub shape is a fanout (or topic) exchange with one queue per subscriber - two different services reading one queue would split the messages between them instead.',
+          'The publisher is decoupled in three ways at once: it does not know the identity of subscribers, does not know how many there are, and does not wait for them. That inverts the dependency direction. In request-response the caller must know every callee, so adding a fourth one changes the caller. In pub/sub the subscriber knows the event and the publisher knows nobody, so a new subscriber is a deployment, not a change request against another team service.',
           'That is also the limitation to be honest about. The publisher gets no feedback, so it cannot know whether anything was processed successfully. If you need a result, pub/sub is the wrong shape - use request-response, or publish an event and subscribe to a resulting event.',
         ],
         code: {
@@ -371,25 +389,26 @@ In Kafka both exist: different consumer GROUPS get their own copy
         },
       },
       {
-        heading: 'Durable or ephemeral - decide before you build on it',
+        heading: 'Delivery guarantees - decide before you build on them',
         paragraphs: [
-          'Redis pub/sub is ephemeral: messages are delivered to whoever is connected right now and are gone forever. A subscriber that was restarting misses everything sent in that window. It is excellent for cache invalidation and live notifications, and completely unsuitable for anything that must not be missed.',
-          'Durable pub/sub - Kafka, Google Pub/Sub, SNS with SQS subscriptions, NATS JetStream - persists messages and tracks per-subscriber progress, so a subscriber that was down catches up when it returns. That durability is what makes pub/sub usable as an integration backbone.',
-          'The mistake to avoid is assuming durability that is not there. Plenty of production incidents come from a team using Redis pub/sub for business events, then discovering during a deploy that a few minutes of events simply never existed. Check the guarantee explicitly for the technology you are using.',
+          'Redis pub/sub is ephemeral: messages are delivered to whoever is connected right now and are gone forever. A subscriber that was restarting misses everything sent in that window. It is excellent for cache invalidation and live notifications, and completely unsuitable for anything that must not be missed. Durable pub/sub - Kafka, Google Pub/Sub, SNS with SQS subscriptions, NATS JetStream - persists messages and tracks per-subscriber progress, so a subscriber that was down catches up when it returns.',
+          'Durable delivery is normally at-least-once, so a subscriber will occasionally receive the same message twice - a redelivery after a crash, a lost acknowledgement, a rebalance. Every handler must be idempotent, and the cheapest way is a deduplication key or a unique constraint on whatever it writes. Ordering is limited too: within a partition or key most brokers preserve it, across a topic they do not, so design handlers to tolerate reordering.',
+          'Independent progress is the other half. Each subscriber tracks its own position, so a slow or failing subscriber falls behind without affecting the others. That isolation is valuable, and it means you must monitor lag per subscriber - a healthy topic says nothing about healthy consumption.',
         ],
         bullets: [
           'Ephemeral (Redis pub/sub) - cache invalidation, presence, live UI hints.',
           'Durable (Kafka, Pub/Sub, SNS+SQS) - business events, integration, anything replayable.',
-          'Per-subscriber progress is what lets a slow consumer lag without affecting others.',
-          'A slow subscriber must not block publishing - check how your broker handles backpressure.',
+          'At-least-once delivery: every handler idempotent, no exceptions.',
+          'Order only within a partition or key - design for reordering across them.',
+          'Monitor lag per subscriber, and check that a slow one cannot block publishing.',
         ],
       },
       {
-        heading: 'Designing topics and messages that age well',
+        heading: 'Designing topics and events that age well',
         paragraphs: [
-          'Topic granularity is a real design decision. One topic per event type gives subscribers exactly what they want and produces many topics to manage. One topic per domain (all order events together) keeps ordering across related events and forces subscribers to filter. A common compromise is one topic per aggregate with the event type as an attribute, so filtering is cheap and ordering is preserved per entity.',
-          'Message content matters too. A thin event ("order 42 changed") forces every subscriber to call back for details, which recreates the coupling you were removing and multiplies load on the publisher. A fat event carrying the relevant state lets subscribers act independently, at the cost of a larger payload and versioning discipline.',
-          'Version additively and never remove a field that somebody might read. Publish a schema, and treat a breaking change as a new topic or a new event version rather than a silent modification - because with pub/sub you genuinely do not know who is listening.',
+          'Topic granularity is a real design decision. One topic per event type gives subscribers exactly what they want and produces many topics to manage. One topic per domain keeps ordering across related events and forces subscribers to filter. A common compromise is one topic per aggregate with the event type as an attribute, so filtering is cheap and ordering is preserved per entity.',
+          'Message content matters too. A thin event ("order 42 changed") forces every subscriber to call back for details, which recreates the coupling you were removing and multiplies load on the publisher. A fat event carrying the relevant state lets subscribers act independently, at the cost of a larger payload and versioning discipline. Name events as past-tense facts - PaymentCaptured - never as commands such as SendWelcomeEmail, which would mean the publisher decides what the subscriber does.',
+          'Version additively and never remove a field that somebody might read, because with pub/sub you genuinely do not know who is listening; a schema registry turns that rule into a check at publish time. And since no single place describes what happens after an event, carry a correlation id on every message and keep an event catalogue generated from code, so one query can still show the whole flow.',
         ],
       },
     ],
@@ -408,21 +427,36 @@ In Kafka both exist: different consumer GROUPS get their own copy
         result:
           'Propagation went from up to 60 seconds to a few milliseconds, using an ephemeral channel backed by a durable TTL. Matching the durability guarantee to the consequence of a lost message is the whole decision.',
       },
+      {
+        title: 'One event, four subscribers, and one that fell behind',
+        setup:
+          'PaymentCaptured is published by the payment service on a durable topic. Four teams subscribe: accounting, email, analytics and fraud.',
+        walkthrough: [
+          'Adding the fraud subscriber a year after launch required 0 changes to the payment service - it subscribed and deployed.',
+          'The analytics subscriber falls 6 hours behind during a traffic peak because its warehouse writes are slow. The other 3 are unaffected, because each tracks its own position.',
+          'Nobody notices for 2 days, because there was no per-subscriber lag alert - only a topic dashboard showing healthy publish rates.',
+          'Fix 1: alert on lag per subscriber group - analytics may lag 30 minutes, accounting not more than 1 minute.',
+          'A separate incident: a rebalance redelivers 1,200 messages and the email subscriber sends 1,200 duplicate receipts.',
+          'Fix 2: idempotency by (payment_id, template), so a redelivery is recognised and skipped.',
+        ],
+        result:
+          'Extensibility worked exactly as promised, and the two problems were the two the pattern always brings: per-subscriber lag and duplicate delivery. Both have standard solutions that belong in place from the start.',
+      },
     ],
     jargon: [
       { term: 'Topic', plain: 'The named channel publishers write to and subscribers listen on.' },
       { term: 'Fan-out', plain: 'One message delivered to many subscribers, each with its own copy.' },
-      { term: 'Subscription', plain: 'One subscriber registration, usually with its own progress marker.' },
+      { term: 'Subscriber group', plain: 'A set of consumers sharing one position in the stream - one copy per group.' },
+      { term: 'Consumer lag', plain: 'How far behind a subscriber is. Monitor it per subscriber.' },
       { term: 'Ephemeral vs durable', plain: 'Messages vanish if nobody is listening, versus stored until consumed.' },
-      { term: 'Fat vs thin event', plain: 'Carrying the data versus carrying only an id subscribers must look up.' },
-      { term: 'Backpressure', plain: 'What happens when a subscriber cannot keep up. Check whether it blocks the publisher.' },
+      { term: 'Idempotent handler', plain: 'One that produces the same result when the message arrives twice.' },
     ],
     remember: [
       'Pub/sub broadcasts; a work queue divides. Know which one you need.',
-      'The publisher learns nothing about subscribers - including whether they succeeded.',
+      'New behaviour is added by subscribing - and the publisher learns nothing, not even whether anyone succeeded.',
       'Check whether your pub/sub is ephemeral or durable before trusting it with business events.',
-      'Fat events reduce callbacks and coupling; thin events reduce payload and increase load.',
-      'Additive versioning only - you do not know who is listening.',
+      'At-least-once delivery means idempotent handlers; monitor lag per subscriber.',
+      'Past-tense facts and additive versioning only - you do not know who is listening.',
     ],
   },
 
@@ -520,7 +554,7 @@ Alert on oldest-message age PER QUEUE, with different thresholds.`,
       {
         heading: 'A task queue is a queue plus a job lifecycle',
         paragraphs: [
-          'A raw message queue moves bytes. A task queue - Celery, Sidekiq, BullMQ, Temporal and friends - adds the things you would otherwise write yourself: serialising a function call and its arguments, retry policies with backoff, scheduled and delayed execution, result storage, progress reporting, and a dashboard showing what is running and what failed.',
+          'A raw message queue moves bytes. A task queue - Celery, Sidekiq, BullMQ, RQ and friends - adds the things you would otherwise write yourself: serialising a function call and its arguments, retry policies with backoff, scheduled and delayed execution, result storage, progress reporting, and a dashboard showing what is running and what failed.',
           'That is why teams reach for one rather than using the broker directly. The queue is the easy part; the lifecycle around each job is where the work actually is, and getting retries, timeouts and failure visibility right is worth a library.',
           'The trade-off is a layer of magic. Arguments are serialised, so passing a whole object is a trap - it is stale by the time the job runs, and it bloats the message. Pass identifiers and let the job load current state.',
         ],

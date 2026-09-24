@@ -80,15 +80,15 @@ export interface QuizQuestion {
  * Educational payload for one concept page. Every field is optional except the
  * identity fields so that a concept can start as an outline and grow.
  */
-export interface Concept {
+export type Concept = ConceptContent & LabHosting;
+
+interface ConceptContent {
   slug: string;
   title: string;
   /** One sentence shown under the title. */
   tagline: string;
   category: CategoryId;
   difficulty: Difficulty;
-  /** Registered interactive lab id, if this concept has one. */
-  lab?: LabId;
   keywords?: string[];
   what?: string;
   why?: string;
@@ -104,6 +104,15 @@ export interface Concept {
 }
 
 /**
+ * The Lab a concept hosts, and the Lab focus it opens that Lab with. One member
+ * per Lab, so `labFocus` only accepts the focus ids of the Lab named in `lab` -
+ * a typo, or a focus of another Lab, fails typecheck.
+ */
+type LabHosting =
+  | { [Id in LabId]: { /** Registered interactive lab id. */ lab: Id; labFocus?: LabFocus<Id> } }[LabId]
+  | { lab?: undefined; labFocus?: undefined };
+
+/**
  * The part of a concept that navigation, search, progress and lists need. It is
  * all the main bundle carries - the lesson body (what/why/how, trade-offs,
  * quiz...) is loaded per category when a concept page opens. Built from the
@@ -115,8 +124,8 @@ export type ConceptSummary = Pick<
 >;
 
 /**
- * The long-form, junior-friendly half of a lesson, shown on the "Full
- * explanation" tab. It is deliberately not part of `Concept`: it is far larger
+ * The long-form, junior-friendly half of a lesson, shown as the Lesson under
+ * the Diagram. It is deliberately not part of `Concept`: it is far larger
  * than the rest of the catalogue and is loaded on demand, per category, from
  * `src/data/concepts/deep`.
  */
@@ -151,7 +160,76 @@ export type LabId =
   | 'monolith-microservices'
   | 'api-gateway'
   | 'tracing'
-  | 'url-journey';
+  | 'url-journey'
+  | 'proxy'
+  | 'data-models'
+  | 'schema-design'
+  | 'cache-layers'
+  | 'consensus'
+  | 'api-styles'
+  | 'realtime'
+  | 'event-log'
+  | 'broker-routing'
+  | 'redundancy'
+  | 'auth'
+  | 'monitoring'
+  | 'slo'
+  | 'transport'
+  | 'partitioning'
+  | 'connection-pool'
+  | 'distributed-lock'
+  | 'idempotency'
+  | 'disaster-recovery'
+  | 'oauth'
+  | 'secrets'
+  | 'waf'
+  | 'serverless'
+  | 'fan-out'
+  | 'bulkhead'
+  | 'saga'
+  | 'outbox';
+
+/**
+ * The Lab focus ids a shared Lab accepts: the starting setups it can open with,
+ * one per Concept that hosts it. A Lab missing here takes no focus. The Lab
+ * itself maps every id to its setup, so an id added here without one fails
+ * typecheck in the Lab.
+ */
+export interface LabFocusIds {
+  'requirements': 'what-is-system-design' | 'functional-requirements' | 'non-functional-requirements';
+  'capacity': 'capacity-estimation' | 'back-of-the-envelope';
+  'url-journey': 'what-happens-when-you-type-a-url' | 'dns' | 'http-https' | 'tls-https';
+  'stateless': 'stateless-applications' | 'stateful-applications' | 'jwt';
+  'load-balancer': 'load-balancing' | 'health-checks';
+  'cdn': 'cdn' | 'cdn-caching';
+  'caching': 'caching' | 'redis';
+  'replication': 'replication' | 'read-replicas' | 'strong-consistency' | 'eventual-consistency' | 'leader-follower';
+  'cap-theorem': 'cap-theorem' | 'consistency' | 'partition-tolerance';
+  'queue': 'message-queues' | 'background-workers' | 'task-queues' | 'backpressure' | 'producer-consumer' | 'request-response';
+  'monolith-microservices': 'monolith' | 'modular-monolith' | 'microservices' | 'service-oriented-architecture';
+  'retry-backoff': 'no-backoff' | 'backoff-jitter';
+  'proxy': 'reverse-proxy' | 'forward-proxy';
+  'data-models': 'sql-databases' | 'nosql-databases' | 'relational-vs-non-relational';
+  'schema-design': 'database-normalization' | 'denormalization';
+  'cache-layers': 'database-caching' | 'application-caching';
+  'consensus': 'leader-election' | 'consensus';
+  'api-styles': 'rest-apis' | 'graphql' | 'grpc';
+  'realtime': 'websockets' | 'server-sent-events' | 'polling' | 'long-polling';
+  'event-log': 'kafka' | 'cqrs' | 'event-sourcing';
+  'broker-routing': 'rabbitmq-concepts' | 'event-driven-architecture' | 'pub-sub';
+  'redundancy': 'availability' | 'redundancy' | 'fault-tolerance' | 'high-availability' | 'single-point-of-failure' | 'failover';
+  'auth': 'authentication' | 'authorization' | 'api-keys';
+  'monitoring': 'logging' | 'metrics' | 'monitoring' | 'alerting';
+  'slo': 'sli' | 'slo' | 'sla';
+}
+
+/** The focus ids of one Lab, or of every Lab when no id is given. */
+export type LabFocus<Id extends LabId = LabId> = Id extends keyof LabFocusIds ? LabFocusIds[Id] : never;
+
+/** Props every Lab component takes. No focus means the Lab's own default setup. */
+export interface LabProps<Id extends LabId = LabId> {
+  focus?: LabFocus<Id>;
+}
 
 export type NodeStatus = 'healthy' | 'degraded' | 'down' | 'starting';
 

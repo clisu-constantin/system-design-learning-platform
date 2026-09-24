@@ -38,3 +38,31 @@ export function formatBytes(bytes: number) {
 
 export const formatClock = (date = new Date()) =>
   date.toLocaleTimeString('en-GB', { hour12: false });
+
+/**
+ * A duration in seconds as the one unit that reads best: "850 ms", "4.2 s", "42 s", "2.5 min",
+ * "17 min", "8.8 h" or "3.1 days". Seconds and minutes keep a decimal only below 10.
+ */
+export function formatSeconds(seconds: number) {
+  if (seconds <= 0) return '0 s';
+  if (seconds < 1) return `${Math.max(1, Math.round(seconds * 1000))} ms`;
+  if (seconds >= 2 * 86400) return `${(seconds / 86400).toFixed(1)} days`;
+  if (seconds >= 3600) return `${(seconds / 3600).toFixed(1)} h`;
+  if (seconds >= 60) return `${(seconds / 60).toFixed(seconds < 600 ? 1 : 0)} min`;
+  return `${seconds.toFixed(seconds < 10 ? 1 : 0)} s`;
+}
+
+/** A duration in seconds as "850 ms", "4.2 s", "42 s" or "2 min 5 s": minutes and seconds, never hours. */
+export function formatSecondsMinSec(seconds: number) {
+  if (seconds < 1) return formatLatency(seconds * 1000);
+  if (seconds < 60) return `${seconds.toFixed(seconds < 10 ? 1 : 0)} s`;
+  const minutes = Math.floor(seconds / 60);
+  return `${minutes} min ${Math.round(seconds - minutes * 60)} s`;
+}
+
+/** A duration in hours as "36 min", "5.0 h" or "2.1 days". */
+export function formatHours(hours: number) {
+  if (hours < 1) return `${Math.round(hours * 60)} min`;
+  if (hours < 48) return `${hours.toFixed(1)} h`;
+  return `${(hours / 24).toFixed(1)} days`;
+}

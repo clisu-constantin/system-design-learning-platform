@@ -43,7 +43,7 @@ const EDGE_STROKE: Record<EdgeTone, string> = {
   muted: 'rgb(var(--c-faint) / 0.25)',
 };
 
-export const OUTCOME_STYLE: Record<RequestOutcome, { fill: string; label: string; shape: 'circle' | 'diamond' | 'triangle' | 'cross' }> = {
+export const OUTCOME_STYLE: Record<RequestOutcome, { fill: string; label: string; shape: ParticleShapeKind }> = {
   success: { fill: 'rgb(var(--c-brand))', label: 'Request / response', shape: 'circle' },
   'cache-hit': { fill: 'rgb(var(--c-ok))', label: 'Cache hit', shape: 'diamond' },
   warning: { fill: 'rgb(var(--c-warn))', label: 'Warning / retry', shape: 'triangle' },
@@ -219,7 +219,10 @@ export function DiagramCanvas({
   );
 }
 
-function ParticleShape({ shape, fill }: { shape: 'circle' | 'diamond' | 'triangle' | 'cross'; fill: string }) {
+export type ParticleShapeKind = 'circle' | 'diamond' | 'triangle' | 'cross';
+
+/** The shape of one particle, centred on 0,0. Diagrams draw it on the wire, legends at 14px. */
+export function ParticleShape({ shape, fill }: { shape: ParticleShapeKind; fill: string }) {
   switch (shape) {
     case 'diamond':
       return <rect x={-4} y={-4} width={8} height={8} rx={1} fill={fill} transform="rotate(45)" />;
@@ -237,22 +240,35 @@ function ParticleShape({ shape, fill }: { shape: 'circle' | 'diamond' | 'triangl
   }
 }
 
+interface ParticleLegendProps {
+  /** Outcomes to list: bare ones get the shared label, `{ outcome, label }` says what it means in this Lab. */
+  outcomes?: (RequestOutcome | { outcome: RequestOutcome; label?: string })[];
+  className?: string;
+  /** Extra legend entries (a wire colour note, a cell style), laid out in the same row. */
+  children?: ReactNode;
+}
+
 /** Shape + colour + text legend so status is never colour-only. */
-export function ParticleLegend({ outcomes, className }: { outcomes?: RequestOutcome[]; className?: string }) {
-  const list = outcomes ?? (['success', 'cache-hit', 'warning', 'failure'] as RequestOutcome[]);
+export function ParticleLegend({
+  outcomes = ['success', 'cache-hit', 'warning', 'failure'],
+  className,
+  children,
+}: ParticleLegendProps) {
   return (
     <div className={cn('flex flex-wrap items-center gap-x-4 gap-y-1.5', className)}>
-      {list.map((outcome) => {
+      {outcomes.map((entry) => {
+        const { outcome, label } = typeof entry === 'string' ? { outcome: entry, label: undefined } : entry;
         const style = OUTCOME_STYLE[outcome];
         return (
           <span key={outcome} className="flex items-center gap-1.5 text-[11px] text-muted">
             <svg width={14} height={14} viewBox="-7 -7 14 14" aria-hidden>
               <ParticleShape shape={style.shape} fill={style.fill} />
             </svg>
-            {style.label}
+            {label ?? style.label}
           </span>
         );
       })}
+      {children}
     </div>
   );
 }

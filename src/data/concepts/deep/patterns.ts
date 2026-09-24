@@ -18,8 +18,12 @@ export const patternsDepth: DepthMap = {
         code: {
           caption: 'The arithmetic, and why hybrids exist',
           body: `typical user, 200 followers, 5 posts/day
-  on write:  5 x 200 = 1,000 writes/day, feed read = 1 lookup
-  on read:   5 writes/day, every feed read joins 200 timelines
+  on write:  5 x 200 = 1,000 timeline writes/day
+             each feed read = 1 lookup of a built list
+  on read:   5 writes/day, one row per post
+             each feed read merges every account the
+             reader follows: 1 follow-list lookup
+             + 200 post queries = 201 queries
 
 celebrity, 50,000,000 followers, 20 posts/day
   on write:  1,000,000,000 writes/day for ONE account
@@ -33,7 +37,7 @@ HYBRID (what real systems do)
       {
         heading: 'The hybrid, and the other meaning of fan-out',
         paragraphs: [
-          'Large social platforms use a threshold: accounts below some follower count are pushed into follower timelines at write time, accounts above it are pulled at read time and merged. A feed read becomes "my precomputed timeline, plus recent posts from the few celebrities I follow, merged by time". It is more code and it is the only approach that works at both ends of the distribution.',
+          'Large social platforms use a threshold: accounts below some follower count are pushed into follower timelines at write time, accounts above it are pulled at read time and merged. A feed read becomes "my precomputed timeline, plus recent posts from the few celebrities I follow, merged by time". Twitter described this design publicly: home timelines held in an in-memory cache, pushed for most accounts, with the largest accounts merged in at read time. It is more code, and it is what lets one system serve both ends of the follower distribution.',
           'Fan-out also has a second, simpler meaning: one request triggering several parallel calls. A page that needs profile, orders, recommendations and notifications fans out to four services and merges the responses. Here the concern is different - latency is the slowest branch, and availability is the product of all of them.',
           'For that second kind, the important discipline is per-branch timeouts and partial results. If recommendations are slow, the page should render without them rather than waiting. Treating every branch as mandatory turns four services at 99.9 percent into a page at 99.6 percent for no product reason.',
         ],
@@ -47,7 +51,7 @@ HYBRID (what real systems do)
       {
         heading: 'What precomputing costs you besides writes',
         paragraphs: [
-          'Storage multiplies. One post stored in a million timelines is a million references, and while each is small, the total across a large user base becomes a serious cost. Most systems bound it by keeping only recent entries per timeline and falling back to a query for older pages.',
+          'Storage multiplies. One post stored in a million timelines is a million references, and while each is small, the total across a large user base becomes a serious cost. Most systems bound it by keeping only recent entries per timeline (Twitter kept 800 per home timeline) and falling back to a query for older pages.',
           'Deletion and editing become fan-out operations too. Removing a post means removing it from every timeline it was written into, which is the same expensive operation again - and it must be reliable, because a deleted post still appearing is a serious problem.',
           'And a new follower has an empty relationship until it is backfilled. Following someone must either trigger a backfill of their recent posts into your timeline, or the read path must merge recent posts for recently followed accounts. Both are extra machinery that the on-read approach never needs.',
         ],
@@ -60,10 +64,10 @@ HYBRID (what real systems do)
           'A social product with 10 million users. Median follower count is 150; the largest account has 8 million followers.',
         walkthrough: [
           'Pure fan-out on write: the top account posting once creates 8 million timeline writes. At 20 posts a day that is 160 million writes from one user, dwarfing everything else.',
-          'Pure fan-out on read: every feed load queries 150 timelines and merges. At 50,000 feed loads per second that is 7.5 million queries per second - also infeasible.',
+          'Pure fan-out on read: a typical user follows about 150 accounts, so every feed load runs 150 queries and merges them. At 50,000 feed loads per second that is 7.5 million queries per second - also infeasible.',
           'Hybrid: accounts with fewer than 10,000 followers fan out on write. Above that, posts are pulled at read time.',
           'A feed read becomes: read my precomputed timeline (one lookup), then fetch recent posts from the celebrities I follow (usually fewer than 20 accounts, cached aggressively), then merge by timestamp.',
-          'Celebrity posts are cached at the edge since millions of people read exactly the same content, so the pull side is cheap.',
+          'Celebrity posts are cached in memory, since millions of people read exactly the same few posts, so each pull is cheap.',
           'Deletion: for pushed posts, a background job removes them from timelines; for pulled posts, deletion is immediate since there is only one copy.',
           'New follow: a backfill job inserts the last 50 posts of the followed account into the timeline, unless that account is a celebrity, in which case nothing is needed.',
         ],
@@ -106,7 +110,7 @@ HYBRID (what real systems do)
           caption: 'Four responses when the buffer is full',
           body: `BLOCK      producer waits            simplest; can deadlock if circular
 DROP       discard new (or oldest)   fine for metrics, telemetry, video
-REJECT     return 429 / error        best for request-response APIs
+REJECT     return 429 / error        fits request-response APIs
 SPILL      write to disk             more capacity, higher latency, bounded eventually
 
 choose per data type:
@@ -186,29 +190,30 @@ choose per data type:
         heading: 'Partition the resource that everything competes for',
         paragraphs: [
           'The failure this prevents is resource monopolisation. One slow dependency causes requests to it to pile up, each holding a thread or a connection, until the shared pool is exhausted - and then every other feature fails too, including ones that never touch the slow dependency.',
-          'A bulkhead caps how much of a shared resource any one dependency may consume. Twenty of two hundred threads for the reviews service means reviews can be completely dead and one hundred and eighty threads remain available for everything else. The reviews feature fails; the product does not.',
+          'The arithmetic is short. Threads in use = calls per second x seconds each call holds its thread. Recommendations at 100 calls a second and 50 ms each holds 5 threads. When it hangs for 30 seconds, the same traffic wants 3,000 threads, and a pool of 200 is gone in 2 seconds.',
+          'A bulkhead caps how much of a shared resource any one dependency may consume. Twenty of two hundred threads for the recommendations service means recommendations can be completely dead and one hundred and eighty threads remain available for everything else. When its twenty are busy, further recommendation calls are rejected at once and the page is shown without them. The recommendations feature fails; the product does not.',
           'The resources worth partitioning are the ones that are finite and shared: worker threads, database connections, concurrent outbound requests, memory buffers. Whichever of them saturates first is the one that transmits a failure from one feature to all of them.',
         ],
         code: {
           caption: 'Same fleet, with and without compartments',
           body: `SHARED POOL (200 threads)
-  reviews service hangs for 30 s
-  -> within 2 s all 200 threads wait on reviews
+  recommendations hangs for 30 s, 100 calls/s
+  -> within 2 s all 200 threads wait on it
   -> checkout, search and profile all fail
   a non-critical feature took down the product
 
 BULKHEADS
-  checkout   80 threads      unaffected
-  search     60 threads      unaffected
-  reviews    20 threads      saturated, fails fast, fallback shown
-  other      40 threads      unaffected
+  checkout          80 threads   unaffected
+  search            60 threads   unaffected
+  recommendations   20 threads   full, fails fast, fallback
+  other             40 threads   unaffected
   the failure is contained to its compartment`,
         },
       },
       {
         heading: 'Levels of isolation, from cheap to expensive',
         paragraphs: [
-          'The cheapest form is a semaphore or a concurrency limit per dependency inside one process: a few lines, no new infrastructure, and it prevents the most common cascade. Separate thread pools go further by also isolating blocking behaviour, at the cost of context switching and more tuning.',
+          'The cheapest form is a semaphore or a concurrency limit per dependency inside one process: a few lines, no new infrastructure, and it prevents the most common cascade. The calling thread still makes the call itself, though, so it cannot walk away from a slow call - it waits until the client timeout. Separate thread pools go further: the call runs on a pool thread, so the caller can stop waiting and keep its own thread, at the cost of queueing, context switching and more tuning. Netflix measured that cost at a few milliseconds at the 99th percentile.',
           'Separate process pools are the next step: run the endpoints that use a risky dependency on their own instances, so even a memory leak or a crash is contained. Deployment-level isolation - separate services, separate clusters, separate cells per customer segment - is the strongest and the most expensive.',
           'Cell-based architecture is the extreme version, and it is what large platforms use: the system is divided into independent cells, each serving a subset of customers with its own full stack. A failure affects one cell rather than everyone, which turns a total outage into a partial one by construction.',
         ],
@@ -222,7 +227,8 @@ BULKHEADS
       {
         heading: 'Sizing, and how it combines with the other patterns',
         paragraphs: [
-          'Size each compartment by its normal concurrency plus headroom, not by an even split. If checkout normally has 40 concurrent requests and reviews has 5, giving them equal shares wastes capacity and still lets reviews take more than it should. Measure first, then allocate.',
+          'Size each compartment by its normal concurrency plus headroom, not by an even split. The Hystrix guideline is peak calls per second when healthy x p99 latency in seconds, plus some breathing room: 50 calls a second at 200 ms is about 10 threads. If checkout normally has 40 concurrent requests and recommendations has 5, equal shares starve checkout and still let recommendations take more than it should. Measure first, then allocate.',
+          'When a compartment is full, fail fast. Resilience4j defaults the wait for a bulkhead slot to zero: a caller that waits is itself holding a thread, so a long wait rebuilds the pile-up one layer up.',
           'Bulkheads pair naturally with timeouts and circuit breakers, and each does a different job. The timeout bounds how long one call may hold its slot. The bulkhead bounds how many slots that dependency may occupy. The circuit breaker stops calling it at all once it is clearly down. Together they turn a dependency failure into a fast, contained, non-propagating event.',
           'The cost is genuine: partitioned resources are less efficiently used, because one compartment can be idle while another queues. That inefficiency is the insurance premium, and it is almost always worth paying on a shared request path.',
         ],
@@ -262,94 +268,6 @@ BULKHEADS
     ],
   },
 
-  'circuit-breaker-pattern': {
-    analogy: {
-      title: 'One switch design, fitted everywhere',
-      body:
-        'The same trip switch protects the kitchen, the workshop and the garage. You do not design a new one for each room - you fit the standard part and set its rating. Recognising the circuit breaker as a reusable structure means you configure it per dependency rather than writing bespoke failure handling in every client.',
-    },
-    deepDive: [
-      {
-        heading: 'The structure, independent of what it wraps',
-        paragraphs: [
-          'Stripped of context, the pattern is: a wrapper around a fallible operation, a rolling window of outcomes, a threshold that opens the wrapper, a cooldown, and a probing state that closes it again. Nothing about that is specific to HTTP - it applies equally to a database call, a queue publish, a third-party SDK or a file system operation.',
-          'Seeing it as a structure matters because it changes how you build. Instead of writing failure handling inside each client, you wrap operations in a configured policy, and every dependency gets consistent behaviour, consistent metrics and consistent naming. New dependencies inherit the protection instead of needing it invented again.',
-          'It also makes the parameters explicit and reviewable. Threshold, minimum volume, window, cooldown, trial count and fallback are configuration per dependency - visible in one place, tunable without code changes, and comparable across the system.',
-        ],
-        code: {
-          caption: 'The policy as configuration, not code',
-          body: `policies:
-  payments:                      # money: be patient, fail closed
-    window: 30s   min_calls: 50  threshold: 60%
-    cooldown: 60s trials: 5      fallback: reject
-  recommendations:               # optional: trip early, fail open
-    window: 10s   min_calls: 20  threshold: 40%
-    cooldown: 15s trials: 3      fallback: empty list
-  search:
-    window: 20s   min_calls: 30  threshold: 50%
-    cooldown: 30s trials: 3      fallback: cached results
-
-same state machine, three risk profiles.`,
-        },
-      },
-      {
-        heading: 'Where the pattern applies beyond HTTP',
-        paragraphs: [
-          'Database calls benefit from it during a failover or an overload: when the database is refusing connections, continuing to attempt them consumes pool slots and threads for nothing. An open breaker fails those requests immediately and lets the application serve whatever it can from caches.',
-          'Queue publishing is another: if the broker is unreachable, every publish attempt blocks. A breaker converts that to a fast failure so the caller can decide - buffer locally, drop, or reject the request - instead of hanging.',
-          'Third-party SDKs are the most valuable case, because they often contain their own hidden retry loops and generous timeouts. Wrapping the SDK call in a breaker gives you control over behaviour you cannot otherwise configure, and it is frequently the only way to bound the impact of a vendor outage.',
-        ],
-        bullets: [
-          'HTTP calls to other services - the canonical use.',
-          'Database and cache clients - protects pools during failover.',
-          'Queue publishes - turns a hang into a decision.',
-          'Third-party SDKs - the case where you control nothing else.',
-        ],
-      },
-      {
-        heading: 'Composing it with the neighbouring patterns',
-        paragraphs: [
-          'The full protective stack around one dependency is: a timeout bounding each attempt, a bounded retry with backoff for transient failures, a circuit breaker to stop calling something that is clearly down, a bulkhead limiting how much capacity this dependency may occupy, and a fallback defining what the user gets when it is unavailable.',
-          'Order matters. Retries happen inside the breaker, so repeated failures count toward tripping it; if the breaker is inside the retry, you retry a call that fails instantly and achieve nothing. The bulkhead sits outside both, capping total concurrency for the dependency regardless of retry behaviour.',
-          'And the whole stack is worthless without the last element. A breaker that opens and returns an error has made the failure fast, which prevents cascades but does not help the user. The fallback - cached data, a default, a reduced response - is what converts protection into continued service.',
-        ],
-      },
-    ],
-    examples: [
-      {
-        title: 'One policy definition, twelve dependencies',
-        setup:
-          'A service calls 12 downstream systems. Each client has its own hand-written error handling, accumulated over three years. Behaviour during outages is inconsistent and unpredictable.',
-        walkthrough: [
-          'Audit: 4 clients retry infinitely, 3 have no timeout at all, 2 have a breaker with different thresholds, and 3 have no protection.',
-          'Introduce one resilience library and one configuration file with a named policy per dependency.',
-          'Classify each dependency: critical (payments, inventory) versus optional (recommendations, reviews, analytics).',
-          'Critical policies: longer cooldown, higher threshold, fail closed with a clear user-facing error.',
-          'Optional policies: trip early, short cooldown, fail open with an empty or cached result.',
-          'Emit consistent metrics from the library: state changes, trip counts and fallback usage per dependency - a dashboard that did not previously exist.',
-          'Result during the next vendor outage: the breaker opened in 8 seconds, the fallback served cached data, and the metric identified the dependency immediately instead of requiring an investigation.',
-        ],
-        result:
-          'Twelve bespoke implementations became one policy file. Treating resilience as a configured pattern rather than per-client code is what makes behaviour predictable during an incident.',
-      },
-    ],
-    jargon: [
-      { term: 'Rolling window', plain: 'Counting outcomes over recent time, not since the process started.' },
-      { term: 'Minimum request volume', plain: 'The call count required before the threshold is evaluated.' },
-      { term: 'Trial / probe calls', plain: 'The limited traffic allowed in the half-open state.' },
-      { term: 'Fail open / fail closed', plain: 'Serving a degraded result, versus refusing, when the breaker is open.' },
-      { term: 'Resilience policy', plain: 'Timeout, retry, breaker, bulkhead and fallback configured together per dependency.' },
-      { term: 'Fallback', plain: 'The alternative response that makes protection useful to a user.' },
-    ],
-    remember: [
-      'It is a reusable state machine, not an HTTP feature - wrap any fallible operation.',
-      'Express it as configuration per dependency, so thresholds are visible and comparable.',
-      'Retries go inside the breaker; the bulkhead goes outside both.',
-      'Critical dependencies fail closed, optional ones fail open.',
-      'Without a fallback, the breaker only makes failure faster.',
-    ],
-  },
-
   'saga-pattern': {
     analogy: {
       title: 'A booked trip you have to unbook step by step',
@@ -385,11 +303,11 @@ rules
         paragraphs: [
           'A choreographed saga has each service react to events and emit the next one, with compensation triggered by failure events. It is loosely coupled and it has no central component - and the workflow exists nowhere, so understanding the process means reading every participant and inferring the order.',
           'An orchestrated saga has a coordinator that issues commands, tracks progress and drives compensation. The process is written in one place, testable, visible, and resumable after a crash if its state is persisted. The cost is a component that knows about every participant and must be highly available.',
-          'For anything with more than three steps or any compensation logic, orchestration is usually the right choice, and durable execution engines exist precisely for it. Choreography suits simple, independent reactions where nothing needs undoing.',
+          'Neither is free. Choreography suits short flows with few participants: there is nothing extra to run, and each service knows only the events it reacts to. As steps and compensations pile up, the orchestrator earns its cost - the sequence sits in one place and a stalled saga has an owner - and durable execution engines such as Temporal or AWS Step Functions exist to run exactly this kind of orchestrator.',
         ],
         bullets: [
-          'Fewer than 3 steps, no compensation -> choreography is fine.',
-          'Ordered steps, compensation, or a lifecycle to inspect -> orchestration.',
+          'Few services, a short chain, little to undo -> choreography keeps the moving parts down.',
+          'Many ordered steps with compensations, or a lifecycle to inspect -> orchestration.',
           'Persist the saga state so a crash resumes rather than restarts.',
           'Every step and every compensation must be idempotent.',
         ],
@@ -407,16 +325,17 @@ rules
       {
         title: 'An order saga, including the step that went wrong',
         setup:
-          'Placing an order spans four services: inventory, payment, shipping and notification. Payment succeeds; shipping rejects the address.',
+          'Placing an order spans five services: order, inventory, payment, shipping and notification, each with its own database. Payment succeeds; shipping rejects the address.',
         walkthrough: [
-          'Step 1: inventory reserves 2 units. Marked as reserved with the saga id, not simply decremented - that is the semantic lock.',
-          'Step 2: payment charges 89 euro, recording the saga id as the idempotency key.',
-          'Step 3: shipping rejects the address as undeliverable. The saga now begins compensating in reverse.',
-          'Compensate step 2: refund 89 euro, using the same saga id so a retry cannot refund twice. The customer sees a charge and a refund on their statement - an intermediate state the product must explain.',
-          'Compensate step 1: release the 2 reserved units back to available stock.',
-          'The order is marked failed with a reason, and the customer is shown an address error rather than a generic failure.',
-          'Step 4 (notification) was deliberately placed last and never ran, so no confirmation email had to be retracted.',
-          'Failure inside compensation: if the refund call times out, it is retried with backoff; after 5 attempts the saga is placed in a manual review queue with an alert, because money is involved.',
+          'Step 1: the Order service saves order 1042 as PENDING - a local transaction, visible at once.',
+          'Step 2: inventory reserves 2 units. Marked as reserved with the saga id, not simply decremented - that is the semantic lock.',
+          'Step 3: payment charges 89 euro, recording the saga id as the idempotency key.',
+          'Step 4: shipping rejects the address as undeliverable. The saga now begins compensating steps 3, 2 and 1, in reverse.',
+          'Compensate step 3: refund 89 euro, using the same saga id so a retry cannot refund twice. The customer sees a charge and a refund on their statement - an intermediate state the product must explain.',
+          'Compensate step 2: release the 2 reserved units back to available stock.',
+          'Compensate step 1: order 1042 goes from PENDING to REJECTED with the reason, and the customer is shown an address error rather than a generic failure.',
+          'Step 5 (notification) was deliberately placed last and never ran, so no confirmation email had to be retracted.',
+          'Failure inside compensation: if the refund call times out, it is retried with backoff; after 3 attempts the saga is placed in a manual review queue with an alert, because money is involved.',
         ],
         result:
           'The saga left the system consistent without any distributed transaction - at the cost of a visible charge and refund, a semantic lock on stock, and a human escalation path. Those costs are the honest price of splitting a transaction across services.',
@@ -451,7 +370,7 @@ rules
         paragraphs: [
           'A service that must save state and publish an event has two systems to update, and no way to commit both atomically. If it writes the database and then crashes, the event is never published and every downstream consumer is unaware. If it publishes first and the database write fails, consumers act on something that did not happen.',
           'Both failure modes are silent and both produce inconsistency that is discovered much later, usually by a customer. And they are not rare: any crash, deploy, timeout or network blip between the two operations produces one of them, which at any real volume means several per week.',
-          'Two-phase commit would solve it and is generally unavailable - message brokers do not participate in database transactions, and where distributed transactions exist they are slow and operationally painful. The outbox pattern is the practical alternative.',
+          'Two-phase commit would solve it and is generally unavailable - most message brokers, Kafka among them, do not join a database transaction out of the box, and where distributed transactions exist they are slow, and participants block while a failed coordinator is down. The outbox pattern is the practical alternative.',
         ],
         code: {
           caption: 'One transaction, two effects',
@@ -474,8 +393,8 @@ crash after publish, before marking -> published twice
         heading: 'Polling relay or change data capture',
         paragraphs: [
           'The simplest relay polls the outbox table for unsent rows every second, publishes them, and marks them sent. It needs no extra infrastructure, and it costs a query per interval plus some latency. Use SELECT ... FOR UPDATE SKIP LOCKED so several relay instances can run without publishing the same row twice.',
-          'Change data capture reads the database write-ahead log directly - Debezium is the common implementation - and publishes changes as they are committed. No polling, lower latency, no load on the database from queries, and considerably more infrastructure to run and understand.',
-          'Both preserve order per aggregate if you are careful: process outbox rows in insertion order and partition the published messages by aggregate id, so all events for one order stay in sequence even when overall throughput is parallel.',
+          'Change data capture reads the database write-ahead log directly - Debezium is the common implementation - and publishes changes as they are committed. No polling, lower latency, no load on the database from queries, and considerably more infrastructure to run and understand. Because the insert is already in the log, the outbox row can be deleted soon after it is written.',
+          'Both preserve order per aggregate if you are careful: process outbox rows in insertion order and partition the published messages by aggregate id, so all events for one order stay in sequence even when overall throughput is parallel. With several polling relay instances, rows of one aggregate can be claimed by two instances at once, so either route one aggregate to one instance or accept a single active relay.',
         ],
         bullets: [
           'Polling relay: simple, no new systems, about a second of latency.',
@@ -717,8 +636,8 @@ with M consumers, message ORDER is not preserved
           caption: 'The costs of a chain, made explicit',
           body: `A -> B -> C -> D   each 99.9% available, each p99 = 50 ms
 
-availability   0.999^3 = 99.7%      (A is now worse than any dependency)
-p99 latency    150 ms + A's own work (tails ADD along the chain)
+availability   0.999^4 = 99.6%      (A and its 3 dependencies must all be up)
+p99 latency    up to 150 ms + A's own work (tails add along the chain)
 failure        D down = A down, unless A degrades deliberately
 
 fix: make hops parallel where possible, remove hops that are not
@@ -750,20 +669,20 @@ needed for the answer, and define a fallback for each one that stays.`,
     ],
     examples: [
       {
-        title: 'Turning a 4-second endpoint into 80 milliseconds',
+        title: 'Turning a 4-second checkout into about 1 second',
         setup:
-          'POST /checkout makes six synchronous calls in sequence: validate cart, check stock, calculate tax, charge card, create shipment, send confirmation. p95 is 4.2 seconds.',
+          'POST /checkout makes six synchronous calls in sequence. At p95: validate cart 120 ms, check stock 180 ms, calculate tax 400 ms, charge card 900 ms, create shipment 1,000 ms, send confirmation 1,600 ms - 4.2 seconds in total.',
         walkthrough: [
           'Classify each call: which are required to tell the user their order was placed?',
           'Required: validate cart, check stock, charge card. Everything else is not - the user does not need tax calculation detail, a shipment record or an email before seeing a confirmation.',
-          'Send confirmation (600 ms) moves to a queue. It is the clearest case: an email provider being slow should never delay a checkout.',
-          'Create shipment (900 ms) moves to a queue, driven by the OrderPlaced event. The warehouse does not act within seconds anyway.',
+          'Send confirmation (1,600 ms) moves to a queue. It is the clearest case: an email provider being slow should never delay a checkout.',
+          'Create shipment (1,000 ms) moves to a queue, driven by the OrderPlaced event. The warehouse does not act within seconds anyway.',
           'Calculate tax (400 ms) must be included in the total, but the result is cacheable per region and product category - it becomes a 2 ms lookup for most requests.',
-          'The three remaining calls run in parallel where the dependencies allow: cart validation and stock check together, then payment.',
-          'Result: p95 becomes about 80 ms, and availability improves because two of the six dependencies can now be entirely down without affecting checkout.',
+          'The remaining calls run in parallel where the dependencies allow: cart validation and stock check together (180 ms, the slower of the two), then the 2 ms tax lookup, then payment (900 ms).',
+          'Result: p95 becomes about 180 + 2 + 900 = roughly 1.1 seconds, most of it the card charge that the user genuinely has to wait for. Availability improves too, because two of the six dependencies can now be entirely down without affecting checkout.',
         ],
         result:
-          'Half the calls did not need to be synchronous at all. Asking "does the user need this to get their answer?" per dependency is the highest-value latency exercise available, and it improves availability at the same time.',
+          'Checkout went from 4.2 s to about 1.1 s, because half the calls did not need to be synchronous at all. Asking "does the user need this to get their answer?" per dependency is the highest-value latency exercise available, and it improves availability at the same time.',
       },
     ],
     jargon: [
@@ -780,94 +699,6 @@ needed for the answer, and define a fallback for each one that stays.`,
       'Timeout everything, propagate deadlines, and honour cancellation.',
       'Move anything the user does not need to a queue.',
       'Parallelise the hops that remain; the chain latency is otherwise a sum.',
-    ],
-  },
-
-  'publish-subscribe': {
-    analogy: {
-      title: 'A noticeboard in the staff room',
-      body:
-        'You pin a notice; whoever reads the board sees it. You do not know who read it, whether they acted, or how many there were. Adding a new reader costs you nothing and requires no change on your part - and that absence of a return channel is both the appeal and the limitation.',
-    },
-    deepDive: [
-      {
-        heading: 'The structural property: extensibility without modification',
-        paragraphs: [
-          'The reason this pattern matters structurally is that behaviour can be added without touching the code that produces the event. A new subscriber is a deployment, not a change request against another team service. In an organisation of any size, that is the difference between a feature taking an afternoon and taking a quarter.',
-          'It inverts the dependency direction. In request-response, the caller must know the callee. In pub/sub, the subscriber knows the publisher event, and the publisher knows nothing. Dependencies point toward the source of truth rather than out from it, which is what keeps a core service from accumulating knowledge of everything downstream.',
-          'The price is that the publisher receives no confirmation. It cannot know whether anyone processed the message, or whether a subscriber failed. Anything requiring an outcome needs either a request-response call or a resulting event to subscribe to - the pattern deliberately does not provide it.',
-        ],
-        code: {
-          caption: 'Which direction the arrows point',
-          body: `REQUEST-RESPONSE
-  order-service --calls--> payment
-                --calls--> email
-                --calls--> analytics
-  order-service must KNOW all three; adding a fourth changes it
-
-PUB/SUB
-  order-service --publishes--> "order.placed"
-      payment   --subscribes-->
-      email     --subscribes-->
-      analytics --subscribes-->
-  order-service knows NONE of them; adding a fourth changes nothing`,
-        },
-      },
-      {
-        heading: 'Delivery semantics you must design around',
-        paragraphs: [
-          'Delivery is normally at-least-once, so a subscriber will occasionally receive the same message twice - a redelivery after a crash, a lost acknowledgement, a rebalance. Every handler must be idempotent, and the cheapest way is a deduplication key or a natural unique constraint on whatever it writes.',
-          'Ordering is limited. Across a topic, messages can arrive out of order; within a partition or a key, most brokers preserve it. Design handlers to tolerate reordering where you can - using absolute state rather than relative changes - because relying on global order limits parallelism severely.',
-          'Independent progress is the other half. Each subscriber tracks its own position, so a slow or failing subscriber falls behind without affecting the others. That isolation is valuable, and it means you must monitor lag per subscriber rather than assuming that a healthy topic means healthy consumption.',
-        ],
-        bullets: [
-          'At-least-once delivery: every handler idempotent, no exceptions.',
-          'Order only within a partition or key - design for reordering across them.',
-          'Monitor lag per subscriber; a healthy topic says nothing about consumers.',
-          'Fat events reduce callbacks; thin events reduce payload and increase load on the publisher.',
-        ],
-      },
-      {
-        heading: 'Keeping it debuggable and evolvable',
-        paragraphs: [
-          'The cost you pay for loose coupling is that no single place describes what happens after an event. Mitigate it with correlation ids on every message, distributed tracing across the async boundary, and an event catalogue generated from code rather than maintained by hand.',
-          'Schema evolution needs discipline because you do not know who is listening. Add fields, never remove or repurpose them, and require consumers to ignore unknown fields. A schema registry that rejects incompatible changes at publish time turns this from a social agreement into a mechanical guarantee.',
-          'Name events as past-tense facts - OrderPlaced, PaymentCaptured - and resist the urge to publish commands disguised as events. SendWelcomeEmail as an event means the publisher has decided what the subscriber should do, which reintroduces exactly the coupling the pattern exists to remove.',
-        ],
-      },
-    ],
-    examples: [
-      {
-        title: 'One event, four subscribers, and one that fell behind',
-        setup:
-          'PaymentCaptured is published by the payment service. Four teams subscribe: accounting, email, analytics and fraud.',
-        walkthrough: [
-          'Adding the fraud subscriber a year after launch required no change to the payment service - it subscribed and deployed. That is the benefit, realised.',
-          'The analytics subscriber falls behind by 6 hours during a traffic peak because its warehouse writes are slow. The other three are unaffected, because each tracks its own position.',
-          'Nobody notices for two days, because there was no per-subscriber lag alert - only a topic-level dashboard showing healthy publish rates.',
-          'Fix 1: alert on consumer lag per subscriber group, with thresholds appropriate to each - analytics may lag minutes, accounting may not.',
-          'A separate incident: the email subscriber sends duplicate receipts after a rebalance redelivers messages.',
-          'Fix 2: idempotency by (payment_id, template), so a redelivery is recognised and skipped. This should have been there from the first line of the handler.',
-          'Fix 3: a correlation id carried from the original HTTP request through the event into every subscriber, so one query shows the whole flow.',
-        ],
-        result:
-          'Extensibility worked exactly as promised, and the two problems were the two the pattern always brings: per-subscriber lag and duplicate delivery. Both have standard solutions that belong in place from the start.',
-      },
-    ],
-    jargon: [
-      { term: 'Topic', plain: 'The named channel. Publishers write to it, subscribers register on it.' },
-      { term: 'Subscriber group', plain: 'A set of consumers sharing one position in the stream.' },
-      { term: 'Consumer lag', plain: 'How far behind a subscriber is. Monitor per subscriber.' },
-      { term: 'Idempotent handler', plain: 'One that produces the same result when the message arrives twice.' },
-      { term: 'Event catalogue', plain: 'The documented set of events, publishers and subscribers.' },
-      { term: 'Schema registry', plain: 'A service enforcing compatible event schema evolution.' },
-    ],
-    remember: [
-      'New behaviour is added by subscribing, with no change to the publisher.',
-      'The publisher learns nothing - no confirmation, no outcome, no subscriber list.',
-      'At-least-once delivery means every handler must be idempotent.',
-      'Monitor lag per subscriber, not just the health of the topic.',
-      'Past-tense facts only; an event that names an action is a command in disguise.',
     ],
   },
 };

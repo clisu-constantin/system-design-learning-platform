@@ -21,7 +21,7 @@ export const distributedDepth: DepthMap = {
 
 PARTITION: node A and node B cannot talk
 
-  CP  both refuse writes they cannot confirm
+  CP  the side without a majority refuses what it cannot confirm
       -> no wrong answers, some requests fail
       -> banking, inventory, unique constraints
 
@@ -179,7 +179,7 @@ the middle three.`,
       {
         heading: 'Measuring it: nines, error budgets and what counts as down',
         paragraphs: [
-          'Availability is the fraction of requests (or of time) where the system responds successfully. Expressed as nines: 99.9 percent allows about 8.8 hours of downtime per year, 99.99 percent allows 52 minutes, 99.999 percent allows five minutes - less than one human reaction.',
+          'Availability is the fraction of requests (or of time) where the system responds successfully. Expressed as nines: 99.9 percent allows about 8.8 hours of downtime per year, 99.99 percent allows about 52.6 minutes, 99.999 percent allows five minutes - less than one human reaction.',
           'Request-based measurement is usually more honest than time-based. A system that returns errors for 5 percent of requests all day is not down by a time-based measure, but users experience it as broken. Counting good requests over total requests captures partial failures, which are far more common than total ones.',
           'The error budget flips the number into something a team can use. If the target is 99.9 percent, you may fail 0.1 percent of requests this quarter. Spend it on deploys and experiments while it lasts; when it is exhausted, stop shipping risky changes and fix reliability. That converts availability from an aspiration into a decision rule.',
         ],
@@ -215,7 +215,7 @@ This is why: fewer hard dependencies, more redundant copies.`,
         paragraphs: [
           'Two instances are not twice as available if switching between them requires a human at 3am. The measured availability of a redundant pair is dominated by detection and switching time, which is why health checks, automated promotion and DNS or load balancer updates matter more than the spare capacity itself.',
           'Watch for shared fate: two instances in the same rack, same zone, same deploy, or depending on the same configuration service are not independent. Correlated failure is what turns a calculated six nines into a real two. The 0.01 squared arithmetic above assumes independence, and independence is the thing you must actually engineer.',
-          'And rehearse. A failover path that has never been exercised has roughly a coin-flip chance of working, because it accumulates untested assumptions: stale credentials, a hardcoded hostname, a replica too far behind to promote. Game days and deliberate failovers in business hours are how that probability becomes high.',
+          'And rehearse. A failover path that has never been exercised has a poor chance of working, because it accumulates untested assumptions: stale credentials, a hardcoded hostname, a replica too far behind to promote. Game days and deliberate failovers in business hours are how that probability becomes high.',
         ],
       },
     ],
@@ -242,7 +242,7 @@ This is why: fewer hard dependencies, more redundant copies.`,
       { term: 'Hard vs soft dependency', plain: 'One whose failure fails the request, versus one you can degrade around.' },
       { term: 'Graceful degradation', plain: 'Serving a reduced but useful response when a part is unavailable.' },
       { term: 'Correlated failure', plain: 'Redundant components failing together because they share a rack, zone or config.' },
-      { term: 'MTTR', plain: 'Mean time to recovery. For availability, reducing it usually beats reducing failure frequency.' },
+      { term: 'MTTR', plain: 'Mean time to recovery. It counts as much as MTBF, and it is often the cheaper one to improve.' },
     ],
     remember: [
       'Serial dependencies multiply availability down; redundant copies multiply it up.',
@@ -372,7 +372,7 @@ It is that two operations cannot both see the same pre-state.`,
         heading: 'How it is achieved, and therefore what it costs',
         paragraphs: [
           'Single-node databases get it almost for free: one copy, internal locks, done. The cost appears when the data is replicated. Then every write must be agreed by a quorum before it can be acknowledged, using a consensus protocol like Raft, and reads must either go through the leader or confirm with a quorum that they are not stale.',
-          'That means at least one round trip to a majority for every operation. Inside a datacenter, 1-2 ms. Across regions, the round trip to the furthest quorum member - 60 to 150 ms - on every write, forever, even when nothing is wrong. Google Spanner pays this and mitigates it with atomic clocks; most systems simply keep the quorum regional.',
+          'That means at least one round trip to a majority for every operation. Inside a datacenter, 1-2 ms. Across regions, the round trip to the replica that completes the majority - 60 to 150 ms - on every write, forever, even when nothing is wrong. Google Spanner pays it too, and uses GPS and atomic clocks (TrueTime) so that read-only transactions can avoid it; most systems simply keep the quorum regional.',
           'And during a partition, a node that cannot reach a quorum must refuse rather than answer. That is the CP choice, and it is not a bug: refusing is the only way to keep the promise.',
         ],
         bullets: [
@@ -549,8 +549,8 @@ you can delete a lock somebody else acquired after yours expired.`,
       {
         heading: 'Where to put the lock, and Redlock',
         paragraphs: [
-          'A single Redis instance gives a fast, simple lock with one flaw: if it fails over to a replica that had not yet received the lock key, two holders are possible. Redlock attempts to fix that by acquiring on a majority of independent Redis nodes; it works in practice for efficiency locks and has been criticised at length for correctness locks because it still relies on time bounds that a pause can violate.',
-          'Systems built on consensus - etcd, ZooKeeper, Consul - offer leases tied to a session with proper fencing. They are slower (a quorum round trip per operation) and they are the right tool when a double execution would corrupt data. If your cluster already runs one, use it rather than inventing a lock.',
+          'A single Redis instance gives a fast, simple lock with one flaw: if it fails over to a replica that had not yet received the lock key, two holders are possible. Redlock attempts to fix that by acquiring on a majority of independent Redis nodes. For efficiency locks it adds cost without much benefit, since a single instance is already enough there; for correctness locks it has been criticised at length (Martin Kleppmann, 2016), because it still relies on time bounds that a pause can violate and it hands out no increasing number to fence with.',
+          'Systems built on consensus - etcd, ZooKeeper, Consul - keep the lock on a replicated quorum, tie it to a lease or session, and give you a number that grows with every change: the revision in etcd, the zxid or znode version in ZooKeeper. That number is your fencing token, as long as the protected resource checks it. They are slower (a quorum round trip per operation), and they are the tool to reach for when a double execution would corrupt data. If your cluster already runs one, use it rather than inventing a lock.',
           'And frequently the best lock is the database you already have. SELECT ... FOR UPDATE on a row, a Postgres advisory lock, or a unique key on a job id gives you mutual exclusion with real transactional semantics and no extra infrastructure. It does not scale to enormous rates, but most locking needs are nowhere near that.',
         ],
       },
@@ -584,7 +584,7 @@ you can delete a lock somebody else acquired after yours expired.`,
       'First try to remove the need: unique constraints, atomic updates, queues, idempotency.',
       'Every lock needs a TTL, and every TTL can expire mid-work.',
       'Release only your own lock, checked atomically by token.',
-      'For correctness-critical work, fencing tokens are the only real protection.',
+      'When a lock guards correctness, the resource must check a fencing token - a TTL alone cannot protect it.',
       'A lock that prevents waste is a different thing from a lock that prevents corruption.',
     ],
   },
@@ -601,7 +601,7 @@ you can delete a lock somebody else acquired after yours expired.`,
         paragraphs: [
           'Coordination is enormously simpler with a single decision maker. One node orders the writes, so there is no conflict resolution. One node runs the scheduled job, so it runs once. One node assigns partitions, so assignments do not overlap. The leader turns a distributed agreement problem into a local one.',
           'The cost is that the leader is a bottleneck for whatever it serialises, and its failure requires a detection-and-election pause during which that work stops. The whole design effort goes into making that pause short and making sure no second leader appears during it.',
-          'Note the pattern: leader-based systems are common precisely because leaderless coordination is so much harder. Raft, Kafka partitions, Postgres primaries, Kubernetes controllers - all pick one and accept a failover gap.',
+          'Note the pattern: leader-based systems are common precisely because leaderless coordination is so much harder. Raft, Kafka partitions, Postgres primaries (elected by a tool such as Patroni on top of etcd), Kubernetes controllers - all pick one and accept a failover gap.',
         ],
       },
       {
@@ -630,6 +630,7 @@ invariants
         paragraphs: [
           'Timeout tuning is a direct trade-off. Short timeouts detect failure quickly and cause spurious elections under load or GC pauses - and every spurious election is a brief write outage. Long timeouts are stable but extend the gap after a real failure. Base the value on your observed worst-case pause, not on the best case.',
           'Split votes and flapping are the failure modes to watch. Randomised timeouts mostly prevent the first; the second usually means the timeout is shorter than your real latency variance. A cluster re-electing several times an hour is telling you something about its network or its garbage collector.',
+          'One more source of needless elections: a node cut off by a partition keeps timing out and raising its term, and when it rejoins, that higher term forces a healthy leader to step down. Pre-vote fixes this - a node first asks whether it could win before it raises its term - and etcd turns it on by default since version 3.5. The Consensus Lab has no pre-vote, so Cut off followers shows the disruption.',
           'And unless you are writing a database, do not implement this yourself. Use etcd, ZooKeeper, Consul, or the leader-election primitive your platform provides - Kubernetes offers one built on a lease object. Consensus implementations are small to describe and notoriously subtle to get right.',
         ],
         bullets: [
@@ -705,13 +706,13 @@ invariants
   5        3          2      when one failure is not enough
   7        4          3      rarely worth the write latency
 
-every write costs a round trip to the slowest member of the majority`,
+every write waits for the slowest member of the fastest majority`,
         },
       },
       {
         heading: 'Where you meet it, and when to use it directly',
         paragraphs: [
-          'You use consensus every day without implementing it: etcd holds Kubernetes state, ZooKeeper coordinates Kafka and HBase, Postgres with synchronous replication and a quorum-based failover manager, CockroachDB and Spanner use Raft-like protocols per range, and every managed database with automatic failover has something similar inside.',
+          'You use consensus every day without implementing it: etcd holds Kubernetes state, ZooKeeper coordinates HBase (and Kafka before version 4.0, which moved to its own Raft-based KRaft), Postgres failover managers such as Patroni keep their leader lock in etcd, CockroachDB runs Raft per range and Spanner runs Paxos per split, and every managed database with automatic failover has something similar inside.',
           'Use it directly for small, critical, low-volume state: cluster membership, configuration, leader leases, feature flags that must be globally consistent. These systems are designed for a modest write rate and total reliability, not for throughput.',
           'Do not use it for bulk data. Every write pays a quorum round trip and is stored on every node, so a consensus store is the wrong home for user content, events or anything high volume. The standard architecture is a small consensus core managing metadata, with the bulk data in systems that reference it.',
         ],
@@ -729,10 +730,10 @@ every write costs a round trip to the slowest member of the majority`,
         setup:
           'A team deploys a 3-node etcd cluster with one node in Europe, one in the US and one in Asia, expecting maximum resilience.',
         walkthrough: [
-          'Every write must be acknowledged by 2 of 3 nodes. From the European leader, the nearest other node is the US at about 90 ms round trip.',
+          'Every write must be acknowledged by 2 of 3 nodes. From a leader in Frankfurt, the nearest other node is in Virginia at about 90 ms round trip.',
           'So every single write costs at least 90 ms, before any disk work. Kubernetes operations that do dozens of writes become visibly slow.',
-          'Worse, leadership can move. If the Asian node becomes leader, its nearest quorum partner is Europe at about 160 ms, and the cluster gets slower for no visible reason.',
-          'Election timeouts also have to be raised well above the cross-region variance, so a real failure now takes several seconds to detect.',
+          'Worse, leadership can move. If the node in Singapore becomes leader, its nearest quorum partner is Frankfurt at about 160 ms, and the cluster gets slower for no visible reason.',
+          'Election timeouts also have to be raised: etcd asks for at least 10 times the round trip, so about 1.6 s here plus margin for variance, and a real failure now takes seconds to detect.',
           'Better design: all three nodes in one region, spread across three availability zones. Round trips are about 1 ms, the cluster survives losing a zone, and writes are fast.',
           'For cross-region survival, run a separate cluster per region and replicate at the application level, accepting eventual consistency between regions - rather than paying consensus latency on every write.',
         ],
@@ -752,7 +753,7 @@ every write costs a round trip to the slowest member of the majority`,
       'Consensus agrees on an order, so replicas applying it end in the same state.',
       'Majorities overlap, which is why a committed decision can never be contradicted.',
       'Odd sizes only - four nodes tolerate the same failures as three.',
-      'Every write costs a round trip to the slowest quorum member; keep them close.',
+      'Every write waits for the slowest member of the fastest majority; keep them close.',
       'Use it for small critical metadata, never for bulk data.',
     ],
   },
@@ -767,9 +768,9 @@ every write costs a round trip to the slowest member of the majority`,
       {
         heading: 'Retries are inevitable, so design for duplicates',
         paragraphs: [
-          'Any network call can time out after the server has already done the work. The client cannot tell the difference between "the request never arrived" and "the response was lost on the way back", so it retries - and now the operation may run twice. Load balancers retry, clients retry, message brokers redeliver, and users press the button again.',
+          'Any network call can time out after the server has already done the work. The client cannot tell the difference between "the request never arrived" and "the response was lost on the way back", so it retries - and now the operation may run twice. Load balancers retry, clients retry, message brokers redeliver, and users press the button again. Refusing to retry is no cure: it swaps the double charge for an error shown on a payment that did go through.',
           'That is why exactly-once delivery does not exist. What exists is at-least-once delivery plus idempotent processing, which together produce exactly-once effect. This is the single most useful sentence in distributed systems engineering, and it shifts the work from the transport to your handler.',
-          'Some operations are naturally idempotent: setting a value, deleting by id, adding to a set. Others are not: incrementing a counter, appending to a list, charging a card, sending an email. For the second group you must add something that makes the repeat recognisable.',
+          'Some operations are naturally idempotent: setting a value, deleting by id, adding to a set. Others are not: incrementing a counter, appending to a list, charging a card, sending an email. For the second group you must add something that makes the repeat recognisable. HTTP itself defines GET, PUT and DELETE as idempotent (RFC 9110), which is why clients and proxies retry them on their own - so a PUT handler that appends to a list breaks a promise the whole web relies on.',
         ],
         code: {
           caption: 'The standard idempotency key flow',
@@ -806,7 +807,7 @@ Key must be generated by the client per intent, not per attempt.`,
         paragraphs: [
           'The key must identify the intent, not the attempt. If a client generates a fresh key on each retry, every retry is a new operation and you have achieved nothing. Generate it when the user clicks, keep it across retries, and change it only for a genuinely new action.',
           'The key record and the effect must commit together. If you charge the card and then crash before recording the key, the retry charges again. Inside one database, use one transaction. Across services, write the key and an outbox row transactionally and let the external call be driven from the outbox - the external call itself carries the key so the provider deduplicates.',
-          'Finally, decide retention and concurrency. Keys are usually kept 24 hours to a few days - long enough to cover client retries, short enough to bound storage. And two simultaneous requests with the same key must not both execute: the unique insert is what serialises them, which is why the insert comes first and the work second.',
+          'Finally, decide retention and concurrency. Keys are usually kept 24 hours to a few days - long enough to cover client retries, short enough to bound storage. And two simultaneous requests with the same key must not both execute: the unique insert is what serialises them, which is why the insert comes first and the work second. Last, check that a repeat carries the same request as the original: a key reused with a different body is a client bug, and the server should reject it (the IETF Idempotency-Key draft uses 422) rather than replay the result of a different payment.',
         ],
       },
     ],

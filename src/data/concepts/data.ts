@@ -7,9 +7,11 @@ export const dataConcepts: Concept[] = [
     tagline: 'Relations, schemas and transactions you can reason about.',
     category: 'data',
     difficulty: 'Beginner',
-    keywords: ['postgres', 'mysql', 'acid', 'joins', 'schema'],
+    lab: 'data-models',
+    labFocus: 'sql-databases',
+    keywords: ['postgres', 'mysql', 'acid', 'joins', 'schema', 'transaction', 'relational'],
     what: 'Relational databases store data in tables with a declared schema, express relationships through keys, and support multi-row transactions with ACID guarantees.',
-    why: 'Most business data is relational, and most business rules are invariants across several rows. A transactional engine enforces those invariants for you instead of leaving them to application code.',
+    why: 'Most business data is relational, and most business rules are invariants across several rows. A transactional engine enforces those invariants for every writer instead of leaving them to application code.',
     how: [
       'Model entities as tables with primary keys; express relationships with foreign keys.',
       'The query planner decides how to satisfy a query using available indexes and statistics.',
@@ -19,29 +21,213 @@ export const dataConcepts: Concept[] = [
     when: [
       'Data with relationships and invariants: orders, payments, inventory, accounts.',
       'Query patterns that are not known in advance - SQL is good at ad-hoc questions.',
+      'An early product whose access patterns are still being discovered.',
     ],
-    diagram: `users            orders
-------           ------
-id (PK)   <----  user_id (FK)
-email            id (PK)
-country          total_cents
-                 status
+    advantages: [
+      'Constraints (types, foreign keys, unique, check) apply to every writer, not just your code.',
+      'One transaction makes a multi-step change all-or-nothing.',
+      'Joins answer new questions without changing how the data is stored.',
+    ],
+    diagram: `carts                 products          orders
+-----                 --------          ------
+user_id               id (PK)           id (PK)
+product_id (FK) ----> stock             user_id
+qty                   price_cents       total_cents
 
-SELECT u.email, SUM(o.total_cents)
-FROM users u JOIN orders o ON o.user_id = u.id
-GROUP BY u.email;`,
+BEGIN;
+  SELECT c.qty, p.price_cents
+    FROM carts c JOIN products p ON p.id = c.product_id
+   WHERE c.user_id = 42;
+  UPDATE products SET stock = stock - 1 WHERE id = 7 AND stock > 0;
+  INSERT INTO orders (user_id, total_cents) VALUES (42, 1999);
+COMMIT;   -- a failure anywhere rolls back all three`,
     tradeoffs: [
       {
-        approach: 'Relational database',
-        gains: ['Transactions across rows and tables', 'Flexible ad-hoc queries', 'Schema catches bad data early'],
-        costs: ['Horizontal write scaling needs deliberate sharding', 'Schema changes on huge tables need care', 'Joins get expensive at very large scale'],
+        approach: 'One relational primary',
+        gains: ['Transactions across rows and tables', 'Flexible ad-hoc queries and joins', 'Schema catches bad data early'],
+        costs: [
+          'Every write goes through one machine; beyond it you need sharding',
+          'Changing a column type on a huge table rewrites it under a lock',
+          'Joins over very large tables get expensive',
+        ],
+      },
+      {
+        approach: 'Distributed SQL (CockroachDB, Spanner, Vitess)',
+        gains: ['Writes scale across machines', 'Keeps SQL and transactions'],
+        costs: [
+          'Transactions that span machines pay extra round trips',
+          'More moving parts to operate and understand',
+          'Some features of single-node SQL are limited or behave differently',
+        ],
       },
     ],
     mistakes: [
       'Assuming "SQL does not scale" - a single well-tuned Postgres instance handles very large workloads.',
-      'Using a relational store as a queue or a cache because it is already there.',
+      'Read-then-write in application code (read stock, then write stock - 1), which loses updates under concurrency.',
+      'Running ALTER COLUMN TYPE on a large production table without planning for the table rewrite and its lock.',
+      'Polling a table as a job queue without FOR UPDATE SKIP LOCKED, so workers block each other.',
+    ],
+    realWorld: [
+      'PostgreSQL defaults to the read committed isolation level; serializable must be asked for, and then transactions must be retried on serialization failures.',
+      'In PostgreSQL 11 and later, adding a column with a constant default is a metadata change; changing a column type usually rewrites the table.',
     ],
     related: ['nosql-databases', 'relational-vs-non-relational', 'database-indexing', 'replication'],
+    quiz: [
+      {
+        id: 'sql-1',
+        prompt:
+          'Two customers buy the last unit of a product at the same moment. Your code runs SELECT stock, subtracts 1 in the application, then runs UPDATE ... SET stock = <new value>. PostgreSQL is on its default isolation level. What can happen?',
+        options: [
+          'The database detects the conflict and rejects the second purchase automatically',
+          'The second request waits until the first commits, then reads 0',
+          'Both read 1, both write 0, and two orders are placed for one unit',
+          'Both transactions deadlock and are rolled back',
+        ],
+        answer: 2,
+        explanation:
+          'Read committed does not stop a lost update: both reads see 1 before either write lands. It is tempting to expect the database to catch it, but it only sees two valid writes. The fix is an atomic conditional write (UPDATE ... SET stock = stock - 1 WHERE stock > 0), a SELECT FOR UPDATE lock, or a version check.',
+      },
+      {
+        id: 'sql-2',
+        prompt:
+          'A checkout runs BEGIN, reserves stock, inserts the order, then inserts the payment - and the payment insert fails on a constraint. What does the database hold afterwards?',
+        options: [
+          'Nothing: the stock reservation and the order roll back too',
+          'The order and the stock reservation, because those statements had already succeeded',
+          'The stock reservation only, because it ran first and was already written to disk',
+          'Whatever the application decides to delete in its error handler',
+        ],
+        answer: 0,
+        explanation:
+          'A transaction is all or nothing: one failed statement means none of its changes are kept. The Lab shows this as triangles - a checkout that failed half-way and was undone. Expecting the earlier writes to stay is the mental model of separate writes, which is exactly what a transaction removes.',
+      },
+      {
+        id: 'sql-3',
+        prompt:
+          'Payments move out of your PostgreSQL database into a separate payment service with its own database. The checkout still wants "order, stock and payment together or not at all". What changes?',
+        options: [
+          'Nothing - wrap the HTTP call to the payment service inside BEGIN ... COMMIT so a failure rolls it back',
+          'Switch the isolation level to serializable so the payment write joins the same guarantee',
+          'Use a longer transaction timeout so the payment has time to finish',
+          'One database transaction no longer covers it; use a saga or outbox with compensation',
+        ],
+        answer: 3,
+        explanation:
+          'Atomicity ends at the edge of one database. Wrapping an HTTP call in BEGIN only holds locks while the call runs - if it succeeds and your COMMIT then fails, the payment still happened. Isolation levels and timeouts do not reach another system either.',
+      },
+      {
+        id: 'sql-4',
+        prompt:
+          'You must widen orders.total_cents from integer to bigint on a 500-million-row PostgreSQL table during business hours. What does a plain ALTER TABLE ... ALTER COLUMN ... TYPE bigint do?',
+        options: [
+          'It changes only the table metadata, like adding a column with a default, so it finishes in milliseconds',
+          'It rewrites the whole table under an ACCESS EXCLUSIVE lock, so writes wait',
+          'It converts rows lazily the next time each one is read, spreading the cost over weeks',
+          'It fails, because column types can never be changed',
+        ],
+        answer: 1,
+        explanation:
+          'Integer to bigint is not binary compatible, so PostgreSQL rewrites the table and its indexes while holding its strongest lock - the Lab Schema change workload shows writes waiting. Instant metadata changes exist, but for adding a column with a constant default, not for a type change. The safe path is expand, backfill in batches, then switch.',
+      },
+      {
+        id: 'sql-5',
+        prompt:
+          'On PostgreSQL 14 you add a new column: ALTER TABLE orders ADD COLUMN priority integer DEFAULT 0. The table has 200 million rows. What do you expect?',
+        options: [
+          'A multi-hour rewrite, because each of the 200 million rows must physically store the 0',
+          'The column is added, but existing rows stay NULL until you backfill them yourself',
+          'A fast change: the default lives in the table metadata, no rewrite',
+          'An error, because a column default also needs a NOT NULL constraint',
+        ],
+        answer: 2,
+        explanation:
+          'Since PostgreSQL 11 a constant default is stored once in the metadata and returned for old rows, so the ALTER is fast even on huge tables. The rewrite fear is right for a type change, not here. It still needs a brief exclusive lock, so it can wait behind a long-running query - set a lock timeout.',
+      },
+      {
+        id: 'sql-6',
+        prompt:
+          'Data is stored normalised in PostgreSQL. The product manager asks for a report nobody planned: revenue by product category per country for last quarter. What is the usual cost?',
+        options: [
+          'Write a new query joining orders, products and users - no data has to move',
+          'Duplicate the category and country into every order row first, so the report avoids joins',
+          'Export everything and join it in application code',
+          'Create a new summary table for this one report and backfill it from last quarter of orders',
+        ],
+        answer: 0,
+        explanation:
+          'Answering questions you did not plan for is what normalised relational data is good at: the join happens at query time. You might add an index if it runs often. Pre-joining or duplicating data is the document-store habit, needed there because joins are missing - see the Join-heavy report workload in the Lab.',
+      },
+      {
+        id: 'sql-7',
+        prompt:
+          'Orders are written by the web app, a nightly import job and a support admin script. Last month an order appeared for a customer id that does not exist. Where should the rule "an order belongs to an existing customer" live?',
+        options: [
+          'In the web app validation, since it writes most orders',
+          'In a nightly clean-up job that deletes orphan orders',
+          'In a code review checklist for every new writer',
+          'In a foreign key constraint in the database',
+        ],
+        answer: 3,
+        explanation:
+          'A constraint in the database applies to every writer at once, including the script someone runs at midnight. Validation in one app is tempting but misses the other two writers, and a clean-up job only repairs damage after customers have seen it.',
+      },
+      {
+        id: 'sql-8',
+        prompt:
+          'You switch a transfer transaction to SERIALIZABLE isolation. Under load, some transactions fail with SQLSTATE 40001 ("could not serialize access"). What should the application do?',
+        options: [
+          'Treat it as a bug and switch back to read committed',
+          'Retry the whole transaction from the beginning',
+          'Retry only the last statement, the one that failed',
+          'Ignore it - the database already applied the changes',
+        ],
+        answer: 1,
+        explanation:
+          'Serializable isolation gives its guarantee by aborting transactions that would break it, and the PostgreSQL docs say applications must retry the entire transaction. Retrying just the last statement is not possible - the transaction is already aborted. Switching back gives up the protection you asked for.',
+      },
+      {
+        id: 'sql-9',
+        prompt:
+          'A product catalogue on one PostgreSQL primary hits its CPU limit. 95% of queries are reads of product pages. Someone proposes rewriting everything for a NoSQL store. What is the proportionate first step?',
+        options: [
+          'Shard the database by product id straight away, before it grows',
+          'Rewrite the data model for a document store that scales reads',
+          'Add read replicas or a cache for the reads, and measure',
+          'Buy a bigger machine and turn off the indexes to save CPU',
+        ],
+        answer: 2,
+        explanation:
+          'Relational databases scale reads with replicas and caches; that is cheap and keeps the transactions and the schema. Sharding and rewrites solve write scaling, which is not the problem here. Dropping indexes would make every read a scan and burn more CPU, not less.',
+      },
+      {
+        id: 'sql-10',
+        prompt:
+          'Ten workers poll a jobs table with SELECT ... FOR UPDATE LIMIT 1. Most of the time nine of them are waiting on the row the first one locked. What is the fix?',
+        options: [
+          'Add FOR UPDATE SKIP LOCKED so each worker takes the next unlocked job',
+          'Remove the lock so every worker reads freely and the jobs table stops being a bottleneck',
+          'Run only one worker',
+          'Raise the isolation level to serializable so the database hands out rows one by one',
+        ],
+        answer: 0,
+        explanation:
+          'SKIP LOCKED makes a worker pass over rows another transaction holds, which the PostgreSQL docs name as the way to avoid contention on a queue-like table. Removing the lock lets two workers take the same job. One worker and serializable both make the waiting worse, not better.',
+      },
+      {
+        id: 'sql-11',
+        prompt:
+          'In the Lab, on the relational side, you raise Checkouts per second past 4,000 and the PostgreSQL node turns red. What limit are you looking at?',
+        options: [
+          'The carts table is full',
+          'Transactions cannot run in parallel, so only one checkout runs at a time and the rest queue',
+          'The join between carts and orders is missing an index, so each checkout scans a table',
+          'Every write goes through the one primary, so its capacity caps checkouts',
+        ],
+        answer: 3,
+        explanation:
+          'A relational database takes all writes on one primary; the Lab frame says it: one machine, every table, every write. Transactions do run in parallel - thousands per second here - so the limit is the machine, not serial execution. The numbers are simplified; the shape is the lesson.',
+      },
+    ],
   },
   {
     slug: 'nosql-databases',
@@ -49,19 +235,27 @@ GROUP BY u.email;`,
     tagline: 'Data models built around a specific access pattern.',
     category: 'data',
     difficulty: 'Beginner',
-    keywords: ['mongodb', 'cassandra', 'dynamodb', 'key value', 'document', 'wide column'],
+    lab: 'data-models',
+    labFocus: 'nosql-databases',
+    keywords: ['mongodb', 'cassandra', 'dynamodb', 'key value', 'document', 'wide column', 'graph', 'partition key'],
     what: 'NoSQL covers several families: key-value stores, document stores, wide-column stores and graph databases. Each trades general-purpose querying for a specific shape of access.',
     why: 'When you know the access pattern in advance and need it to stay fast at very large scale, a store designed around that pattern can partition and replicate more easily than a general relational engine.',
     how: [
-      'Key-value (Redis, DynamoDB): O(1) lookup by key, no joins.',
+      'Key-value (Redis, DynamoDB): lookup by key, no joins.',
       'Document (MongoDB): store an aggregate as one document, read it in one operation.',
       'Wide-column (Cassandra, HBase): partition key plus clustering key, optimised for huge write volumes.',
       'Graph (Neo4j): relationships are first-class, traversals are cheap.',
+      'In a partitioned store the partition key decides which machine holds a record, so a lookup by key touches one machine.',
     ],
     when: [
-      'High write throughput with a known partition key.',
+      'High read or write throughput on a known partition key.',
       'Documents that are always read as a whole (a product page, a user profile).',
-      'Flexible or rapidly changing shape of data.',
+      'Data whose shape varies a lot between records.',
+    ],
+    advantages: [
+      'Partitioning is part of the model, so adding machines adds capacity for key traffic.',
+      'Predictable latency for the access pattern the data was designed for.',
+      'One read returns a whole aggregate, with no join.',
     ],
     diagram: `Document store               Wide column store
 
@@ -71,21 +265,188 @@ GROUP BY u.email;`,
   orders: [ ... ] }             one contiguous disk scan`,
     tradeoffs: [
       {
-        approach: 'NoSQL store',
-        gains: ['Partitioning is built in', 'Predictable latency for the designed access pattern', 'Schema flexibility'],
+        approach: 'Key-value or document store',
+        gains: ['Partitioning is built in', 'Predictable latency for the designed access pattern', 'Flexible record shape'],
         costs: [
-          'Cross-entity transactions are limited or absent',
-          'New query patterns may require re-modelling or duplicating data',
+          'Multi-item transactions are limited or cost extra',
+          'Queries the key was not designed for need a scan, an index or a second copy of the data',
           'Denormalised data must be kept in sync by your code',
         ],
+      },
+      {
+        approach: 'Wide-column store',
+        gains: ['Very high write throughput across many machines', 'Cheap range reads inside one partition'],
+        costs: ['Tables are designed per query, so data is duplicated', 'A bad partition key creates hot or huge partitions'],
+      },
+      {
+        approach: 'Graph database',
+        gains: ['Multi-hop traversals (friends of friends) stay cheap'],
+        costs: ['Aggregations over the whole dataset are not its strength', 'A smaller ecosystem to hire and operate for'],
       },
     ],
     mistakes: [
       'Choosing NoSQL for "speed" and then implementing joins in the application layer.',
       'Picking a partition key that concentrates traffic on one partition.',
       'Assuming schema-less means you have no schema - it means the schema lives in your code.',
+      'Doing several separate writes that must succeed together, with no transaction or compensation.',
+    ],
+    realWorld: [
+      'MongoDB supports multi-document transactions, and its docs still advise modelling so that most writes touch one document.',
+      'DynamoDB transactions do two underlying writes per item (prepare and commit), so they consume twice the write capacity.',
+      'Each DynamoDB partition serves up to 3,000 read units and 1,000 write units per second, which is why a hot key is a real limit.',
     ],
     related: ['sql-databases', 'relational-vs-non-relational', 'sharding', 'eventual-consistency'],
+    quiz: [
+      {
+        id: 'nosql-1',
+        prompt:
+          'A chat app stores messages in a wide-column store partitioned by message_id. The main screen shows the last 50 messages of one conversation. What goes wrong, and what is the usual fix?',
+        options: [
+          'Nothing - partitioning by message id spreads the reads evenly, which is best for any screen',
+          'Each screen touches many partitions; partition by conversation id, sorted by time',
+          'Writes become slow because recent messages pile onto one node; partition by user name instead',
+          'The store runs out of space on one node; add a TTL so old messages expire',
+        ],
+        answer: 1,
+        explanation:
+          'In a partitioned store you design the key from the query. Partitioning by message_id spreads writes well but scatters one conversation over every node. Partitioning by conversation (bounded by a time bucket for huge chats) makes the screen one read of one sorted partition.',
+      },
+      {
+        id: 'nosql-2',
+        prompt:
+          'In the Lab you turn on One hot key: half of all requests ask for the same cart and Partition 1 turns red. You raise partitions from 4 to 6. What happens?',
+        options: [
+          'The hot key is split across the six partitions, so each carries a sixth of its load and it evens out',
+          'Every partition slows down equally while the data is moved around',
+          'The store rejects all requests until you rebalance by hand',
+          'Nothing improves for that key - one key lives on one partition, so it stays hot',
+        ],
+        answer: 3,
+        explanation:
+          'More partitions spread more keys, but one key still hashes to one partition. The tempting answer assumes the load is split per request; it is split per key. The fixes are a better key (for example adding a suffix to spread writes), or a cache in front of the hot reads.',
+      },
+      {
+        id: 'nosql-3',
+        prompt:
+          'A forum stores each post as a document that embeds the author display name, so a post page needs one read. A user changes their display name. What happens to their old posts?',
+        options: [
+          'They keep the old name until your code updates every post',
+          'The store updates them automatically, the way a foreign key cascades an update',
+          'They show an error, because the embedded reference to the user is now broken',
+          'Only the newest post is updated, since it is the one still in the write cache',
+        ],
+        answer: 0,
+        explanation:
+          'Embedding copies the value, and a document store keeps no link between copies - there is no join to fetch the current name. Automatic updates are the relational picture, where the name is stored once. Denormalising buys a one-read page and costs you this fan-out write.',
+      },
+      {
+        id: 'nosql-4',
+        prompt:
+          'Users are stored in a key-value store keyed by user id. A new feature needs "all users in Berlin". What is the honest cost?',
+        options: [
+          'None - a key-value store filters on any field quickly, since values sit in memory',
+          'You need a join between users and cities, which the store plans and runs for you',
+          'A full scan, unless you add a secondary index or a copy keyed by city and keep it in sync',
+          'You must first migrate every user into a new store that supports queries by field',
+        ],
+        answer: 2,
+        explanation:
+          'A key-value store answers by key. A question on another field means scanning everything, unless you build an access path for it - an index or a duplicate table - which costs storage and write work. This is why the NoSQL habit is to list the queries before designing the keys.',
+      },
+      {
+        id: 'nosql-5',
+        prompt:
+          'Five services write order documents into one collection with no validation. A year later a report crashes on orders where total is a string. What is the lesson?',
+        options: [
+          'Document stores slowly corrupt field types over time, so the collection needs a periodic repair job',
+          'Schema-less still has a schema - it lives in your code, so validate it on write',
+          'Reports should not read orders directly; they should only read pre-computed totals',
+          'Use a bigger machine for the report',
+        ],
+        answer: 1,
+        explanation:
+          'The store accepted whatever each service wrote, so five slightly different shapes piled up. Blaming the store misses the point: nothing enforced a shape, so your code has to - with validation rules, a version field, or a schema check on write.',
+      },
+      {
+        id: 'nosql-6',
+        prompt:
+          'In the Lab the document store runs checkouts without a transaction: read the cart, update stock, write the order. The Half-done checkouts counter keeps growing. What does each one mean?',
+        options: [
+          'A checkout that failed once, was retried by the client, and succeeded on the second try',
+          'An order written twice because the client resent the request after a timeout',
+          'A request rejected because the partition holding the cart was full',
+          'Stock was reserved, then the order write failed, and nothing undid it',
+        ],
+        answer: 3,
+        explanation:
+          'Separate writes to different documents succeed or fail on their own. When the second fails, the first stays. Turning on Multi-document transaction makes it all-or-nothing at the price of more operations per checkout; the other options are to put both changes in one document, or to write a compensating step.',
+      },
+      {
+        id: 'nosql-7',
+        prompt:
+          'You plan one DynamoDB transaction per second, each writing three items of 500 bytes with TransactWriteItems. How many write capacity units do you provision?',
+        options: ['6, because each item is written twice: prepare and commit', '3, one write capacity unit per 500-byte item, since each is under 1 KB', '1, because the transaction commits as one atomic write', '0, transactions are free'],
+        answer: 0,
+        explanation:
+          'The DynamoDB docs use this exact example: every item in a transaction costs two writes, so three items need six WCUs. Counting one per item is the non-transactional price, and one per transaction forgets that every item is its own write - the Lab shows the same doubling as more operations per checkout when the transaction is on.',
+      },
+      {
+        id: 'nosql-8',
+        prompt:
+          'In the Lab on the document side, 4 partitions share 120,000 key requests per second and the busiest runs at 75%. Traffic will double. Keys are spread evenly. What keeps it healthy?',
+        options: [
+          'Nothing - a document store cannot take more traffic without a bigger primary',
+          'A join index on the carts so each request reads fewer documents',
+          'More partitions, so each machine takes a smaller share of the keys',
+          'Turning on multi-document transactions to batch the key requests together',
+        ],
+        answer: 2,
+        explanation:
+          'With keys spread evenly, capacity grows with the number of partitions: each get or put touches only the partition that holds its key. Transactions add cost rather than capacity, and joins are not involved in key lookups at all.',
+      },
+      {
+        id: 'nosql-9',
+        prompt:
+          'A team chose a document store "because it is faster", and now builds a monthly revenue report by loading 5 million order documents into the app and joining them with products in code. It takes minutes. What is the better move?',
+        options: [
+          'Add more application servers so the join in code runs in parallel and finishes faster',
+          'Run it on a store built for scans: a relational replica or an analytics store',
+          'Embed every product inside every order document, then scan the collection again',
+          'Cache the finished report for one second so repeat viewers do not trigger the join',
+        ],
+        answer: 1,
+        explanation:
+          'The Lab Join-heavy report shows why: without a join in the database, every matching order crosses the network before the answer exists. More app servers do not remove the shipping, and a cache still pays the full minutes on the first run. Reports usually belong in a second system built for scans and joins.',
+      },
+      {
+        id: 'nosql-10',
+        prompt:
+          'A user saves their new address, reloads immediately, and sees the old one. The store is read with its default eventually consistent reads. What is going on?',
+        options: [
+          'The write was lost because the client did not wait for the acknowledgement before reloading',
+          'The partition key is wrong, so the read went to a different item',
+          'The document is too large, so the store served an old cached version',
+          'The read hit a replica that had not caught up; use a strongly consistent read here',
+        ],
+        answer: 3,
+        explanation:
+          'Eventually consistent reads may return a value from before a recent write. The write is not lost - it arrives a moment later. Stores like DynamoDB let you ask for a strongly consistent read per request, which costs more, so you use it where read-your-writes matters.',
+      },
+      {
+        id: 'nosql-11',
+        prompt:
+          'A catalogue holds TVs with 40 attributes and T-shirts with 6. A product page always loads one product with all its attributes. Which model fits this access most directly?',
+        options: [
+          'One document per product, read by product id',
+          'A graph database with an edge per product attribute',
+          'A wide-column table partitioned by attribute name',
+          'One relational table with a column for every possible attribute',
+        ],
+        answer: 0,
+        explanation:
+          'The page reads one aggregate whole, and the shape varies per category - the case documents are built for. A wide table with every possible column is mostly empty; partitioning by attribute scatters one product across machines. A relational design with a JSONB column is also workable, but among these options the document is the direct fit.',
+      },
+    ],
   },
   {
     slug: 'relational-vs-non-relational',
@@ -93,14 +454,25 @@ GROUP BY u.email;`,
     tagline: 'Not fast vs slow - different guarantees and different query freedom.',
     category: 'data',
     difficulty: 'Beginner',
-    keywords: ['comparison', 'trade-offs', 'choice'],
+    lab: 'data-models',
+    labFocus: 'relational-vs-non-relational',
+    keywords: ['comparison', 'trade-offs', 'choice', 'sql vs nosql', 'polyglot persistence'],
     what: 'A comparison of relational and non-relational stores along the dimensions that actually differ: data model, query flexibility, transactions, scaling story and operational cost.',
     why: 'The common shorthand ("SQL is slow, NoSQL is fast") is wrong and leads to bad choices. Both families can be fast; they differ in what they guarantee and what they make easy.',
     how: [
-      'Ask whether your query patterns are known and stable. If yes, a purpose-built store can win.',
+      'Ask whether your query patterns are known and stable. If yes, a purpose-built store can fit them exactly.',
       'Ask whether you need multi-entity transactions. If yes, relational is the low-effort path.',
       'Ask what your write volume and partition key look like at 10x current scale.',
       'Ask who will operate it at 3am.',
+    ],
+    when: [
+      'Choosing the store for a new product or a new service.',
+      'A workload outgrows the store it started on, and you must decide what to add.',
+      'Deciding which store is the system of record when data lives in several.',
+    ],
+    advantages: [
+      'Choosing on access patterns and transactions avoids an expensive migration later.',
+      'Knowing what each side costs lets you add a second store for one workload instead of replacing the first.',
     ],
     diagram: `SQL (PostgreSQL)          NoSQL (document / wide column)
 -----------------         ------------------------------
@@ -122,25 +494,167 @@ Shard deliberately        Shard key is a modelling decision`,
         gains: ['Horizontal scale from day one', 'Model matches one access pattern exactly'],
         costs: ['Consistency handled in application code', 'Changing access patterns is expensive', 'Analytics usually needs a second system'],
       },
+      {
+        approach: 'Both (polyglot persistence)',
+        gains: ['Each workload runs on a store shaped for it'],
+        costs: ['Every store adds backups, upgrades, monitoring and on-call knowledge', 'You must decide which store owns each fact'],
+      },
     ],
     mistakes: [
       'Choosing based on popularity rather than on transaction and query requirements.',
       'Mixing both without a clear rule about which system owns which data.',
+      'Choosing for an imagined future scale instead of the queries you run today.',
     ],
     related: ['sql-databases', 'nosql-databases', 'denormalization', 'cap-theorem'],
     quiz: [
       {
         id: 'rvn-1',
-        prompt: 'Which statement is accurate?',
+        prompt:
+          'A teammate wants to move the order history page (500 requests per second) from PostgreSQL to a document store "because NoSQL is faster". What is the accurate reply?',
         options: [
-          'NoSQL databases are always faster than relational databases',
-          'Relational databases cannot scale beyond one machine',
-          'Both can be fast; they differ in transactional guarantees and how easily they partition',
-          'NoSQL databases do not need a data model',
+          'Agreed - document stores skip joins and schema checks, so they are always faster than relational ones',
+          'No - relational databases are always faster, because their query planner picks the best plan for every read',
+          'Both handle 500 per second easily; the difference is guarantees, query freedom and partitioning',
+          'It does not matter, because neither needs a data model at 500 requests per second',
         ],
         answer: 2,
         explanation:
-          'Performance depends on the access pattern and the hardware. The real differences are guarantees, query flexibility and how partitioning is handled.',
+          'Speed depends on the access pattern and the hardware, not on the family. At this load both are comfortable, so the choice rests on transactions, which future queries stay cheap, and how writes scale. Both "always faster" claims are the shorthand this Concept exists to correct.',
+      },
+      {
+        id: 'rvn-2',
+        prompt:
+          'A ticket booking system must reserve a seat, record the payment and issue the ticket - all together or not at all. The team is choosing a store. What points to relational?',
+        options: [
+          'The need to change several records atomically, in one transaction',
+          'The number of seats in a venue, since fixed-size inventory fits rows and columns',
+          'The small size of each ticket record, which fits neatly in a table row',
+          'The fact that seats have numbers, which map to an integer primary key',
+        ],
+        answer: 0,
+        explanation:
+          'Multi-entity invariants are the strongest signal for relational: BEGIN ... COMMIT makes them all-or-nothing. Document stores can do it with multi-document transactions, at extra cost and with narrower limits; the other options do not bear on the choice at all.',
+      },
+      {
+        id: 'rvn-3',
+        prompt:
+          'An IoT platform ingests 200,000 sensor readings per second. They are only ever read as "readings of device X between two times". No joins, no multi-row transactions. Which fits this workload most directly?',
+        options: [
+          'One relational primary with a foreign key from readings to devices, to keep the data clean',
+          'A graph database with an edge per reading',
+          'A document per device that embeds every reading, so one read returns the whole history',
+          'A wide-column store partitioned by device and time bucket, sorted by time',
+        ],
+        answer: 3,
+        explanation:
+          'Huge write volume on a known key, read by range inside that key - the shape wide-column stores are built for, with writes spread over many machines. One primary takes every write on one machine; one ever-growing document per device hits size limits and rewrites the whole document on every reading.',
+      },
+      {
+        id: 'rvn-4',
+        prompt:
+          'A three-person startup is building its first product. Nobody knows yet which screens and reports will matter. What is the lower-risk starting store?',
+        options: [
+          'A wide-column store, so the product is ready for scale before the first big customer arrives',
+          'A relational database such as PostgreSQL, which answers queries nobody planned',
+          'Three different stores, one per future workload, so nothing needs migrating later',
+          'Plain JSON files on disk',
+        ],
+        answer: 1,
+        explanation:
+          'When access patterns are unknown, the store that lets you discover them is the safe bet: normalised tables plus joins answer new questions without moving data. A wide-column store asks you to commit to the queries up front, and several stores multiply the operational cost before there is any need.',
+      },
+      {
+        id: 'rvn-5',
+        prompt:
+          'In the Lab with both stores shown: at 80,000 key requests per second the relational side fails requests and the document side is fine. You switch to Join-heavy report and the document side takes seconds while relational answers fast. What does that show?',
+        options: [
+          'The document store is faster overall, because it handled far more key traffic',
+          'The relational database is faster overall, since the report is the harder query',
+          'Neither is faster in general - each makes a different workload cheap',
+          'The Lab numbers are random',
+        ],
+        answer: 2,
+        explanation:
+          'Key traffic splits across partitions, so the document store scales it; the report needs a join, which the relational database runs where the data lives. Picking a winner from one workload is exactly the mistake. The Lab numbers are simplified, but the shapes follow how each store works.',
+      },
+      {
+        id: 'rvn-6',
+        prompt:
+          'Orders live in PostgreSQL and are copied into a search index. After a bug, the two disagree about an order status. Which store should be trusted, and how do you repair the other?',
+        options: [
+          'PostgreSQL is the system of record; re-sync the search index from it',
+          'The search index, because it holds the newer value and was written after PostgreSQL',
+          'Whichever store the customer looked at last, so the answer matches what they saw',
+          'Average the two values',
+        ],
+        answer: 0,
+        explanation:
+          'With several stores, one must own each fact and every other copy must be rebuildable from it. Trusting the newer copy just picks whichever bug wrote last. Deciding the owner before the incident is what keeps polyglot persistence sane.',
+      },
+      {
+        id: 'rvn-7',
+        prompt:
+          'You run PostgreSQL and need a background job queue for about 50 jobs per second. A teammate wants to add a message broker and a cache as well. What is the proportionate choice?',
+        options: [
+          'Add the broker and the cache now, before traffic grows tenfold',
+          'Keep jobs in application memory, which is faster than any database round trip',
+          'Poll a jobs table without any locking, so no worker ever waits on another',
+          'A jobs table with FOR UPDATE SKIP LOCKED; add a broker when you measure a need',
+        ],
+        answer: 3,
+        explanation:
+          'Postgres handles a modest queue well, and every extra store costs backups, upgrades, monitoring and on-call knowledge forever. Memory loses jobs on restart, and polling without locks lets two workers take the same job.',
+      },
+      {
+        id: 'rvn-8',
+        prompt:
+          'The core feature is "people within three hops of you who liked this event", run constantly on a large social graph. Among these, which store is shaped for that query?',
+        options: ['A key-value store', 'A graph database', 'A wide-column store', 'A document database'],
+        answer: 1,
+        explanation:
+          'Multi-hop traversal is what graph databases make cheap: relationships are stored as first-class links. Key-value and wide-column stores would need one lookup per hop per person, and documents do not model many-to-many links well.',
+      },
+      {
+        id: 'rvn-9',
+        prompt:
+          'Every order now needs a currency field. On the document store the team says "no migration needed". In the Lab Schema change workload, what is the full picture?',
+        options: [
+          'The document store rewrites every order in the background, adding the field with a null value',
+          'Nothing changes at all',
+          'Nothing is locked, but old orders lack the field until code or a backfill handles them',
+          'The document store rejects new writes until the field has been added to every existing order',
+        ],
+        answer: 2,
+        explanation:
+          'Schema-on-read avoids the lock a relational rewrite can take, which is real. The cost moves into your code: two shapes to read until you backfill, and nothing in the database stops a third. "No migration needed" is half the truth.',
+      },
+      {
+        id: 'rvn-10',
+        prompt:
+          'A team says: "we will need to scale writes across machines, so we cannot use SQL". What is the missing option?',
+        options: [
+          'Distributed SQL, such as CockroachDB or Spanner, which shards writes behind a SQL interface',
+          'None - a SQL database only ever runs on one machine, so its write rate is capped by that hardware',
+          'Turning off transactions in PostgreSQL so writes no longer wait on locks',
+          'Adding read replicas, which also take writes and spread them across machines',
+        ],
+        answer: 0,
+        explanation:
+          'Distributed SQL shards and replicates behind a SQL interface, so "horizontal writes" and "SQL" are not exclusive. Read replicas only add read capacity - every write still lands on the primary. Transactions that span machines pay extra round trips, which is the price.',
+      },
+      {
+        id: 'rvn-11',
+        prompt:
+          'All order data lives in a key-value store. The business now wants ad-hoc dashboards: revenue by region, by week, by product line. What is the usual approach?',
+        options: [
+          'Scan the key-value store from the dashboard on every page load, since the data is already there',
+          'Add a secondary index for every possible dashboard filter, so each chart becomes a key lookup',
+          'Stop building dashboards',
+          'Stream the data into an analytics store or warehouse built for scans and joins',
+        ],
+        answer: 3,
+        explanation:
+          'A store shaped for key access is not shaped for ad-hoc analysis, which is why analytics usually needs a second system fed from the first. Scanning on every page load competes with live traffic, and an index per filter multiplies write cost without giving you joins.',
       },
     ],
   },
@@ -151,57 +665,73 @@ Shard deliberately        Shard key is a modelling decision`,
     category: 'data',
     difficulty: 'Beginner',
     lab: 'indexing',
-    keywords: ['b-tree', 'full scan', 'query plan', 'composite index', 'selectivity'],
-    what: 'An index is an auxiliary data structure - usually a B-tree - that lets the database find rows matching a predicate without scanning the whole table.',
-    why: 'Without an index, finding one row in ten million means reading ten million rows. With a B-tree index it means a handful of page reads, because each step discards most of the remaining rows.',
+    keywords: ['b-tree', 'full scan', 'query plan', 'composite index', 'selectivity', 'page', 'covering index'],
+    what: 'An index is an extra, sorted data structure - usually a B-tree - that lets the database find rows matching a condition without scanning the whole table.',
+    why: 'Without an index, finding one row in ten million means reading every page of the table. With a B-tree index it means a handful of page reads - one per level of the tree, then the page that holds the row.',
     how: [
-      'A B-tree keeps keys sorted; each node narrows the search range, giving O(log n) lookups.',
-      'The planner uses table statistics to decide whether the index is cheaper than a scan.',
+      'A database reads pages, not rows: fixed blocks of 8 KB in PostgreSQL, each holding many rows.',
+      'A B-tree keeps keys sorted in pages that each hold hundreds of keys, so even a huge table is only 3-4 levels deep - O(log n) lookups.',
+      'The planner uses table statistics to decide whether the index is cheaper than a scan, and EXPLAIN shows which one it picked.',
       'A composite index on (a, b) serves queries filtering on a, or on a and b - but not on b alone.',
-      'Covering indexes include the selected columns so the table itself is never touched.',
+      'A covering index also holds the selected columns, so the database can answer from the index and skip the table.',
     ],
     when: [
-      'Columns used in WHERE, JOIN and ORDER BY clauses.',
+      'Columns used in WHERE, JOIN and ORDER BY clauses of frequent queries.',
       'High-selectivity columns (email, user_id) - an index on a boolean rarely helps.',
+      'Not on write-heavy tables that are rarely read, where every index is a cost on every insert.',
     ],
     diagram: `WITHOUT INDEX (sequential scan)
-row 1, row 2, row 3 ... row 8247 -> FOUND
-rows scanned: 8,247      time: ~350 ms
+page 1, page 2, page 3 ... page 50,000
+every page read (5,000,000 rows)      ~1,200 ms
 
 WITH B-TREE INDEX ON email
-        [ m ]
-       /     \\
-   [ f ]     [ s ]
-   /   \\     /   \\
- ...   [john@example.com] -> row pointer
-rows inspected: ~13      time: ~4 ms`,
+          [ root ]                    level 1
+         /   |    \\
+  [ branch ] ... [ branch ]           level 2
+      |
+  [ leaf: ana@example.com -> row ]    level 3
+      |
+  table page holding the row          + 1 page
+pages read: 4                         ~0.3 ms`,
     advantages: [
-      'Turns linear scans into logarithmic lookups.',
+      'Turns linear scans into logarithmic lookups: one page per level instead of every page.',
       'Speeds up sorting and range queries when the order matches the index.',
       'Unique indexes enforce correctness, not just speed.',
     ],
     tradeoffs: [
       {
-        approach: 'Adding an index',
-        gains: ['Much faster reads for matching queries', 'Cheaper sorts and joins'],
+        approach: 'No index (sequential scan)',
+        gains: ['No extra write work and no extra storage', 'Fine for small tables and for queries that read most of the rows anyway'],
+        costs: ['Every lookup reads every page, so cost grows with the table', 'A missing row costs a full scan to prove it is missing'],
+      },
+      {
+        approach: 'A B-tree index on the filtered column',
+        gains: ['A lookup reads one page per level plus the row, about 4 pages for 5 million rows', 'Cheaper sorts, range queries and joins on that column'],
         costs: [
-          'Every INSERT, UPDATE and DELETE must maintain it',
-          'Extra storage, often 10-30% of the table per index',
-          'More indexes means a slower write path and more cache pressure',
+          'Every INSERT, UPDATE of the column and DELETE must also update the index',
+          'Extra storage, and memory to keep its pages cached',
+          'Useless for queries that filter on another column or wrap this one in a function',
         ],
+      },
+      {
+        approach: 'A covering index (key plus the selected columns)',
+        gains: ['Answers the query from the index alone, skipping the table page', 'Fastest option for one hot read path'],
+        costs: ['A wider index: more storage and more memory', 'Any change to the included columns now also rewrites the index'],
       },
     ],
     mistakes: [
-      'Indexing every column "just in case" and halving write throughput.',
-      'Wrapping the indexed column in a function (LOWER(email)) so the index cannot be used.',
+      'Indexing every column "just in case" - every write then updates every index, and most are never read.',
+      'Wrapping the indexed column in a function (LOWER(email)) so the index cannot be used - index the expression instead.',
       'Creating (b, a) when queries filter on a - column order in composite indexes matters.',
-      'Forgetting that adding an index to a huge table can lock writes unless built concurrently.',
+      'Forgetting that a plain CREATE INDEX on a huge table blocks writes until it finishes - build it concurrently.',
+      'Forcing an index on a low-selectivity column when the planner correctly chose a scan.',
     ],
     realWorld: [
       'EXPLAIN / EXPLAIN ANALYZE is how you check whether an index is actually used.',
       'Write-heavy tables (event logs) are often deliberately under-indexed.',
+      'PostgreSQL CREATE INDEX CONCURRENTLY builds an index without blocking writes, at the cost of a slower build.',
     ],
-    related: ['sql-databases', 'read-replicas', 'denormalization', 'caching'],
+    related: ['sql-databases', 'read-replicas', 'denormalization', 'caching', 'partitioning'],
     quiz: [
       {
         id: 'idx-1',
@@ -209,25 +739,166 @@ rows inspected: ~13      time: ~4 ms`,
         options: [
           'WHERE created_at > ?',
           'WHERE country = ? AND created_at > ?',
-          'WHERE LOWER(country) = ?',
+          'WHERE LOWER(country) = ? AND created_at > ?',
           'WHERE email = ?',
         ],
         answer: 1,
         explanation:
-          'A composite index is usable from the leftmost column onwards. Filtering on created_at alone skips the leading column, and wrapping a column in a function prevents index use.',
+          'A composite index is usable from the leftmost column onwards, so country = ? narrows it and created_at > ? is a range inside that country. Filtering on created_at alone skips the leading column - the dates are only sorted within each country - and wrapping a column in a function hides it from the index.',
       },
       {
         id: 'idx-2',
-        prompt: 'What is the main cost of adding an index?',
+        prompt:
+          'An events table takes 20,000 inserts per second and is read once a night by a batch report. A teammate adds six indexes to speed up that report. What changes during the day?',
         options: [
-          'Reads become slower',
-          'Writes become slower and storage grows, because the index must be maintained',
-          'The database can no longer use transactions',
-          'Replication stops working',
+          'Nothing - an index only costs anything when a query actually reads it',
+          'Daytime reads get slower, because the planner now has six more plans to weigh',
+          'Every insert now updates the table plus six indexes - about seven times the write work',
+          'The table stops accepting transactions while the six indexes are kept current',
+        ],
+        answer: 2,
+        explanation:
+          'Every index is maintained on every insert, whether or not anyone reads it. On a write-heavy table that is the difference between comfortable and saturated - the Lab shows it as the write path meter doubling with one index. It is tempting to think unused indexes are free, but they cost writes, storage and memory all day.',
+      },
+      {
+        id: 'idx-3',
+        prompt:
+          'In the Lab you grow the users table from 8,000 to 50,000 rows. A full scan goes from 80 to 500 pages. What happens to the index lookup?',
+        options: [
+          'It also grows about six times, to around 20 pages',
+          'It becomes slower than the scan, because the tree is bigger',
+          'It stays exactly the same at any table size',
+          'It goes from 2 to 3 index levels - about one more page read',
+        ],
+        answer: 3,
+        explanation:
+          'Each index page holds hundreds of keys, so a level multiplies the reach of the tree by that much. A table six times larger adds one level at most. The scan is linear in table size; the index is logarithmic. It is not exactly constant - a big enough jump adds a level - but it barely moves.',
+      },
+      {
+        id: 'idx-4',
+        prompt:
+          "A login query runs WHERE LOWER(email) = 'ana@example.com'. There is an index on email, yet EXPLAIN shows a Seq Scan. What is the fix?",
+        options: [
+          'Create an index on LOWER(email), or store emails lowercased and query the column',
+          'REINDEX the email index - it is probably corrupted, so the planner has stopped trusting it',
+          'Add more memory so the whole index fits in RAM and the planner prefers it',
+          'Add a second plain index on email',
+        ],
+        answer: 0,
+        explanation:
+          'The index is sorted by email, not by LOWER(email), so the planner cannot use it for that condition and scans instead. An expression index sorts by exactly what the query compares. Nothing is corrupted, more memory does not change what the index is sorted by, and another plain index on email has the same problem.',
+      },
+      {
+        id: 'idx-5',
+        prompt:
+          'A users table has an index on is_active. 95% of rows are active. WHERE is_active = true uses a Seq Scan, and a teammate wants to force the index. What do you tell them?',
+        options: [
+          'Force it - an index is always faster than a scan, and the planner is just using stale statistics',
+          'Drop the table statistics so the planner stops guessing and falls back to the index',
+          'The planner is right: fetching nearly every row through the index costs more than one scan',
+          'Add the index a second time so the planner notices it',
+        ],
+        answer: 2,
+        explanation:
+          'An index pays off when it narrows the rows a lot (high selectivity). For 95% of the table it adds index reads on top of reading almost every table page. If the rare case (is_active = false) is what you query, a partial index on those rows is the useful one.',
+      },
+      {
+        id: 'idx-6',
+        prompt:
+          'A dashboard query is WHERE tenant_id = 7 AND created_at > now() - 7 days ORDER BY created_at DESC LIMIT 50, on 80 million rows. The only index is on (created_at), and EXPLAIN shows 4 million rows read and filtered. Which index fixes it?',
+        options: [
+          'An index on (created_at, tenant_id)',
+          'An index on tenant_id alone, dropping the created_at index',
+          'No index can help an ORDER BY query',
+          'An index on (tenant_id, created_at)',
+        ],
+        answer: 3,
+        explanation:
+          'Equality columns first, range or sort column last. With (tenant_id, created_at) the database seeks to tenant 7 and walks its dates in order, stopping after 50 rows. (created_at, tenant_id) looks similar but still starts from every row in the date range, because tenants are only sorted within each timestamp.',
+      },
+      {
+        id: 'idx-7',
+        prompt:
+          'You need an index on a 400 GB orders table in PostgreSQL, and the shop takes orders all day. What happens if you run a plain CREATE INDEX at noon?',
+        options: [
+          'Nothing noticeable - PostgreSQL builds indexes in the background by default and swaps them in',
+          'Writes to orders wait for the whole build; use CREATE INDEX CONCURRENTLY instead',
+          'Reads are blocked while the index is built, but inserts and updates continue as normal',
+          'The build fails because the table is too large',
         ],
         answer: 1,
         explanation:
-          'Indexes are a read/write trade. Every mutation updates every affected index, and each index occupies storage and cache.',
+          'A plain CREATE INDEX in PostgreSQL blocks writes to the table for the whole build, while reads continue. CREATE INDEX CONCURRENTLY avoids blocking writes at the cost of a slower build that scans the table twice. Assuming it runs in the background is how people take a shop down at lunchtime.',
+      },
+      {
+        id: 'idx-8',
+        prompt:
+          'SELECT status FROM orders WHERE id = ? runs 50,000 times a second. There is an index on id, and every lookup still reads one table page. How can you remove that last page read?',
+        options: [
+          'A covering index on id that also includes status, so the index alone answers',
+          'A second index on status, so the value is found without the table',
+          'Drop the index on id - a scan avoids the extra hop',
+          'Nothing - every query must read the table',
+        ],
+        answer: 0,
+        explanation:
+          'In the Lab, the index path ends with one table page to fetch the row. A covering index stores status next to the key, so the database can answer without that page (an index-only scan). An index on status does not help find an id, and dropping the id index turns 4 page reads into a full scan.',
+      },
+      {
+        id: 'idx-9',
+        prompt:
+          'Over a year the indexes on a database grow to three times the RAM of the server. Index lookups that took 0.3 ms now take 5 ms. What is the most likely cause?',
+        options: [
+          'The B-trees grew dozens of levels deeper, so each lookup walks many more pages',
+          'The index pages no longer fit in memory, so lookups now wait for disk',
+          'The planner stopped using the indexes',
+          'Indexes slow down automatically after a year and must be recreated',
+        ],
+        answer: 1,
+        explanation:
+          'An index is fast because its pages - especially the upper levels - stay cached in memory. Once the indexes outgrow RAM, lookups start reading from disk. The tree only gains a level when the data grows hundreds of times, so depth is not the cause. Dropping unused indexes and adding memory are the usual fixes.',
+      },
+      {
+        id: 'idx-10',
+        prompt:
+          'A feed query is SELECT * FROM posts ORDER BY created_at DESC LIMIT 20 on 10 million rows. It takes 900 ms. After adding an index on created_at it takes 1 ms. Why?',
+        options: [
+          'The index caches the whole posts table in memory, so the sort no longer touches disk',
+          'The index lets the database use a faster sort algorithm on the 10 million rows',
+          'LIMIT only works when an index exists',
+          'The index is already sorted, so it reads the newest 20 entries and stops',
+        ],
+        answer: 3,
+        explanation:
+          'A B-tree keeps keys sorted, so ORDER BY on the indexed column needs no sort at all - the database reads the first 20 entries and stops. Without it, it must read every row and sort them before LIMIT can apply. The index does not cache the table and does not change how sorting works.',
+      },
+      {
+        id: 'idx-11',
+        prompt:
+          'In the Lab you search for "a row that does not exist". Without an index the scan reads every page. With the index it stops after the index levels. Why the difference?',
+        options: [
+          'The index remembers which lookups failed before, so a missing email is answered from that list',
+          'The index is sorted, so the one leaf where the email would be proves it is absent',
+          'The scan is slowed down on purpose by the planner',
+          'The index stores only the emails that exist, so it never has to search for a missing one',
+        ],
+        answer: 1,
+        explanation:
+          'A sorted structure can prove absence by looking at the one place the key would be. An unsorted table can only prove absence by checking everything, which is why LIMIT 1 cannot help a scan for a missing row. The index does not remember past queries; it is just sorted.',
+      },
+      {
+        id: 'idx-12',
+        prompt:
+          'Index usage statistics show idx_orders_legacy has not been read once in three months. The orders table takes 5,000 writes a second. What should you do?',
+        options: [
+          'Keep it - an unused index costs nothing, since the planner simply skips it',
+          'Rebuild it so the planner starts using it and the three months of upkeep pay off',
+          'Check that no rare job or constraint needs it, then drop it',
+          'Add a second index next to it so one of them gets used',
+        ],
+        answer: 2,
+        explanation:
+          'An index is maintained on every write whether or not anyone reads it, and its pages compete for memory with useful ones. Checking first matters - a unique index enforces correctness even if it is never scanned, and a quarterly report may be the one reader - but a truly unused index is pure cost.',
       },
     ],
   },
@@ -238,13 +909,14 @@ rows inspected: ~13      time: ~4 ms`,
     category: 'data',
     difficulty: 'Intermediate',
     lab: 'replication',
-    keywords: ['primary', 'replica', 'failover', 'lag', 'synchronous', 'asynchronous'],
+    labFocus: 'replication',
+    keywords: ['primary', 'replica', 'leader', 'follower', 'failover', 'lag', 'synchronous', 'asynchronous', 'semi-synchronous'],
     what: 'Replication keeps copies of a dataset on multiple nodes. Writes go to a primary (in the common leader-based model) and are streamed to replicas that can serve reads and take over on failure.',
-    why: 'One database instance is both a capacity limit and a single point of failure. Replicas give you read capacity, a failover target, and a copy in another availability zone.',
+    why: 'One database instance is both a capacity limit and a single point of failure. Replicas give you durability, read capacity, a failover target, and a copy in another availability zone.',
     how: [
-      'The primary writes changes to a log (WAL / binlog) and streams it to replicas.',
+      'The primary writes changes to a log (WAL / binlog) and streams it to replicas, which replay it in the same order.',
       'Asynchronous replication acknowledges the client before replicas have applied the change.',
-      'Synchronous replication waits for at least one replica, trading latency for durability.',
+      'Synchronous replication waits for replicas before acknowledging - for all of them, or for one in the semi-synchronous setup - trading latency for durability.',
       'On primary failure, an orchestrator promotes the most up-to-date replica and repoints traffic.',
     ],
     when: [
@@ -276,47 +948,162 @@ Primary DOWN -> promote Replica 1 -> repoint writes`,
         costs: ['Replication lag means stale reads', 'A failover can lose recently acknowledged writes'],
       },
       {
-        approach: 'Synchronous replication',
-        gains: ['No acknowledged write is lost on failover', 'Replicas are always current'],
-        costs: ['Every write pays a network round trip', 'A slow or unreachable replica stalls writes unless quorum-based'],
+        approach: 'Semi-synchronous (wait for one replica)',
+        gains: ['An acknowledged write is on two machines, so losing one machine loses nothing', 'Only the fastest replica is awaited'],
+        costs: ['Every write pays one round trip to a replica', 'The other replicas still lag, so their reads can be stale'],
+      },
+      {
+        approach: 'Synchronous replication (wait for every replica)',
+        gains: ['No acknowledged write is lost on failover', 'Every replica holds every acknowledged write, so replica reads are current'],
+        costs: ['Every write waits for the slowest replica', 'One slow or unreachable replica stalls all writes'],
       },
     ],
     mistakes: [
       'Reading your own write from a replica immediately after writing, and showing the user stale data.',
       'Assuming failover is instant - detection, promotion and DNS/connection repointing all take time.',
       'Treating replicas as backups. A deleted row replicates in milliseconds; a backup lets you go back in time.',
+      'Adding replicas to fix a write bottleneck. Every write still lands on the one primary.',
     ],
     realWorld: [
       'Read-your-writes is commonly solved by routing a user to the primary for a short window after they write.',
       'Managed services (RDS Multi-AZ, Cloud SQL HA) automate promotion but still have a measurable failover window.',
     ],
-    related: ['read-replicas', 'sharding', 'failover', 'eventual-consistency', 'high-availability'],
+    related: ['read-replicas', 'leader-follower', 'sharding', 'failover', 'eventual-consistency', 'high-availability'],
     quiz: [
       {
         id: 'rep-1',
-        prompt: 'A user updates their profile and immediately sees the old value. Writes go to the primary, reads to replicas. What is happening?',
+        prompt:
+          'A user updates their profile and immediately sees the old value. Writes go to the primary, reads to replicas, and the primary logged the update as committed. What is happening?',
         options: [
-          'The write failed silently',
-          'Replication lag - the replica has not applied the change yet',
-          'The cache is broken',
-          'The primary is down',
+          'The write failed silently after the commit was logged, so only the log has it',
+          'The primary is down, so reads fell back to an old snapshot from the backup',
+          'Replication lag - the replica that served the read has not applied it yet',
+          'The browser cached the old profile page, so the request never reached the server',
         ],
-        answer: 1,
+        answer: 2,
         explanation:
-          'With asynchronous replication the replica is slightly behind. Read-your-writes requires routing that user to the primary or waiting for the replica to catch up.',
+          'The write committed on the primary, so it did not fail; the read simply went to a copy that is a few hundred milliseconds behind. In the Lab this is the "Own save not seen" metric. The fix is read-your-writes: send that user to the primary for a short window, or return the saved object from the write.',
       },
       {
         id: 'rep-2',
-        prompt: 'Why is a replica not a backup?',
+        prompt:
+          'At 10:00 an engineer runs DELETE FROM orders without a WHERE clause on the primary. The database has three replicas, all healthy. At 10:05 the team wants the rows back. Where are they?',
         options: [
-          'Replicas are slower',
-          'Replicas faithfully copy destructive changes, including an accidental DELETE',
-          'Replicas cannot be restored',
-          'Replicas do not store all columns',
+          'On any replica - promote one, since replicas exist to hold a second copy of the data',
+          'Only in a backup or point-in-time recovery - the replicas deleted them too',
+          'On the replica with the most lag, which has not applied the delete yet',
+          'In the primary replication log, which can be replayed onto the table',
         ],
         answer: 1,
         explanation:
-          'Replication propagates mistakes as quickly as it propagates good data. Backups and point-in-time recovery protect against logical errors.',
+          'Replication copies destructive changes as faithfully as good ones, so by 10:05 every replica has applied the DELETE. A lagging replica holds the rows for at most seconds, not minutes. Protection against mistakes comes from backups and point-in-time recovery, which is why a replica is not a backup.',
+      },
+      {
+        id: 'rep-3',
+        prompt:
+          'Asynchronous replication, lag has grown to 2 seconds during a traffic peak, and the primary host dies. Failover promotes the most up-to-date replica. What happens to the orders customers were told were saved in the last second before the crash?',
+        options: [
+          'They are lost - they never reached any replica',
+          'They are safe - failover waits for the replicas to catch up first',
+          'They are replayed from the open client connection',
+          'They appear on the new primary after the lag has passed',
+        ],
+        answer: 0,
+        explanation:
+          'Async acknowledges as soon as the primary commits, so writes still in flight died with the primary. The promoted replica cannot catch up from a machine that is gone. In the Lab, kill the primary in async mode with a long delay and "Lost writes" jumps. Waiting for the lag to pass only helps if the old primary is still alive.',
+      },
+      {
+        id: 'rep-4',
+        prompt:
+          'A payments team must not lose an acknowledged payment when one machine dies, but cannot afford a cross-region round trip on every write. Which replication setup fits?',
+        options: [
+          'Fully synchronous to every replica, including the one in another region, so nothing is ever lost',
+          'Asynchronous to every replica, with nightly backups to cover a machine failure',
+          'Semi-synchronous: wait for one same-region replica, stream to the far one async',
+          'No replicas - a bigger single server',
+        ],
+        answer: 2,
+        explanation:
+          'Waiting for one nearby replica costs a millisecond or two and guarantees every acknowledged write exists on two machines, so a single failure loses nothing. Fully synchronous would also be safe, but every write would wait for the slowest, distant replica. Async plus backups still loses the in-flight window.',
+      },
+      {
+        id: 'rep-5',
+        prompt:
+          'In the Lab you choose Sync (acknowledge after every replica) and then kill Replica 2. "Writes refused" starts climbing. Why?',
+        options: [
+          'The Lab has a bug - in a real database a dead replica never affects whether writes succeed',
+          'The primary lost its data when Replica 2 died, because they shared the same write log',
+          'Reads were routed to the dead replica',
+          'Each write needs every replica to confirm it, and one replica no longer can',
+        ],
+        answer: 3,
+        explanation:
+          'Waiting for every replica means one unreachable replica blocks every write - the cost of never acknowledging a write that exists on fewer than all copies. Real systems stall until a timeout or an operator removes the replica from the synchronous set. Semi-sync or a quorum avoids this by waiting for some replicas, not all.',
+      },
+      {
+        id: 'rep-6',
+        prompt:
+          'The primary is at 95% CPU, and almost all of that load is INSERTs and UPDATEs. Someone proposes adding four read replicas. What will it do for the CPU of the primary?',
+        options: [
+          'Very little - every write still runs on the primary, which now also ships its log',
+          'Cut it by about 80%, since the load is then spread over five machines instead of one',
+          'Cut it by half, since replicas take over the UPDATEs while the primary keeps INSERTs',
+          'Remove the write load entirely',
+        ],
+        answer: 0,
+        explanation:
+          'Replication scales reads, durability and availability - never write capacity. Each replica replays every write too, so the total work grows. For a write-bound primary the options are removing unnecessary writes, batching, a bigger machine, or sharding.',
+      },
+      {
+        id: 'rep-7',
+        prompt:
+          'In the Lab, async mode, you drag Network delay to replicas from 400 ms to 2000 ms. What changes?',
+        options: [
+          'Write latency rises to about 2 s, and Reads behind stays the same',
+          'Nothing - the delay only matters in sync mode, where writes wait for replicas',
+          'Write latency stays near 8 ms, and Reads behind rises',
+          'Both write latency and Reads behind fall, since replicas batch more',
+        ],
+        answer: 2,
+        explanation:
+          'Async never waits for replicas, so the write is acknowledged at the commit time of the primary however slow the network is. What grows is the window in which a replica has not yet applied an acknowledged write, so more reads land in it. In sync mode the same slider would move write latency instead.',
+      },
+      {
+        id: 'rep-8',
+        prompt:
+          'The primary acknowledged writes up to version 1003 and then died. The replicas had applied up to 980, 1000 and 995. Automation promotes the most up-to-date replica. How many acknowledged writes are lost?',
+        options: ['0', '3', '8', '23'],
+        answer: 1,
+        explanation:
+          'The replica at 1000 is promoted, so versions 1001 to 1003 exist nowhere: 3 writes. Promoting the replica at 980 would have lost 23, which is why failover picks the most up-to-date replica. In the Lab the log reports exactly this count when you kill the primary.',
+      },
+      {
+        id: 'rep-9',
+        prompt:
+          'During a bulk import, replication lag on one replica grows to 45 seconds. Health checks say every replica is up. What should the team have in place?',
+        options: [
+          'Nothing - a replica that passes health checks is safe to read from and to promote',
+          'Restart the lagging replica so it reconnects and starts replication fresh',
+          'Send all reads to that replica, since it is doing the least query work right now',
+          'A lag alert in seconds, pulling the replica from reads, and failover that skips it',
+        ],
+        answer: 3,
+        explanation:
+          'A replica can be up and 45 seconds stale. Reads from it return old data, and promoting it would lose 45 seconds of writes. Lag is the metric to alert and route on, not liveness. Restarting it only makes it fall further behind.',
+      },
+      {
+        id: 'rep-10',
+        prompt:
+          'After a network blip, the old primary comes back still believing it is the primary, while a replica has already been promoted. Both accept writes for a minute. What is the name of this problem and what prevents it?',
+        options: [
+          'Split brain - prevented by quorum election plus fencing the old primary',
+          'Replication lag - prevented by synchronous replication, so both nodes hold the same writes',
+          'Read-your-writes - prevented by routing every read to the primary',
+          'Cache stampede - prevented by jitter',
+        ],
+        answer: 0,
+        explanation:
+          'Two primaries accepting writes means two diverging histories, and one of them will be thrown away. Synchronous replication does not help - both nodes think they are the one replicas should follow. A majority vote on who is primary, plus fencing (revoking the old primary rights or cutting it off), makes a second writer impossible.',
       },
     ],
   },
@@ -327,19 +1114,21 @@ Primary DOWN -> promote Replica 1 -> repoint writes`,
     category: 'data',
     difficulty: 'Advanced',
     lab: 'sharding',
-    keywords: ['shard key', 'hot shard', 'partition', 'routing', 'resharding'],
+    keywords: ['shard key', 'hot shard', 'partition', 'routing', 'resharding', 'scatter-gather', 'consistent hashing'],
     what: 'Sharding splits a dataset horizontally across independent database instances. A shard key decides which shard owns each row, and a router sends each query to the right shard.',
     why: 'Replication scales reads, but every replica still holds the whole dataset and every write still goes through one primary. Sharding is how you scale writes and data volume beyond one machine.',
     how: [
       'Choose a shard key present in almost every query - user_id, tenant_id, or a hash of it.',
       'Map key to shard by range, by hash, or through a lookup/directory service.',
-      'Route queries: single-shard queries are fast; cross-shard queries must scatter and gather.',
-      'Plan resharding before you need it - consistent hashing or virtual buckets reduce the pain.',
+      'Route queries: single-shard queries are fast; cross-shard queries must scatter to every shard and gather the answers.',
+      'Give each shard its own replicas - sharding splits the load, replication keeps each slice available.',
+      'Plan resharding before you need it - consistent hashing or many virtual shards mean adding a node moves only a small part of the data.',
     ],
     when: [
       'The working set no longer fits on the largest reasonable machine.',
       'Write throughput exceeds what one primary can absorb.',
       'Regulatory requirements force data to live in specific regions.',
+      'Not before vertical scaling, read replicas, caching and query tuning have run out - they are far cheaper to undo.',
     ],
     diagram: `                Shard Router
         +------------+------------+
@@ -347,69 +1136,207 @@ Primary DOWN -> promote Replica 1 -> repoint writes`,
     Shard A      Shard B      Shard C
    users 1-3M   users 3-6M   users 6-10M
 
-BAD SHARD KEY (country, skewed traffic)
-Shard A  ################# 90%   <- hot shard
-Shard B  #####             20%
-Shard C  #####             18%`,
+BAD SHARD KEY (skewed traffic)
+Shard A  ##################  90% load  <- hot shard
+Shard B  ####                20% load
+Shard C  ####                18% load`,
     advantages: [
-      'Write capacity and storage grow with shard count.',
-      'Failure of one shard affects only part of the users.',
+      'Write capacity and storage grow with shard count - if the key spreads the load.',
+      'Failure of one shard affects only the users on it.',
       'Enables data residency per region.',
     ],
     tradeoffs: [
       {
+        approach: 'No sharding (one primary, plus replicas)',
+        gains: ['Joins, transactions and unique constraints just work', 'One database to back up, migrate and operate'],
+        costs: ['All writes go through one primary', 'Data size is capped by one machine'],
+      },
+      {
         approach: 'Hash sharding',
-        gains: ['Even distribution', 'No hot ranges from sequential keys'],
-        costs: ['Range queries must hit every shard', 'Resharding moves data unless you use consistent hashing'],
+        gains: ['Even distribution of data and traffic', 'No hot ranges from sequential keys'],
+        costs: [
+          'Range queries must hit every shard',
+          'With hash % N, changing N moves most keys; consistent hashing or virtual shards cut that to about 1/N',
+        ],
       },
       {
         approach: 'Range sharding',
-        gains: ['Efficient range scans', 'Simple to reason about and rebalance by split'],
-        costs: ['Sequential keys create a hot shard at the end', 'Uneven growth needs active rebalancing'],
+        gains: ['Efficient range scans', 'Simple to reason about and rebalance by splitting a range'],
+        costs: ['Sequential keys (ids, timestamps) send every new row to the last shard', 'Uneven growth needs active rebalancing'],
       },
       {
         approach: 'Directory / lookup sharding',
-        gains: ['Full control over placement', 'Easy to move a single tenant'],
-        costs: ['The directory is an extra dependency and a single point of failure', 'One more lookup per query'],
+        gains: ['Full control over placement', 'Easy to move a single big tenant to its own shard'],
+        costs: ['The directory must be fast and highly available, or it becomes a single point of failure', 'One more lookup per query'],
       },
     ],
     mistakes: [
       'Sharding by something skewed (country, "enterprise customer") and creating a hot shard.',
       'Designing queries that need joins across shards - they become scatter-gather with the slowest shard setting latency.',
-      'Sharding before exhausting vertical scaling, replicas and caching. It is a one-way door.',
+      'Sharding before exhausting vertical scaling, replicas and caching. It is very hard to undo.',
       'Forgetting that cross-shard transactions need sagas or two-phase commit.',
+      'Using hash % N and discovering that adding one shard remaps almost every key.',
+      'Keeping one auto-increment sequence per shard, so two shards hand out the same id.',
     ],
     realWorld: [
       'Multi-tenant SaaS often shards by tenant_id, which keeps almost every query single-shard.',
-      'Instagram-style systems shard by user id and generate globally unique ids that embed the shard.',
+      'Instagram shards by user id onto thousands of logical shards, and generates 64-bit ids that embed the shard number.',
+      'Vitess (MySQL) and Citus (PostgreSQL) add a shard router in front of ordinary databases.',
     ],
-    related: ['partitioning', 'replication', 'nosql-databases'],
+    related: ['partitioning', 'replication', 'nosql-databases', 'vertical-scaling', 'saga-pattern'],
     quiz: [
       {
         id: 'sh-1',
         prompt: 'You shard a social app by country. One country produces 70% of traffic. What is the result?',
         options: [
-          'Perfectly balanced load',
-          'A hot shard that saturates while others idle - the cluster is limited by one node',
-          'Faster queries for that country',
-          'Reduced storage usage',
+          'Perfectly balanced load, because every country gets its own shard',
+          'A hot shard that saturates while the others idle, capping the cluster',
+          'Faster queries for that country, since its data sits on one shard',
+          'Lower storage use, because each shard only stores one country',
         ],
         answer: 1,
         explanation:
-          'A shard key must distribute both data and traffic. Skewed keys mean one shard becomes the bottleneck and adding shards does not help.',
+          'A shard key must distribute both data and traffic. With country as the key, 70% of requests go to one shard, which saturates while the others idle, and adding shards does not help because that country still maps to one of them. In the Lab, pick Country and watch the load skew.',
       },
       {
         id: 'sh-2',
-        prompt: 'What should you usually try before sharding?',
+        prompt:
+          'Your PostgreSQL primary holds 400 GB, serves 5,000 reads and 300 writes a second, and runs at 60% CPU. A teammate proposes sharding now. What do you suggest first?',
         options: [
-          'Nothing - shard as early as possible',
-          'Vertical scaling, read replicas, caching and query tuning',
-          'Switching programming language',
-          'Adding more application servers',
+          'Shard now - it only gets harder later, once the table passes a terabyte',
+          'Move to a NoSQL database, which shards automatically and needs no planning up front',
+          'Add more application servers so the database sees shorter, faster queries',
+          'Replicas, caching, query tuning and a bigger machine - it all fits one machine',
+        ],
+        answer: 3,
+        explanation:
+          'Sharding permanently complicates queries, transactions and operations, and it mainly buys write capacity and data size. Here reads dominate and the data fits one machine, so replicas and caching attack the actual load. More application servers would only send more queries to the same database.',
+      },
+      {
+        id: 'sh-3',
+        prompt:
+          'In the Lab you pick "Range on created_at". The 2026 shard takes about 70% of the traffic. Why does adding more shards not fix it?',
+        options: [
+          'New rows all carry a current timestamp, so they still hit the newest range',
+          'The router is too slow to spread requests across more than four shards at once',
+          'Range sharding does not allow more than four shards without a full re-import',
+          'Old shards are read-only',
+        ],
+        answer: 0,
+        explanation:
+          'A range on a key that only grows (time, auto-increment ids) sends every new row to the last range. More shards only add more cold history. Hashing the key, or a composite key that spreads current writes, removes the hotspot at the cost of range queries.',
+      },
+      {
+        id: 'sh-4',
+        prompt:
+          'Rows are placed with hash(user_id) % 4. Traffic grows and you add a fifth shard, changing the formula to % 5. Roughly how much data moves?',
+        options: [
+          'None - existing rows stay where they are and only new rows use the % 5 formula',
+          'About a fifth - only the rows the new shard needs move, and the other four keep theirs',
+          'About four fifths - most keys give a different remainder mod 5 than mod 4',
+          'Exactly half',
+        ],
+        answer: 2,
+        explanation:
+          'Changing N in a modulo scheme changes the answer for most keys: only about 1 in 5 keys keeps the same shard, so about 80% move. Moving only about a fifth is what consistent hashing or many virtual shards give you - which is why they are worth the extra complexity.',
+      },
+      {
+        id: 'sh-5',
+        prompt:
+          'Users are sharded by user_id across 16 shards. The login page looks users up by email. What happens to that query, and what is the usual fix?',
+        options: [
+          'The router hashes the email instead and goes straight to the one shard that holds the user',
+          'It fans out to all 16 shards; the fix is an email-to-user_id lookup table',
+          'It fails - a sharded database cannot query any column other than the shard key',
+          'It is fast, because each shard is small and holds an index on email',
         ],
         answer: 1,
         explanation:
-          'Sharding permanently complicates queries, transactions and operations. Cheaper options usually buy years of headroom.',
+          'The router can only route by the shard key. A query without it asks every shard, and its latency is set by the slowest one. A small email-to-user_id lookup (itself sharded by email) turns login back into two single-shard queries. Hashing the email finds the wrong shard, because rows were placed by user_id.',
+      },
+      {
+        id: 'sh-6',
+        prompt:
+          'In the Lab you run 2,000 queries a second across 4 shards, then raise cross-shard queries from 5% to 30%. How many requests per second do the shards receive in total?',
+        options: [
+          '2,000 - the traffic did not change, only which shards answer each query',
+          '1,400 - cross-shard queries are cheaper, since each returns less',
+          '2,600 - each of the 600 cross-shard queries adds one extra request',
+          '3,800 - each cross-shard query becomes 4 shard requests: 1,400 + 600 x 4',
+        ],
+        answer: 3,
+        explanation:
+          '70% of 2,000 is 1,400 single-shard queries. The other 600 each fan out to all 4 shards, adding 2,400. Scatter-gather multiplies load by the shard count, which is why queries without the shard key must stay off the hot path.',
+      },
+      {
+        id: 'sh-7',
+        prompt:
+          'A payment app is sharded by user_id. Ana (shard 2) sends 50 euros to Ben (shard 7). How do you make the debit and the credit happen together?',
+        options: [
+          'A saga with compensation, or two-phase commit across the two shards',
+          'A normal BEGIN ... COMMIT, since both shards run PostgreSQL and can join one transaction',
+          'Write both rows to shard 2 so one local transaction covers the transfer',
+          'Retry each write until both succeed, so the transfer eventually completes',
+        ],
+        answer: 0,
+        explanation:
+          'A local transaction lives inside one database. Across shards you need a distributed protocol (two-phase commit) or a saga that can undo the debit if the credit fails. Blind retries can double-apply a step, and writing Ben to the wrong shard breaks routing for every later read.',
+      },
+      {
+        id: 'sh-8',
+        prompt:
+          'A SaaS product hashes tenant_id across 8 nodes. Three enterprise tenants are each bigger than a thousand small ones, and their nodes run hot. What is the common fix?',
+        options: [
+          'Switch to range sharding on tenant_id so neighbouring tenants share load',
+          'Add more nodes to the hash ring, so the three big tenants are likely to land on different nodes',
+          'A directory override that pins each big tenant to its own node, hashing the rest',
+          'Split each big tenant randomly across all 8 nodes so no node carries all of it',
+        ],
+        answer: 2,
+        explanation:
+          'Hashing spreads many small tenants well but cannot split one huge tenant, because all its rows share one key. A directory entry for the few outliers gives them their own capacity. Scattering one tenant randomly makes every one of its queries cross-shard.',
+      },
+      {
+        id: 'sh-9',
+        prompt:
+          'Writes reach 40,000 a second and the single primary is saturated. A teammate suggests adding five read replicas. What happens to write capacity?',
+        options: [
+          'It grows about six times, since six machines can each accept a share of writes',
+          'Nothing - every replica applies every write, and all writes still hit the primary',
+          'It halves, because replicas slow the primary down',
+          'It grows, but only for small rows that fit in one replication packet',
+        ],
+        answer: 1,
+        explanation:
+          'Replication copies the whole dataset: it adds read capacity and failover targets, but each replica replays every write. Only splitting the data so each node owns and accepts writes for a slice raises write capacity.',
+      },
+      {
+        id: 'sh-10',
+        prompt:
+          'After sharding, each shard keeps its own auto-increment id for orders. Support reports two different orders with id 1042. What should the id scheme be?',
+        options: [
+          'Keep per-shard sequences and hope they never collide',
+          'One central sequence database that every insert on every shard calls to get its next id',
+          'Random 32-bit integers, since four billion values leave plenty of room',
+          'Globally unique ids such as UUIDv7, Snowflake-style ids, or ids with the shard number',
+        ],
+        answer: 3,
+        explanation:
+          'Independent sequences on each shard produce the same numbers. A central sequence works but puts one service on every insert. Time-ordered unique ids such as UUIDv7 or Snowflake need no coordination and stay roughly sorted, which is kind to B-tree indexes. Random 32-bit values collide by the birthday paradox.',
+      },
+      {
+        id: 'sh-11',
+        prompt:
+          'Users are sharded across 4 shards, and each shard is a single database with no replica. The Shard C machine dies. What do users see?',
+        options: [
+          'Users on Shard C get errors; users on A, B and D are unaffected',
+          'Everyone is down, because the cluster fails as one system',
+          'Nothing - the router sends Shard C traffic to the other shards',
+          'Shard C data is rebuilt automatically from the other shards',
+        ],
+        answer: 0,
+        explanation:
+          'Sharding limits the blast radius to one slice, but it does not copy data. The other shards do not hold Shard C rows, so the router has nowhere to send those queries. That is why real deployments shard and replicate: each shard is a primary with replicas.',
       },
     ],
   },
@@ -419,15 +1346,27 @@ Shard C  #####             18%`,
     tagline: 'Splitting one table into manageable pieces inside a single database.',
     category: 'data',
     difficulty: 'Intermediate',
-    keywords: ['range partition', 'list partition', 'pruning', 'retention'],
+    lab: 'partitioning',
+    keywords: ['range partition', 'list partition', 'hash partition', 'pruning', 'retention', 'drop partition'],
     what: 'Partitioning divides a large table into smaller physical pieces - by range (usually time), by list, or by hash - while keeping one logical table inside one database.',
     why: 'It keeps indexes small, lets the planner skip irrelevant partitions, and makes deleting old data an instant DROP instead of a multi-hour DELETE.',
     how: [
-      'Choose a partition column that appears in most queries - created_at for event data.',
-      'The planner prunes partitions that cannot match the predicate.',
-      'Retention becomes DROP PARTITION rather than a bulk delete and vacuum.',
+      'Choose a partition key that appears in most queries - created_at for event data, tenant_id for multi-tenant data.',
+      'The application still reads and writes one table; the database routes each row to its partition.',
+      'The planner prunes partitions that cannot match the WHERE clause, and reads only the rest.',
+      'Retention becomes DROP TABLE on the oldest partition rather than a bulk DELETE and vacuum.',
     ],
-    when: ['Time-series and event tables.', 'Tables large enough that index maintenance hurts.'],
+    when: [
+      'Time-series and event tables with a retention rule such as "keep 90 days".',
+      'Tables larger than the memory of the database server, where index maintenance and scans start to hurt.',
+      'Most queries filter on one column that can serve as the partition key.',
+    ],
+    advantages: [
+      'Queries that filter on the partition key read only the partitions that can match.',
+      'Each partition has its own smaller index, which is far more likely to stay in memory.',
+      'Dropping an old partition takes milliseconds and returns its disk space at once.',
+      'Still one database: transactions, joins and SQL work as before.',
+    ],
     diagram: `events (logical table)
   |- events_2026_07   <- pruned
   |- events_2026_08   <- pruned
@@ -435,13 +1374,194 @@ Shard C  #####             18%`,
 WHERE created_at >= '2026-09-01'`,
     tradeoffs: [
       {
-        approach: 'Partitioning',
-        gains: ['Smaller indexes', 'Partition pruning', 'Cheap retention'],
-        costs: ['Queries without the partition key touch every partition', 'More objects to manage', 'Unique constraints must include the partition key'],
+        approach: 'Range partitioning (by time)',
+        gains: ['Recent-data queries prune to one partition', 'Retention is a DROP of the oldest partition', 'Old partitions can move to cheaper storage'],
+        costs: ['Every new row lands in the newest partition, so writes are not spread', 'Future partitions must be created ahead of time, or inserts fail'],
+      },
+      {
+        approach: 'List partitioning (by a fixed set of values)',
+        gains: ['One partition per region or status, easy to reason about', 'Queries for one value prune to one partition'],
+        costs: ['Sizes follow the data, so one big value makes one big partition', 'A new value needs a new partition or a DEFAULT partition'],
+      },
+      {
+        approach: 'Hash partitioning (by tenant or user id)',
+        gains: ['Rows spread evenly when there is no natural range', 'Queries for one key prune to one partition'],
+        costs: ['Range queries and retention by time touch every partition', 'Changing the number of partitions means moving rows'],
+      },
+      {
+        approach: 'One plain table (no partitioning)',
+        gains: ['No partitions to create, name or monitor', 'No rule that unique keys must include the partition key'],
+        costs: ['Every scan and index covers the whole table', 'Retention is a slow bulk DELETE that leaves dead space behind'],
       },
     ],
-    mistakes: ['Confusing partitioning with sharding - partitioning stays inside one database and does not add write capacity.'],
+    mistakes: [
+      'Confusing partitioning with sharding - partitioning stays inside one database and does not add write capacity.',
+      'Choosing a partition key the main queries do not filter on, so every query opens every partition.',
+      'Forgetting to create next month partition in advance - inserts for the new month fail.',
+      'Creating thousands of tiny partitions - planning time and memory grow with the partitions a query keeps.',
+      'Enforcing retention with DELETE on a range-partitioned table instead of dropping the old partition.',
+    ],
+    realWorld: [
+      'PostgreSQL, MySQL and Oracle all support range, list and hash partitioning of a single table.',
+      'Log, audit and event tables are commonly partitioned by day or month and expire by dropping partitions.',
+    ],
     related: ['sharding', 'database-indexing', 'sql-databases'],
+    quiz: [
+      {
+        id: 'pt-1',
+        prompt:
+          'An events table holds 170M rows over six months and is range-partitioned by month on created_at. On 20 September a dashboard asks for WHERE created_at >= now() - 7 days. What does the planner read?',
+        options: [
+          'All six partitions, because the table is still one logical table',
+          'Only the current month partition; the other five are pruned',
+          'Only the global index of the whole table, never a partition',
+          'The oldest partition first, then newer ones until it finds 7 days of rows',
+        ],
+        answer: 1,
+        explanation:
+          'The WHERE clause filters on the partition key, so the planner rules out every partition whose range cannot overlap the last 7 days - in the Lab, five wires go dashed. Being one logical table does not force a full read: pruning is the whole point of partitioning.',
+      },
+      {
+        id: 'pt-2',
+        prompt:
+          'The same table, range-partitioned by created_at, gets a report of all failed events, filtering only on the status column. How does it compare with running it on one unpartitioned table of the same size?',
+        options: [
+          'About six times faster, because six smaller partitions are scanned in parallel',
+          'It fails, because status is not the partition key and cannot be filtered',
+          'It reads every partition, a little slower than one plain table',
+          'It reads only the newest partition, because failures are recent',
+        ],
+        answer: 2,
+        explanation:
+          'Pruning only happens when the query filters on the partition key. status is not the key, so all partitions are opened, each with its own planning cost. Splitting the table does not make an unrelated filter faster - in the Lab, pick "failed events" and every wire lights up.',
+      },
+      {
+        id: 'pt-3',
+        prompt:
+          'Retention is 90 days. Every night DELETE FROM events WHERE created_at < now() - 90 days removes about 20M rows, runs for hours and makes replicas lag. The table is range-partitioned by month. What do you change?',
+        options: [
+          'Run the DELETE in smaller batches every hour so each one finishes in minutes',
+          'Keep the DELETE as it is and add a replica to absorb the replication lag',
+          'Switch to hash partitioning so the DELETE is spread evenly over every partition',
+          'Drop or detach the oldest monthly partition instead of deleting rows',
+        ],
+        answer: 3,
+        explanation:
+          'A month that is its own partition can be removed with DROP TABLE, a metadata change that takes milliseconds, writes almost no WAL and returns the space at once. Batching the DELETE spreads the pain but still writes every row to the WAL and leaves dead space; hash partitioning scatters each month over every partition, so it could never be dropped whole.',
+      },
+      {
+        id: 'pt-4',
+        prompt:
+          'A nightly DELETE removed 30M old rows from an unpartitioned table. The next morning the table still uses the same disk space. Why?',
+        options: [
+          'The DELETE was rolled back when the nightly session timed out',
+          'VACUUM makes the dead space reusable inside the table but does not return it to disk',
+          'The deleted rows were moved into the write-ahead log, which still counts as table data',
+          'Deleted rows are hidden but stay readable until the next backup',
+        ],
+        answer: 1,
+        explanation:
+          'In PostgreSQL a DELETE marks rows dead; regular VACUUM lets the table reuse that space but normally keeps the file size, and VACUUM FULL needs an exclusive lock to rewrite it. The Lab shows this as "GB dead" after a DELETE. Nothing was rolled back - the rows are gone, only their space remains.',
+      },
+      {
+        id: 'pt-5',
+        prompt:
+          'Your team says: "Our single PostgreSQL primary is at 95% CPU from writes. Let us partition the orders table to add write capacity." What do you tell them?',
+        options: [
+          'Good plan - each partition gets its own worker process, so writes run on more CPU',
+          'Every partition stays on the same machine, so it adds no write capacity',
+          'Partition by hash, because hash partitions run on separate cores in parallel',
+          'Partition by range, because only the newest partition takes writes',
+        ],
+        answer: 1,
+        explanation:
+          'Partitions are tables inside one database instance, sharing its CPU, memory and disk. Partitioning reduces work per query and per maintenance job, not the ceiling of the machine. Spreading writes over machines is sharding. Hash partitions do not get their own cores.',
+      },
+      {
+        id: 'pt-6',
+        prompt:
+          'A SaaS app runs almost every query with WHERE tenant_id = ? and has no time-based retention. Tenants are roughly the same size. Which partitioning fits?',
+        options: [
+          'Hash partitioning on tenant_id, so each query prunes to one partition',
+          'Range partitioning on created_at, because every table should be partitioned by time',
+          'List partitioning with one partition per tenant for 40,000 tenants',
+          'No key at all - let the database pick partitions at random',
+        ],
+        answer: 0,
+        explanation:
+          'The dominant filter is tenant_id, so it should be the key, and hash spreads it evenly when there is no natural range. Range on created_at would force every tenant query to open all partitions. One list partition per tenant means 40,000 partitions, far past the few thousand the PostgreSQL planner handles well.',
+      },
+      {
+        id: 'pt-7',
+        prompt:
+          'The events table is range-partitioned by month and has partitions up to September. On 1 October at 00:00 inserts start failing. What most likely happened?',
+        options: [
+          'The September partition reached its maximum size at midnight',
+          'The partition key index is corrupted after a month of heavy inserts',
+          'No October partition exists and there is no default, so rows have nowhere to go',
+          'The planner pruned the insert because October matches no query',
+        ],
+        answer: 2,
+        explanation:
+          'A row whose key matches no partition is rejected with an error. Partitions have no size limit, so September is not "full". This is the classic partitioning outage: create future partitions with a scheduled job and alert when it fails.',
+      },
+      {
+        id: 'pt-8',
+        prompt:
+          'You want a PRIMARY KEY (id) on an events table partitioned by range on created_at. PostgreSQL refuses. What is the fix, and why?',
+        options: [
+          'Use PRIMARY KEY (id, created_at), since uniqueness is only checked per partition',
+          'Add a global index across all partitions, so id is unique in one structure',
+          'Switch to hash partitioning on created_at, which lets any column be the key',
+          'Drop the primary key - partitioned tables cannot have one; check it in code',
+        ],
+        answer: 0,
+        explanation:
+          'Indexes on a partitioned table are really one index per partition, so uniqueness is only checked inside a partition. Including the partition key guarantees two equal keys land in the same partition. PostgreSQL has no global index, and partitioned tables can have a primary key as long as it contains the partition columns.',
+      },
+      {
+        id: 'pt-9',
+        prompt:
+          'Someone proposes daily partitions for 20 years of data, about 7,300 partitions, "for maximum pruning". Most queries are monthly reports. What is the risk?',
+        options: [
+          'None - more partitions always means faster queries, since each one is smaller',
+          'The table will no longer fit on one disk, because each partition has fixed overhead',
+          'Queries will return duplicate rows',
+          'Monthly reports still open about 30 partitions, and planning cost grows with count',
+        ],
+        answer: 3,
+        explanation:
+          'Too many partitions cost planning time and per-session memory, and the PostgreSQL docs say the planner copes with a few thousand only when queries prune to a few. Partition size should follow the typical query range. More partitions is not free, and it changes nothing about disk size or correctness.',
+      },
+      {
+        id: 'pt-10',
+        prompt:
+          'An orders table of 2 GB fits easily in the memory of the database server. Queries are fast and there is no retention rule. A developer wants to partition it "to be ready". What do you say?',
+        options: [
+          'Yes - partition every table from day one, because migrating a big table later is harder',
+          'Hold off: the benefit shows once a table outgrows memory, and today it adds cost',
+          'Shard it instead, since partitioning is not enough',
+          'Partition it by hash so it uses all CPU cores',
+        ],
+        answer: 1,
+        explanation:
+          'The PostgreSQL docs give a rule of thumb: partitioning is worthwhile when a table would otherwise exceed the memory of the server. A small, fast table gains nothing and still pays the costs - future partitions, key rules, per-partition overhead. Sharding a 2 GB table adds far more cost.',
+      },
+      {
+        id: 'pt-11',
+        prompt:
+          'In the Lab you switch to list partitioning by region and try to remove April. Why is the DROP button disabled, and what happens with DELETE?',
+        options: [
+          'DROP is disabled because list partitions can never be dropped; the DELETE is instant instead',
+          'DROP is disabled only while queries run; pause and it works',
+          'April rows sit in every region partition, so the DELETE must walk all of them',
+          'DELETE is pruned to the DE partition, because DE is the biggest',
+        ],
+        answer: 2,
+        explanation:
+          'Only a time-based range key puts one month in one piece. With list partitioning by region, April lives in every partition, so removing it means deleting rows everywhere - slow, WAL-heavy and leaving dead space. List partitions themselves can be dropped; dropping one would remove a whole region, not a month.',
+      },
+    ],
   },
   {
     slug: 'database-normalization',
@@ -449,28 +1569,205 @@ WHERE created_at >= '2026-09-01'`,
     tagline: 'Store each fact once so it cannot contradict itself.',
     category: 'data',
     difficulty: 'Beginner',
-    keywords: ['3nf', 'schema design', 'redundancy', 'integrity'],
+    lab: 'schema-design',
+    labFocus: 'database-normalization',
+    keywords: ['3nf', 'schema design', 'redundancy', 'integrity', 'update anomaly'],
     what: 'Normalization organises tables so that each piece of information is stored in exactly one place, with relationships expressed by keys.',
-    why: 'Duplicated data drifts. If a customer address exists in three tables, sooner or later they disagree, and no query can tell you which one is right.',
+    why: 'Duplicated data drifts. If a customer email is copied into every one of their orders, a change has to reach every copy, and a change that stops part way leaves the rows disagreeing - with no constraint to notice and no query that can tell you which one is right.',
     how: [
       'Give every entity its own table and a primary key.',
       'Move repeating groups into child tables linked by foreign keys.',
-      'Ensure non-key columns depend on the whole key and nothing else (third normal form is usually enough).',
+      'Ensure non-key columns depend on the key, the whole key and nothing but the key (third normal form is usually enough).',
+      'Keep historical values, such as the price paid, as facts of their own - copying them is not duplication.',
     ],
-    when: ['Transactional systems where correctness of writes matters most.'],
+    when: [
+      'Transactional systems where correctness of writes matters most.',
+      'Any fact that changes and is referenced from many rows: names, emails, plans, prices.',
+      'As the starting point of every schema - denormalise specific read paths later, once measurement shows they need it.',
+    ],
+    advantages: [
+      'A change writes one row, so it either happens or it does not.',
+      'No update, insert or delete anomalies.',
+      'Constraints (foreign keys, unique keys) can protect the data.',
+    ],
     diagram: `DENORMALISED                    NORMALISED
 orders                          orders        customers
  id, customer_name,              id,           id (PK)
  customer_email, total           customer_id,  name
- (name repeated per order)       total         email`,
+ (email repeated per order)      total         email`,
     tradeoffs: [
       {
         approach: 'Normalized schema',
-        gains: ['No update anomalies', 'Smaller storage', 'One source of truth'],
+        gains: ['No update anomalies', 'A change writes one row', 'One source of truth'],
         costs: ['Reads need joins', 'Very hot read paths may become join-heavy'],
       },
+      {
+        approach: 'Copying the fact into every row',
+        gains: ['A read answers from one row, no join', 'Simple queries for one screen'],
+        costs: ['A change must reach every copy', 'A half-done change leaves rows that disagree', 'More storage and more rows written'],
+      },
+    ],
+    mistakes: [
+      'Treating a historical value (price paid, address at shipping time) as duplication and joining to the current value, which rewrites history.',
+      'Denormalising up front because joins "will be slow", before any measurement.',
+      'Relying on application code to update every copy - every other writer (an admin tool, a script, another service) will miss one.',
     ],
     related: ['denormalization', 'sql-databases', 'database-indexing'],
+    quiz: [
+      {
+        id: 'norm-1',
+        prompt:
+          'An orders table stores customer_email on every order. A customer with 120 orders changes email, and the job that rewrites the rows crashes after 70 of them. What state is the data in?',
+        options: [
+          'The database notices the rows disagree and rolls the 70 rows back automatically',
+          'Only the customers table is wrong; the orders are fine',
+          'The customer now has two emails across their orders, and nothing flags it',
+          'Nothing changed, because email is not part of the primary key',
+        ],
+        answer: 2,
+        explanation:
+          'Each of the 120 rows is valid on its own, so no constraint can see that 70 say one thing and 50 say another. That is the update anomaly. The database only rolls back what was inside one failed transaction - it has no idea the 120 copies are the same fact.',
+      },
+      {
+        id: 'norm-2',
+        prompt:
+          'In the Schema Design Lab you switch to Normalized and raise Changes left half-done to 10%. The disagreeing-copies counter stays at 0. Why?',
+        options: [
+          'The Lab turns failures off in the normalized schema, so no change is ever half-done',
+          'Foreign keys block every write that would leave a copy out of date',
+          'The normalized schema retries failed changes automatically until every row matches',
+          'The email lives in one customers row, so there is no second copy to disagree',
+        ],
+        answer: 3,
+        explanation:
+          'Half-done changes still happen in the normalized schema; they just cannot split one fact in two. A single-row write is atomic. Foreign keys are tempting but they check that a reference points somewhere, not that copies agree.',
+      },
+      {
+        id: 'norm-3',
+        prompt:
+          'order_items stores price_at_purchase, while products stores the current price. A reviewer says this is duplication and asks you to join to products.price instead. What do you answer?',
+        options: [
+          'Agree - the price should live in exactly one place, and a join finds it',
+          'The price paid is a different fact, frozen in time; keep it on the order line',
+          'Agree, but keep a nightly job that copies products.price into order_items so they match',
+          'Store the price only in order_items and drop it from products',
+        ],
+        answer: 1,
+        explanation:
+          'Normalization is about storing each fact once, and "what this customer paid on that day" is not the same fact as "what the product costs today". Joining to the current price is tempting because it looks normalised, but it silently rewrites every past invoice after a price change.',
+      },
+      {
+        id: 'norm-4',
+        prompt:
+          'A university keeps one table: enrollments(student_id, student_name, course_id, course_title, instructor). It wants to publish a new course before anyone has enrolled. What goes wrong?',
+        options: [
+          'The course has nowhere to go without a fake enrollment row - an insert anomaly',
+          'Nothing - just insert a row with an empty student_id until someone enrolls',
+          'The instructor column must be dropped first, since it depends on the course',
+          'The course is recorded, but the student names are duplicated on every new row',
+        ],
+        answer: 0,
+        explanation:
+          'Course data only lives on enrollment rows, so no enrollment means nowhere to put the course. An empty student_id is the tempting workaround, but it is the fake row: it breaks the key and every count of students. The fix is a courses table that exists on its own.',
+      },
+      {
+        id: 'norm-5',
+        prompt:
+          'In a flat sales table, the only row for the product "Blue Lamp" is deleted when its last order is cancelled. The next day nobody can find the lamp price or supplier. Which change prevents this?',
+        options: [
+          'Soft-delete sales rows instead, so the product data stays readable',
+          'Add an index on product_name so the lamp can still be found',
+          'Keep a nightly backup of the sales table to restore lost product rows',
+          'Move product data into its own products table, referenced by product_id',
+        ],
+        answer: 3,
+        explanation:
+          'This is a delete anomaly: removing one fact (the order) removed another (the product). Soft-deleting hides the symptom but keeps product data hostage to order rows, and an index or a backup does not change where the product lives. Giving products their own table makes each fact live and die on its own.',
+      },
+      {
+        id: 'norm-6',
+        prompt: 'employees(id, name, department_id, department_name). Which column breaks third normal form, and what is the fix?',
+        options: [
+          'name - two employees can share a name, so move it to a people table',
+          'department_name - it depends on department_id; move it to departments',
+          'department_id - foreign keys are not allowed in 3NF, so the column must go',
+          'None - every column depends on id somehow',
+        ],
+        answer: 1,
+        explanation:
+          'department_name is determined by department_id, a non-key column, so it depends on the key only through another column (a transitive dependency). "Depends on id somehow" is the tempting answer, but 3NF asks for the key and nothing but the key. Renaming a department would otherwise touch every employee row.',
+      },
+      {
+        id: 'norm-7',
+        prompt:
+          'order_lines has the composite key (order_id, product_id) and the columns qty and product_name. What is wrong with product_name here?',
+        options: [
+          'Nothing - it is in the same row as the key, so it depends on the whole key',
+          'It should be part of the key, so each product line is unique by name',
+          'It depends on only product_id, half of the key - a 2NF violation',
+          'It is a historical fact, like the price paid, and must stay on the line',
+        ],
+        answer: 2,
+        explanation:
+          'qty needs both order_id and product_id to be known, but product_name needs only product_id - a partial dependency. The historical-fact answer is tempting, but a product name is not frozen at purchase the way the price paid is; renaming the product would have to rewrite every line.',
+      },
+      {
+        id: 'norm-8',
+        prompt:
+          'A normalised order page joins 3 tables on indexed keys and takes 8 ms at 300 reads per second. A teammate wants to copy the customer name and the total into orders "to make it fast". What do you do?',
+        options: [
+          'Keep it normalised and measure; denormalise only a proven slow path',
+          'Copy the columns now, before traffic grows and the migration gets harder',
+          'Drop the foreign keys to speed up the joins',
+          'Move the whole schema to a document database so the page is one read',
+        ],
+        answer: 0,
+        explanation:
+          'At 8 ms the joins are not the bottleneck, and copying the columns buys every future email or name change a set of copies to keep in sync. "Before traffic grows" is the tempting argument, but it trades certain integrity work for a speed-up nobody has measured yet. Dropping foreign keys or moving stores attacks a cost that is not there.',
+      },
+      {
+        id: 'norm-9',
+        prompt:
+          'In the Lab on the Database Normalization focus, the database is over budget at 200 reads/sec and 20 email changes/sec with 100 orders per customer. Switching to Normalized fixes it even though each read now touches 6 rows instead of 1. Why?',
+        options: [
+          'The normalized schema is faster on every workload, so it always wins',
+          'Normalizing adds an index on customer_id the denormalized schema lacked',
+          'Reads stop going to the database after normalizing, because rows get cached',
+          'Each email change drops from 101 row writes to 1, which outweighs the extra reads',
+        ],
+        answer: 3,
+        explanation:
+          '20 changes x 101 rows is about 2,000 row writes per second, while 200 reads x 6 rows is 1,200 cheap row reads. The workload was write-heavy, so the copies cost more than the joins. "Faster on every workload" is exactly what the Denormalization focus disproves with 1,500 reads per second.',
+      },
+      {
+        id: 'norm-10',
+        prompt:
+          'To stop half-done email changes, a team keeps the copied email on orders but wraps the customers row and all order rows in one transaction. What does that fix, and what does it leave?',
+        options: [
+          'It fixes everything - the copies can no longer disagree, since every change is now atomic',
+          'It stops half-done changes, but a writer that skips the copies still leaves them stale',
+          'It fixes nothing, because transactions do not cover UPDATE statements across tables',
+          'It removes the need for the orders table',
+        ],
+        answer: 1,
+        explanation:
+          'A transaction makes one change all-or-nothing, which is real progress. But the schema still permits disagreement: any code path that updates only customers leaves the copies behind, and every change still rewrites all the rows. Normalising removes the copies, so there is nothing left to forget.',
+      },
+      {
+        id: 'norm-11',
+        prompt:
+          'orders.customer_id is a foreign key to customers(id) with the default ON DELETE behaviour. Someone deletes a customer who still has orders. What happens in PostgreSQL?',
+        options: [
+          'The customer is deleted and the orders keep a customer_id that points nowhere',
+          'The orders are deleted with the customer, cascading down the foreign key',
+          'The delete is rejected with an error, since orders still reference it',
+          'customer_id on those orders is set to NULL, leaving the orders without an owner',
+        ],
+        answer: 2,
+        explanation:
+          'The default is NO ACTION: if referencing rows still exist when the constraint is checked, the delete fails. Cascading or setting NULL only happens when you ask for ON DELETE CASCADE or SET NULL. Orphaned references are what the foreign key exists to prevent.',
+      },
+    ],
   },
   {
     slug: 'denormalization',
@@ -478,18 +1775,25 @@ orders                          orders        customers
     tagline: 'Deliberately duplicating data to make a read path fast.',
     category: 'data',
     difficulty: 'Intermediate',
-    keywords: ['read optimization', 'precomputation', 'materialized view', 'fan-out'],
+    lab: 'schema-design',
+    labFocus: 'denormalization',
+    keywords: ['read optimization', 'precomputation', 'materialized view', 'fan-out', 'derived data'],
     what: 'Denormalization stores redundant copies of data - a counter, an embedded document, a materialised view - so that a frequent read does not have to join or aggregate.',
-    why: 'Some read paths are so hot that joins and aggregates dominate your database load. Precomputing the answer moves the cost to write time, where it is usually cheaper and rarer.',
+    why: 'Some read paths are so hot that joins and aggregates dominate your database load. Precomputing the answer moves the cost to write time, where it is paid once per change instead of once per read.',
     how: [
-      'Identify the expensive, frequent query.',
+      'Identify the expensive, frequent query, and check that an index does not already fix it.',
       'Precompute its result on write, or maintain a materialised view.',
-      'Decide how the copy is kept in sync: transactionally, via triggers, or asynchronously through events.',
+      'Decide how the copy is kept in sync: in the same transaction, via triggers, or asynchronously through events.',
       'Accept and document a staleness window if the update is asynchronous.',
+      'Run a reconciliation job that recomputes the copy from the source and fixes drift.',
     ],
-    when: ['Feeds, counters, leaderboards, product pages, anything read far more than written.'],
+    when: [
+      'Feeds, counters, leaderboards, product pages, anything read far more than written.',
+      'Stores without joins (most NoSQL), where writing the data once per access path is the data model.',
+    ],
+    advantages: ['Reads answer from one row or one document', 'Predictable read cost under heavy load'],
     diagram: `Normalized read:  SELECT COUNT(*) FROM likes WHERE post_id = ?
-                  -> scans thousands of rows per page view
+                  -> counts every like row on every page view
 
 Denormalized:     posts.like_count  (maintained on write)
                   -> one column read, updated when a like happens`,
@@ -499,12 +1803,189 @@ Denormalized:     posts.like_count  (maintained on write)
         gains: ['Much faster and cheaper reads', 'Predictable query cost'],
         costs: ['Two copies that can diverge', 'Write path becomes more complex', 'Backfills needed when logic changes'],
       },
+      {
+        approach: 'Staying normalised (index, join at read time)',
+        gains: ['One source of truth, nothing to reconcile', 'Writes stay one row'],
+        costs: ['Every read pays the join or the aggregate', 'Hot read paths can dominate database load'],
+      },
     ],
     mistakes: [
       'Denormalising before measuring - an index often solves the same problem with no duplication.',
       'Having no reconciliation job, so drift is never detected.',
+      'Letting the copy become the only copy, so it can no longer be rebuilt from a source of truth.',
+      'Copying a fact that changes often into many places, so every change fans out into many writes.',
     ],
     related: ['database-normalization', 'caching', 'cqrs', 'fan-out'],
+    quiz: [
+      {
+        id: 'denorm-1',
+        prompt:
+          'A post page runs COUNT(*) over the likes table on every view. Views are 5,000 per second, new likes are 20 per second, and the count dominates database load. What is the fitting change?',
+        options: [
+          'Add more read replicas and keep counting on every view, so no single machine is overloaded',
+          'Store like_count on posts, update it with the like insert, and reconcile it',
+          'Cache the page for 24 hours so the count runs once a day',
+          'Delete likes older than a year so the COUNT scans fewer rows',
+        ],
+        answer: 1,
+        explanation:
+          'The read is 250 times more frequent than the write, the textbook case for precomputing on write. The same transaction keeps the two copies from splitting, and the reconciliation job catches drift from paths that bypass it. Replicas are tempting but they only spread the same wasted counting over more machines; a day-long cache shows stale counts, and deleting likes changes the answer.',
+      },
+      {
+        id: 'denorm-2',
+        prompt:
+          'An order page takes 400 ms. EXPLAIN shows a sequential scan on orders.customer_id in the join. Someone proposes copying the customer columns into orders. What do you try first?',
+        options: [
+          'Add an index on orders.customer_id and measure again',
+          'Copy the columns - joins are always slow once a table passes a few million rows',
+          'Move the orders into a document database so the page needs no join',
+          'Cache the whole page for an hour so the join rarely runs',
+        ],
+        answer: 0,
+        explanation:
+          'The join is slow because it scans, not because it is a join. An index often solves the same problem with no duplication and nothing to keep in sync. Denormalising here would hide a missing index behind copies that now need maintenance.',
+      },
+      {
+        id: 'denorm-3',
+        prompt:
+          'like_count is incremented by the application in a statement separate from the like insert. After a year, spot checks show counts that do not match the likes table. Which change stops requests that fail between the two statements from splitting them?',
+        options: [
+          'Run the increment before the insert instead of after',
+          'Increment by 2 to compensate',
+          'Put the insert and the increment in one transaction',
+          'Read the count from a replica',
+        ],
+        answer: 2,
+        explanation:
+          'Two separate statements can be split by any failure in between, whichever runs first. One transaction makes them all-or-nothing. Swapping the order is tempting but it only changes the direction of the error, not whether it happens.',
+      },
+      {
+        id: 'denorm-4',
+        prompt:
+          'Clients retry the Like request on timeout. The likes table has a unique key on (user_id, post_id), so the second insert is rejected, yet like_count still goes up twice. What is the fix?',
+        options: [
+          'Turn off client retries so each like is sent exactly once',
+          'Increment only when the insert created a row, or derive the count from the rows',
+          'Remove the unique key so both inserts succeed and the count matches the number of rows',
+          'Lower the timeout',
+        ],
+        answer: 1,
+        explanation:
+          'The insert is idempotent thanks to the unique key; the blind increment is not. Tie the increment to the effect of the insert (for example INSERT ... ON CONFLICT DO NOTHING and increment only if a row was inserted). Turning off retries is tempting but it trades a counting bug for user-visible failures.',
+      },
+      {
+        id: 'denorm-5',
+        prompt:
+          'An admin tool deletes spam likes directly in the database, and like_count never goes down. Which sync mechanism would have kept the counter right for those deletes too?',
+        options: [
+          'An increment and decrement in the application code',
+          'A longer cache TTL',
+          'A read replica for the admin tool',
+          'A database trigger on the likes table',
+        ],
+        answer: 3,
+        explanation:
+          'A trigger runs for every writer, including tools and scripts that bypass the application. Its cost is invisible behaviour that the next engineer may not expect. Application code is the tempting answer, but it is exactly what the admin tool bypassed.',
+      },
+      {
+        id: 'denorm-6',
+        prompt:
+          'In the Lab on the Denormalization focus you switch to Denormalized: database load drops from over budget to about 25%, but the disagreeing-copies counter starts to climb. What is the Lab telling you?',
+        options: [
+          'The copies need a mechanism to keep them honest, such as a reconciliation job',
+          'Denormalization is broken and should be undone before copies drift further',
+          'The counter is a Lab display bug and can be ignored, since load is fine',
+          'Raise the database budget',
+        ],
+        answer: 0,
+        explanation:
+          'The read path is now cheap, and the price is copies that can drift when a change stops part way. That is expected, and it is why every denormalised value needs a sync mechanism and a reconciliation job. Switching back is tempting but it brings the read overload back.',
+      },
+      {
+        id: 'denorm-7',
+        prompt:
+          'A product stock level changes 1,000 times per second and is read 50 times per second. A teammate wants to copy it into 30 denormalised listing documents. What happens?',
+        options: [
+          'Reads get faster at no cost, since each listing no longer looks up stock',
+          'Nothing changes much, because 50 reads per second is too few to matter',
+          'Every stock change becomes 30 writes, about 30,000 writes per second',
+          'The listings become the source of truth',
+        ],
+        answer: 2,
+        explanation:
+          'Denormalisation pays off when reads vastly outnumber writes. Here writes win by 20 to 1, so the copy multiplies the expensive side. "Reads get faster" is true but ignores the write fan-out that pays for it.',
+      },
+      {
+        id: 'denorm-8',
+        prompt:
+          'Product search documents embed the brand name and are updated by an asynchronous consumer of change events. A brand is renamed, and for about 2 seconds search still shows the old name. What does this mean?',
+        options: [
+          'The search index is corrupt and must be deleted and rebuilt before users notice',
+          'It is the expected lag of an async copy - document it, keep it rebuildable',
+          'Asynchronous copies never go stale, so the consumer must have dropped the event',
+          'The rename must be rolled back',
+        ],
+        answer: 1,
+        explanation:
+          'An asynchronous copy is eventually consistent: it scales well and is briefly behind. That is the trade chosen, so it should be documented, not treated as a failure. The search document is derived data, so if it ever drifts further it can be rebuilt from the source.',
+      },
+      {
+        id: 'denorm-9',
+        prompt:
+          'To save a join, a team copies author_name into every post and drops the name column from users. A year later nobody can say what an author is actually called. What went wrong?',
+        options: [
+          'Nothing - the posts hold the name, so any post can answer the question',
+          'The join should have been cached instead of removed',
+          'The posts needed an index on author_name to find the right value',
+          'The copy became the only copy, with no source to rebuild it from',
+        ],
+        answer: 3,
+        explanation:
+          'Safe denormalisation is derived data: you can delete it and recompute it from the source. Removing the source turns the copies into competing originals, and after one partial rename they disagree forever. "The posts hold the name" is the tempting answer, but which of the posts?',
+      },
+      {
+        id: 'denorm-10',
+        prompt:
+          'You move orders to a key-value store without joins. The app needs "orders by customer" and "orders by product". What is the usual design?',
+        options: [
+          'Write each order twice, keyed by customer and by product, and keep both in sync',
+          'Run a join in the application for every request by scanning all orders in the store',
+          'Store only by customer and scan for product queries',
+          'Store only one table and add a secondary index on every column',
+        ],
+        answer: 0,
+        explanation:
+          'Without joins, denormalisation is the data model: each access path gets its own copy of the data, and keeping them in agreement is accepted up front. Scanning all orders is the tempting fallback, and it grows with the whole dataset on every request.',
+      },
+      {
+        id: 'denorm-11',
+        prompt:
+          'A dashboard aggregates 50 million rows on every request. The business is fine with numbers up to 5 minutes old. What fits best?',
+        options: [
+          'Run the aggregate on every request, on a bigger machine',
+          'Copy the totals into every row of the source table',
+          'A materialised view refreshed every 5 minutes',
+          'Remove the dashboard, since nobody reads it in real time',
+        ],
+        answer: 2,
+        explanation:
+          'A materialised view stores the query result and is refreshed on command, so reads are cheap and the source stays the only truth. Its data is as old as the last refresh, which the 5-minute budget allows. Copying totals into every row creates many copies to keep in sync for one screen.',
+      },
+      {
+        id: 'denorm-12',
+        prompt:
+          'A viral post gets 3,000 likes per second, and each like updates posts.like_count in the same transaction as the insert. Like requests start queueing. Why, and what is a common fix?',
+        options: [
+          'The likes table is too big to take 3,000 inserts a second - partition it by post_id',
+          'Every transaction waits on the lock of one counter row; batch the increments',
+          'The count column is the wrong type',
+          'Retries are too aggressive',
+        ],
+        answer: 1,
+        explanation:
+          'The same transaction is the safest sync, but it serialises every writer on one hot row. Batching increments asynchronously removes the contention at the price of a short staleness window, and the reconciliation job keeps it honest. Partitioning likes is tempting but the lock is on the posts row, not on likes.',
+      },
+    ],
   },
   {
     slug: 'read-replicas',
@@ -513,15 +1994,26 @@ Denormalized:     posts.like_count  (maintained on write)
     category: 'data',
     difficulty: 'Beginner',
     lab: 'replication',
-    keywords: ['read scaling', 'lag', 'routing', 'analytics'],
-    what: 'Read replicas are copies of the primary database that serve read-only queries.',
+    labFocus: 'read-replicas',
+    keywords: ['read scaling', 'lag', 'routing', 'analytics', 'read-your-writes', 'monotonic reads'],
+    what: 'Read replicas are copies of the primary database that serve read-only queries. They follow the primary asynchronously, so each one is slightly behind it.',
     why: 'Most applications read far more than they write. Moving reads off the primary frees it for writes and gives you a warm failover target at the same time.',
     how: [
       'Point read-only queries at a replica endpoint, writes at the primary.',
-      'Route reads that must be fresh (read-your-writes) back to the primary.',
+      'Route reads that must be fresh (read-your-writes) back to the primary - for example every read of a user within 5 seconds of their last write.',
+      'Keep a user on one replica, so their reads never go back in time (monotonic reads).',
       'Watch replication lag as a first-class metric and stop routing to a lagging replica.',
     ],
-    when: ['Read-heavy workloads.', 'Reporting and analytics that would otherwise compete with production traffic.'],
+    when: [
+      'Read-heavy workloads.',
+      'Reporting and analytics that would otherwise compete with production traffic - on a replica of their own.',
+    ],
+    advantages: [
+      'Read capacity grows with each replica, with no change to the schema.',
+      'The primary keeps its headroom for writes.',
+      'Heavy reports run on their own replica, away from customer traffic.',
+      'Each replica is also a warm promotion target for failover.',
+    ],
     diagram: `app --writes--> PRIMARY --stream--> REPLICA 1 <--reads-- app
                    |                 REPLICA 2 <--reads-- analytics
                    +--stream-------->`,
@@ -531,9 +2023,166 @@ Denormalized:     posts.like_count  (maintained on write)
         gains: ['Primary keeps headroom for writes', 'Read capacity scales with replica count'],
         costs: ['Stale reads under lag', 'Application must decide per query where it is safe to read'],
       },
+      {
+        approach: 'Read-your-writes routing (recent writers read the primary)',
+        gains: ['Users always see their own changes', 'Everyone else still reads from replicas'],
+        costs: ['Some reads come back to the primary', 'The application must remember when each user last wrote'],
+      },
+      {
+        approach: 'Every read on the primary',
+        gains: ['No stale reads at all', 'No routing logic'],
+        costs: ['No read scaling - the primary serves everything', 'A heavy report competes with every write'],
+      },
     ],
-    mistakes: ['Routing every read to replicas including the one right after a write.'],
-    related: ['replication', 'caching', 'connection-pooling'],
+    mistakes: [
+      'Routing every read to replicas, including the one right after a write.',
+      'Classifying queries by SQL text, so a SELECT inside a write transaction lands on a replica.',
+      'Running heavy analytics on the same replica that serves customer reads.',
+      'Watching only whether a replica is up, not how far behind it is.',
+    ],
+    related: ['replication', 'leader-follower', 'eventual-consistency', 'caching', 'connection-pooling'],
+    quiz: [
+      {
+        id: 'rr-1',
+        prompt:
+          'A primary runs at 85% CPU, and 90% of its queries are SELECTs that tolerate a second of staleness. You add two read replicas and route those SELECTs to them. What happens?',
+        options: [
+          'Nothing changes - replicas only help during a failover, not for everyday reads',
+          'The primary CPU drops sharply, while every write still goes to the primary',
+          'Write capacity triples, since three machines can now share the write load',
+          'Reads get slower because each one now crosses the network to a separate replica',
+        ],
+        answer: 1,
+        explanation:
+          'The dominant load moves off the primary, and two replicas now answer those reads. Write capacity does not change at all - every write still lands on the primary and is replayed by each replica. Extra network hops to a replica are the same as to the primary.',
+      },
+      {
+        id: 'rr-2',
+        prompt:
+          'The Lab opens with reads on the replicas and "Own save not seen" near 100%. Users save their profile, get redirected, and see the old name. Which change fixes it while keeping most reads on replicas?',
+        options: [
+          'Route every read to the primary',
+          'Add a fourth replica so each one has less to replay and catches up sooner',
+          'Turn on read-your-writes routing for users who just saved',
+          'Raise the read rate so the replica caches refresh more often',
+        ],
+        answer: 2,
+        explanation:
+          'Only the reads right after a save need the primary. Read-your-writes routing sends just those, and the crosses disappear while the other reads stay on replicas. Routing everything to the primary also fixes it, but throws away the read scaling that was the point. A fourth replica is just as behind.',
+      },
+      {
+        id: 'rr-3',
+        prompt:
+          'In the Lab you drag Network delay to replicas from 800 ms down to 100 ms, and "Own save not seen" falls to 0% - the reload comes 150 ms after the save. Is read-your-writes solved for production?',
+        options: [
+          'Yes - keep replica lag under 150 ms and the race cannot come back',
+          'Yes, as long as there are at least three replicas to spread the load',
+          'No - the reads must go to the primary forever, replicas cannot help',
+          'No - lag spikes under load, so route recent writers explicitly',
+        ],
+        answer: 3,
+        explanation:
+          'Low lag only makes the race rare. Lag is not constant: it grows exactly under load, and then the same reload lands on a replica that has not caught up. Read-your-writes has to be a routing rule, not a hope about lag. Routing all reads to the primary would work but gives up the replicas.',
+      },
+      {
+        id: 'rr-4',
+        prompt:
+          'The nightly finance report scans a year of orders on the same replica that serves product pages. Every night at 2:00 product pages slow down. What is the fix?',
+        options: [
+          'Give analytics its own replica, so scans cannot starve customer reads',
+          'Run the report on the primary instead, which has the most CPU in the cluster',
+          'Add an index for every column in the report so the scan finishes quickly',
+          'Pause replication during the report so the replica can spend all its CPU on it',
+        ],
+        answer: 0,
+        explanation:
+          'A replica has one CPU, disk and cache; a year-long scan takes them from the customer queries sharing it. A dedicated analytics replica isolates the workload. Moving it to the primary puts the same scan next to every write, which is worse. Stopping replication makes the report data stale.',
+      },
+      {
+        id: 'rr-5',
+        prompt:
+          'A proxy routes every statement that starts with SELECT to a replica. Inside a transaction, the code runs UPDATE accounts ... and then SELECT balance FROM accounts. What goes wrong?',
+        options: [
+          'Nothing - SELECTs are always safe on a replica, whatever surrounds them',
+          'The SELECT runs on a replica and does not see the uncommitted UPDATE',
+          'The UPDATE is sent to the replica too, since it shares the connection',
+          'The proxy doubles the balance',
+        ],
+        answer: 1,
+        explanation:
+          'A read inside a write transaction belongs to that transaction and must run on the primary; the replica has neither the uncommitted change nor the locks. That is why routing by intent in the application (this block writes, so it uses the primary) is more reliable than guessing from the SQL text.',
+      },
+      {
+        id: 'rr-6',
+        prompt:
+          'A user refreshes a comment thread twice. The first refresh shows a new comment; the second does not. Both reads went to replicas. What happened, and what prevents it?',
+        options: [
+          'The comment was deleted in between by a moderator',
+          'The primary lost the comment in a failover that happened between the two refreshes',
+          'The reads hit two replicas with different lag; pin each user to one replica',
+          'The comment is still being written, so it flickers until the commit',
+        ],
+        answer: 2,
+        explanation:
+          'The first replica had applied the comment, the second was further behind. Pinning a user to one replica gives monotonic reads: they may see old data, but never newer and then older. Nothing was deleted or lost - the copies just disagree for a moment.',
+      },
+      {
+        id: 'rr-7',
+        prompt:
+          'During a schema migration, one replica falls 20 seconds behind while the other two stay under 1 second. What should the read router do?',
+        options: [
+          'Keep round-robin across all three - they are all healthy and passing checks',
+          'Send more reads to the lagging replica, since its CPU is idle and it has spare capacity',
+          'Restart the primary',
+          'Take the lagging replica out of the read pool until its lag is back under 2 s',
+        ],
+        answer: 3,
+        explanation:
+          'A replica can pass every health check and still return 20-second-old data. Routing on lag keeps users on fresh copies; the lagging replica rejoins once it catches up. Its spare CPU is a symptom of it replaying a backlog, not free capacity.',
+      },
+      {
+        id: 'rr-8',
+        prompt:
+          'In the Lab you switch Route reads to Primary. "Reads behind" and "Own save not seen" both drop to 0%. What did it cost?',
+        options: [
+          'The primary now serves every read too, so the read scaling is gone',
+          'Nothing - that is strictly the right setting, since all reads are now fresh',
+          'Writes are now lost on failover, because the replicas stop receiving them',
+          'Replication stops',
+        ],
+        answer: 0,
+        explanation:
+          'Reading from the one copy that takes the writes is always fresh, and the Reads count on the primary shows the price: all the traffic is back on one machine. The replicas still replicate and still protect against failure. It is a trade, not a free fix.',
+      },
+      {
+        id: 'rr-9',
+        prompt:
+          'The primary and three replicas each handle 5,000 reads per second. At peak you serve 18,000 reads per second from the three replicas. One replica dies. What happens?',
+        options: [
+          'Nothing - replicas share load automatically and absorb the loss',
+          'Reads slow down by a third, since each remaining replica takes half again, but all succeed',
+          'Two replicas serve only 10,000 of the 18,000 reads, so they overload',
+          'The primary is promoted twice',
+        ],
+        answer: 2,
+        explanation:
+          'Replicas add capacity, so losing one removes capacity. Two replicas x 5,000 = 10,000, far below 18,000. Plan the read pool with one spare (N+1), and decide in advance whether the primary may absorb overflow - it has headroom only for the writes it was sized for.',
+      },
+      {
+        id: 'rr-10',
+        prompt:
+          'On a PostgreSQL replica, a 40-minute analytics query keeps failing with "canceling statement due to conflict with recovery". Why?',
+        options: [
+          'The replica is out of disk because the query spills its sort to temp files',
+          'Replayed changes remove rows the query still reads, so the replica cancels it',
+          'Replicas cannot run queries longer than a minute',
+          'The primary is down',
+        ],
+        answer: 1,
+        explanation:
+          'A replica must keep applying the log of the primary. When a long query still needs row versions the primary has already cleaned up, the replica either delays replication or cancels the query. That is a reason to give analytics its own replica with settings that favour long queries, separate from the replicas serving users.',
+      },
+    ],
   },
   {
     slug: 'connection-pooling',
@@ -541,50 +2190,239 @@ Denormalized:     posts.like_count  (maintained on write)
     tagline: 'Reuse a small number of database connections instead of opening one per request.',
     category: 'data',
     difficulty: 'Intermediate',
-    keywords: ['pgbouncer', 'max connections', 'saturation', 'thundering herd'],
+    lab: 'connection-pool',
+    keywords: ['pgbouncer', 'max connections', 'acquire timeout', 'pool exhaustion', 'hikaricp'],
     what: 'A connection pool keeps a bounded set of established database connections and lends them to requests, instead of creating a new connection each time.',
-    why: 'Database connections are expensive: each one costs memory and, in Postgres, a backend process. Ten app servers opening 100 connections each will exhaust a database that happily serves the same traffic through 40 pooled connections.',
+    why: 'Database connections are expensive: opening one costs handshakes worth tens of milliseconds, and in Postgres each one is a server process with its own memory. Ten app servers opening 100 connections each will exhaust a database that happily serves the same traffic through 40 pooled connections.',
     how: [
-      'Size the pool from the database limit, not from the request rate: total connections across all instances must stay under max_connections.',
-      'Keep pool size close to the number of cores the database can actually use in parallel.',
-      'Set acquisition timeouts so a saturated pool fails fast instead of queueing forever.',
+      'Open the connections once and lend one to each request for the length of its query or transaction, then take it back.',
+      'Size the pools from the database, not from the request rate: start the total near (database cores x 2) + disk spindles - often 10 to 30 - and tune by measuring.',
+      'Multiply pool size by instance count: the total across all instances must stay under max_connections, with headroom for admin access.',
+      'Set a short acquire timeout so a saturated pool fails fast instead of making requests wait 30 seconds or forever.',
       'Use an external pooler (PgBouncer) when you have many application instances or serverless functions.',
     ],
-    when: ['Any application tier that scales horizontally in front of a relational database.'],
+    when: [
+      'Any application that talks to a relational database more than a few times a second.',
+      'Any application tier that scales horizontally in front of one database - that is where the connection multiplier bites.',
+    ],
+    advantages: [
+      'Each query skips the connection setup, often several times longer than the query itself.',
+      'The pool caps how many queries reach the database at once - backpressure that keeps it responsive.',
+      'The connection count on the database stays predictable as traffic changes.',
+    ],
     diagram: `10 app servers x 100 connections = 1000 -> database max_connections 200  ->  refused
 
 With pooling: 10 servers x 20 = 200, requests queue briefly inside the app
 With PgBouncer: thousands of client connections multiplexed onto ~40 server connections`,
     tradeoffs: [
       {
-        approach: 'Small pool',
-        gains: ['Database stays responsive', 'Queueing happens in the app, where it is visible'],
-        costs: ['Requests wait for a connection under burst'],
+        approach: 'No pool (connect per request)',
+        gains: ['Simplest code, no pool settings to tune', 'No idle connections held on the database'],
+        costs: [
+          'Every request pays the connection setup (~25 ms) before its query',
+          'Nothing caps connections, so a slow database is flooded until it refuses new ones',
+        ],
+      },
+      {
+        approach: 'Small pool (close to cores x 2 in total)',
+        gains: ['Database stays responsive', 'Queueing happens in the app, where it is visible and can time out'],
+        costs: ['Requests wait for a connection under burst', 'Needs an acquire timeout and an alert on wait time'],
       },
       {
         approach: 'Large pool',
-        gains: ['No waiting in the application'],
-        costs: ['Database context-switches and memory pressure', 'Latency collapses for everyone at saturation'],
+        gains: ['No waiting in the application while the database still has headroom'],
+        costs: [
+          'Database context-switches and contends for locks; latency collapses for everyone at saturation',
+          'Easy to pass max_connections when the instance count grows',
+        ],
+      },
+      {
+        approach: 'External pooler (PgBouncer)',
+        gains: [
+          'Thousands of client connections share a few dozen server connections',
+          'Database connections stop multiplying with instance count',
+        ],
+        costs: [
+          'One more hop and one more component to run redundantly',
+          'Transaction mode breaks session features: SET, LISTEN, session advisory locks',
+        ],
       },
     ],
     mistakes: [
       'Autoscaling the app tier without accounting for the connection multiplier.',
-      'Infinite acquisition timeouts, turning a slow database into a fully stalled service.',
+      'Raising the pool size to fix slow requests when the database is already at what its cores can do.',
+      'Infinite or very long acquire timeouts, turning a slow database into a fully stalled service.',
+      'Holding a connection (often inside a transaction) across a call to an external service.',
+      'Leaking connections on error paths, so the pool slowly empties until every request hangs.',
     ],
-    related: ['horizontal-scaling', 'backpressure', 'read-replicas'],
+    related: ['horizontal-scaling', 'backpressure', 'bulkhead', 'serverless', 'read-replicas'],
     quiz: [
       {
         id: 'cp-1',
         prompt: 'Autoscaling grows the API tier from 4 to 20 instances and the database starts refusing connections. Why?',
         options: [
-          'The database ran out of disk',
-          'Each instance holds its own pool, so total connections grew 5x past the server limit',
-          'Replication lag increased',
-          'The load balancer opened too many sockets',
+          'The database ran out of disk from the extra connection logs',
+          'Each instance holds its own pool, so total connections passed the limit',
+          'Replication lag increased, so the replicas refused new sessions',
+          'The load balancer opened too many sockets to the database for the new instances',
         ],
         answer: 1,
         explanation:
-          'Pool size multiplies by instance count. Either size pools with the maximum fleet in mind, or put a shared pooler in front of the database.',
+          'Pool size multiplies by instance count: 4 x 20 = 80 connections became 20 x 20 = 400 against a max_connections of 200. The load balancer holds sockets to the API instances, not to the database, so it cannot be the cause. Size pools with the maximum fleet in mind, or put a shared pooler in front of the database.',
+      },
+      {
+        id: 'cp-2',
+        prompt:
+          'In the Lab at 1,200 req/s with 5 ms queries, p95 is about 5 ms. You switch the pool off and p95 jumps to about 30 ms, although the database is nowhere near busy. Where did the extra 25 ms go?',
+        options: [
+          'The database runs each query slower when it is not pooled, since plans are not cached',
+          'Requests now wait in a queue inside the app for a free connection',
+          'Each request first opens a new connection: TCP, TLS and auth handshakes',
+          'Without a pool the database has to parse every query twice',
+        ],
+        answer: 2,
+        explanation:
+          'Without a pool, connection setup happens on every request, and it costs several times the 5 ms query. There is no queue in the app when the pool is off - every request connects at once - so waiting in the app is the tempting but wrong reading. A pool pays the setup once and reuses the connection.',
+      },
+      {
+        id: 'cp-3',
+        prompt:
+          'An API reports p99 of 9 seconds. The database shows 4 ms average query time and 20% CPU. Each instance has a pool of 10. What do you measure first?',
+        options: [
+          'How long requests wait to acquire a connection from the pool',
+          'Which query is missing an index, since slow requests usually mean a scan',
+          'Whether the database needs a bigger machine',
+          'Whether max_connections on the database is too low',
+        ],
+        answer: 0,
+        explanation:
+          'A calm database with slow requests points at the waiting before the query, not the query itself. Pool exhaustion shows up as latency in the app while the database looks idle. An index or a bigger machine speeds up work the database is barely doing, so it would not touch 9 seconds.',
+      },
+      {
+        id: 'cp-4',
+        prompt:
+          'In the Lab, queries slow from 5 to 20 ms and requests start timing out. A teammate raises each of the 4 pools from 5 to 50 connections. Throughput falls and every query gets slower. Why?',
+        options: [
+          'Pools of 50 still are not enough for this load, so requests still queue in the app',
+          'The acquire timeout is now too short for the larger pools',
+          'Each of the new connections has to repeat the TLS handshake on every query',
+          'About 200 queries now run at once on 8 cores and fight over locks',
+        ],
+        answer: 3,
+        explanation:
+          'The database works best with roughly 2 x its cores in flight. Letting 200 in only adds contention - the Lab shows most of its work lost - so fewer connections serve more requests. A bigger pool looks like the fix for waiting, but here the bottleneck is the database, and the waiting belongs in the app.',
+      },
+      {
+        id: 'cp-5',
+        prompt:
+          'In the Lab, each of 4 instances has a pool of 1 connection. Requests hit the acquire timeout, while the database shows only 4 queries in flight against a best of about 16. What helps?',
+        options: [
+          'Shrink the pool further to protect the database from overload',
+          'Raise the pool size a little, since the database has room',
+          'Raise the acquire timeout to 30 seconds so requests stop failing',
+          'Switch the pool off so each request gets a fresh connection',
+        ],
+        answer: 1,
+        explanation:
+          'Here the pool, not the database, is the bottleneck: 4 connections cannot carry the load, and the database is under-used. Raising the pool to a total near 16 lets it work in parallel. A longer timeout only makes requests wait longer before failing, and switching the pool off adds connection setup to every request.',
+      },
+      {
+        id: 'cp-6',
+        prompt:
+          'The database slows down for a minute. Your pool uses the library default acquire timeout of 30 seconds. What happens to the API, and what should you change?',
+        options: [
+          'Nothing happens: requests fail fast on their own once the database slows',
+          'The pool opens extra connections past its maximum to absorb the burst',
+          'Requests pile up waiting until the API stalls; set a short timeout',
+          'The database cancels the slow queries for you after its statement timeout',
+        ],
+        answer: 2,
+        explanation:
+          'A request waiting for a connection still holds a thread and memory in the app. With 30 seconds of patience the backlog grows until the whole service stops. A short acquire timeout turns the stall into fast errors the caller can handle. A pool never grows past its maximum - that cap is the point of it.',
+      },
+      {
+        id: 'cp-7',
+        prompt:
+          'You move an API to serverless functions. At peak 2,000 run at once, each opening its own connection, and Postgres refuses them. What is the usual fix?',
+        options: [
+          'Put an external pooler such as PgBouncer in front of the database',
+          'Raise max_connections to 2,000 so every function gets a connection',
+          'Give each function a pool of 10 connections so it reuses them',
+          'Add a read replica',
+        ],
+        answer: 0,
+        explanation:
+          'Functions cannot share an in-process pool, so a shared pooler multiplexes their many client connections onto a few dozen server connections. Raising max_connections to 2,000 means 2,000 backend processes contending for a handful of cores, and a pool per function multiplies the problem by 10.',
+      },
+      {
+        id: 'cp-8',
+        prompt:
+          'After putting PgBouncer in transaction mode in front of the database, a feature that runs SET search_path once per session starts reading the wrong schema at random. Why?',
+        options: [
+          'PgBouncer rewrites SQL statements and drops the SET it does not understand',
+          'The database lost the setting in a restart during the switch',
+          'search_path is not supported by Postgres behind a proxy, so it is dropped',
+          'Each transaction may land on a different server connection without that setting',
+        ],
+        answer: 3,
+        explanation:
+          'Transaction mode lends a server connection for one transaction only. Session state - SET, LISTEN, session advisory locks - stays on whichever server connection ran it. PgBouncer does not rewrite SQL; the fix is to set the value inside each transaction (SET LOCAL) or use session mode for that client.',
+      },
+      {
+        id: 'cp-9',
+        prompt:
+          'One endpoint opens a transaction, calls a payment provider that takes 5 seconds, then commits. Under traffic, every other endpoint gets slow. What is going on?',
+        options: [
+          'The payment provider is rate limiting the other endpoints too',
+          'Each payment holds a pooled connection for 5 seconds, so the pool empties',
+          'The transaction locks every table in the database until it commits',
+          'The database is overloaded by the payment queries',
+        ],
+        answer: 1,
+        explanation:
+          'A connection held across a network call you do not control is idle for the database but unavailable to the pool. Ten slow calls occupy a pool of 10. Move the call outside the transaction, or give that endpoint its own small pool (a bulkhead). The database is not busy at all, so it is not overloaded.',
+      },
+      {
+        id: 'cp-10',
+        prompt:
+          'Every morning the first few queries fail with "connection reset", then everything works. At night the app is idle for hours. What is the likely cause?',
+        options: [
+          'The database restarts every night for maintenance and the pool reconnects slowly',
+          'The pool is too small for the morning traffic, so the first requests are cut off',
+          'A firewall dropped idle connections and the pool handed out dead ones',
+          'The acquire timeout is too short',
+        ],
+        answer: 2,
+        explanation:
+          'Firewalls and load balancers silently drop idle TCP connections. The pool does not know, and the first borrower gets an error. Recycling connections before the network idle timeout (max lifetime) and checking a connection on borrow removes this class of error. A small pool would cause waiting, not resets.',
+      },
+      {
+        id: 'cp-11',
+        prompt:
+          'After a few hundred errors from one code path, every request hangs, and the pool reports 0 idle connections while the database shows almost nothing running. What happened?',
+        options: [
+          'A leak: that path takes a connection and never releases it on error',
+          'The database crashed and the pool is waiting for it to come back',
+          'Traffic suddenly grew, and every connection is busy serving a new request',
+          'The pool shrank to zero to save memory after the errors',
+        ],
+        answer: 0,
+        explanation:
+          'Connections that are borrowed and never returned drain the pool one error at a time, and the database sees them as idle. More traffic would show queries running. Use the scoped block of the framework (try-with-resources, a context manager) so the release happens even on an exception.',
+      },
+      {
+        id: 'cp-12',
+        prompt:
+          'The database has 16 cores and SSD storage, max_connections is 200, and the API runs on 6 instances. Which pool size per instance is a sensible starting point?',
+        options: [
+          '100 per instance, to be safe',
+          '50 per instance, so bursts never wait',
+          '33 per instance, which is 198 in total, just under the limit',
+          'About 5 per instance, around 30 in total',
+        ],
+        answer: 3,
+        explanation:
+          'The (cores x 2) + spindles starting point, about 33 here, is for the database total, not for each instance. 6 x 5 = 30 keeps the database near what its cores can use. 33 per instance fits under max_connections, but lets about 200 queries contend for 16 cores - fitting under the limit is not the same as being fast. 50 or 100 per instance (300 or 600 in total) pass max_connections outright.',
       },
     ],
   },

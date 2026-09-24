@@ -4,20 +4,27 @@ import {
   ArchNode,
   DiagramCanvas,
   NodeStatRow,
+  ParticleLegend,
   spread,
   type DiagramEdge,
   type Layout,
+  type ParticleView,
 } from '@/components/architecture';
 import { LiveChart } from '@/components/charts';
 import { Insight, LabShell, MetricsPanel } from '@/components/learning';
 import { Button, Meter, Slider, Toggle } from '@/components/ui';
-import { useEventLog, useSeries, useTicker } from '@/simulations/engine';
+import { advanceParticles, nextParticleId, useEventLog, useSeries, useTicker, type Particle } from '@/simulations/engine';
 import { computeLoad } from '@/simulations/models/load';
 import { useRerender } from '@/hooks/useRerender';
-import { clamp, smooth } from '@/utils/math';
+import { clamp, sampleArrivals, smooth } from '@/utils/math';
 import { formatLatency, formatNumber, formatPercent } from '@/utils/format';
 import type { NodeStatus } from '@/types';
 
+/**
+ * Simplified and time-compressed. One instance serves about 500 req/sec, a new one needs 4 seconds to boot
+ * and pass its health check, and the traffic curve repeats every 60 seconds. In a real cloud the warm-up
+ * is minutes and the daily curve is hours; the proportions, not the numbers, are the lesson.
+ */
 const SERVER_CAPACITY = 500;
 const WARMUP_SECONDS = 4;
 
@@ -30,6 +37,9 @@ interface Instance {
 
 interface AutoScaleState {
   instances: Instance[];
+  particles: Particle[];
+  /** Round-robin position over the instances that are in the pool. */
+  cursor: number;
   elapsed: number;
   cooldownUntil: number;
   cpu: number;
@@ -48,6 +58,8 @@ const newInstance = (id: number, ready: boolean, now: number): Instance => ({
 
 const initialState = (): AutoScaleState => ({
   instances: [newInstance(1, true, 0)],
+  particles: [],
+  cursor: 0,
   elapsed: 0,
   cooldownUntil: 0,
   cpu: 0,
@@ -128,6 +140,23 @@ export function AutoScalingLab() {
     const load = computeLoad(traffic, capacity, { baseLatencyMs: 45, kneeAt: 0.65 });
     current.cpu = smooth(current.cpu, load.cpu, 0.12);
 
+    // Requests only go to instances in the pool: a booting instance gets no traffic until its health
+    // check passes. Overflow beyond the pool capacity fails at the instance that was picked.
+    const arrivals = sampleArrivals(Math.min(traffic / 20, 250), dt * 0.4);
+    for (let index = 0; index < arrivals && ready.length > 0; index += 1) {
+      current.cursor = (current.cursor + 1) % ready.length;
+      const failed = Math.random() < load.errorRate;
+      current.particles.push({
+        id: nextParticleId(),
+        route: ['users', 'lb', ready[current.cursor].id],
+        leg: 0,
+        t: 0,
+        speed: 1.4 + Math.random() * 0.4,
+        outcome: failed ? 'failure' : load.cpu > 0.85 ? 'warning' : 'success',
+      });
+    }
+    current.particles = advanceParticles(current.particles, dt).alive.slice(-160);
+
     const cpuPercent = current.cpu * 100;
     if (cpuPercent > scaleOut) {
       current.aboveFor += dt;
@@ -195,9 +224,19 @@ export function AutoScalingLab() {
       to: instance.id,
       tone: instance.status === 'healthy' ? 'ok' : 'warn',
       dashed: instance.status !== 'healthy',
-      animated: instance.status === 'healthy',
     })),
   ];
+
+  // An instance terminated by scale-in takes its in-flight dots with it.
+  const particleViews: ParticleView[] = current.particles
+    .filter((particle) => particle.route.every((id) => layout[id]))
+    .map((particle) => ({
+      id: particle.id,
+      from: particle.route[particle.leg],
+      to: particle.route[particle.leg + 1],
+      t: particle.t,
+      outcome: particle.outcome ?? 'success',
+    }));
 
   return (
     <LabShell
@@ -206,6 +245,7 @@ export function AutoScalingLab() {
       running={running}
       onToggleRun={() => setRunning((value) => !value)}
       onReset={reset}
+      legend={<ParticleLegend outcomes={['success', 'warning', 'failure']} />}
       events={events}
       actions={
         <Button onClick={() => addInstance('Manual scale-out')} disabled={count >= maxInstances}>
@@ -364,12 +404,14 @@ export function AutoScalingLab() {
           <div className="rounded-xl border border-line bg-elevated p-3">
             <p className="label mb-2">Signal</p>
             <Meter value={current.cpu} threshold={scaleOut / 100} label="Fleet CPU vs scale-out threshold" />
-            <p className="mt-2 text-[11px] text-faint">Warm-up: {WARMUP_SECONDS}s before an instance serves traffic.</p>
+            <p className="mt-2 text-[11px] text-faint">
+              Warm-up: {WARMUP_SECONDS}s here (minutes in a real cloud) before an instance serves traffic.
+            </p>
           </div>
         </>
       }
     >
-      <DiagramCanvas layout={layout} edges={edges} height={475} className="bg-canvas">
+      <DiagramCanvas layout={layout} edges={edges} particles={particleViews} height={475} className="bg-canvas">
         <ArchNode
           kind="client"
           title="Traffic generator"
@@ -377,7 +419,7 @@ export function AutoScalingLab() {
           placed={layout.users}
           compact
         />
-        <ArchNode kind="load-balancer" title="Load Balancer" subtitle="auto scaling group, 2 nodes" placed={layout.lb}>
+        <ArchNode kind="load-balancer" title="Load Balancer" subtitle="health-checked pool, 2 nodes" placed={layout.lb}>
           <NodeStatRow label="In pool" value={ready.length} />
           <NodeStatRow label="Warming up" value={count - ready.length} tone="text-warn" />
         </ArchNode>
@@ -401,7 +443,7 @@ export function AutoScalingLab() {
       </DiagramCanvas>
       <div className="flex items-center gap-2 px-4 pb-3 pt-1 text-[11px] text-faint">
         <TrendingUp className="h-3.5 w-3.5" />
-        Traffic repeats on a 60-second cycle: ramp, plateau, drop.
+        Traffic repeats on a 60-second cycle: ramp, plateau, drop. Time is compressed - a real warm-up takes minutes.
       </div>
     </LabShell>
   );

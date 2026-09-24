@@ -18,7 +18,7 @@ npm run dev      # dev server on http://localhost:5173
 npm run build    # check:visuals + check:content + tsc -b + vite build + check:bundle  (must pass)
 npm run lint     # ESLint (typescript-eslint + react-hooks); CI fails on any finding
 npm run check:visuals   # diagram geometry + wiring: overlap, overflow, truncated labels, replica consistency
-npm run check:content   # every concept has its long-form lesson, and sits in its category file
+npm run check:content   # every concept has its long-form lesson, a Lab and a 10-question Quiz, and sits in its category file
 npm run check:bundle    # initial JS (entry + modulepreloads) stays under the gzip budget
 npm run preview  # serve the production build
 npx tsc --noEmit -p tsconfig.app.json   # fast typecheck of src/ only
@@ -90,19 +90,25 @@ useTicker(running, (dt) => { /* mutate state.current */ rerender(); });
 2. Add an animated diagram for it in `src/data/visuals/` - **this is the important half**. A concept
    page leads with its diagram; the prose is secondary and collapsed.
 3. Add a `ConceptDepth` entry to `src/data/concepts/deep/<category>.ts`, keyed by slug. This is the
-   "Full explanation" tab and `check:content` fails the build without it. See below.
-4. That is it — the sidebar, search, glossary links, category page and progress tracking all read
+   Lesson under the Diagram and `check:content` fails the build without it. See below.
+4. Give it a Lab and a Quiz: set `lab` to a registered `LabId` (a new Lab, or a shared one with a
+   Lab focus - see below), and write `quiz` with at least 10 scenario questions. `check:content`
+   fails the build on a Concept with no Lab or with fewer than 10 questions. Make the wrong options
+   as specific as the right one: it also fails when, across a Category, the right option is the
+   strictly longest (or shortest) option in more than 35% of the questions.
+5. That is it — the sidebar, search, glossary links, category page and progress tracking all read
    from `CONCEPTS`. That export (`@/data/concepts`) is a light `ConceptSummary` index generated at
    build time by `scripts/vite-plugin-concept-index.ts`; the lesson body is fetched with
    `loadConcept(category, slug)`. Never import `concepts/all.ts`, `concepts/summaries.ts` or a
    category file from shell code - that puts every lesson back into the main bundle. A lab, being
    its own lazy chunk, may import its category file directly (see `CacheStrategiesLab`).
-5. `related` slugs are resolved defensively (`resolveRelated`), so a typo degrades instead of
+6. `related` slugs are resolved defensively (`resolveRelated`), so a typo degrades instead of
    crashing — but fix typos anyway.
 
 ### The long-form lesson (`src/data/concepts/deep/`)
 
-Written for a junior who has never met the idea. Every concept has one, and the shape is fixed:
+Written for a junior who has never met the idea. Every concept has one, and the shape is fixed.
+It renders under the Diagram: the analogy shows open, the rest behind "Read the full explanation".
 
 - `analogy` — one everyday picture with a title. The thing they will still remember next week.
 - `deepDive` — 2-3 sections of real prose, optionally with `bullets` and one fixed-width `code`
@@ -128,6 +134,28 @@ caller") rather than escaping them.
 The lab then appears on the concept page's "Interactive lab" tab, at `/labs/<id>`, in search, and
 on the labs index — no other wiring.
 
+The Lab must render a `DiagramCanvas` - in its own file, or through a component it imports
+(`FlowVisual` counts). `check:content` reads the source and fails the build on a Lab that does not.
+
+#### A Lab focus for a shared lab
+
+When several concepts host one lab, each opens it on the setup that teaches its own concept - its
+Lab focus. `RetryBackoffLab` is the worked example (Retry opens on immediate retries, Exponential
+backoff on backoff with jitter):
+
+1. List the focus ids in `LabFocusIds` in `src/types/index.ts`: `'<lab-id>': 'focus-a' | 'focus-b'`.
+2. In the lab, take `{ focus }: LabProps<'<lab-id>'>`, keep a `DEFAULT_SETUP`, and map every id to
+   its setup in a `Record<LabFocus<'<lab-id>'>, Setup>` - a new id without a setup fails typecheck.
+   Keep the controls in one `Setup` state that starts from
+   `focus ? FOCUS_SETUPS[focus] : DEFAULT_SETUP`, and make Reset set it back to that same start,
+   not to `DEFAULT_SETUP` - one object, so Reset cannot miss a control. `useLabSetup(start)`
+   (`src/hooks/useLabSetup.ts`) holds it and gives `change(key)`, the onChange for one control.
+3. Set `labFocus: 'focus-a'` next to `lab: '<lab-id>'` on the concept. The `Concept` type pairs the
+   two, so a typo, or a focus of another lab, fails typecheck.
+
+The concept page passes the focus and keys the lab by concept slug, so moving between two hosts of
+the same lab remounts it on the new focus. `/labs/<id>` passes no focus and gets `DEFAULT_SETUP`.
+
 ### A new playground component kind
 
 Add it to `NODE_KINDS` in `src/components/architecture/nodeKinds.tsx` (icon, accent, capacity,
@@ -139,14 +167,21 @@ The product complaint that shaped this app was "too much text". Concept pages th
 **running diagram**, not a paragraph:
 
 - `src/data/visuals/` maps every concept slug to a `VisualSpec` (nodes, edges with a particle
-  `rate`, optional `steps`). All 106 concepts have one - keep it that way.
-- `FlowVisual` renders a spec as a self-running diagram; `SequenceFlow` walks the same spec one hop
-  at a time with a caption of **six words or fewer**.
-- The concept page shows: diagram tab, step-by-step tab, lab tab, trade-offs as chips, quiz, and one
-  "Full explanation" tab that holds all the prose. The right column is short cards only.
+  `rate`, and `steps` - its Walkthrough). All 102 concepts have one - keep it that way.
+- `FlowVisual` renders a spec as a self-running Diagram. With `walkthrough` (the concept page only),
+  a spec with `steps` also gets a chip row under the canvas: "Live" for the traffic, then one chip
+  per step. Picking a step stops the traffic and walks one request along that hop, on the same
+  Diagram, with a caption of **six words or fewer**. Play advances the steps and loops.
+- The concept page has four tabs, in this order: Diagram, Interactive lab, Trade-offs (as chips),
+  Quiz. A tab with nothing to show (no Lab or no Quiz yet) is hidden. The Diagram tab shows the Diagram with
+  its Walkthrough, then the Lesson under it: the Analogy is open, and all the other prose folds
+  behind one "Read the full explanation" button, which stays open while the learner stays on that
+  Concept. The right column is short cards only.
 - Run `npm run check:visuals` after editing a spec. It covers `src/data/visuals`, the home hero and
   the `src/features/evolution` stage layouts, and fails the build on overlapping boxes, nodes past
-  the canvas, labels too long for their box, step captions over six words, nodes with no edges, and
+  the canvas, labels too long for their box, step captions over six words, nodes with no edges, a
+  concept Diagram with fewer than 2 steps, a node no step visits, a step along a wire the Diagram
+  does not draw (either direction counts - a response goes back), and
   **edge labels that land behind a node card** (the SVG wiring layer is painted under the HTML
   nodes, so such a label is simply invisible). Move one with `labelT`, shorten it, or drop it.
 - A node carrying a badge (`isNew` in the evolution stages) needs about 47px more width - the badge
@@ -170,14 +205,17 @@ interchangeable, which contradicts the entire stateless/horizontal-scaling lesso
   introduced and label it afterwards (`2 nodes, multi-AZ`) rather than leaving a single box that
   quietly says "this is where everything goes down".
 
-- `SequenceFlow` shows the active step caption as a banner over the canvas, never as an edge label -
-  on a short edge an edge label always lands on a node.
+- A part the story deliberately does not reach (a pruned partition, a cut feature) gets a step with
+  `skipped: true`: its wire is shown dashed and no request travels it. Never send a `failure` dot
+  there - that tells the learner traffic arrived and broke.
+- A Walkthrough step shows its caption in a strip above the canvas - never as an edge label (on a
+  short edge it lands on a node) and never floated over the canvas (it covers the top-left node).
 - `FlowVisual` auto-fits its spec to the container width (0.5x-1.3x, via `DiagramCanvas`'s `fit`
   prop), so a spec authored at 760px fills a wider card instead of stopping halfway across it. Pass
   `zoom` only to pin a scale.
-- `FlowVisual` and `SequenceFlow` have a Pause/Play control, start paused under
-  `prefers-reduced-motion`, and stop ticking while scrolled off screen (`useAutoplay`). Their nodes
-  and edges are memoized on `spec`, so only the particle layer re-renders per frame - keep it that
+- `FlowVisual` has a Pause/Play control, starts paused under `prefers-reduced-motion`, and stops
+  ticking while scrolled off screen (`useAutoplay`). Its nodes and edges are memoized on `spec` (and
+  the active Walkthrough step), so only the particle layer re-renders per frame - keep it that
   way; every `ArchNode` is a framer-motion `layout` component that measures the DOM on re-render.
 
 ## Content conventions
@@ -220,14 +258,14 @@ These are editorial rules, not style preferences. They are the reason the app is
   module". Heavy deps reached only from lazy chunks are listed in `optimizeDeps.include` so Vite
   never re-optimizes and force-reloads mid-session.
 - Labs that size node boxes at runtime (load balancer, horizontal scaling, auto scaling, queue) must
-  keep the widest label readable: minimum width is 52 + the title width (the per-letter table in `scripts/check-visuals.mjs`, about 7px a letter), and the whole row must
+  keep the widest label readable: minimum width is 54 + the title width (the per-letter table in `scripts/check-visuals.mjs`, about 7px a letter), and the whole row must
   stay inside the 960px canvas.
 - The Bash tool on this machine has had trouble with large heredocs containing `.tsx`; prefer the
   Write tool for source files.
 - `ArchNode` grows to fit its content and truncates its title, so an undersized box silently
   clips its label or overlaps the node below. `npm run check:visuals` catches both; it runs as part
   of `npm run build`. Minimum height is 62 + 12 (subtitle) + 16 (stat row); minimum width is
-  52 + the per-letter title width table in `scripts/check-visuals.mjs` (about 7px a letter).
+  54 + the per-letter title width table in `scripts/check-visuals.mjs` (about 7px a letter).
 - Everything persists to `localStorage` only (`sdi:theme`, `sdi:progress:v1`, and `sdi:layout` for
   which side panels the learner folded). No backend, no auth, no network calls at runtime — keep it
   that way.

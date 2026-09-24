@@ -174,7 +174,7 @@ graceful degradation: the feature is reduced, the page still works`,
         heading: 'Availability is dominated by how fast you recover',
         paragraphs: [
           'Availability is often expressed as MTBF divided by MTBF plus MTTR - time between failures over that plus time to recover. In practice you have far more control over the second term. Making failures rarer is slow, expensive work; making recovery faster is usually a matter of automation and preparation.',
-          'A system that fails once a month but recovers in 30 seconds is at about 99.999 percent. A system that fails once a year but takes eight hours to recover is at about 99.9 percent. The second sounds more reliable and is two orders of magnitude worse.',
+          'A system that fails once a month but recovers in 30 seconds is at about 99.999 percent. A system that fails once a year but takes eight hours to recover is at about 99.9 percent. The second sounds more reliable and has about eighty times more downtime: 8 hours a year against 6 minutes.',
           'So the highest-leverage availability work is nearly always: detect faster, fail over automatically, and make rollback trivial. Those three reduce MTTR directly, and none of them require the underlying components to become more reliable.',
         ],
         code: {
@@ -427,51 +427,52 @@ slowest: DNS with a long TTL plus client libraries caching resolution`,
     analogy: {
       title: 'The trip switch in a fuse box',
       body:
-        'When a circuit is faulty, the breaker trips and stays open. It does not keep reconnecting into a short - that would burn the house down. After a while somebody flips it back to test: if the fault is gone, power returns; if not, it trips again immediately. Three states, and the middle one is the clever part.',
+        'When a circuit is faulty, the breaker trips and stays open. It does not keep reconnecting into a short - that would burn the house down. After a while somebody flips it back to test: if the fault is gone, power returns; if not, it trips again immediately. Three states, and the middle one is the clever part. And the same standard switch protects the kitchen, the workshop and the garage - you fit the part and set its rating per room.',
     },
     deepDive: [
       {
         heading: 'Three states, and why the half-open one matters',
         paragraphs: [
-          'Closed is normal: calls pass through and failures are counted. When the failure rate crosses a threshold within a window, the breaker opens. Open means calls fail immediately without being attempted - no waiting, no threads consumed, an instant fallback for the caller.',
-          'After a cooldown the breaker moves to half-open and allows a small number of trial calls. If they succeed, it closes and normal service resumes. If any fails, it opens again for another cooldown. Without that middle state you either hammer a recovering service the moment the timer expires, or you need a human to reset it.',
-          'The key insight is what the breaker converts: a slow failure into a fast one. A dependency that times out after 10 seconds consumes a thread for 10 seconds on every request; an open breaker consumes nothing and answers in microseconds. That difference is what stops a cascade.',
+          'Closed is normal: calls pass through and failures are counted over a rolling window of recent calls. When the failure rate crosses a threshold within that window, the breaker opens. Open means calls fail immediately without being attempted - no waiting, no threads consumed, an instant fallback for the caller.',
+          'After a cooldown the breaker moves to half-open and allows a small number of trial calls. If they succeed, it closes and normal service resumes. If any fails, it opens again for another cooldown - that is the classic rule, and the one the Lab uses; Resilience4j instead compares the failure rate of the trial calls with the threshold. Without that middle state you either hammer a recovering service the moment the timer expires, or you need a human to reset it.',
+          'The key insight is what the breaker converts: a slow failure into a fast one. A dependency that times out after 10 seconds consumes a thread for 10 seconds on every request; an open breaker consumes nothing and answers in a millisecond or two. That difference is what stops a cascade.',
+          'Stripped of context, this is a reusable structure: a wrapper, a window, a threshold, a cooldown and a probe. So you do not write it into each client - you wrap every dependency in the same machine and give each one its own policy. The numbers become configuration, visible in one place and comparable across the system.',
         ],
         code: {
-          caption: 'The state machine, with realistic settings',
-          body: `CLOSED --failure rate > 50% over 20 calls--> OPEN
-OPEN   --after 30 s cooldown-------------->  HALF-OPEN
-HALF-OPEN --3 trial calls succeed-------->   CLOSED
-HALF-OPEN --any trial call fails--------->   OPEN (cooldown again)
+          caption: 'One state machine, one policy per dependency',
+          body: `CLOSED    --failure rate > 50% over 20 calls-->  OPEN
+OPEN      --after 30 s cooldown--------------->  HALF-OPEN
+HALF-OPEN --3 trial calls succeed------------->  CLOSED
+HALF-OPEN --any trial call fails-------------->  OPEN (cooldown again)
 
-thresholds that work in practice
-  minimum calls before evaluating   20   (avoid tripping on 1 of 2)
-  failure rate threshold            50%
-  cooldown                          30 s
-  half-open trial calls             3
-  count timeouts as failures        yes - they are the expensive case`,
+                  min calls  trip at  cooldown  trials  fallback
+payments                 50      60%      60 s       5  reject
+recommendations          20      40%      15 s       3  empty list
+search                   30      50%      30 s       3  cached results
+
+count timeouts as failures - they are the expensive case`,
         },
       },
       {
-        heading: 'What to trip on, and what not to',
+        heading: 'What to wrap, and what to trip on',
         paragraphs: [
+          'Nothing about the pattern is specific to HTTP. A database that refuses connections during a failover eats pool slots and threads for nothing; an open breaker fails those requests at once so the application can serve from cache. A queue publish to an unreachable broker blocks; a breaker turns the hang into a decision - buffer, drop or reject. And a third-party SDK often hides its own retry loops and generous timeouts, so wrapping it is frequently the only way to bound a vendor outage.',
           'Count timeouts, connection errors and 5xx responses as failures. Do not count 4xx: a 404 or a 400 means your request was wrong, not that the service is unhealthy, and tripping the breaker on client errors takes down a perfectly working dependency for everybody.',
-          'Scope the breaker per dependency, and often per endpoint. One breaker for an entire service means a slow reporting endpoint trips the breaker for the fast lookup endpoint that was fine. Per-endpoint breakers keep the blast radius of a trip proportional to the actual fault.',
-          'And put the breaker on the client side, in the caller, not in the service being called. The point is to protect the caller resources; a breaker inside the failing service cannot help a caller whose threads are already blocked waiting on it.',
+          'Scope the breaker per dependency, and often per endpoint. One breaker for an entire service means a slow reporting endpoint trips the breaker for the fast lookup endpoint that was fine. And put it on the client side, in the caller: the point is to protect the caller resources, and a breaker inside the failing service cannot help a caller whose threads are already blocked waiting on it.',
         ],
         bullets: [
+          'Wrap HTTP calls, database and cache clients, queue publishes and third-party SDKs.',
           'Trip on timeouts, connection failures and 5xx. Never on 4xx.',
-          'One breaker per dependency per operation, not one per service.',
-          'Always pair with a timeout - the breaker measures failures, the timeout bounds the wait.',
-          'Always have a fallback, or an open breaker just fails faster.',
+          'One breaker per dependency per operation, on the caller side.',
+          'Require a minimum call count, so a quiet minute cannot trip it on noise.',
         ],
       },
       {
-        heading: 'Making the open state useful',
+        heading: 'Composing it, and making the open state useful',
         paragraphs: [
-          'An open breaker that returns an error is better than a hang, but it is not a good experience. The value comes from what you do instead: serve a cached value, return a sensible default, omit the section, queue the work for later, or degrade to a simpler behaviour. The breaker is the trigger for graceful degradation.',
-          'Observability matters as much as the mechanism. Breaker state changes should be logged and emitted as metrics, because an open breaker is a precise, high-signal statement that a specific dependency is unhealthy - often a better alert than the monitoring of the underlying service.',
-          'Be careful with distributed effects. If every one of fifty instances has its own breaker, the dependency still receives fifty trial calls per cooldown, which may be enough to keep a fragile service down. For that case, combine the breaker with a low concurrency limit or a shared rate limit so recovery is genuinely gentle.',
+          'The full protective stack around one dependency is: a timeout bounding each attempt, a bounded retry with backoff for transient failures, the circuit breaker to stop calling something that is clearly down, a bulkhead limiting how much capacity this dependency may occupy, and a fallback. Order matters. The retry goes around the breaker, so every attempt passes through it and counts toward tripping - the default order in Resilience4j, and the one the Azure guidance describes. The retry must then treat "circuit open" as final: retrying it only waits out backoff delays against a circuit that fails instantly.',
+          'An open breaker that returns an error answers in a millisecond or two instead of hanging for 30 seconds, but an error is still what the user sees. The value comes from what you do instead: serve a cached value, return a sensible default, omit the section, or queue the work for later. Critical dependencies such as payments usually fail closed with a clear error; optional ones such as recommendations fail open with an empty or cached result.',
+          'Breaker state changes should be logged and emitted as metrics, because an open breaker is a precise statement that a specific dependency is unhealthy - often a better alert than the monitoring of that dependency. And watch the distributed effect: fifty instances each sending three trial calls per cooldown may be enough to keep a fragile service down, so cap the probes with a low concurrency limit or a shared rate limit.',
         ],
       },
     ],
@@ -492,21 +493,37 @@ thresholds that work in practice
         result:
           'Both failure modes were configuration, not concept. A breaker with no minimum call count trips on noise; one with a long cooldown and fleet-wide probes turns recovery into a second outage.',
       },
+      {
+        title: 'One policy definition, twelve dependencies',
+        setup:
+          'A service calls 12 downstream systems. Each client has its own hand-written error handling, accumulated over three years. Behaviour during outages is inconsistent and unpredictable.',
+        walkthrough: [
+          'Audit: 4 clients retry infinitely, 3 have no timeout at all, 2 have a breaker with different thresholds, and 3 have no protection.',
+          'Introduce 1 resilience library and 1 configuration file with 12 named policies, one per dependency.',
+          'Classify each dependency: 2 critical (payments, inventory) versus 10 optional (recommendations, reviews, analytics and the rest).',
+          'Critical policies: 60-second cooldown, 60 percent threshold, fail closed with a clear user-facing error.',
+          'Optional policies: trip at 40 percent, 15-second cooldown, fail open with an empty or cached result.',
+          'The library emits the same 3 metrics for all 12: state changes, trip counts and fallback usage - a dashboard that did not previously exist.',
+          'During the next vendor outage the breaker opened in 8 seconds, the fallback served cached data, and the metric named the dependency at once instead of requiring an investigation.',
+        ],
+        result:
+          'Twelve bespoke implementations became one policy file. Treating resilience as a configured pattern rather than per-client code is what makes behaviour predictable during an incident.',
+      },
     ],
     jargon: [
       { term: 'Closed / open / half-open', plain: 'Calls pass, calls fail instantly, and a few trial calls test recovery.' },
       { term: 'Trip', plain: 'The transition to open when the failure threshold is crossed.' },
+      { term: 'Rolling window', plain: 'Counting outcomes over recent calls or seconds, not since the process started.' },
       { term: 'Cooldown', plain: 'How long the breaker stays open before testing again.' },
       { term: 'Fallback', plain: 'What you return while the breaker is open. Without one, the breaker only fails faster.' },
-      { term: 'Bulkhead', plain: 'A companion pattern: cap the resources one dependency may consume.' },
-      { term: 'Fail fast', plain: 'Returning an error immediately instead of waiting on something known to be broken.' },
+      { term: 'Fail open / fail closed', plain: 'Serving a degraded result, versus refusing, when the breaker is open.' },
     ],
     remember: [
       'A breaker converts a slow failure into a fast one - that is what stops cascades.',
       'Half-open is what lets recovery be automatic and gentle.',
-      'Trip on timeouts and 5xx, never on 4xx.',
-      'Scope per dependency and per operation, on the caller side.',
-      'Pair it with a timeout and a real fallback, or it buys you little.',
+      'Trip on timeouts and 5xx over a rolling window with a minimum call count, never on 4xx.',
+      'Wrap any fallible call with one policy per dependency, and stop retrying when the breaker says the circuit is open.',
+      'Pair it with a timeout and a real fallback - critical calls fail closed, optional ones fail open.',
     ],
   },
 
@@ -530,7 +547,7 @@ thresholds that work in practice
 never on     400, 401, 403, 404, 422 - these will fail identically
 ambiguous    timeout on a POST -> retry ONLY with an idempotency key
 
-attempts     3 (plus the original), not 10
+attempts     3 in total (1 original + 2 retries), not 10
 delay        base 100 ms, exponential, full jitter
 budget       total time across attempts < the caller deadline
 per-call     each attempt still gets its own timeout`,
@@ -540,7 +557,7 @@ per-call     each attempt still gets its own timeout`,
         heading: 'Retry amplification: how retries cause the outage',
         paragraphs: [
           'Retries multiply load exactly when a system is least able to take it. If a service is struggling and every client retries three times, it receives four times the traffic - and each retry occupies a connection and a thread on the recovering service. Many outages are extended, not caused, by retry storms.',
-          'It gets worse in layered architectures. If the gateway retries 3 times, the service it calls retries 3 times, and its database client retries 3 times, one user request can become 27 database calls. Each layer looks reasonable in isolation; the product is catastrophic.',
+          'It gets worse in layered architectures. If the gateway makes 3 attempts, the service it calls makes 3, and its database client makes 3, one user request can become 3 x 3 x 3 = 27 database calls. With 3 retries (4 attempts) at each of the three layers it is 4 x 4 x 4 = 64 - the example in the Google SRE book. Each layer looks reasonable in isolation; the product is catastrophic.',
           'The fix is to retry at one layer - normally the outermost one that can make a meaningful decision - and to use a retry budget: allow retries only while they are a small percentage of total requests (say 10 percent). When the failure rate is high, the budget is exhausted and retries stop automatically, which is exactly the behaviour you want during an outage.',
         ],
         bullets: [
@@ -565,9 +582,9 @@ per-call     each attempt still gets its own timeout`,
         setup:
           'A database has a brief 10-second hiccup. The dashboard, normally at 500 requests per second, generates enough load that the database stays down for 6 minutes.',
         walkthrough: [
-          'Layer 1: the mobile client retries failed requests 3 times with a 1-second delay.',
-          'Layer 2: the API gateway retries 5xx responses from the service 3 times.',
-          'Layer 3: the service database client retries connection failures 3 times.',
+          'Layer 1: the mobile client makes up to 3 attempts per request, 1 second apart.',
+          'Layer 2: the API gateway makes up to 3 attempts on a 5xx from the service.',
+          'Layer 3: the database client of the service makes up to 3 attempts on a connection failure.',
           'Multiplication: one user tap becomes 3 x 3 x 3 = 27 database attempts, all within a few seconds.',
           'Effective load during the incident: 500 requests per second becomes roughly 13,500 attempts per second at the database, which cannot recover under that pressure.',
           'Fix 1: retries only at the gateway. The database client and the mobile client stop retrying entirely.',
@@ -639,7 +656,7 @@ This is the AWS-recommended default. Use it unless you have a reason not to.`,
       {
         heading: 'Where backoff appears besides retries',
         paragraphs: [
-          'TCP congestion control is exponential backoff at the transport layer - the protocol halves its sending rate on loss and grows back gradually. Ethernet used it for collision recovery decades ago. The pattern is old because the problem is fundamental: contention for a shared resource is best resolved by backing off with randomness.',
+          'TCP uses exponential backoff at the transport layer: each time a retransmission times out, the sender doubles its retransmission timeout (RFC 6298). Classic Ethernet used randomised binary exponential backoff for collision recovery decades ago - backoff and jitter in one rule. The pattern is old because the problem is fundamental: contention for a shared resource is best resolved by backing off with randomness.',
           'In application code you will meet it in reconnection loops for WebSockets and message brokers, in poller intervals that slow down when nothing changes, in rate limiter clients honouring 429s, and in job queue retry policies. It is the same formula each time.',
           'One caveat worth stating: backoff is for the client. It does not protect the server from clients that ignore it, which is why servers still need rate limiting and load shedding. Backoff is cooperative; rate limiting is enforcement, and a production system needs both.',
         ],
@@ -655,7 +672,7 @@ This is the AWS-recommended default. Use it unless you have a reason not to.`,
           'Those clients retry one second later - together again. The synchronised wave repeats indefinitely and the server never gets a quiet moment to become healthy.',
           'Fix 1: exponential backoff with base 1 second and cap 30 seconds. The waves spread out over time - but they are still waves, because every client computes the same schedule.',
           'Fix 2: full jitter. Each client sleeps a random duration between 0 and its computed backoff, so the first wave spreads across a second, the next across two, and so on.',
-          'Effect: instead of 10,000 attempts at t+1, roughly 5,000 spread over the first second, then the remainder spread across widening windows. The server accepts connections steadily and is fully recovered in about 20 seconds.',
+          'Effect: instead of 10,000 attempts in the same instant, the 10,000 first retries spread evenly over the first second - about 1,000 per 100 ms - and the ones that fail spread over the next 2 seconds, then 4. The server accepts connections steadily and is fully recovered in about 20 seconds.',
           'Fix 3: the server also sends a Retry-After hint during shutdown, so clients know to wait rather than guess.',
         ],
         result:
@@ -701,8 +718,9 @@ This is the AWS-recommended default. Use it unless you have a reason not to.`,
   failing this = restart me
 
 GET /readyz    (readiness)
-  check: can I serve? DB pool has a connection, cache reachable,
+  check: can I serve? local DB pool has a connection,
          startup complete, not shedding load
+  do NOT check soft dependencies (the cache): degrade instead
   failing this = stop sending me traffic, but let me live
 
 GET /startupz  (startup)
@@ -720,7 +738,7 @@ GET /startupz  (startup)
         bullets: [
           'Liveness: no dependency checks, ever.',
           'Readiness: local capability, with caching so the check itself is cheap.',
-          'Never let a shared dependency failure remove 100 percent of the fleet.',
+          'Never let a shared dependency failure remove 100 percent of the fleet. Many balancers fail open: an AWS ALB routes to every target when all of them are unhealthy.',
           'Cache dependency check results for a few seconds - probes run often.',
           'Return a body with detail for humans, and use the status code for machines.',
         ],
@@ -729,7 +747,7 @@ GET /startupz  (startup)
         heading: 'Tuning, draining and the settings that cause incidents',
         paragraphs: [
           'Three numbers matter: interval, timeout and threshold. Too aggressive (every second, one failure removes the instance) and normal latency variance ejects healthy nodes, reducing capacity and increasing load on the rest - a feedback loop. Too lax (every 30 seconds, five failures) and a dead instance keeps receiving traffic for over two minutes.',
-          'A reasonable default is a 5-second interval, a 2-second timeout, and 2-3 consecutive failures to remove but only 1-2 successes to restore. Restoring faster than removing is deliberate: you want to be quick to use a recovered instance and slow to condemn a healthy one.',
+          'The worst-case detection time is roughly interval x failure threshold, and the defaults differ a lot. HAProxy probes every 2 s, removes after 3 failures and restores after 2 passes - about 6 s to detect. Kubernetes probes every 10 s with a 1 s timeout, 3 failures and 1 success - about 30 s. An AWS Application Load Balancer probes every 30 s, removes after 2 failures and restores only after 5 passes - about 60 s, and slow to trust a recovered target. A few seconds of interval and 2-3 failures is a common middle ground: fast enough that few requests fail, slow enough that one hiccup does not eject anyone.',
           'Draining is the other half. During a deploy or a scale-in, the instance should start failing readiness while continuing to serve in-flight requests, wait for the load balancer to notice, and only then shut down. Without that sequence, every deploy produces a burst of connection errors - which is the most common self-inflicted error spike in production.',
         ],
       },
@@ -738,7 +756,7 @@ GET /startupz  (startup)
       {
         title: 'The health check that caused the outage',
         setup:
-          'A service has one /health endpoint used for both liveness and readiness. It checks the process, the database and Redis. Kubernetes restarts on liveness failure.',
+          'A service has one /health endpoint used for both liveness and readiness. It checks the process, the database and Redis. Both probes run every 5 s with a failure threshold of 2, and Kubernetes restarts a pod on liveness failure.',
         walkthrough: [
           'Redis has a 15-second failover. Every instance health check fails, because they all check Redis.',
           'Readiness failing removes every pod from the service - 100 percent of traffic now fails, although the application could have served most requests without Redis.',
@@ -765,7 +783,7 @@ GET /startupz  (startup)
       'Liveness means restart me; readiness means stop sending me traffic. Never share one endpoint.',
       'Liveness must not check dependencies, or an outage becomes a restart loop.',
       'If a check could fail on every instance at once, it should not gate traffic.',
-      'Remove slowly, restore quickly, and cache the check result.',
+      'Eject on a few failures in a row, never one; a dead instance still gets traffic for about interval x threshold.',
       'Drain by failing readiness before shutdown, or every deploy spikes errors.',
     ],
   },
@@ -786,24 +804,26 @@ GET /startupz  (startup)
         ],
         code: {
           caption: 'Strategies, and what they cost',
-          body: `strategy         RTO         RPO        relative cost
-backup/restore   hours-days  hours      lowest
-pilot light      10s of min  minutes    low (data replicated, compute off)
-warm standby     minutes     seconds    medium (scaled-down copy running)
-active-active    seconds     ~zero      highest (full second region live)
+          body: `strategy         RTO          RPO (region lost)  relative cost
+backup/restore   hours        backup interval    lowest (copies only)
+pilot light      10s of min   seconds            low (data replicated, apps off)
+warm standby     minutes      seconds            medium (small copy running)
+hot standby /    minutes      seconds, or 0      highest (full second region)
+active-active    or less      with sync
 
+a bad write or DROP TABLE: every strategy restores from backup.
 pick per system, not per company.`,
         },
       },
       {
         heading: 'Backups: the 3-2-1 rule and the only test that counts',
         paragraphs: [
-          'Three copies of the data, on two different media or systems, with one offsite and ideally offline or immutable. The offline copy is what protects you from ransomware and from a compromised account deleting your backups - an increasingly common failure that replication and even versioned storage do not cover.',
+          'The 3-2-1 rule: three copies of the data, on two different media or systems, with one offsite - and ideally one offline or immutable. The offline copy is what protects you from ransomware and from a compromised account deleting your backups - an increasingly common failure that replication and even versioned storage do not cover.',
           'A backup that has never been restored is not a backup, it is a file. Restores fail for mundane reasons: a missing encryption key, an incompatible version, a corrupted archive, a dependency the restore script assumes. Schedule restore tests, measure how long they take, and use that measured number as your real RTO rather than an optimistic estimate.',
           'Also check the retention window against the detection window. If a corruption is noticed after 10 days and you keep 7 days of backups, every copy contains the corruption. For destructive-error protection specifically, a delayed replica - one deliberately kept hours behind - is a cheap and very effective complement.',
         ],
         bullets: [
-          '3 copies, 2 media, 1 offsite and immutable.',
+          '3 copies, 2 media, 1 offsite - and one offline or immutable if you can.',
           'Test restores on a schedule; the measured time is your RTO.',
           'Retention must exceed your realistic detection time.',
           'Back up the configuration, secrets and infrastructure definitions too, not just the data.',
@@ -815,7 +835,7 @@ pick per system, not per company.`,
         paragraphs: [
           'Teams practise restoring a database and discover, during a real event, that they cannot deploy the application because the CI system was in the failed region, the container registry is unreachable, the secrets manager is down, or DNS is managed by an account nobody can access. Disaster recovery covers the whole ability to operate, not the data alone.',
           'Infrastructure as code is what makes this tractable: if the environment can be recreated from a repository, recovery is a pipeline run rather than an archaeology project. The repository itself, the secrets, and the DNS control must all be reachable from outside the failed region.',
-          'Finally, write the plan down and make it executable by someone who did not design the system. Include the decision criteria for declaring a disaster, who is authorised to do so, the order of restoration for dependent services, and how to verify the system is actually correct afterwards. Then run a game day against it, because a plan that has never been executed contains an average of several wrong assumptions.',
+          'Finally, write the plan down and make it executable by someone who did not design the system. Include the decision criteria for declaring a disaster, who is authorised to do so, the order of restoration for dependent services, and how to verify the system is actually correct afterwards. Then run a game day against it, because a plan that has never been executed almost always contains wrong assumptions.',
         ],
       },
     ],

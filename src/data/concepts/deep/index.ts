@@ -5,9 +5,9 @@ export type { DepthMap } from './types';
 
 /**
  * The long-form teaching content is roughly 700 KB of prose - larger than the
- * rest of the application put together - and it is only ever read on the
- * "Full explanation" tab of one concept. So it is never imported statically:
- * each category is its own chunk, fetched when a learner actually opens it.
+ * rest of the application put together - and it is only ever read as the
+ * Lesson under the Diagram of one concept. So it is never imported statically:
+ * each category is its own chunk, fetched when a learner opens a concept in it.
  *
  * Keep these lazy. A static import here would put every word of it into the
  * main bundle and undo the code splitting the rest of the app relies on.

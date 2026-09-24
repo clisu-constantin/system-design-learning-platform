@@ -117,7 +117,7 @@ export const gettingStartedDepth: DepthMap = {
         paragraphs: [
           'When somebody says "design Twitter", they have not given you requirements - they have given you a brand name. The expected first move is to propose a scope and get agreement: "I will cover posting a tweet, following a user and reading a home timeline. I will leave out DMs, ads and search unless you want them." That takes thirty seconds and it saves the entire rest of the conversation.',
           'Be explicit about what is out of scope, not just what is in. An unlisted feature is an assumed feature; the interviewer or the product owner is quietly holding one in their head and will mention it at the worst moment. Naming the exclusions makes them negotiable.',
-          'Then rank what is in scope. Usually two or three core flows account for 90 percent of the traffic and all of the architectural pressure. Design for those; everything else rides on the same infrastructure.',
+          'Then rank what is in scope. Usually two or three core flows account for most of the traffic and nearly all of the architectural pressure. Design for those; everything else rides on the same infrastructure.',
         ],
       },
     ],
@@ -177,7 +177,7 @@ export const gettingStartedDepth: DepthMap = {
       {
         heading: 'Why percentiles, and never averages',
         paragraphs: [
-          'Imagine 100 requests: 99 take 50 ms and one takes 5 seconds. The average is 99 ms, which looks fine on a dashboard. But one user in a hundred waited five seconds, and if a page makes 20 such calls, most page loads contain at least one of them. Averages hide exactly the users who are having a bad time.',
+          'Imagine 100 requests: 99 take 50 ms and one takes 5 seconds. The average is 99 ms, which looks fine on a dashboard. But one user in a hundred waited five seconds, and if a page makes 20 such calls, nearly one page load in five contains at least one of them. Averages hide exactly the users who are having a bad time.',
           'So latency is stated as p95 or p99: "p99 under 300 ms" means 99 out of 100 requests finish within 300 ms. The tail is where retries, garbage collection pauses, cold caches and overloaded shards show up, which is why engineers care about it more than the median.',
           'A practical rule: the more calls a single user action makes, the more the tail dominates. With 20 backend calls per page and a p99 of 1 second, roughly one in five page loads will hit that 1 second call. Tail latency is not an edge case at scale - it is the common case.',
         ],
@@ -208,17 +208,17 @@ export const gettingStartedDepth: DepthMap = {
           '99.99% of a year is 52 minutes of allowed downtime. That is the total budget for the whole year.',
           'A single ordinary deploy with a restart costs 30-60 seconds. Twelve deploys a month would eat the entire yearly budget on planned work alone, so deploys must become zero-downtime: at least two instances behind a load balancer.',
           'An unplanned machine failure takes 5-15 minutes to notice and replace by hand. One such incident consumes 20 percent of the budget, so detection and replacement must be automated: health checks plus an auto-scaling group.',
-          'The database is still single. A failover done by a human is 15+ minutes; a managed automatic failover is 30-90 seconds. So the database needs a standby replica with automated promotion.',
-          'One availability zone going down would exceed the budget by itself, so instances and replicas spread across at least two zones. Cost roughly doubles.',
+          'The database is still single. A failover done by a human is 15+ minutes; a managed automatic failover typically takes one to two minutes. So the database needs a standby replica with automated promotion.',
+          'One availability zone going down would exceed the budget by itself, so instances and replicas spread across two or three zones. With a full copy in each, the bill grows roughly 2-3x.',
         ],
         result:
-          'Four extra nines of uptime turned into: load balancer, 2+ app instances, automated health checks, database standby with auto-failover, multi-zone deployment, and roughly 2x the bill. None of that was a configuration flag - which is exactly the honest answer to give.',
+          'Moving to four nines turned into: load balancer, 2+ app instances, automated health checks, database standby with auto-failover, multi-zone deployment, and roughly 2-3x the bill. None of that was a configuration flag - which is exactly the honest answer to give.',
       },
     ],
     jargon: [
       { term: 'Nines', plain: 'Shorthand for availability. "Four nines" means 99.99% uptime, about 52 minutes of downtime per year.' },
       { term: 'p95 / p99', plain: 'The latency that 95% (or 99%) of requests come in under. The slow tail that averages hide.' },
-      { term: 'Tail latency', plain: 'The slowest few percent of requests. At scale, most users hit it at least once per page.' },
+      { term: 'Tail latency', plain: 'The slowest few percent of requests. A page that makes many calls hits it far more often than any single call does.' },
       { term: 'Durability', plain: 'The promise that data already acknowledged as written will not be lost, even if machines die.' },
       { term: 'RPO / RTO', plain: 'How much data you may lose in a disaster (Recovery Point) and how long recovery may take (Recovery Time).' },
       { term: 'Operability', plain: 'How easy the system is to run: deploy, debug, page someone, recover. Rarely written down, always paid for.' },
@@ -271,8 +271,8 @@ hot set in RAM = active objects x bytes per object`,
       {
         heading: 'Round aggressively, then sanity-check against one machine',
         paragraphs: [
-          'Use 100,000 seconds for a day instead of 86,400, and round every input to one significant figure. The estimate is not trying to be accurate; it is trying to answer "which order of magnitude is this?" Getting 11,575 req/sec instead of 10,000 req/sec changes no decision you will make today.',
-          'The decision you are actually making is a category. Under roughly 1,000 requests per second, one well-tuned machine plus a replica is usually enough and the interesting problems are elsewhere. Between 1,000 and 50,000 you need horizontal scaling, caching and a serious look at the database. Above that, partitioning and per-region deployment stop being optional.',
+          'Use 100,000 seconds for a day instead of 86,400, round the big inputs (users, requests, bytes) to powers of ten and the small factors to one significant figure. The estimate is not trying to be accurate; it is trying to answer "which order of magnitude is this?" Getting 11,575 req/sec instead of 10,000 req/sec changes no decision you will make today.',
+          'The decision you are actually making is a category. Under roughly 1,000 requests per second, one well-tuned machine plus a spare is usually enough and the interesting problems are elsewhere. That boundary comes from a common planning number: about 1,000 requests per second per app server when each request does real work, such as a database call. A server returning cached or static answers can do ten times more, so say which one you assumed. Between 1,000 and 50,000 you need horizontal scaling, caching and a serious look at the database. Above that, partitioning and per-region deployment stop being optional.',
           'Storage has the same categories. Under a terabyte, a single database instance is fine for years. Tens of terabytes means partitioning, archival tiers and a real retention policy. Do the multiplication before choosing, because "how much data per year" is the question that decides whether sharding is in your future.',
         ],
         bullets: [
@@ -292,6 +292,7 @@ hot set in RAM = active objects x bytes per object`,
           'Reads per day: 4x writes = 1.6B, about 18,500 reads per second on average.',
           'Peak factor for a single-region consumer app, evening heavy: use 4x. Peak is roughly 18,000 writes/sec and 74,000 reads/sec.',
           'Storage: 400M x 500 bytes is 200 GB/day. Times 365 is about 73 TB/year, and with 3 replicas about 220 TB/year.',
+          'App tier: about 92,500 peak requests/sec in total, at 1,000 per server, is 93 servers; with 50% headroom call it 140.',
           'Bandwidth on reads: 74,000/sec x 500 bytes is about 37 MB/sec, roughly 300 Mbit/sec - comfortable for a fleet, impossible to ignore for one box.',
           'Hot set: messages from the last day are what people actually re-read. 200 GB does not fit in one cache node, so the cache is either sharded or holds only the last hours of conversations.',
         ],
@@ -326,20 +327,18 @@ hot set in RAM = active objects x bytes per object`,
       {
         heading: 'Learn the ratios, not the values',
         paragraphs: [
-          'Hardware changes: SSDs get faster, networks get better, the absolute numbers drift every few years. What barely changes is the distance between the levels. Memory is roughly a hundred times faster than an SSD, an SSD is roughly a hundred times faster than a spinning disk seek, and a trip across the Atlantic is slower than everything because it is limited by physics, not engineering.',
+          'Hardware changes: SSDs get faster, networks get better, the absolute numbers drift every few years. What barely changes is the distance between the levels. Memory is roughly a thousand times faster than an SSD read, an SSD read is roughly a hundred times faster than a spinning disk seek, and a trip across the Atlantic is slower than everything because it is limited by physics, not engineering.',
           'Those ratios are the whole toolkit. "This design reads from disk inside a request that has a 100 ms budget, 50 times" becomes an obvious no once you know a random SSD read is about 100 microseconds - 50 of them is 5 ms, fine - but a spinning-disk seek is 10 ms, and 50 of those is half a second, which is not fine.',
-          'The number that beats all the others is the cross-region round trip. Light in fibre travels roughly 200 km per millisecond, and the path is never straight, so London to New York is about 70-80 ms one way in practice. No amount of engineering will make a synchronous cross-continent write feel local. That single fact explains read replicas, CDNs and eventual consistency.',
+          'The number that beats all the others is the cross-region round trip. Light in fibre travels roughly 200 km per millisecond, and the path is never straight, so a round trip between London and New York takes about 70-80 ms in practice. No amount of engineering will make a synchronous cross-continent write feel local. That single fact explains read replicas, CDNs and eventual consistency.',
         ],
         code: {
           caption: 'The canonical list, rounded to orders of magnitude',
-          body: `L1 cache reference                 ~1 ns        1x
-Main memory reference            ~100 ns      100x
-Read 1 MB from memory             ~10 us
-SSD random read                  ~100 us
-Read 1 MB from SSD               ~200 us
-Round trip in the same DC        ~500 us
-Spinning disk seek                ~10 ms
-Round trip EU <-> US             ~150 ms     150,000,000x L1
+          body: `L1 cache reference              ~1 ns
+Main memory reference         ~100 ns    100x an L1 reference
+SSD random read               ~100 us    1,000x a memory reference
+Round trip in the same DC     ~500 us    5x an SSD read
+Spinning disk seek             ~10 ms    100x an SSD read
+Round trip US West <-> EU     ~150 ms    300x a round trip in the DC
 
 Useful conversions
 1 ms = 1,000 us = 1,000,000 ns
@@ -350,7 +349,7 @@ Useful conversions
       {
         heading: 'Scaling the numbers to human time',
         paragraphs: [
-          'Nanoseconds are impossible to feel, so translate the whole table by a factor of a billion and it becomes a workday. If an L1 cache reference takes 1 second, then main memory takes about 2 minutes, an SSD read takes about 1.5 days, a datacenter round trip takes about a week, and a round trip from Europe to the US takes about 5 years.',
+          'Nanoseconds are impossible to feel, so translate the whole table by a factor of a billion and it becomes a workday. If an L1 cache reference takes 1 second, then main memory takes about 2 minutes, an SSD read takes a little over a day, a datacenter round trip takes about a week, and a round trip from Europe to the US takes about 5 years.',
           'Hold that picture during design reviews. "We will just call the other service" is a week-long errand in this scale. "We will call it in a loop, once per item, for 200 items" is four years of errands. That is why batching and N+1 queries matter so much more than micro-optimising the code inside the loop.',
           'The practical consequence: the biggest performance wins are almost always about removing round trips, not making code faster. Batch the queries, cache the result, move the data closer, or do the work asynchronously. Optimising an O(n) loop that runs entirely in memory is usually noise next to one avoidable network call.',
         ],
@@ -358,13 +357,14 @@ Useful conversions
       {
         heading: 'Three habits that make estimates fast',
         paragraphs: [
-          'First, always compare to one machine. A modern server handles on the order of tens of thousands of simple requests per second, holds hundreds of gigabytes of RAM, and pushes gigabits of network. If your estimate lands far below that, stop designing a distributed system.',
+          'First, always compare to one machine. A modern server handles on the order of tens of thousands of trivial requests per second (static or cached answers) - closer to a thousand when each request does real work - holds hundreds of gigabytes of RAM, and pushes gigabits of network. If your estimate lands far below that, stop designing a distributed system.',
           'Second, convert everything to per-second before comparing. Different people quote per-day, per-month or per-hour numbers and they are not comparable until normalised. Per-second against machine capability is the only comparison that produces a decision.',
-          'Third, write the powers of ten. Thinking in 10^5 and 10^9 instead of 86,400 and 1,073,741,824 removes arithmetic mistakes under pressure, and nobody has ever made a worse architectural decision because they used 1000 instead of 1024.',
+          'Third, write the powers of ten. Thinking in 10^5 and 10^9 instead of 86,400 and 1,073,741,824 removes arithmetic mistakes under pressure, and multiplying becomes adding exponents: 10^7 users x 10 requests is 10^8 a day, and 10^8 / 10^5 seconds is 10^3 per second. Nobody has ever made a worse architectural decision because they used 1000 instead of 1024.',
+          'Each rounding to a power of ten can be off by up to about 3x. When some inputs round up and others round down the errors cancel; when they all round the same way they multiply. So a rough answer is trusted to pick the order of magnitude, and when it lands right on a boundary between two designs, you redo it exactly.',
         ],
         bullets: [
           '1 KB = 10^3 bytes, 1 MB = 10^6, 1 GB = 10^9, 1 TB = 10^12.',
-          'One machine: roughly 10k-100k simple req/sec, 100s of GB RAM, 1-10 Gbit/sec network.',
+          'One machine: roughly 10k-100k trivial req/sec (about 1k doing real work), 100s of GB RAM, 1-10 Gbit/sec network.',
           '1 Gbit/sec is about 125 MB/sec. Divide bits by 8 before comparing with file sizes.',
         ],
       },
@@ -384,6 +384,20 @@ Useful conversions
         result:
           'The fix was not faster code, it was fewer round trips and shorter distance. Knowing two numbers - 150 ms cross-region, 1 ms local cache - was enough to redesign the feature in a meeting.',
       },
+      {
+        title: 'Rounding an estimate and checking it against the exact one',
+        setup:
+          'A new app expects 12 million daily active users making 8 requests each, with a 5x peak factor. One app server handles about 1,000 requests per second doing real work. This is the setup the Lab opens on for this Concept.',
+        walkthrough: [
+          'Round the big numbers to powers of ten: 12M becomes 10^7 and 8 becomes 10. One went down, one went up.',
+          'Requests per day: 10^7 x 10 = 10^8. Exact: 12M x 8 = 96M.',
+          'Per second: 10^8 / 10^5 = 10^3. Exact: 96M / 86,400 = 1,111.',
+          'Peak: 10^3 x 5 = 5,000 req/sec. Exact: 1,111 x 5 = 5,556 req/sec - the rough answer is 1.1x off.',
+          'Servers: 5 at peak, 8 with 50% headroom; exact gives 6 and 9. Both answers say the same thing: a small fleet behind a load balancer.',
+        ],
+        result:
+          'Ten seconds of power-of-ten arithmetic landed within about 10% of the exact answer and picked the same design. The errors cancelled because 12M rounded down while 8 rounded up.',
+      },
     ],
     jargon: [
       { term: 'Round trip (RTT)', plain: 'The time for a request to reach a machine and the answer to come back. Distance sets the floor.' },
@@ -397,7 +411,7 @@ Useful conversions
       'Distance is physics: you cannot optimise away a cross-region round trip, only avoid it.',
       'Most big wins come from removing round trips, not from faster code.',
       'Always normalise to per-second and compare against what one machine can do.',
-      'A day is 10^5 seconds; 1 GB is 10^9 bytes. Round and move on.',
+      'A day is 10^5 seconds: round to powers of ten, add exponents, and redo it exactly only near a boundary.',
     ],
   },
 
@@ -411,8 +425,8 @@ Useful conversions
       {
         heading: 'Stage 1: finding the address (and the five caches before it)',
         paragraphs: [
-          'Before any network traffic happens, the browser checks its own caches: is this URL in the HTTP cache, is there a service worker, is the hostname in the browser DNS cache, then the operating system cache, then the hosts file. A surprising number of "requests" never leave the machine at all, which is why cache headers are among the highest-leverage settings you control.',
-          'If the name is still unresolved, a DNS query goes to a resolver, usually run by your ISP or a public provider. The resolver walks the hierarchy - root servers, then the .com nameservers, then the nameservers for the domain - and caches the answer for as long as the TTL says. A cold lookup can take 20-120 ms; a warm one is free.',
+          'Before any network traffic happens, the browser checks its own caches: is this URL in the HTTP cache, is there a service worker, is the hostname in the browser DNS cache, then in the operating system (its own cache and the hosts file). A surprising number of "requests" never leave the machine at all, which is why cache headers are among the highest-leverage settings you control.',
+          'If the name is still unresolved, a DNS query goes to a resolver, usually run by your ISP or a public provider. The resolver walks the hierarchy - root servers, then the .com nameservers, then the nameservers for the domain - and caches every answer for as long as its TTL says (the list of .com servers for two days, so a busy resolver almost never needs a root server). A cold lookup can take 20-120 ms; a warm one is free.',
           'This is why DNS TTL is an operational decision, not a detail. A 24-hour TTL makes lookups cheap but means a failover takes a day to be noticed by some clients. A 60-second TTL makes failover fast and multiplies DNS traffic. Teams usually lower the TTL days before a planned migration.',
         ],
       },

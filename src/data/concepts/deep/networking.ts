@@ -12,7 +12,7 @@ export const networkingDepth: DepthMap = {
         heading: 'The lookup is a hierarchy, and every level caches',
         paragraphs: [
           'A lookup for shop.example.com walks down a tree. The resolver asks a root server, which says "ask the .com servers". The .com servers say "ask the nameservers for example.com". Those authoritative servers hold the actual record and answer with an IP. That full walk costs several round trips, which is why it almost never happens.',
-          'Caching is everywhere on this path: the browser has a cache, the operating system has one, the resolver has the biggest one, and each level honours the TTL on the record. In practice, popular names are answered from a nearby cache in under a millisecond, and only the unlucky first request pays the full walk.',
+          'Caching is everywhere on this path: the browser has a cache, the operating system has one, the resolver has the biggest one, and each level honours the TTL on the record. The resolver even caches the referrals: the list of .com servers comes with a TTL of two days, so a busy resolver almost never asks a root server. In practice, popular names are answered from the browser or OS cache in under a millisecond, or from the resolver cache in a few milliseconds, and only the unlucky first request pays the full walk.',
           'The practical consequence is that DNS changes are not instant and are not uniform. After you change a record, some clients see the new value immediately and others keep the old one until their cached copy expires. You are never in a state where "everyone" has switched.',
         ],
         code: {
@@ -20,7 +20,7 @@ export const networkingDepth: DepthMap = {
           body: `browser -> OS cache -> resolver
 resolver -> root         "try .com at 192.5.6.30"
 resolver -> .com         "try ns1.example.com"
-resolver -> ns1.example  "shop.example.com = 93.184.216.34, TTL 300"
+resolver -> ns1.example  "shop.example.com = 203.0.113.10, TTL 300"
 resolver caches for 300 s, answers the browser
 
 warm lookup: browser or OS cache, ~0 ms`,
@@ -125,14 +125,14 @@ ETag: "a3f9"
           'Confidentiality - the bytes are unreadable in transit.',
           'Integrity - the bytes cannot be modified without detection.',
           'Authentication - you are talking to the server the certificate names.',
-          'Not included: the server itself is not made trustworthy, and the URL you typed is still visible via DNS and SNI.',
+          'Not included: the server itself is not made trustworthy, and the hostname you visit is still visible via DNS and SNI (the path and query string are not).',
         ],
       },
       {
         heading: 'HTTP/1.1, /2 and /3 in one paragraph each',
         paragraphs: [
           'HTTP/1.1 sends one request at a time per connection. Browsers worked around it by opening six connections per host, which is why asset sharding and sprite sheets were once good ideas. Head-of-line blocking is at the request level: one slow response holds up everything behind it on that connection.',
-          'HTTP/2 multiplexes many streams over a single TCP connection, adds header compression and server push. The old workarounds became counterproductive - six connections now hurt. But head-of-line blocking moved down a layer: one lost TCP packet stalls every stream in that connection, because TCP insists on delivering bytes in order.',
+          'HTTP/2 multiplexes many streams over a single TCP connection and adds header compression (it also added server push, which browsers have since dropped). The old workarounds became counterproductive - six connections now hurt. But head-of-line blocking moved down a layer: one lost TCP packet stalls every stream in that connection, because TCP insists on delivering bytes in order.',
           'HTTP/3 replaces TCP with QUIC over UDP, giving each stream its own delivery order, so a lost packet only stalls the stream it belonged to. It also folds the transport and TLS handshakes together, cutting setup to one round trip - and resuming a connection can cost zero. On lossy mobile networks the difference is large; on a clean wired link it is modest.',
         ],
       },
@@ -180,74 +180,77 @@ ETag: "a3f9"
       {
         heading: 'What TCP actually does for you',
         paragraphs: [
-          'TCP gives four guarantees: every byte arrives, in the order sent, without duplication, and the sender slows down when the network is congested. It achieves this with sequence numbers, acknowledgements, retransmission timers and congestion control - all of it invisible to your code, which just reads a stream.',
-          'Those guarantees have a price, and the price is time. Connection setup is a round trip before any data moves. A lost packet means waiting for a retransmission, and everything behind it waits too, because the stream must be delivered in order. Congestion control deliberately starts slow and ramps up, so short connections never reach full speed.',
-          'For almost everything - HTTP, databases, SSH, message brokers - this is the right trade. Losing a byte of a JSON payload is not an acceptable outcome, and the latency cost is invisible next to the work being done.',
+          'TCP gives four guarantees: every byte arrives (or the connection reports an error), in the order sent, without duplication, and the sender slows down when the network is congested. It achieves this with sequence numbers, acknowledgements, retransmission timers and congestion control - all of it invisible to your code, which just reads a stream.',
+          'Those guarantees have a price, and the price is time. Connection setup (SYN, SYN-ACK, ACK) is a round trip before any data moves. A lost packet has to be noticed first: every packet that arrives after the gap makes the receiver repeat the same ACK, and after 3 duplicate ACKs the sender resends it (fast retransmit). With nothing behind it to trigger duplicate ACKs, the sender waits for a timeout instead - at least 200 ms on Linux. Either way the lost packet arrives at least a round trip late, and everything behind it waits too, because the stream must be delivered in order. That wait is head-of-line blocking.',
+          'For almost everything - HTTP, databases, SSH, message brokers - this is the right trade. Losing a byte of a JSON payload is not an acceptable outcome, and the latency cost is small next to the work being done. Congestion control adds one more cost: a new connection starts slowly and ramps up, so short connections never reach full speed.',
         ],
         code: {
           caption: 'The cost and the guarantee, side by side',
           body: `                   TCP                    UDP
 setup              1 RTT handshake        none, send immediately
 delivery           guaranteed, in order   best effort, any order
-lost packet        retransmitted (wait)   gone
-congestion         backs off automatically  your problem
-header             20 bytes               8 bytes
+lost packet        resent (1+ RTT late)   gone
+congestion         backs off by itself    your problem
+header             20 bytes minimum       8 bytes
 head-of-line       yes (ordered stream)   no
-used by            HTTP, SQL, SSH, Kafka  DNS, QUIC, video, games`,
+used by            HTTP/1-2, SQL, SSH     DNS, QUIC, video, games`,
         },
       },
       {
         heading: 'Why anyone chooses UDP',
         paragraphs: [
           'UDP is a thin wrapper over IP: send a datagram, hope it arrives. No handshake, no ordering, no retransmission, no congestion control. That sounds worse in every way until you notice the category of applications for which late data is worthless data.',
-          'In a voice call, a packet that arrives 400 ms late cannot be played - the conversation has moved on. Retransmitting it wastes bandwidth and delays the packets behind it. Better to drop it and let the codec conceal the gap. The same logic applies to live video and multiplayer game state: the next update supersedes the lost one.',
+          'In a voice call, a frame that arrives after its playout time cannot be played - the conversation has moved on. Retransmitting it wastes bandwidth and, over TCP, delays the frames behind it. Better to drop it and let the codec conceal the gap. The same logic applies to live video and multiplayer game state: the next update supersedes the lost one.',
           'The second reason is control. QUIC (and therefore HTTP/3) runs over UDP not because it wants unreliability, but because it wants to implement reliability itself, per stream, in user space - free from the in-order delivery rule baked into TCP and from the slow pace of changing kernel networking stacks.',
         ],
         bullets: [
           'Use TCP when every byte matters: APIs, databases, file transfer, messaging.',
           'Use UDP when fresh beats complete: voice, video, game state, telemetry samples.',
           'Use UDP when you want your own reliability model: QUIC, some RPC frameworks.',
-          'DNS uses UDP for small queries and falls back to TCP for large responses.',
+          'DNS uses UDP for small queries and falls back to TCP when the answer is too large.',
         ],
       },
       {
         heading: 'Things that bite people in practice',
         paragraphs: [
-          'TCP connections are not free and not infinite. Each one holds kernel buffers, and a server has a finite number of ports and file descriptors. Connection pooling and keep-alive exist because opening a connection per request wastes a round trip and exhausts resources at scale.',
-          'The TIME_WAIT state surprises everyone at least once: a closed connection lingers for a minute or two to catch stray packets. A service that opens thousands of short-lived connections per second can accumulate tens of thousands of sockets in TIME_WAIT and start failing to connect, with plenty of CPU and memory free.',
+          'TCP connections are not free and not infinite. Each one holds kernel buffers, and a server has a finite number of ports and file descriptors. Connection pooling and keep-alive (holding a connection open to reuse it) exist because opening a connection per request wastes a round trip and exhausts resources at scale.',
+          'The TIME_WAIT state surprises everyone at least once: the side that closes a connection keeps it for twice the maximum segment lifetime - 60 seconds on Linux - to catch stray packets. A service that opens thousands of short-lived connections per second can pile up tens of thousands of sockets in TIME_WAIT, run out of local ports and start failing to connect, with plenty of CPU and memory free.',
           'On the UDP side, the hazards are size and firewalls. A datagram larger than the path MTU gets fragmented, and one lost fragment loses the whole datagram - so keep them under roughly 1,400 bytes. And many corporate networks block or aggressively time out UDP, which is why QUIC implementations always keep a TCP fallback.',
         ],
       },
     ],
     examples: [
       {
-        title: 'Why a video call and an API call want opposite things',
+        title: 'One lost packet, three ways',
         setup:
-          'The same network drops 2 percent of packets. Compare what happens to a JSON API request and to a voice stream.',
+          'One-way delay 30 ms, so a round trip is 60 ms. A voice call sends a 20 ms frame every 20 ms, and the receiver plays each frame 60 ms after it would normally arrive. Frame #10, sent at t = 200 ms, is dropped.',
         walkthrough: [
-          'API over TCP: a packet in the middle of the response is lost. TCP detects it and retransmits, costing one round trip (say 60 ms).',
-          'Everything after the lost packet was already received but is held back until the gap is filled, because the application must see bytes in order. The response arrives 60 ms late but complete - perfectly acceptable.',
-          'Voice over TCP: the same 20 ms of audio is retransmitted and arrives 60 ms late. By then the playback buffer has moved on, so it is useless - and the audio after it was delayed too, producing an audible stutter.',
-          'Voice over UDP: the packet is simply lost. The codec interpolates 20 ms of audio, which most listeners cannot detect, and everything after it plays on time.',
-          'Note the asymmetry: TCP turned one lost packet into a stutter, UDP turned it into an inaudible blip. Same loss rate, opposite outcomes.',
+          'Over TCP, frames #11, #12 and #13 arrive at 250, 270 and 290 ms. Each makes the receiver repeat its ACK for #10, and each duplicate ACK reaches the sender 30 ms later.',
+          'The third duplicate ACK reaches the sender at 320 ms, so it resends #10. The resend arrives at 350 ms - 150 ms after the first send, where a normal frame takes 30 ms.',
+          'Frame #10 had to play at 200 + 30 + 60 = 290 ms, so it is 60 ms late. Frames #11 and #12 were already there, but TCP held them behind the gap until 350 ms, past their playout times of 310 and 330 ms. One drop, three missed frames: 60 ms of stutter.',
+          'Over UDP the same drop costs frame #10 only. Frames #11, #12 and #13 go to the app at 250, 270 and 290 ms and play on time, and the codec fills one 20 ms gap that most listeners do not notice.',
+          'An API response of 10 packets on the same TCP connection loses its third packet. It still arrives complete, about one round trip (60 ms) later than it would have - a slower response, not a broken one.',
         ],
         result:
-          'The question is never which protocol is more reliable. It is whether late data still has value. If yes, use TCP; if no, use UDP and handle loss in the codec or the application.',
+          'Same network, same drop: TCP turned it into 60 ms of stutter for the call and 60 ms of extra wait for the API; UDP turned it into one hidden 20 ms gap. The question is never which protocol is more reliable. It is whether late data still has value. If yes, use TCP; if no, use UDP and handle loss in the codec or the app.',
       },
     ],
     jargon: [
       { term: 'Datagram', plain: 'One self-contained UDP message. It arrives whole or not at all.' },
       { term: 'Three-way handshake', plain: 'SYN, SYN-ACK, ACK - the round trip TCP spends before sending your data.' },
+      {
+        term: 'Head-of-line blocking',
+        plain: 'Data that already arrived, waiting because an earlier packet is missing and the stream must stay in order.',
+      },
       { term: 'Congestion control', plain: 'TCP slowing itself down when the network shows signs of overload.' },
       { term: 'MTU', plain: 'The largest packet the path accepts, typically about 1,500 bytes. Exceed it and packets fragment.' },
-      { term: 'Keep-alive', plain: 'Holding a TCP connection open to reuse it and avoid paying the handshake again.' },
       { term: 'QUIC', plain: 'A reliable, multiplexed protocol built on UDP. The transport under HTTP/3.' },
     ],
     remember: [
       'TCP: ordered, reliable, congestion-aware - and therefore sometimes late.',
-      'UDP: no promises, no waiting - and therefore always fresh.',
+      'UDP: no promises and no waiting - a lost datagram never holds up the next one.',
       'Choose by asking whether late data is still useful.',
-      'TCP head-of-line blocking means one lost packet delays everything behind it.',
+      'TCP head-of-line blocking means one lost packet delays everything behind it by at least a round trip.',
       'QUIC uses UDP to build its own reliability, per stream, without the in-order rule.',
     ],
   },
@@ -277,7 +280,7 @@ used by            HTTP, SQL, SSH, Kafka  DNS, QUIC, video, games`,
       {
         heading: 'Reverse proxy or load balancer?',
         paragraphs: [
-          'The honest answer is that the categories overlap and the vocabulary is inconsistent. A load balancer is defined by what it decides (which backend gets this request); a reverse proxy is defined by where it sits (in front, acting on behalf of the servers). Every load balancer is a reverse proxy; not every reverse proxy balances load.',
+          'The honest answer is that the categories overlap and the vocabulary is inconsistent. A load balancer is defined by what it decides (which backend gets this request); a reverse proxy is defined by where it sits (in front, acting on behalf of the servers). The HTTP load balancers most teams run are reverse proxies that also pick a backend; not every reverse proxy balances load, and some network load balancers only forward packets without opening connections of their own.',
           'In practice teams run both roles in one process. nginx in front of three app servers is a reverse proxy doing load balancing. A cloud application load balancer is a managed reverse proxy with health checks and autoscaling integration.',
           'Where the distinction matters is in layering. A common shape is a cloud L4 balancer at the edge for raw distribution and DDoS absorption, then nginx or Envoy inside for routing, retries and per-route policy. Each layer has one job, and each is scaled and configured separately.',
         ],
@@ -295,8 +298,8 @@ used by            HTTP, SQL, SSH, Kafka  DNS, QUIC, video, games`,
       {
         heading: 'The details that cause incidents',
         paragraphs: [
-          'The first is the client IP. Once a proxy forwards a request, the backend sees the proxy address, not the user. The proxy must set X-Forwarded-For (or the standard Forwarded header) and the application must be configured to trust it - but only from the proxy, otherwise anyone can spoof their IP and defeat your rate limiting.',
-          'The second is timeouts. A proxy has its own read and connect timeouts, and if they are shorter than the application timeout, users get a 504 while the backend is still happily working. If they are longer, a stuck backend holds proxy connections until the proxy exhausts its own limits. These numbers should be chosen together, with the proxy slightly more patient than the intended request budget and considerably less patient than infinity.',
+          'The first is the client IP. Once a proxy forwards a request, the backend sees the proxy address, not the user. The proxy must set X-Forwarded-For (or the standard Forwarded header, RFC 7239) - nginx does not add it unless you configure it - and the application must be configured to trust it, but only from the proxy, otherwise anyone can spoof their IP and defeat your rate limiting.',
+          'The second is timeouts. A proxy has its own read and connect timeouts (60 seconds each by default in nginx), and if they are shorter than the application timeout, users get a 504 while the backend is still happily working. If they are longer, a stuck backend holds proxy connections until the proxy exhausts its own limits. These numbers should be chosen together, with the proxy slightly more patient than the intended request budget and considerably less patient than infinity.',
           'The third is buffering. Proxies buffer responses by default, which is what protects slow clients from occupying a worker - but it also breaks streaming responses, server-sent events and long-polling, which appear to hang until the whole response is ready. Those routes need buffering explicitly turned off.',
         ],
       },
@@ -328,7 +331,7 @@ used by            HTTP, SQL, SSH, Kafka  DNS, QUIC, video, games`,
     remember: [
       'A reverse proxy is one public address hiding any internal layout you like.',
       'It is the right home for TLS, routing, compression, caching and rate limits - configured once.',
-      'Every load balancer is a reverse proxy; not every reverse proxy balances load.',
+      'An HTTP load balancer is a reverse proxy that picks a backend; not every reverse proxy balances load.',
       'Forward the client IP explicitly, and only trust that header from your own proxy.',
       'Disable buffering on streaming routes or they will appear to hang.',
     ],
@@ -370,9 +373,10 @@ REVERSE proxy (acts for servers)
       {
         heading: 'Limits and honest caveats',
         paragraphs: [
-          'A forward proxy sees very little of HTTPS traffic. With CONNECT it just tunnels bytes, so it can log and allow by hostname (via SNI) but not inspect the content. Inspecting content requires TLS interception - installing a company certificate on every device and decrypting traffic - which is powerful, invasive, and creates a high-value target.',
+          'A forward proxy sees very little of HTTPS traffic. With CONNECT it just tunnels bytes, so it can log and allow by the hostname the CONNECT request names (and the SNI in the TLS handshake) but not inspect or cache the content. Inspecting content requires TLS interception - installing a company certificate on every device and decrypting traffic - which is powerful, invasive, and creates a high-value target.',
           'It is also a single point of failure and a bottleneck by construction. If everything outbound goes through it, its capacity and availability become your capacity and availability for every third-party call. Run it redundantly and monitor it like a production service, because it is one.',
           'Finally, on a proxy that many clients share, the destination sees one IP for all of them. That is the point, but it means one misbehaving client can get the whole organisation rate limited or blocked by an API provider.',
+          'Hiding the clients is also not automatic. On requests it can read, a proxy may add X-Forwarded-For with the client address - Squid does so by default (its forwarded_for setting is on) - so a proxy meant to hide its clients must be configured to leave the header out.',
         ],
       },
     ],
@@ -440,7 +444,7 @@ WITH CDN, cache miss
         paragraphs: [
           'An edge decides what it is holding by a cache key, normally the URL plus a few chosen headers. Getting the key wrong is the classic CDN bug in both directions: include too much (say, the full cookie header) and every user gets their own copy, so the hit rate collapses to nearly zero; include too little (ignore Accept-Language or the auth header) and you serve the private content of one user to another.',
           'TTL decides how long an edge may answer without asking the origin. Long TTLs give great hit rates and slow updates. The industry solution is to avoid the conflict entirely with content-addressed filenames: app.4f2a1c.js can be cached for a year because a change produces a different name, so nothing ever needs invalidating.',
-          'When you do need invalidation, know that a purge is a request to hundreds of locations and takes seconds to minutes to complete globally. Designs that depend on instant global purge are fragile; designs that depend on immutable URLs are not.',
+          'When you do need invalidation, know that a purge is a request to hundreds of locations. The large vendors now finish one in seconds, but the locations never drop their copies at the same instant, and a purge never reaches the copies already in browsers. Designs that depend on instant global purge are fragile; designs that depend on immutable URLs are not.',
         ],
         bullets: [
           'Hashed filenames + max-age=31536000, immutable - never purge anything.',
@@ -481,7 +485,7 @@ WITH CDN, cache miss
       { term: 'Origin', plain: 'Your servers - where the edge fetches from on a miss.' },
       { term: 'Cache key', plain: 'What the edge uses to decide whether two requests are the same. Usually URL plus selected headers.' },
       { term: 'Hit rate', plain: 'The share of requests answered at the edge. The single number that says if the CDN is working.' },
-      { term: 'Purge / invalidation', plain: 'Telling edges to drop a cached object. Takes seconds to minutes globally.' },
+      { term: 'Purge / invalidation', plain: 'Telling edges to drop a cached object. Takes seconds, arrives at each location at a different moment, and never clears browser caches.' },
       { term: 'stale-while-revalidate', plain: 'Serve the old copy immediately and refresh in the background. Great for perceived speed.' },
     ],
     remember: [

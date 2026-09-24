@@ -99,7 +99,7 @@ FIX 3 optimistic version
       {
         heading: 'NoSQL is four different things, not one',
         paragraphs: [
-          'Lumping them together causes most of the confusion. Key-value stores (Redis, DynamoDB) map a key to a blob and are essentially a distributed hash map. Document stores (MongoDB) hold JSON documents and can index fields inside them. Wide-column stores (Cassandra, HBase) are built around a partition key plus a sorted clustering key, optimised for enormous write volume. Graph databases (Neo4j) store relationships as first-class objects for traversal queries.',
+          'Lumping them together causes most of the confusion. Key-value stores (Redis, DynamoDB) map a key to a value and behave like a hash map, usually spread over many machines. Document stores (MongoDB) hold JSON documents and can index fields inside them. Wide-column stores (Cassandra, HBase) are built around a partition key plus a sorted clustering key, optimised for enormous write volume. Graph databases (Neo4j) store relationships as first-class objects for traversal queries.',
           'They share one design philosophy: give up some of what a relational database offers - joins, arbitrary queries, strong multi-row transactions - in exchange for horizontal scalability and a data model that matches a specific access pattern exactly.',
           'So the useful question is never "SQL or NoSQL". It is "which of these four shapes matches how I read and write this data, and can I live with what it cannot do?"',
         ],
@@ -178,7 +178,7 @@ graph         (user42)-[:ORDERED]->(order9)   traverse relationships`,
       {
         heading: 'Ask about access patterns, not about scale',
         paragraphs: [
-          'Most teams choose a database on an imagined future scale and regret it. The better question is the shape of the queries. If you mostly fetch one object by a known id, almost anything works. If you need to answer questions that combine several entities - and especially questions you cannot list today - relational wins decisively.',
+          'Most teams choose a database on an imagined future scale and regret it. The better question is the shape of the queries. If you mostly fetch one object by a known id, almost anything works. If you need to answer questions that combine several entities - and especially questions you cannot list today - a relational store is the low-effort fit, because it runs the join where the data lives.',
           'The second question is about transactions: does any single user action have to change several things atomically? Orders, payments, bookings and inventory almost always do. Feeding that requirement into a store without multi-object transactions means implementing sagas and compensations, which is a large amount of hand-written correctness work.',
           'Only the third question is scale, and be honest about the numbers. A single Postgres instance on decent hardware handles tens of thousands of transactions per second and terabytes of data. Most products never reach that, and the ones that do usually reach it for one table, not the whole database.',
         ],
@@ -258,19 +258,20 @@ Unsure / early product?                          -> Postgres`,
       {
         heading: 'What a B-tree index actually does',
         paragraphs: [
-          'Without an index, finding rows matching a condition means a sequential scan: read every row and test it. On a million-row table that is a million comparisons and a lot of disk reads. An index is a separate, sorted structure mapping column values to row locations, so the database can binary-search instead.',
-          'The shape used almost everywhere is a B-tree: a shallow tree where each node holds many keys. Its depth grows logarithmically, so a table of a thousand rows and a table of a billion rows differ by only a few levels - typically 3 to 4 disk reads to locate any row. That is why indexes feel like magic: a thousandfold growth in data costs one extra hop.',
-          'The sorted order is a second gift. An index on created_at makes ORDER BY created_at LIMIT 20 free, because the data is already in order - no sort of the whole table. Range queries (BETWEEN, >, <) work for the same reason.',
+          'A database does not read rows one at a time. It reads pages: fixed blocks of 8 KB in PostgreSQL, each holding many rows. Without an index, finding rows matching a condition means a sequential scan: read every page and test every row on it. A 5 million row table of about 100 rows per page is 50,000 pages. An index is a separate, sorted structure mapping column values to row locations, so the database can search it instead of reading everything.',
+          'The shape used almost everywhere is a B-tree: a shallow tree of pages where each page holds hundreds of keys. Each level multiplies the reach of the tree by that many, so a table of a thousand rows and a table of a billion rows differ by only a couple of levels - typically 3 to 4 page reads to locate any row, then one more for the row itself. That is why indexes feel like magic: a table a few hundred times larger costs about one extra page read.',
+          'The sorted order is a second gift. An index on created_at makes ORDER BY created_at LIMIT 20 cheap, because the data is already in order - the database reads the first 20 entries and stops, with no sort of the whole table. Range queries (BETWEEN, >, <) work for the same reason.',
         ],
         code: {
           caption: 'Same query, two plans',
           body: `SELECT * FROM users WHERE email = 'ana@example.com';
 
 WITHOUT index
-  Seq Scan on users  (rows=5,000,000)  ~1,200 ms
+  Seq Scan on users   50,000 pages read   ~1,200 ms
 
 WITH index on (email)
-  Index Scan using users_email_idx     ~0.3 ms
+  Index Scan using users_email_idx
+    3 index pages + 1 table page          ~0.3 ms
 
 Cost of that index: ~200 MB, and every INSERT/UPDATE of email
 now writes to the table AND the index.`,
@@ -281,20 +282,20 @@ now writes to the table AND the index.`,
         paragraphs: [
           'An index on (tenant_id, created_at) sorts by tenant first, then by date inside each tenant. That serves WHERE tenant_id = 7 and it serves WHERE tenant_id = 7 ORDER BY created_at. It does not serve WHERE created_at > x on its own, because the dates are only sorted within each tenant - a phone book sorted by surname then first name is useless for finding everyone called Ana.',
           'This left-prefix rule is the most valuable index fact to know. An index on (a, b, c) can be used for queries on a, on (a, b) and on (a, b, c), but not for b alone. Order the columns by putting equality filters first, then the range or sort column last.',
-          'A covering index goes one step further: include every column the query needs, and the database never touches the table at all - it answers entirely from the index. That can turn a 50 ms query into a 2 ms one, at the cost of a larger index.',
+          'A covering index goes one step further: include every column the query needs, and the database can answer from the index alone and skip the table page (PostgreSQL calls this an index-only scan, and still checks the table for rows changed very recently). It removes one page read per lookup on a hot path, at the cost of a larger index.',
         ],
         bullets: [
           'Equality columns first, range or ORDER BY column last.',
           '(a, b) also covers queries on a alone - so do not create both.',
           'Low-selectivity columns (a boolean, a status with 3 values) rarely deserve their own index.',
-          'A covering index answers the query without reading the table - great for hot read paths.',
+          'A covering index answers the query without reading the table page - useful for one hot read path.',
           'Partial indexes (WHERE deleted_at IS NULL) are small and fast when most rows are irrelevant.',
         ],
       },
       {
         heading: 'The cost side, stated honestly',
         paragraphs: [
-          'Every index must be updated on every insert, update of an indexed column, and delete. A table with eight indexes does nine writes per insert. On a write-heavy table that is the difference between comfortable and saturated, which is why "add an index for every query" is bad advice.',
+          'Every index must be updated on every insert, update of an indexed column, and delete. A table with eight indexes does nine writes per insert. On a write-heavy table that is the difference between comfortable and saturated, which is why "add an index for every query" is bad advice. Building an index costs too: a plain CREATE INDEX in PostgreSQL blocks writes to the table until it finishes, so large production tables use CREATE INDEX CONCURRENTLY.',
           'Indexes also consume memory. The reason an index is fast is that its upper levels stay cached in RAM; once the working set of indexes exceeds memory, every lookup starts hitting disk and the benefit collapses. Unused indexes are therefore not free even when nobody queries them - they evict useful pages.',
           'So the workflow is: find the slow queries, read the execution plan, add the narrowest index that fixes them, and periodically delete indexes that statistics show are never used. Most databases expose usage counts, and most mature systems have several indexes that have never been read.',
         ],
@@ -321,12 +322,12 @@ now writes to the table AND the index.`,
       { term: 'Sequential scan', plain: 'Reading every row to find matches. Fine for small tables, fatal for large ones.' },
       { term: 'B-tree', plain: 'The sorted tree structure behind most indexes. Depth grows very slowly with data size.' },
       { term: 'Selectivity', plain: 'How much a condition narrows the rows. An email is highly selective; a boolean is not.' },
-      { term: 'Composite index', plain: 'An index on several columns, usable left-to-right only.' },
+      { term: 'Page', plain: 'The block a database reads and writes, 8 KB in PostgreSQL. Query cost is counted in pages, not rows.' },
       { term: 'Covering index', plain: 'An index containing every column a query needs, so the table is never read.' },
       { term: 'EXPLAIN / query plan', plain: 'The database telling you how it intends to run a query. The first thing to look at.' },
     ],
     remember: [
-      'An index turns a full scan into a few sorted hops - logarithmic, not linear.',
+      'An index turns a full scan of every page into one page per tree level - logarithmic, not linear.',
       'Composite indexes work left-to-right: equality columns first, range or sort last.',
       'Every index is a write tax on every insert and update.',
       'Read EXPLAIN before adding anything; guessing at indexes wastes writes and memory.',
@@ -346,15 +347,15 @@ now writes to the table AND the index.`,
         paragraphs: [
           'The first is durability. More copies on more machines means the loss of one disk, one server or one datacenter does not lose data. This is the reason that is never optional for anything valuable.',
           'The second is availability. If the primary dies, a replica can be promoted, so an outage becomes a failover of seconds instead of a restore from backup taking hours. The third is read scalability: reads can be spread over replicas, which helps enormously for read-heavy workloads and not at all for write-heavy ones.',
-          'Notice that only one of the three helps with writes - none of them. All writes still go to one primary in a classic setup, so replication never increases write capacity. That is what sharding is for, and confusing the two is a common planning mistake.',
+          'Notice that none of the three helps with writes. All writes still go to one primary in a classic setup, and every replica has to replay every one of them, so replication never increases write capacity. That is what sharding is for, and confusing the two is a common planning mistake.',
         ],
       },
       {
         heading: 'Synchronous, asynchronous, and the choice you are really making',
         paragraphs: [
           'Asynchronous replication commits on the primary and streams the change to replicas afterwards. Writes are fast, because they never wait for the network, and replicas lag by milliseconds to seconds. If the primary dies before a change reaches any replica, that change is lost - which is why async replication has a real, nonzero data-loss window.',
-          'Synchronous replication waits for at least one replica to confirm before the write is acknowledged. No acknowledged write can be lost, but every write now pays a round trip, and if the replica is slow or unreachable, writes stall or the system must fall back to async.',
-          'Semi-synchronous is the common compromise: wait for one replica in the same region (a millisecond or two), stream asynchronously to the distant one. You get no data loss for the common failure - losing one machine - without paying cross-region latency on every write.',
+          'Synchronous replication waits for replicas to confirm before the write is acknowledged. No acknowledged write can be lost, but every write now pays a round trip, and if a replica it waits for is slow or unreachable, writes stall or the system must fall back to async. Waiting for every replica is rarely done for exactly that reason: one bad node stops all writes.',
+          'Semi-synchronous is the common compromise: wait for one replica - typically in the same region, a millisecond or two away - and stream asynchronously to the others. You get no data loss for the common failure - losing one machine - without paying cross-region latency on every write.',
         ],
         code: {
           caption: 'What each mode costs',
@@ -465,6 +466,7 @@ consistent hashing    adding a shard moves only ~1/N of keys
           'Globally unique ids need a scheme that does not depend on one sequence: UUIDv7, Snowflake, or per-shard ranges.',
           'Accept that some queries become scatter-gather, and keep those off the hot path.',
           'Plan the rebalancing procedure before you need it, and rehearse it.',
+          'Replicate every shard - sharding splits the data, it does not copy it, so a lost shard is lost for its users.',
         ],
       },
     ],
@@ -512,19 +514,19 @@ consistent hashing    adding a shard moves only ~1/N of keys
       {
         heading: 'Partitioning is inside one database; sharding is across machines',
         paragraphs: [
-          'The words get used interchangeably and should not be. Partitioning splits one logical table into physical pieces managed by the same database instance. The application sees one table, writes the same SQL, and the database routes to the right partition. Sharding splits data across independent database servers and the application has to know.',
-          'Because it is local, partitioning keeps everything you like: transactions across partitions still work, joins still work, unique constraints within the partitioning scheme still work. It costs no distributed systems complexity at all, which makes it a very cheap win compared with sharding.',
+          'The two words are often used for the same thing - Designing Data-Intensive Applications calls splitting data across machines partitioning, and Kafka and Cassandra use the word that way too. This app uses the narrower meaning the database manuals use for table partitioning: one logical table split into physical pieces managed by the same database instance. The application sees one table, writes the same SQL, and the database routes each row to the right partition. Sharding, in this app, splits data across independent database servers, and something outside the database has to know where each row lives.',
+          'Because it is local, partitioning keeps everything you like: transactions across partitions still work, joins still work, and unique constraints still work as long as they include the partition key. It costs no distributed systems complexity at all, which makes it a very cheap win compared with sharding.',
           'The limitation is equally clear. Partitioning does not add write capacity or storage beyond the one machine - it only makes that machine work less per query and makes maintenance operations cheaper. When the machine itself is the limit, you shard.',
         ],
         code: {
-          caption: 'One table, four drawers',
+          caption: 'One table, three drawers',
           body: `CREATE TABLE events (id bigint, tenant_id int, created_at timestamptz, ...)
   PARTITION BY RANGE (created_at);
 
-events_2026_01   Jan
-events_2026_02   Feb
-events_2026_03   Mar   <- WHERE created_at >= '2026-03-01' reads only this
-events_default
+events_2026_01   Jan   pruned
+events_2026_02   Feb   pruned
+events_2026_03   Mar   read     <- WHERE created_at >= '2026-03-01'
+                                     AND created_at <  '2026-04-01'
 
 DROP TABLE events_2025_09;   -- deleting a month is instant,
                              -- versus DELETE of 200M rows`,
@@ -533,8 +535,8 @@ DROP TABLE events_2025_09;   -- deleting a month is instant,
       {
         heading: 'Partition pruning is the payoff',
         paragraphs: [
-          'When a query filters on the partition key, the planner skips every partition that cannot contain matching rows. A query for last week against a table with 36 monthly partitions reads one of them, so the effective table size is 1/36 of the total for both the scan and the index.',
-          'That pruning only happens if the partition key is in the WHERE clause. Queries that filter on something else must touch all partitions, and are then slower than they would have been on a single table, because there is per-partition overhead. So the partition key must match the dominant query filter - usually time for events and logs, or tenant for multi-tenant data.',
+          'When a query filters on the partition key, the planner skips every partition that cannot contain matching rows. A query for last week against a table with 36 monthly partitions reads one of them (two when the week crosses a month boundary), so the effective table size is 1/36 of the total for both the scan and the index.',
+          'That pruning only happens if the partition key is in the WHERE clause. Queries that filter on something else must touch all partitions, and are then a little slower than they would have been on a single table, because every partition adds planning and opening overhead. So the partition key must match the dominant query filter - usually time for events and logs, or tenant for multi-tenant data.',
           'Indexes get better too. Each partition has its own smaller index, so index maintenance is cheaper and the hot partition index is far more likely to stay in memory. On large time-series tables this is often a bigger win than the pruning itself.',
         ],
         bullets: [
@@ -549,7 +551,7 @@ DROP TABLE events_2025_09;   -- deleting a month is instant,
         paragraphs: [
           'Retention is the first and most common. Deleting 200 million rows with a DELETE statement produces enormous write amplification, bloats the table and can run for hours. Dropping a partition is a metadata operation that takes milliseconds. Any table with "keep 90 days" in its requirements wants range partitioning by time.',
           'Maintenance is the second. VACUUM, index rebuilds, statistics gathering and bulk loads all operate on a partition-sized chunk rather than the whole table, which turns a maintenance window into a background job.',
-          'The costs are real but modest: you must create future partitions ahead of time (automated, or you discover it at midnight on the 1st), queries without the partition key get slower, and some databases limit what unique constraints can span. Compared with sharding, these are small problems.',
+          'The costs are real but modest: you must create future partitions ahead of time (a row that matches no partition is rejected, so you discover it at midnight on the 1st), queries without the partition key get slower, and PostgreSQL and MySQL both require every unique key to include the partition key. Too many partitions cost planning time and memory too - the PostgreSQL docs say a few thousand work only when queries prune to a handful. Compared with sharding, these are small problems.',
         ],
       },
     ],
@@ -574,7 +576,7 @@ DROP TABLE events_2025_09;   -- deleting a month is instant,
       { term: 'Partition', plain: 'One physical piece of a logical table, held by the same database instance.' },
       { term: 'Partition key', plain: 'The column that decides which partition a row lands in.' },
       { term: 'Pruning', plain: 'The planner skipping partitions that cannot match. The reason queries get faster.' },
-      { term: 'Local vs global index', plain: 'An index per partition, or one across all of them. Local indexes are usually what you get.' },
+      { term: 'Local vs global index', plain: 'An index per partition, or one across all of them. PostgreSQL only has local ones; Oracle also offers global indexes.' },
       { term: 'Retention policy', plain: 'How long data is kept. Partitioning makes enforcing it nearly free.' },
       { term: 'Write amplification', plain: 'Doing far more disk writes than the logical change, as with a huge DELETE.' },
     ],
@@ -669,7 +671,7 @@ NORMALISED
       'The key, the whole key, and nothing but the key.',
       'Historical values are separate facts - copying them is correct, not duplication.',
       'Normalise first, measure, then denormalise the specific paths that need it.',
-      'Materialised views and covering indexes give read speed without a second copy of the truth.',
+      'Materialised views and covering indexes give read speed without a second source of truth.',
     ],
   },
 
@@ -770,7 +772,7 @@ KEPT IN SYNC BY
       {
         heading: 'The cheapest large win for a read-heavy system',
         paragraphs: [
-          'Most applications read far more than they write - ratios of 10:1 to 1000:1 are typical. A read replica takes that dominant traffic off the primary, which then has spare capacity for the writes that only it can do. Adding two replicas can triple effective read capacity with no application redesign beyond routing.',
+          'Most applications read far more than they write - ratios of 10:1 to 1000:1 are typical. A read replica takes that dominant traffic off the primary, which then has spare capacity for the writes that only it can do. Adding two replicas can triple effective read capacity when the primary keeps serving a share of the reads too with no application redesign beyond routing.',
           'Replicas also let you isolate workloads that behave badly. Analytics queries, exports, and the nightly report that scans a year of data can run on a dedicated replica where a slow query cannot lock, saturate or evict cache on the machine serving customers.',
           'And they double as standby nodes. A replica that is already streaming changes can be promoted on failure, so the same machines that serve reads also provide your failover path - which is why read replicas are usually the first thing added after a single instance.',
         ],
@@ -785,7 +787,7 @@ KEPT IN SYNC BY
       {
         heading: 'Routing: the part the application must own',
         paragraphs: [
-          'The database will not decide for you. Something must send each query to the primary or a replica, and the usual options are an application-level router (two connection pools), a proxy like PgBouncer or ProxySQL that classifies statements, or an ORM feature that marks read-only blocks.',
+          'The database will not decide for you. Something must send each query to the primary or a replica, and the usual options are an application-level router (two connection pools), a proxy like Pgpool-II or ProxySQL that classifies statements, or an ORM feature that marks read-only blocks.',
           'Statement-based classification sounds convenient and misleads: a SELECT inside a write transaction must go to the primary, and a SELECT ... FOR UPDATE is a write in disguise. Explicit routing in the application, where the intent is known, is more reliable than inference from the SQL text.',
           'The essential rule to encode: after a user writes, route the reads of that user to the primary for a window longer than your typical lag - often 5 seconds. Everything else can use replicas. That single rule removes the great majority of stale-read bug reports.',
         ],
@@ -861,7 +863,7 @@ health of replica: lag < 2 s, else take it out of rotation`,
           body: `WITHOUT pool
   TCP+TLS+auth+fork   ~25 ms
   query                 3 ms
-  close                 1 ms     -> 29 ms, and ~500 MB RAM at 100 conns
+  close                 1 ms     -> ~29 ms, a new backend each time
 
 WITH pool (10 connections)
   acquire from pool   ~0.05 ms
@@ -874,14 +876,14 @@ WITH pool (10 connections)
         paragraphs: [
           'The instinct is that a bigger pool means more throughput. It does not. A database executes queries on a limited number of CPU cores and disks; beyond that, extra concurrent queries just context-switch and contend for locks, so total throughput falls while latency rises. The commonly cited starting point is roughly cores x 2 plus effective spindles - often 10 to 30 connections for a single database, not 500.',
           'The number that actually matters is the total across your fleet. Twenty application instances with a pool of 50 each is 1,000 connections requested from a server configured for 200. The failure looks like random connection errors under load and is one of the most common self-inflicted outages when scaling horizontally.',
-          'When the total is genuinely too large - many instances, or serverless functions that each want their own connections - put a pooler like PgBouncer between them. In transaction mode it multiplexes thousands of client connections onto a few dozen server connections, at the cost of losing session-level features like prepared statements and session variables unless configured carefully.',
+          'When the total is genuinely too large - many instances, or serverless functions that each want their own connections - put a pooler like PgBouncer between them. In transaction mode it multiplexes thousands of client connections onto a few dozen server connections, at the cost of session-level features: SET, LISTEN and session advisory locks do not carry over between transactions, and protocol-level prepared statements work only when max_prepared_statements is set.',
         ],
         bullets: [
           'Start around (cores x 2) + spindles, then tune with measurements.',
           'pool_size x instance_count must stay below the server max_connections, with headroom for admin access.',
           'Use a separate, smaller pool for background jobs so they cannot starve web requests.',
           'PgBouncer in transaction mode for very high instance counts or serverless.',
-          'Always set an acquire timeout, or a stuck pool becomes an infinite hang.',
+          'Set a short acquire timeout (HikariCP defaults to 30 seconds), or a stuck pool becomes a long hang.',
         ],
       },
       {
@@ -901,7 +903,7 @@ WITH pool (10 connections)
         walkthrough: [
           'Pool size is 10 per instance. Metrics show connection acquire time averaging 8.6 seconds, which accounts for nearly all of the latency.',
           'One endpoint generates a PDF: it opens a transaction, then calls an external rendering service that takes 4-6 seconds, then commits.',
-          'Those requests hold a connection for the whole external call. Two concurrent PDF requests occupy 2 of 10 connections; twelve occupy all of them and everything else queues.',
+          'Those requests hold a connection for the whole external call. Two concurrent PDF requests occupy 2 of 10 connections; ten occupy all of them and everything else queues.',
           'Fix 1: move the external call outside the transaction. Read what is needed, release the connection, call the service, then reopen briefly to write the result.',
           'Fix 2: give PDF generation its own small pool (3 connections), so it can never consume the pool that serves normal traffic - a bulkhead.',
           'Fix 3: set an acquire timeout of 2 seconds so the failure becomes a fast 503 instead of a 9-second hang, and add an alert on acquire time.',
@@ -923,7 +925,7 @@ WITH pool (10 connections)
       'Small pools outperform large ones; the database has limited cores either way.',
       'Multiply pool size by instance count before you scale out, or you will exhaust the server.',
       'Never hold a connection across a call to an external system.',
-      'Always set an acquire timeout, and alert on acquire wait time.',
+      'Set a short acquire timeout, and alert on acquire wait time.',
     ],
   },
 };
