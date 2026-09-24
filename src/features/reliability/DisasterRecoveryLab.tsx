@@ -9,12 +9,13 @@ import {
   type Layout,
   type ParticleView,
 } from '@/components/architecture';
-import { Insight, LabShell, MetricsPanel } from '@/components/learning';
+import { Insight, LabShell, MetricsPanel, SIMULATED_HINT } from '@/components/learning';
 import { Button, SegmentedControl, Slider, Toggle } from '@/components/ui';
 import { advanceParticles, nextParticleId, useEventLog, useTicker, type Particle } from '@/simulations/engine';
 import { useRerender } from '@/hooks/useRerender';
 import { sampleArrivals } from '@/utils/math';
 import { cn } from '@/utils/cn';
+import { formatSeconds } from '@/utils/format';
 import type { NodeStatus, RequestOutcome } from '@/types';
 
 /*
@@ -176,15 +177,11 @@ function dataAtRisk(kind: DisasterKind, setup: Setup, clock: number, lastBackupA
 
 const totalMinutes = (stages: Stage[]) => stages.reduce((sum, stage) => sum + stage.minutes, 0);
 
-function formatMinutes(minutes: number | null) {
-  if (minutes === null) return 'everything';
-  if (minutes <= 0) return '0';
-  if (minutes < 1) return `${Math.max(1, Math.round(minutes * 60))} s`;
-  if (minutes < 120) return `${Math.round(minutes)} min`;
-  return `${(minutes / 60).toFixed(1)} h`;
-}
+/** Simulated minutes as a duration; `null` is data that no backup covers. */
+const formatMinutes = (minutes: number | null) => (minutes === null ? 'everything' : formatSeconds(minutes * 60));
 
-function formatClock(minutes: number) {
+/** The simulated wall clock: "09:30", then "day 2 09:30" once it passes midnight. */
+function formatSimClock(minutes: number) {
   const day = Math.floor(minutes / 1440);
   const inDay = ((minutes % 1440) + 1440) % 1440;
   const hh = String(Math.floor(inDay / 60)).padStart(2, '0');
@@ -484,7 +481,7 @@ export function DisasterRecoveryLab() {
         <div className="flex flex-wrap items-center justify-between gap-2">
           <ParticleLegend outcomes={['success', 'warning', 'failure']} />
           <span className="font-mono text-[11px] text-faint">
-            simulated clock {formatClock(sim.clock)} - 1 s = {SIM_MIN_PER_SEC} min
+            simulated clock {formatSimClock(sim.clock)} - 1 s = {SIM_MIN_PER_SEC} min
           </span>
         </div>
       }
@@ -636,7 +633,7 @@ export function DisasterRecoveryLab() {
               </div>
             )}
             <p className="mt-3 text-xs text-faint">
-              Simplified model, not a measurement: a restore takes {DURATION.restore / 60} h (a 500 GB database), a
+              {SIMULATED_HINT} A restore takes {DURATION.restore / 60} h (a 500 GB database), a
               promotion {DURATION.promote} min, a deploy from code {DURATION.deployApp} min, a DNS switch{' '}
               {DURATION.dns} min, and an unrehearsed plan adds {DURATION.surprises} min of surprises. Your real numbers
               come from a restore drill.

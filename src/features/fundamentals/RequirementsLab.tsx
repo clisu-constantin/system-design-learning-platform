@@ -11,11 +11,10 @@ import {
   type ParticleView,
 } from '@/components/architecture';
 import { Insight, LabShell, MetricsPanel } from '@/components/learning';
-import { Badge, SegmentedControl, Slider } from '@/components/ui';
+import { Badge, SegmentedControl, Slider, Toggle } from '@/components/ui';
 import { advanceParticles, nextParticleId, useEventLog, useTicker, type Particle } from '@/simulations/engine';
 import { useRerender } from '@/hooks/useRerender';
 import { sampleArrivals } from '@/utils/math';
-import { cn } from '@/utils/cn';
 import { formatCompact, formatNumber } from '@/utils/format';
 import type { LabFocus, LabProps, NodeKind, RequestOutcome } from '@/types';
 
@@ -783,40 +782,20 @@ export function RequirementsLab({ focus }: LabProps<'requirements'>) {
               <p className="flex items-center gap-2 text-xs font-medium text-muted">
                 <ListChecks className="h-3.5 w-3.5 text-brand" /> Functional requirements
               </p>
-              {options.map((option) => {
-                const checked = Boolean(selected[option.id]);
-                return (
-                  <button
-                    key={option.id}
-                    type="button"
-                    role="checkbox"
-                    aria-checked={checked}
-                    onClick={() => toggleFeature(option.id)}
-                    className={cn(
-                      'flex w-full items-start gap-2.5 rounded-xl border px-3 py-2 text-left transition-colors',
-                      checked ? 'border-brand bg-brand/5' : 'border-line hover:border-brand/40',
-                    )}
-                  >
-                    <span
-                      className={cn(
-                        'mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded border',
-                        checked ? 'border-brand bg-brand text-white' : 'border-line',
-                      )}
-                    >
-                      {checked ? <Check className="h-3 w-3" /> : null}
-                    </span>
-                    <span className="min-w-0 flex-1">
-                      <span className="flex items-center gap-2">
-                        <span className="text-xs font-medium text-ink">{option.label}</span>
-                        {option.core ? <Badge tone="ok">core</Badge> : <Badge>extra</Badge>}
-                      </span>
-                      <span className={cn('mt-0.5 block text-[11px]', checked ? 'text-muted' : 'text-faint')}>
-                        {option.implication}
-                      </span>
-                    </span>
-                  </button>
-                );
-              })}
+              {options.map((option) => (
+                <Toggle
+                  key={option.id}
+                  checked={Boolean(selected[option.id])}
+                  onChange={() => toggleFeature(option.id)}
+                  label={
+                    <>
+                      <span className="text-ink">{option.label}</span>
+                      {option.core ? <Badge tone="ok">core</Badge> : <Badge>extra</Badge>}
+                    </>
+                  }
+                  description={option.implication}
+                />
+              ))}
             </div>
           ) : (
             <>

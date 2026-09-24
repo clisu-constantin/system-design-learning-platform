@@ -11,9 +11,10 @@ import {
   type ParticleView,
 } from '@/components/architecture';
 import { LiveChart } from '@/components/charts';
-import { Insight, LabShell, MetricsPanel } from '@/components/learning';
+import { Insight, LabShell, MetricsPanel, SIMULATED_HINT } from '@/components/learning';
 import { Button, SegmentedControl, Slider, Stepper, Toggle } from '@/components/ui';
 import { advanceParticles, nextParticleId, useEventLog, useSeries, useTicker, type Particle } from '@/simulations/engine';
+import { useLabSetup } from '@/hooks/useLabSetup';
 import { useRerender } from '@/hooks/useRerender';
 import { sampleArrivals } from '@/utils/math';
 import { formatNumber, formatPercent, formatSeconds } from '@/utils/format';
@@ -241,11 +242,7 @@ export function RedundancyLab({ focus }: LabProps<'redundancy'>) {
   const start = focus ? FOCUS_SETUPS[focus] : DEFAULT_SETUP;
   const challenge = focus === 'single-point-of-failure' ? 'find-spof' : focus === 'high-availability' ? 'target' : null;
   // Every control lives in one object, so Reset cannot miss one.
-  const [setup, setSetup] = useState(start);
-  const change =
-    <K extends keyof Setup>(key: K) =>
-    (value: Setup[K]) =>
-      setSetup((current) => ({ ...current, [key]: value }));
+  const { setup, setSetup, change } = useLabSetup(start);
   const [running, setRunning] = useState(true);
   const state = useRef<State>(createState());
   const rerender = useRerender(30);
@@ -722,7 +719,7 @@ export function RedundancyLab({ focus }: LabProps<'redundancy'>) {
                 </ul>
               )}
               <p className="mt-3 text-[11px] text-faint">
-                Simplified model, not a measurement: parts fail independently, each is repaired in {REPAIR_HOURS} h, a
+                {SIMULATED_HINT} Parts fail independently, each is repaired in {REPAIR_HOURS} h, a
                 whole zone is up {formatAvailability(ZONE_AVAILABILITY)}, one app server serves {APP_CAPACITY} req/s, a
                 promotion takes {PROMOTE_SEC} s and a manual failover {formatSeconds(MANUAL_FAILOVER_SEC)}.
               </p>

@@ -1,6 +1,6 @@
 import { useCallback, useMemo, useRef, useState } from 'react';
 import { ArchNode, DiagramCanvas, NodeStatRow, ParticleLegend, type DiagramEdge, type Layout, type ParticleView } from '@/components/architecture';
-import { Insight, LabShell, MetricsPanel } from '@/components/learning';
+import { Insight, LabShell, MetricsPanel, SIMULATED_HINT } from '@/components/learning';
 import { SegmentedControl, Toggle } from '@/components/ui';
 import { advanceParticles, nextParticleId, useEventLog, useTicker, type Particle } from '@/simulations/engine';
 import { useRerender } from '@/hooks/useRerender';
@@ -564,7 +564,7 @@ export function AuthLab({ focus }: LabProps<'auth'>) {
               </li>
             </ol>
             <p className="mt-3 text-xs text-faint">
-              Simplified model, not a measurement: a fixed cast of callers, one gateway, one service and two invoices. The
+              {SIMULATED_HINT} A fixed cast of callers, one gateway, one service and two invoices. The
               30 min idle timeout, the {TOKEN_LIFE_MIN} min token life and the key names are illustrative, and the counters
               count the requests on this canvas.
             </p>

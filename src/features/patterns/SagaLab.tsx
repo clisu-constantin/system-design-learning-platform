@@ -9,7 +9,7 @@ import {
   type Layout,
   type ParticleView,
 } from '@/components/architecture';
-import { Insight, LabShell, MetricsPanel } from '@/components/learning';
+import { Insight, LabShell, MetricsPanel, SIMULATED_HINT } from '@/components/learning';
 import { Button, SegmentedControl, Toggle } from '@/components/ui';
 import { nextParticleId, useEventLog, useTicker, type EventTone } from '@/simulations/engine';
 import { useRerender } from '@/hooks/useRerender';
@@ -742,7 +742,7 @@ export function SagaLab() {
               </div>
             </div>
             <p className="mt-3 text-xs text-faint">
-              Simplified model, not a measurement: one saga at a time, messages sent one after another, a{' '}
+              {SIMULATED_HINT} One saga at a time, messages sent one after another, a{' '}
               {REPLY_TIMEOUT} s timeout, and a {UNITS}-unit, {PRICE} euro order. In choreography the bus delivers
               each event to the service that acts on it next; its other subscribers are not drawn.
             </p>

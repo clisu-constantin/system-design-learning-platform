@@ -4,6 +4,7 @@ import { ArchNode, DiagramCanvas, NodeStatRow, ParticleLegend, type DiagramEdge,
 import { Insight, LabShell, MetricsPanel } from '@/components/learning';
 import { Button, SegmentedControl, Slider, Stepper, Toggle } from '@/components/ui';
 import { advanceParticles, nextParticleId, useEventLog, useTicker, visualShare, type Particle } from '@/simulations/engine';
+import { useLabSetup } from '@/hooks/useLabSetup';
 import { useRerender } from '@/hooks/useRerender';
 import { cn } from '@/utils/cn';
 import { clamp, sampleArrivals } from '@/utils/math';
@@ -154,11 +155,7 @@ export function EventLogLab({ focus }: LabProps<'event-log'>) {
   // The page keys this Lab by Concept, so the focus never changes under a mounted Lab.
   const start = focus ? FOCUS_SETUPS[focus] : DEFAULT_SETUP;
   // Every control lives in one object, so Reset cannot miss one.
-  const [setup, setSetup] = useState(start);
-  const change =
-    <K extends keyof Setup>(key: K) =>
-    (value: Setup[K]) =>
-      setSetup((current) => ({ ...current, [key]: value }));
+  const { setup, setSetup, change } = useLabSetup(start);
   const { writeRate, partitions, members, memberRate, replayFrom, offsetReset, projectorRate, delayMs, bug, snapshots, retention } =
     setup;
 
@@ -267,7 +264,7 @@ export function EventLogLab({ focus }: LabProps<'event-log'>) {
     setSetup(start);
     state.current = createState(start);
     clear();
-  }, [start, clear]);
+  }, [start, clear, setSetup]);
 
   const changePartitions = (value: number) => {
     setSetup((current) => ({ ...current, partitions: value }));
@@ -830,7 +827,7 @@ function ControlGroup({ title, children }: { title: string; children: ReactNode 
 function Legend() {
   return (
     <ParticleLegend
-      items={[
+      outcomes={[
         { outcome: 'success', label: 'Event (one record)' },
         { outcome: 'cache-hit', label: 'Fresh read, or a snapshot saved' },
         { outcome: 'warning', label: 'Stale read' },

@@ -9,7 +9,7 @@ import {
   type ParticleView,
 } from '@/components/architecture';
 import { LiveChart } from '@/components/charts';
-import { Insight, LabShell, MetricsPanel } from '@/components/learning';
+import { Insight, LabShell, MetricsPanel, SIMULATED_HINT } from '@/components/learning';
 import { Meter, Slider, Toggle } from '@/components/ui';
 import {
   advanceParticles,
@@ -23,6 +23,7 @@ import {
   type Particle,
 } from '@/simulations/engine';
 import { computeLoad } from '@/simulations/models/load';
+import { useLabSetup } from '@/hooks/useLabSetup';
 import { useRerender } from '@/hooks/useRerender';
 import { clamp, sampleArrivals } from '@/utils/math';
 import { formatLatency, formatNumber, formatPercent } from '@/utils/format';
@@ -148,11 +149,7 @@ export function CacheLayersLab({ focus }: LabProps<'cache-layers'>) {
   // The page keys this lab by Concept, so the focus never changes under a mounted lab.
   const start = focus ? FOCUS_SETUPS[focus] : DEFAULT_SETUP;
   // Every control lives in one object, so Reset cannot miss one.
-  const [setup, setSetup] = useState(start);
-  const change =
-    <K extends keyof Setup>(key: K) =>
-    (value: Setup[K]) =>
-      setSetup((current) => ({ ...current, [key]: value }));
+  const { setup, setSetup, change } = useLabSetup(start);
   const [running, setRunning] = useState(true);
 
   const state = useRef<State>(createState());
@@ -165,7 +162,7 @@ export function CacheLayersLab({ focus }: LabProps<'cache-layers'>) {
     state.current = createState();
     clear();
     resetSeries();
-  }, [start, clear, resetSeries]);
+  }, [start, clear, resetSeries, setSetup]);
 
   const spawn = (route: string[], outcome: RequestOutcome) => {
     state.current.particles.push({ id: nextParticleId(), route, leg: 0, t: 0, speed: PARTICLE_SPEED, outcome });
@@ -383,7 +380,7 @@ export function CacheLayersLab({ focus }: LabProps<'cache-layers'>) {
               yDomain={[0, 100]}
             />
             <p className="mt-2 text-xs text-faint">
-              Simplified model, not a measurement: a toy database of {formatNumber(PRODUCTS)} products whose orders
+              {SIMULATED_HINT} A toy database of {formatNumber(PRODUCTS)} products whose orders
               fill {formatNumber(BASE_PAGES)} pages of {PAGE_KB} KB ({pagesAsMb(BASE_PAGES)}), {PAGES_PER_PRODUCT} pages
               per product, and a view of {VIEW_PAGES} pages. Costs are fixed: about {LOCAL_HIT_MS} ms for an in-process
               hit, {NETWORK_MS} ms network to the database, and a page from disk 40 times slower than one from RAM.

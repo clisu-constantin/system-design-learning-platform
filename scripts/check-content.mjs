@@ -107,7 +107,6 @@ function rendersDiagram(file, seen = new Set()) {
   return false;
 }
 
-/** The Concept standard: every Concept hosts a registered Lab and a Quiz, and every Lab draws its system. */
 /**
  * Option length must not give the answer away. Per Category, the right option may be the strictly
  * longest (or strictly shortest) option in at most MAX_ANSWER_LENGTH_TELL of the questions - a
@@ -134,6 +133,7 @@ function checkAnswerLengthTell(concepts, problems) {
         );
 }
 
+/** The Concept standard: every Concept hosts a registered Lab and a Quiz, and every Lab draws its system. */
 function checkConceptStandard(concepts, problems) {
   const labs = registeredLabs(problems);
   const labIds = new Set(labs.map((lab) => lab.id));

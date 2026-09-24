@@ -9,7 +9,7 @@ import {
   type Layout,
   type ParticleView,
 } from '@/components/architecture';
-import { Insight, LabShell, MetricsPanel } from '@/components/learning';
+import { Insight, LabShell, MetricsPanel, SIMULATED_HINT } from '@/components/learning';
 import { Button, SegmentedControl, Slider, Toggle } from '@/components/ui';
 import { advanceParticles, nextParticleId, useEventLog, useTicker, type Particle } from '@/simulations/engine';
 import { useRerender } from '@/hooks/useRerender';
@@ -502,7 +502,7 @@ export function IdempotencyLab() {
             </div>
           </div>
           <p className="text-xs text-faint">
-            Simplified model, not a measurement: requests always arrive, each response is lost with the chosen chance,
+            {SIMULATED_HINT} Requests always arrive, each response is lost with the chosen chance,
             the client waits a fixed {TIMEOUT_S} s timeout (and {CONFLICT_WAIT_S} s after a 409) before it retries, and
             keys never expire here. Real APIs keep keys for a window, such as 24 hours, and a retry after that window is a
             new payment.

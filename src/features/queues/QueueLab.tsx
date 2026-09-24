@@ -14,6 +14,7 @@ import { LiveChart } from '@/components/charts';
 import { Insight, LabShell, MetricsPanel, type MetricItem } from '@/components/learning';
 import { Button, Meter, Slider, Stepper, Toggle } from '@/components/ui';
 import { advanceParticles, nextParticleId, useEventLog, useSeries, useTicker, visualShare, type Particle } from '@/simulations/engine';
+import { useLabSetup } from '@/hooks/useLabSetup';
 import { useRerender } from '@/hooks/useRerender';
 import { clamp, sampleArrivals } from '@/utils/math';
 import { formatLatency, formatNumber, formatPercent } from '@/utils/format';
@@ -189,13 +190,9 @@ export function QueueLab({ focus }: LabProps<'queue'>) {
   // The page keys this lab by Concept, so the focus never changes under a mounted lab.
   const start = focus ? FOCUS_SETUPS[focus] : DEFAULT_SETUP;
   // Every control lives in one object, so Reset cannot miss one.
-  const [setup, setSetup] = useState(start);
+  const { setup, setSetup, change } = useLabSetup(start);
   const { queueOn, producerRate, workers, workerRate, bounded, maxDepth, timeoutMs, retries, failureRate, maxAttempts, retryDelay } =
     setup;
-  const change =
-    <K extends keyof Setup>(key: K) =>
-    (value: Setup[K]) =>
-      setSetup((current) => ({ ...current, [key]: value }));
 
   const [running, setRunning] = useState(true);
   const state = useRef<State>(createState());

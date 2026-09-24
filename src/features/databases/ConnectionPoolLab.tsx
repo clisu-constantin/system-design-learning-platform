@@ -1,7 +1,7 @@
 import { useCallback, useRef, useState } from 'react';
 import { ArchNode, DiagramCanvas, NodeStatRow, ParticleLegend, type DiagramEdge, type Layout, type ParticleView } from '@/components/architecture';
 import { LiveChart } from '@/components/charts';
-import { Insight, LabShell, MetricsPanel } from '@/components/learning';
+import { Insight, LabShell, MetricsPanel, SIMULATED_HINT } from '@/components/learning';
 import { Meter, Slider, Toggle } from '@/components/ui';
 import {
   MetricWindow,
@@ -441,7 +441,7 @@ export function ConnectionPoolLab() {
             />
             <LiveChart data={points} series={[{ key: 'p95', label: 'p95 latency (ms)', color: 'warn' }]} variant="line" height={140} />
             <p className="mt-2 text-xs text-faint">
-              Simplified model, not a measurement: {DB_CORES} database cores that work best with about {BEST_IN_FLIGHT}{' '}
+              {SIMULATED_HINT} {DB_CORES} database cores that work best with about {BEST_IN_FLIGHT}{' '}
               queries in flight and lose work to contention past that, a new connection that costs about{' '}
               {HANDSHAKE_MS + SETUP_WORK_MS} ms, and max_connections {MAX_CONNECTIONS}. All instances get equal load, so
               their pools are modelled as one.

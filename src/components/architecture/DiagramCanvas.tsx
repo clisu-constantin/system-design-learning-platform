@@ -240,44 +240,34 @@ export function ParticleShape({ shape, fill }: { shape: ParticleShapeKind; fill:
   }
 }
 
-/** One outcome drawn at legend size (14px), in its shape and colour. Pair it with a text label. */
-export function OutcomeGlyph({ outcome }: { outcome: RequestOutcome }) {
-  const style = OUTCOME_STYLE[outcome];
-  return (
-    <svg width={14} height={14} viewBox="-7 -7 14 14" aria-hidden>
-      <ParticleShape shape={style.shape} fill={style.fill} />
-    </svg>
-  );
-}
-
-/** A legend row: an outcome, and what it means in this Lab. Without a label it uses the shared one. */
-export interface ParticleLegendItem {
-  outcome: RequestOutcome;
-  label?: string;
-}
-
 interface ParticleLegendProps {
-  /** Outcomes with their shared labels. Ignored when `items` is given. */
-  outcomes?: RequestOutcome[];
-  /** Outcomes with the labels of this Lab. */
-  items?: ParticleLegendItem[];
+  /** Outcomes to list: bare ones get the shared label, `{ outcome, label }` says what it means in this Lab. */
+  outcomes?: (RequestOutcome | { outcome: RequestOutcome; label?: string })[];
   className?: string;
   /** Extra legend entries (a wire colour note, a cell style), laid out in the same row. */
   children?: ReactNode;
 }
 
 /** Shape + colour + text legend so status is never colour-only. */
-export function ParticleLegend({ outcomes, items, className, children }: ParticleLegendProps) {
-  const list: ParticleLegendItem[] =
-    items ?? (outcomes ?? (['success', 'cache-hit', 'warning', 'failure'] as RequestOutcome[])).map((outcome) => ({ outcome }));
+export function ParticleLegend({
+  outcomes = ['success', 'cache-hit', 'warning', 'failure'],
+  className,
+  children,
+}: ParticleLegendProps) {
   return (
     <div className={cn('flex flex-wrap items-center gap-x-4 gap-y-1.5', className)}>
-      {list.map(({ outcome, label }) => (
-        <span key={outcome} className="flex items-center gap-1.5 text-[11px] text-muted">
-          <OutcomeGlyph outcome={outcome} />
-          {label ?? OUTCOME_STYLE[outcome].label}
-        </span>
-      ))}
+      {outcomes.map((entry) => {
+        const { outcome, label } = typeof entry === 'string' ? { outcome: entry, label: undefined } : entry;
+        const style = OUTCOME_STYLE[outcome];
+        return (
+          <span key={outcome} className="flex items-center gap-1.5 text-[11px] text-muted">
+            <svg width={14} height={14} viewBox="-7 -7 14 14" aria-hidden>
+              <ParticleShape shape={style.shape} fill={style.fill} />
+            </svg>
+            {label ?? style.label}
+          </span>
+        );
+      })}
       {children}
     </div>
   );

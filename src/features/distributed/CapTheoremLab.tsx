@@ -12,6 +12,7 @@ import {
 import { Insight, LabShell, MetricsPanel } from '@/components/learning';
 import { Badge, Button, SegmentedControl } from '@/components/ui';
 import { advanceParticles, nextParticleId, useEventLog, useTicker, type Particle } from '@/simulations/engine';
+import { useLabSetup } from '@/hooks/useLabSetup';
 import { useRerender } from '@/hooks/useRerender';
 import { cn } from '@/utils/cn';
 import type { LabFocus, LabProps, RequestOutcome } from '@/types';
@@ -161,7 +162,7 @@ export function CapTheoremLab({ focus }: LabProps<'cap-theorem'>) {
   // The page keys this lab by Concept, so the focus never changes under a mounted lab.
   const start = focus ? FOCUS_SETUPS[focus] : DEFAULT_SETUP;
   // Every control lives in one object, so Reset cannot miss one.
-  const [setup, setSetup] = useState(start);
+  const { setup, setSetup, change } = useLabSetup(start);
   const { choice, partitioned, replicas, traffic } = setup;
   const [running, setRunning] = useState(true);
   const sim = useRef<SimState>(createState());
@@ -335,11 +336,6 @@ export function CapTheoremLab({ focus }: LabProps<'cap-theorem'>) {
     clear();
     rerender();
   };
-
-  const change =
-    <K extends keyof Setup>(key: K) =>
-    (value: Setup[K]) =>
-      setSetup((current) => ({ ...current, [key]: value }));
 
   const state = sim.current;
   const { stats, value } = state;

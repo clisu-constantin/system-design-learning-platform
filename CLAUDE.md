@@ -148,7 +148,8 @@ backoff on backoff with jitter):
    its setup in a `Record<LabFocus<'<lab-id>'>, Setup>` - a new id without a setup fails typecheck.
    Keep the controls in one `Setup` state that starts from
    `focus ? FOCUS_SETUPS[focus] : DEFAULT_SETUP`, and make Reset set it back to that same start,
-   not to `DEFAULT_SETUP` - one object, so Reset cannot miss a control.
+   not to `DEFAULT_SETUP` - one object, so Reset cannot miss a control. `useLabSetup(start)`
+   (`src/hooks/useLabSetup.ts`) holds it and gives `change(key)`, the onChange for one control.
 3. Set `labFocus: 'focus-a'` next to `lab: '<lab-id>'` on the concept. The `Concept` type pairs the
    two, so a typo, or a focus of another lab, fails typecheck.
 

@@ -9,9 +9,10 @@ import {
   type Layout,
   type ParticleView,
 } from '@/components/architecture';
-import { Insight, LabShell, MetricsPanel } from '@/components/learning';
+import { Insight, LabShell, MetricsPanel, SIMULATED_HINT } from '@/components/learning';
 import { Button, SegmentedControl, Select, Slider, Toggle } from '@/components/ui';
 import { advanceParticles, nextParticleId, useEventLog, useTicker, type Particle } from '@/simulations/engine';
+import { useLabSetup } from '@/hooks/useLabSetup';
 import { useRerender } from '@/hooks/useRerender';
 import { cn } from '@/utils/cn';
 import { formatNumber } from '@/utils/format';
@@ -307,11 +308,7 @@ export function BrokerRoutingLab({ focus }: LabProps<'broker-routing'>) {
   // The page keys this lab by Concept, so the focus never changes under a mounted lab.
   const start = focus ? FOCUS_SETUPS[focus] : DEFAULT_SETUP;
   // Every control lives in one object, so Reset cannot miss one.
-  const [setup, setSetup] = useState(start);
-  const change =
-    <K extends keyof Setup>(key: K) =>
-    (value: Setup[K]) =>
-      setSetup((current) => ({ ...current, [key]: value }));
+  const { setup, setSetup, change } = useLabSetup(start);
   const changeSub = (id: SubId, patch: Partial<Subscriber>) =>
     setSetup((current) => ({ ...current, subs: { ...current.subs, [id]: { ...current.subs[id], ...patch } } }));
 
@@ -325,7 +322,7 @@ export function BrokerRoutingLab({ focus }: LabProps<'broker-routing'>) {
     setSetup(start);
     state.current = createState(start);
     clear();
-  }, [start, clear]);
+  }, [start, clear, setSetup]);
 
   /** Publishes one event with the current setup. */
   const publishOne = (current: State) => {
@@ -820,7 +817,7 @@ export function BrokerRoutingLab({ focus }: LabProps<'broker-routing'>) {
               ))}
             </ul>
             <p className="mt-3 text-[11px] text-faint">
-              Simplified model, not a measurement: each service handles a fixed number of events per second (Analytics{' '}
+              {SIMULATED_HINT} Each service handles a fixed number of events per second (Analytics{' '}
               {SERVICE_BY_ID.analytics.rate}, the others 10), queues have no length limit, and a changed topology starts
               from empty queues.
             </p>

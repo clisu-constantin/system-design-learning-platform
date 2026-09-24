@@ -25,6 +25,7 @@ import {
   type Particle,
 } from '@/simulations/engine';
 import { computeLoad } from '@/simulations/models/load';
+import { useLabSetup } from '@/hooks/useLabSetup';
 import { useRerender } from '@/hooks/useRerender';
 import { clamp, sampleArrivals } from '@/utils/math';
 import { formatLatency, formatNumber, formatPercent } from '@/utils/format';
@@ -191,13 +192,9 @@ const INSPECTABLE_REQUESTS = 140;
 export function LoadBalancerLab({ focus }: LabProps<'load-balancer'>) {
   // The page keys this lab by Concept, so the focus never changes under a mounted lab.
   const start = focus ? FOCUS_SETUPS[focus] : DEFAULT_SETUP;
-  const [setup, setSetup] = useState(start);
+  const { setup, setSetup, change } = useLabSetup(start);
   const { traffic, serverCount, algorithm, capacity, duration, slowFirst, healthChecks, intervalSec, failThreshold } =
     setup;
-  const change =
-    <K extends keyof Setup>(key: K) =>
-    (value: Setup[K]) =>
-      setSetup((current) => ({ ...current, [key]: value }));
 
   const [running, setRunning] = useState(true);
   const [inspected, setInspected] = useState<SimulatedRequest | null>(null);
@@ -226,7 +223,7 @@ export function LoadBalancerLab({ focus }: LabProps<'load-balancer'>) {
       }
       setSetup((current) => ({ ...current, serverCount: next }));
     },
-    [log],
+    [log, setSetup],
   );
 
   const reset = useCallback(() => {
@@ -236,7 +233,7 @@ export function LoadBalancerLab({ focus }: LabProps<'load-balancer'>) {
     clear();
     resetSeries();
     setInspected(null);
-  }, [start, clear, resetSeries]);
+  }, [start, clear, resetSeries, setSetup]);
 
   const killServer = useCallback(
     (id: string) => {

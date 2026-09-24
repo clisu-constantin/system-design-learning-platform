@@ -8,7 +8,7 @@ import {
   ParticleLegend,
   ParticleShape,
   type DiagramEdge, type Layout, type ParticleView } from '@/components/architecture';
-import { Insight, LabShell } from '@/components/learning';
+import { Insight, LabShell, SIMULATED_HINT } from '@/components/learning';
 import { Button, Slider } from '@/components/ui';
 import { useTicker, useEventLog } from '@/simulations/engine';
 import { useRerender } from '@/hooks/useRerender';
@@ -559,7 +559,7 @@ function Comparison({ sim }: { sim: Sim }) {
       </table>
       <p className="mt-3 text-xs text-faint">
         All four streams run at once, and random drops hit the same packet numbers on TCP and on UDP. Counters restart
-        when you change the network. Simplified model, not a measurement: see the list under the controls.
+        when you change the network. {SIMULATED_HINT} See the list under the controls.
       </p>
     </div>
   );
@@ -569,7 +569,7 @@ function Comparison({ sim }: { sim: Sim }) {
 function WireLegend() {
   return (
     <ParticleLegend
-      items={[
+      outcomes={[
         { outcome: 'success', label: 'Data packet (and the SYN)' },
         { outcome: 'cache-hit', label: 'ACK going back (and the SYN-ACK)' },
         { outcome: 'warning', label: 'Resent packet' },

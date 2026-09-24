@@ -12,6 +12,7 @@ import {
 } from '@/components/architecture';
 import { Insight, LabShell, MetricsPanel } from '@/components/learning';
 import { Button, SegmentedControl, Slider, Toggle } from '@/components/ui';
+import { useLabSetup } from '@/hooks/useLabSetup';
 import { useRerender } from '@/hooks/useRerender';
 import {
   advanceParticles,
@@ -228,11 +229,7 @@ export function MonitoringLab({ focus }: LabProps<'monitoring'>) {
   // The page keys this Lab by Concept, so the focus never changes under a mounted Lab.
   const start = focus ? FOCUS_SETUPS[focus] : DEFAULT_SETUP;
   // Every control lives in one object, so Reset cannot miss one.
-  const [setup, setSetup] = useState(start);
-  const change =
-    <K extends keyof Setup>(key: K) =>
-    (value: Setup[K]) =>
-      setSetup((current) => ({ ...current, [key]: value }));
+  const { setup, setSetup, change } = useLabSetup(start);
   const [running, setRunning] = useState(true);
   const state = useRef<SimState | null>(null);
   if (state.current === null) state.current = createState(start);
@@ -243,7 +240,7 @@ export function MonitoringLab({ focus }: LabProps<'monitoring'>) {
     setSetup(start);
     state.current = createState(start);
     clear();
-  }, [start, clear]);
+  }, [start, clear, setSetup]);
 
   const chooseFault = (fault: Fault) => {
     if (fault === setup.fault) return;

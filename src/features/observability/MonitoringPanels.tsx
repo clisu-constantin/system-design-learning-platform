@@ -1,4 +1,5 @@
 import { LiveChart } from '@/components/charts';
+import { SIMULATED_HINT } from '@/components/learning';
 import { Button } from '@/components/ui';
 import type { SeriesPoint } from '@/simulations/engine';
 import { cn } from '@/utils/cn';
@@ -20,8 +21,6 @@ import {
   type Setup,
   type Trace,
 } from './monitoringModel';
-
-const SIMPLIFIED = 'Simplified model, not a measurement.';
 
 /* ------------------------------------------------------------------ Logs */
 
@@ -128,7 +127,7 @@ export function LogsView({ setup, stream, followed, onNext, linesPerSecond, byte
         </div>
         <p className="mt-2 text-xs text-faint">
           About {formatNumber(linesPerSecond)} lines/s, {formatBytes(bytesPerDay)} per day at this level and format.
-          Byte sizes per line are rough ({setup.logFormat === 'json' ? '320' : '110'} bytes): {SIMPLIFIED}
+          Byte sizes per line are rough ({setup.logFormat === 'json' ? '320' : '110'} bytes): {SIMULATED_HINT}
         </p>
       </div>
     </div>
@@ -194,7 +193,7 @@ export function MetricsView({ setup, chart, gateway, series }: MetricsViewProps)
           Bucket upper bounds in ms. A percentile is estimated from these counts, like Prometheus histogram_quantile,
           so p99 is only as precise as the bucket it lands in. Time series stored:{' '}
           <span className={cn('font-mono', setup.userIdLabel ? 'text-danger' : 'text-ink')}>{formatNumber(series)}</span>
-          {setup.userIdLabel ? ' - one per user, per route, per status, per bucket.' : '.'} {SIMPLIFIED}
+          {setup.userIdLabel ? ' - one per user, per route, per status, per bucket.' : '.'} {SIMULATED_HINT}
         </p>
       </div>
     </div>
@@ -314,7 +313,7 @@ export function DashboardView({ setup, aggregates, expectedRate, probe, chart }:
       </div>
       <p className="text-xs text-faint">
         Traffic has a wave on purpose, like a day of real users squeezed into 10 simulated minutes.
-        {setup.probe ? ' The probe runs one scripted page load from outside every 10 simulated seconds.' : ''} {SIMPLIFIED}
+        {setup.probe ? ' The probe runs one scripted page load from outside every 10 simulated seconds.' : ''} {SIMULATED_HINT}
       </p>
     </div>
   );
@@ -408,7 +407,7 @@ for:   ${forText}`}
       <p className="text-xs text-faint">
         The rule is checked every simulated second; the simulated clock runs 10x faster than real time. User pain
         means over 1% errors, p99 over 1 s, or under half the users reaching the site, for more than a minute.{' '}
-        {SIMPLIFIED}
+        {SIMULATED_HINT}
       </p>
     </div>
   );

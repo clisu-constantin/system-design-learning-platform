@@ -2,9 +2,10 @@ import { useCallback, useRef, useState, type ReactNode } from 'react';
 import { Zap } from 'lucide-react';
 import { ArchNode, DiagramCanvas, NodeStatRow, ParticleLegend, type DiagramEdge, type Layout, type ParticleView } from '@/components/architecture';
 import { LiveChart } from '@/components/charts';
-import { Insight, LabShell, MetricsPanel } from '@/components/learning';
+import { Insight, LabShell, MetricsPanel, SIMULATED_HINT } from '@/components/learning';
 import { Button, Meter, SegmentedControl, Slider, Toggle } from '@/components/ui';
 import { advanceParticles, nextParticleId, useEventLog, useTicker, type Particle } from '@/simulations/engine';
+import { useLabSetup } from '@/hooks/useLabSetup';
 import { useRerender } from '@/hooks/useRerender';
 import { formatHours, formatNumber } from '@/utils/format';
 import type { LabFocus, LabProps, RequestOutcome } from '@/types';
@@ -130,11 +131,7 @@ export function SloLab({ focus }: LabProps<'slo'>) {
   // The page keys this lab by Concept, so the focus never changes under a mounted lab.
   const start = focus ? FOCUS_SETUPS[focus] : DEFAULT_SETUP;
   // Every control lives in one object, so Reset cannot miss one.
-  const [setup, setSetup] = useState(start);
-  const change =
-    <K extends keyof Setup>(key: K) =>
-    (value: Setup[K]) =>
-      setSetup((current) => ({ ...current, [key]: value }));
+  const { setup, setSetup, change } = useLabSetup(start);
   const { good, point, countSynthetic, slo, sla, errorRate, slowRate, dropRate, speed } = setup;
 
   const [running, setRunning] = useState(true);
@@ -388,7 +385,7 @@ export function SloLab({ focus }: LabProps<'slo'>) {
             />
             <p className="mt-2 text-xs text-faint">
               While the budget line stays above the dashed line you are burning slower than 1x and will meet the SLO.
-              Below it, the budget runs out before the month does. Simplified model, not a measurement: constant traffic
+              Below it, the budget runs out before the month does. {SIMULATED_HINT} Constant traffic
               of {USER_RPS} user and {SYNTHETIC_RPS} bot requests a second, faults as fixed shares.
             </p>
           </div>

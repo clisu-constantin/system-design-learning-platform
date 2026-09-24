@@ -1,7 +1,7 @@
 import { useCallback, useRef, useState } from 'react';
 import { ArchNode, DiagramCanvas, NodeStatRow, ParticleLegend, type DiagramEdge, type Layout, type ParticleView } from '@/components/architecture';
 import { LiveChart } from '@/components/charts';
-import { Insight, LabShell, MetricsPanel } from '@/components/learning';
+import { Insight, LabShell, MetricsPanel, SIMULATED_HINT } from '@/components/learning';
 import { Slider, Toggle } from '@/components/ui';
 import {
   MetricWindow,
@@ -448,7 +448,7 @@ export function BulkheadLab() {
               height={140}
             />
             <p className="mt-2 text-xs text-faint">
-              Simplified model, not a measurement: one API process with {TOTAL_THREADS} threads, one blocking call per
+              {SIMULATED_HINT} One API process with {TOTAL_THREADS} threads, one blocking call per
               request, Payments answering in about {CHECKOUT_MS} ms, and a request that finds its pool full rejected at
               once (a real server may queue it briefly first).
             </p>

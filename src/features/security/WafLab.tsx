@@ -8,7 +8,7 @@ import {
   type Layout,
   type ParticleView,
 } from '@/components/architecture';
-import { Insight, LabShell, MetricsPanel } from '@/components/learning';
+import { Insight, LabShell, MetricsPanel, SIMULATED_HINT } from '@/components/learning';
 import { Button, SegmentedControl, Slider, Toggle } from '@/components/ui';
 import { advanceParticles, nextParticleId, useEventLog, useTicker, type Particle } from '@/simulations/engine';
 import { useRerender } from '@/hooks/useRerender';
@@ -518,7 +518,7 @@ export function WafLab() {
             </div>
           </div>
           <p className="text-xs text-faint">
-            Simplified model, not a measurement: each request type has a fixed, illustrative chance to be flagged at each
+            {SIMULATED_HINT} Each request type has a fixed, illustrative chance to be flagged at each
             paranoia level. The real OWASP Core Rule Set adds points per matching rule (a critical match is 5) and blocks a
             request at an anomaly score of 5 or more; higher paranoia levels switch on more rules. The rule ids in the log
             are real CRS rules, picked to match the request type.
@@ -665,7 +665,7 @@ export function WafLab() {
 function WafLegend() {
   return (
     <ParticleLegend
-      items={[
+      outcomes={[
         { outcome: 'success', label: 'Real user request' },
         { outcome: 'warning', label: 'Attack or bad bot' },
         { outcome: 'failure', label: '403 Forbidden from the WAF' },

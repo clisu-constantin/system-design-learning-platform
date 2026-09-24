@@ -9,7 +9,7 @@ import {
   type Layout,
   type ParticleView,
 } from '@/components/architecture';
-import { Insight, LabShell, MetricsPanel } from '@/components/learning';
+import { Insight, LabShell, MetricsPanel, SIMULATED_HINT } from '@/components/learning';
 import { Button, SegmentedControl, Select, Slider, Toggle } from '@/components/ui';
 import { advanceParticles, nextParticleId, useTicker, type Particle } from '@/simulations/engine';
 import { useRerender } from '@/hooks/useRerender';
@@ -331,7 +331,7 @@ export function ApiStylesLab({ focus }: LabProps<'api-styles'>) {
               </table>
             </div>
             <p className="mt-2 text-xs text-faint">
-              Simplified model, not a measurement: illustrative JSON body sizes, protobuf taken as{' '}
+              {SIMULATED_HINT} Illustrative JSON body sizes, protobuf taken as{' '}
               {Math.round(PROTO_RATIO * 100)}% of the same JSON (the real ratio depends on the data), {DB_MS} ms per
               database query, HTTP/2 for every style, and a {callerInfo.label.toLowerCase()}.
             </p>

@@ -9,10 +9,11 @@ import {
   type Layout,
   type ParticleView,
 } from '@/components/architecture';
-import { Insight, LabShell, MetricsPanel } from '@/components/learning';
+import { Insight, LabShell, MetricsPanel, SIMULATED_HINT } from '@/components/learning';
 import { Button, SegmentedControl, Slider, Toggle } from '@/components/ui';
 import { advanceParticles, nextParticleId, useEventLog, useTicker, type Particle } from '@/simulations/engine';
 import { useRerender } from '@/hooks/useRerender';
+import { formatSeconds } from '@/utils/format';
 import type { NodeStatus, RequestOutcome } from '@/types';
 
 /**
@@ -208,8 +209,6 @@ const isValid = (state: SimState, id: string | null) => {
   return cred.expiresAt === null || state.clock < cred.expiresAt;
 };
 
-const fmtS = (value: number) => `${value.toFixed(1)} s`;
-
 const titleOf = (svc: ServiceId) => SERVICES.find((service) => service.id === svc)?.title ?? svc;
 
 /** Forgets credentials that no longer work and that nobody holds, so a long run does not grow the map. */
@@ -282,7 +281,7 @@ export function SecretsLab() {
     if (rotation.pending.size === 0 && rotation.oldRevoked) {
       rotation.finishedAt = state.clock;
       state.lastRotationTook = state.clock - rotation.startedAt;
-      log(`Rotation finished in ${fmtS(state.lastRotationTook)}: every holder has the new credential and the old one is revoked`, 'ok');
+      log(`Rotation finished in ${formatSeconds(state.lastRotationTook)}: every holder has the new credential and the old one is revoked`, 'ok');
     }
   };
 
@@ -551,7 +550,7 @@ export function SecretsLab() {
         const cred = state.creds.get(leakNow.cred);
         const expired = cred !== undefined && !cred.revoked && cred.expiresAt !== null;
         log(
-          `The leaked credential stopped working ${fmtS(state.clock - leakNow.at)} after the leak (${expired ? 'its lease expired' : 'revoked'})`,
+          `The leaked credential stopped working ${formatSeconds(state.clock - leakNow.at)} after the leak (${expired ? 'its lease expired' : 'revoked'})`,
           'ok',
         );
       }
@@ -667,7 +666,7 @@ export function SecretsLab() {
         </>
       ) : (
         <>
-          The leaked credential never expires, so the attacker keeps reading until someone rotates it - {fmtS(leakAge)} so far.
+          The leaked credential never expires, so the attacker keeps reading until someone rotates it - {formatSeconds(leakAge)} so far.
           {inVault ? ' Only the Orders API uses it.' : ' It is the password of all three services.'} Press Rotate
           {overlap ? '' : ', first without a dual-key window'}.
         </>
@@ -690,7 +689,7 @@ export function SecretsLab() {
     }
     return (
       <>
-        The leaked key was usable for {fmtS(leakAge)}; the services lost {fmtS(downtimeTotal)} in total.
+        The leaked key was usable for {formatSeconds(leakAge)}; the services lost {formatSeconds(downtimeTotal)} in total.
         {storage === 'code'
           ? ' The old password is still in git history - harmless now only because it was revoked - and the new one was committed to the same repository.'
           : storage === 'env'
@@ -748,7 +747,7 @@ export function SecretsLab() {
               {
                 key: 'downtime',
                 label: 'Downtime',
-                value: fmtS(downtimeTotal),
+                value: formatSeconds(downtimeTotal),
                 tone: downtimeTotal > 0 ? 'danger' : 'ok',
                 hint: 'Seconds of rejected logins, added up over the three services.',
                 simulated: true,
@@ -756,7 +755,7 @@ export function SecretsLab() {
               {
                 key: 'leak',
                 label: 'Leaked key',
-                value: !leakInfo ? 'none' : leakValid ? `valid ${fmtS(leakAge)}` : `dead after ${fmtS(leakAge)}`,
+                value: !leakInfo ? 'none' : leakValid ? `valid ${formatSeconds(leakAge)}` : `dead after ${formatSeconds(leakAge)}`,
                 tone: !leakInfo ? 'neutral' : leakValid ? 'danger' : 'ok',
                 hint: 'How long the leaked credential kept working after the leak.',
                 simulated: true,
@@ -771,7 +770,7 @@ export function SecretsLab() {
               {
                 key: 'rotation',
                 label: 'Last rotation took',
-                value: rotating && rotation ? `running ${fmtS(state.clock - rotation.startedAt)}` : state.lastRotationTook === null ? '-' : fmtS(state.lastRotationTook),
+                value: rotating && rotation ? `running ${formatSeconds(state.clock - rotation.startedAt)}` : state.lastRotationTook === null ? '-' : formatSeconds(state.lastRotationTook),
                 hint: 'From pressing Rotate until every holder has the new credential and the old one is revoked.',
                 simulated: true,
               },
@@ -812,7 +811,7 @@ export function SecretsLab() {
             </ul>
           </div>
           <p className="text-xs text-faint">
-            Simplified model, not a measurement: one simulated second stands in for minutes. A rebuild and redeploy takes{' '}
+            {SIMULATED_HINT} One simulated second stands in for minutes. A rebuild and redeploy takes{' '}
             {REDEPLOY_S} s per service here and an edit and restart {RESTART_S} s, one service after another; a vault read is
             every {POLL_S} s, and a service with a vault credential asks again as soon as its login is rejected. Every query
             here is a new login, so a dead credential fails at once; real pools keep connections that are already open.
@@ -886,7 +885,7 @@ export function SecretsLab() {
               <NodeStatRow label="Holds" value={current.cred ?? '-'} />
               <NodeStatRow
                 label="Down for"
-                value={fmtS(current.downtime)}
+                value={formatSeconds(current.downtime)}
                 tone={current.downtime > 0 ? 'text-danger' : 'text-ok'}
               />
             </ArchNode>
@@ -931,7 +930,7 @@ export function SecretsLab() {
           alert={leakValid}
           compact
         >
-          <NodeStatRow label="Access so far" value={fmtS(leakAge)} tone={leakValid ? 'text-danger' : 'text-ink'} />
+          <NodeStatRow label="Access so far" value={formatSeconds(leakAge)} tone={leakValid ? 'text-danger' : 'text-ink'} />
         </ArchNode>
       </DiagramCanvas>
     </LabShell>

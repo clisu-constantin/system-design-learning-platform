@@ -113,7 +113,8 @@ export const TTL_OPTIONS: { value: number; label: string }[] = [
   { value: 86400, label: '1 day' },
 ];
 
-export const formatSeconds = (seconds: number) =>
+/** A TTL, or a time counted against one, in whole units the way a TTL is set: "45 s", "5 min", "1 h", "2 days". */
+export const formatTtl = (seconds: number) =>
   seconds >= 86400
     ? `${Math.round(seconds / 86400)} day${seconds >= 172800 ? 's' : ''}`
     : seconds >= 3600
@@ -222,7 +223,7 @@ export function planJourney(setup: JourneySetup): StagePlan[] {
     {
       id: 'dns-auth',
       title: 'DNS: authoritative server',
-      short: `A record + TTL ${formatSeconds(setup.ttlS)}`,
+      short: `A record + TTL ${formatTtl(setup.ttlS)}`,
       group: 'dns',
       cost: AUTH_RTT_MS,
       skipped: dnsSkip(dns.answerCached, 'The resolver had the answer cached'),

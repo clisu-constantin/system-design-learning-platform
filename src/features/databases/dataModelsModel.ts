@@ -185,11 +185,3 @@ function combine(loads: LoadResponse[], shares: number[]): SideLoad {
   });
   return { latencyMs, errorRate, busiest };
 }
-
-/** A duration in seconds as "850 ms", "12.0 s", "17 min" or "2.8 h". */
-export function formatSeconds(seconds: number): string {
-  if (seconds < 1) return `${Math.max(1, Math.round(seconds * 1000))} ms`;
-  if (seconds < 120) return `${seconds.toFixed(1)} s`;
-  if (seconds < 7200) return `${Math.round(seconds / 60)} min`;
-  return `${(seconds / 3600).toFixed(1)} h`;
-}

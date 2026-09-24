@@ -9,9 +9,10 @@ import {
   type Layout,
   type ParticleView,
 } from '@/components/architecture';
-import { Insight, LabShell, MetricsPanel } from '@/components/learning';
+import { Insight, LabShell, MetricsPanel, SIMULATED_HINT } from '@/components/learning';
 import { Button, Meter, Slider, Toggle } from '@/components/ui';
 import { advanceParticles, nextParticleId, useEventLog, useTicker, type Particle } from '@/simulations/engine';
+import { useLabSetup } from '@/hooks/useLabSetup';
 import { useRerender } from '@/hooks/useRerender';
 import { cn } from '@/utils/cn';
 import { formatBytes, formatLatency, formatNumber, formatPercent } from '@/utils/format';
@@ -171,12 +172,8 @@ export function RealtimeLab({ focus }: LabProps<'realtime'>) {
   // The page keys this lab by Concept, so the focus never changes under a mounted lab.
   const start = focus ? FOCUS_SETUPS[focus] : DEFAULT_SETUP;
   // Every control lives in one object, so Reset cannot miss one.
-  const [setup, setSetup] = useState(start);
+  const { setup, setSetup, change } = useLabSetup(start);
   const { technique, clients, eventsPerMin, sendsPerMin, intervalS, holdS, etag } = setup;
-  const change =
-    <K extends keyof Setup>(key: K) =>
-    (value: Setup[K]) =>
-      setSetup((current) => ({ ...current, [key]: value }));
 
   const [running, setRunning] = useState(true);
   const sim = useRef<Sim>(createSim(start));
@@ -529,7 +526,7 @@ export function RealtimeLab({ focus }: LabProps<'realtime'>) {
               </table>
             </div>
             <p className="mt-2 text-xs text-faint">
-              Simplified model, not a measurement: one server node, 50 ms each way, events at random at the chosen
+              {SIMULATED_HINT} One server node, 50 ms each way, events at random at the chosen
               rate. A full HTTP request costs 1 unit of work, a 304 costs 0.3, a message on an open connection 0.02;
               the server does 5,000 units a second and has room for {formatNumber(CONNECTION_BUDGET)} open
               connections (about 50 KB each). The animation slows one network hop down to {HOP_S} s so you can follow
@@ -716,7 +713,7 @@ function insightFor(setup: Setup, model: RealtimeResult) {
 function RealtimeLegend() {
   return (
     <ParticleLegend
-      items={[
+      outcomes={[
         { outcome: 'success', label: 'Request or message' },
         { outcome: 'cache-hit', label: 'New event' },
         { outcome: 'warning', label: 'Nothing new (wasted)' },

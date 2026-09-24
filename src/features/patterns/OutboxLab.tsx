@@ -9,7 +9,7 @@ import {
   type Layout,
   type ParticleView,
 } from '@/components/architecture';
-import { Insight, LabShell, MetricsPanel } from '@/components/learning';
+import { Insight, LabShell, MetricsPanel, SIMULATED_HINT } from '@/components/learning';
 import { Button, SegmentedControl, Slider, Toggle } from '@/components/ui';
 import { advanceParticles, nextParticleId, useEventLog, useTicker, type Particle } from '@/simulations/engine';
 import { useRerender } from '@/hooks/useRerender';
@@ -721,7 +721,7 @@ export function OutboxLab() {
             </div>
           </div>
           <p className="text-xs text-faint">
-            Simplified model, not a measurement: every hop takes the same simulated time, a crash always lands between
+            {SIMULATED_HINT} Every hop takes the same simulated time, a crash always lands between
             the two steps (or inside the outbox transaction, half before and half after COMMIT), the service restarts in{' '}
             {SERVICE_RESTART_S} s, the relay claims up to {RELAY_BATCH} rows per poll, and sent rows are never pruned here.
             A real outbox deletes sent rows on a schedule so the table stays small.

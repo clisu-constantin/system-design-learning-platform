@@ -13,6 +13,7 @@ import {
 import { Insight, LabShell, MetricsPanel } from '@/components/learning';
 import { Button, SegmentedControl, Slider, Toggle } from '@/components/ui';
 import { advanceParticles, nextParticleId, useEventLog, useTicker, type Particle } from '@/simulations/engine';
+import { useLabSetup } from '@/hooks/useLabSetup';
 import { useRerender } from '@/hooks/useRerender';
 import { sampleArrivals } from '@/utils/math';
 import { formatLatency, formatNumber, formatPercent } from '@/utils/format';
@@ -151,12 +152,8 @@ const SESSION_WHERE: Record<Mode, string> = {
 export function StatelessLab({ focus }: LabProps<'stateless'>) {
   // The page keys this lab by Concept, so the focus never changes under a mounted lab.
   const start = focus ? FOCUS_SETUPS[focus] : DEFAULT_SETUP;
-  const [setup, setSetup] = useState(start);
+  const { setup, setSetup, change } = useLabSetup(start);
   const { mode, traffic, denylist, tokenMinutes } = setup;
-  const change =
-    <K extends keyof Setup>(key: K) =>
-    (value: Setup[K]) =>
-      setSetup((current) => ({ ...current, [key]: value }));
   const [running, setRunning] = useState(true);
   const state = useRef<State>(createState());
   const rerender = useRerender(30);
@@ -183,7 +180,7 @@ export function StatelessLab({ focus }: LabProps<'stateless'>) {
     setSetup(start);
     state.current = createState();
     clear();
-  }, [clear, start]);
+  }, [clear, start, setSetup]);
 
   const login = useCallback(() => {
     const current = state.current;

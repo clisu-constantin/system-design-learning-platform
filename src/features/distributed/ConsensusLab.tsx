@@ -12,6 +12,7 @@ import {
 import { Insight, LabShell, MetricsPanel } from '@/components/learning';
 import { Badge, Button, SegmentedControl, Slider, Toggle } from '@/components/ui';
 import { useEventLog, useTicker } from '@/simulations/engine';
+import { useLabSetup } from '@/hooks/useLabSetup';
 import { useRerender } from '@/hooks/useRerender';
 import { cn } from '@/utils/cn';
 import type { LabFocus, LabProps, NodeStatus, RequestOutcome } from '@/types';
@@ -129,7 +130,7 @@ const LEGEND: { outcome: RequestOutcome; label: string }[] = [
 
 function ConsensusLegend() {
   return (
-    <ParticleLegend items={LEGEND}>
+    <ParticleLegend outcomes={LEGEND}>
       <span className="flex items-center gap-1.5 text-[11px] text-muted">
         <span className="inline-block h-3 w-3 rounded-sm border border-brand/60 bg-brand/20" />
         committed entry
@@ -178,12 +179,8 @@ export function ConsensusLab({ focus }: LabProps<'consensus'>) {
   // The page keys this lab by Concept, so the focus never changes under a mounted lab.
   const start = focus ? FOCUS_SETUPS[focus] : DEFAULT_SETUP;
   // Every control lives in one object, so Reset cannot miss one.
-  const [setup, setSetup] = useState(start);
+  const { setup, setSetup, change } = useLabSetup(start);
   const { size, writeRate, timeoutS, randomTimeouts } = setup;
-  const change =
-    <K extends keyof Setup>(key: K) =>
-    (value: Setup[K]) =>
-      setSetup((current) => ({ ...current, [key]: value }));
   const timing = { timeoutS, randomTimeouts };
 
   const [running, setRunning] = useState(true);
@@ -196,7 +193,7 @@ export function ConsensusLab({ focus }: LabProps<'consensus'>) {
     setSetup(start);
     state.current = createCluster(start.size, start);
     clear();
-  }, [start, clear]);
+  }, [start, clear, setSetup]);
 
   const resize = (next: Setup['size']) => {
     setSetup((current) => ({ ...current, size: next }));

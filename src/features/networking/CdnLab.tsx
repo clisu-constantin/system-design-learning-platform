@@ -10,7 +10,7 @@ import {
   type ParticleView,
 } from '@/components/architecture';
 import { DistributionBar, LiveChart } from '@/components/charts';
-import { Insight, LabShell, MetricsPanel } from '@/components/learning';
+import { Insight, LabShell, MetricsPanel, SIMULATED_HINT } from '@/components/learning';
 import { Button, Meter, SegmentedControl, Select, Slider, Toggle } from '@/components/ui';
 import {
   advanceParticles,
@@ -23,6 +23,7 @@ import {
   visualShare,
   type Particle,
 } from '@/simulations/engine';
+import { useLabSetup } from '@/hooks/useLabSetup';
 import { useRerender } from '@/hooks/useRerender';
 import { sampleArrivals } from '@/utils/math';
 import { LATENCY_TEXT, formatLatency, formatNumber, formatPercent, latencyTone } from '@/utils/format';
@@ -175,11 +176,7 @@ export function CdnLab({ focus }: LabProps<'cdn'>) {
   // The page keys this lab by Concept, so the focus never changes under a mounted lab.
   const start = focus ? FOCUS_SETUPS[focus] : DEFAULT_SETUP;
   // Every control lives in one object, so Reset cannot miss one.
-  const [setup, setSetup] = useState(start);
-  const change =
-    <K extends keyof Setup>(key: K) =>
-    (value: Setup[K]) =>
-      setSetup((current) => ({ ...current, [key]: value }));
+  const { setup, setSetup, change } = useLabSetup(start);
   const { cdnEnabled, traffic, edges: footprint, cacheControl, ttlSec, cacheKey } = setup;
   const [running, setRunning] = useState(true);
   const state = useRef<State>(createState());
@@ -193,7 +190,7 @@ export function CdnLab({ focus }: LabProps<'cdn'>) {
     state.current = createState();
     clear();
     resetSeries();
-  }, [start, clear, resetSeries]);
+  }, [start, clear, resetSeries, setSetup]);
 
   const toggleCdn = (value: boolean) => {
     change('cdnEnabled')(value);
@@ -508,7 +505,7 @@ export function CdnLab({ focus }: LabProps<'cdn'>) {
               yDomain={[0, 100]}
             />
             <p className="mt-2 text-xs text-faint">
-              Simplified model, not a measurement: {formatNumber(CATALOGUE)} files with a few popular and most rare,
+              {SIMULATED_HINT} {formatNumber(CATALOGUE)} files with a few popular and most rare,
               one store of up to {formatNumber(EDGE_CAPACITY)} objects per edge, and a purge that reaches the edges
               within two seconds. Real purges take from under a second to tens of seconds, depending on the vendor.
             </p>

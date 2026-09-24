@@ -20,6 +20,7 @@ import {
   useTicker,
   type Particle,
 } from '@/simulations/engine';
+import { useLabSetup } from '@/hooks/useLabSetup';
 import { useRerender } from '@/hooks/useRerender';
 import { sampleArrivals } from '@/utils/math';
 import { formatLatency, formatNumber, formatPercent } from '@/utils/format';
@@ -201,12 +202,8 @@ export function ReplicationLab({ focus }: LabProps<'replication'>) {
   // The page keys this lab by Concept, so the focus never changes under a mounted lab.
   const start = focus ? FOCUS_SETUPS[focus] : DEFAULT_SETUP;
   // Every control lives in one object, so Reset cannot miss one.
-  const [setup, setSetup] = useState(start);
+  const { setup, setSetup, change } = useLabSetup(start);
   const { mode, writeRate, readRate, lagMs, readFromReplicas, readYourWrites } = setup;
-  const change =
-    <K extends keyof Setup>(key: K) =>
-    (value: Setup[K]) =>
-      setSetup((current) => ({ ...current, [key]: value }));
   const [running, setRunning] = useState(true);
 
   const state = useRef<State>(createState());
@@ -222,7 +219,7 @@ export function ReplicationLab({ focus }: LabProps<'replication'>) {
     // Back to this Concept's starting setup, not the lab's global default.
     setSetup(start);
     rebuild();
-  }, [start, rebuild]);
+  }, [start, rebuild, setSetup]);
 
   const killNode = useCallback(
     (id: string) => {

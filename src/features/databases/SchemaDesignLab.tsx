@@ -1,9 +1,10 @@
 import { useRef, useState } from 'react';
 import { ArchNode, DiagramCanvas, NodeStatRow, ParticleLegend, type DiagramEdge, type Layout, type ParticleView } from '@/components/architecture';
-import { Insight, LabShell, MetricsPanel } from '@/components/learning';
+import { Insight, LabShell, MetricsPanel, SIMULATED_HINT } from '@/components/learning';
 import { Meter, SegmentedControl, Slider, Toggle } from '@/components/ui';
 import { advanceParticles, nextParticleId, useEventLog, useTicker, type Particle } from '@/simulations/engine';
 import { computeLoad } from '@/simulations/models/load';
+import { useLabSetup } from '@/hooks/useLabSetup';
 import { useRerender } from '@/hooks/useRerender';
 import { clamp, sampleArrivals } from '@/utils/math';
 import { formatLatency, formatNumber, formatPercent } from '@/utils/format';
@@ -104,12 +105,8 @@ export function SchemaDesignLab({ focus }: LabProps<'schema-design'>) {
   // The page keys this lab by Concept, so the focus never changes under a mounted lab.
   const start = focus ? FOCUS_SETUPS[focus] : DEFAULT_SETUP;
   // Every control lives in one object, so Reset cannot miss one.
-  const [setup, setSetup] = useState(start);
+  const { setup, setSetup, change } = useLabSetup(start);
   const { schema, reads, updates, ordersPerCustomer, halfDone, reconcile } = setup;
-  const change =
-    <K extends keyof Setup>(key: K) =>
-    (value: Setup[K]) =>
-      setSetup((current) => ({ ...current, [key]: value }));
 
   const [running, setRunning] = useState(true);
   const state = useRef<SimState>(createState());
@@ -389,7 +386,7 @@ export function SchemaDesignLab({ focus }: LabProps<'schema-design'>) {
             <p className="label mb-3">What the tables hold for customer 42</p>
             <pre className="ascii text-[11px]">{rowsSketch(schema, ordersPerCustomer, sim.conflicts > 0)}</pre>
             <p className="mt-2 text-xs text-faint">
-              Simplified model, not a measurement: the database has a budget of {formatNumber(CAPACITY)} row operations
+              {SIMULATED_HINT} The database has a budget of {formatNumber(CAPACITY)} row operations
               per second, a row write counts {WRITE_WEIGHT}x a row read, every order has {ITEMS_PER_ORDER} line items,
               and a half-done change is taken to stop after {Math.round(STOPPED_AT * 100)}% of its rows.
             </p>
@@ -535,7 +532,7 @@ export function SchemaDesignLab({ focus }: LabProps<'schema-design'>) {
 function ShapeLegend() {
   return (
     <ParticleLegend
-      items={[
+      outcomes={[
         { outcome: 'success', label: 'Row read' },
         { outcome: 'warning', label: 'Row write' },
         { outcome: 'failure', label: 'Copy left stale, or request failed' },

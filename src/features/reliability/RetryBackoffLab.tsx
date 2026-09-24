@@ -10,9 +10,10 @@ import {
   type ParticleView,
 } from '@/components/architecture';
 import { LiveChart } from '@/components/charts';
-import { Insight, LabShell, MetricsPanel } from '@/components/learning';
+import { Insight, LabShell, MetricsPanel, SIMULATED_HINT } from '@/components/learning';
 import { Button, SegmentedControl, Slider, Toggle } from '@/components/ui';
 import { advanceParticles, nextParticleId, useEventLog, useTicker, type Particle } from '@/simulations/engine';
+import { useLabSetup } from '@/hooks/useLabSetup';
 import { useRerender } from '@/hooks/useRerender';
 import { formatLatency, formatNumber } from '@/utils/format';
 import { cn } from '@/utils/cn';
@@ -119,12 +120,8 @@ export function RetryBackoffLab({ focus }: LabProps<'retry-backoff'>) {
   // The page keys this lab by Concept, so the focus never changes under a mounted lab.
   const start = focus ? FOCUS_SETUPS[focus] : DEFAULT_SETUP;
   // Every control lives in one object, so Reset cannot miss one.
-  const [setup, setSetup] = useState(start);
+  const { setup, setSetup, change } = useLabSetup(start);
   const { strategy, baseMs, maxAttempts, jitter, failureRate, clients, speed } = setup;
-  const change =
-    <K extends keyof Setup>(key: K) =>
-    (value: Setup[K]) =>
-      setSetup((current) => ({ ...current, [key]: value }));
   const [seed, setSeed] = useState(SEED);
   const [running, setRunning] = useState(true);
 
@@ -384,7 +381,7 @@ export function RetryBackoffLab({ focus }: LabProps<'retry-backoff'>) {
             />
             <p className="mt-2 text-xs text-faint">
               Same number of clients and the same failure rate in every scenario - only the retry policy changes.
-              Simplified model, not a measurement: the dependency goes down and the first request of every client fails
+              {SIMULATED_HINT} The dependency goes down and the first request of every client fails
               within the same {FAILURE_WINDOW_MS} ms, each retry fails at the chosen rate, retries are counted in{' '}
               {BUCKET_MS} ms buckets and shown per second, and capacity is assumed to be 60% of the client count. The
               diagram plays this same run back.

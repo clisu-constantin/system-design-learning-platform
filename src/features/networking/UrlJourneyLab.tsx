@@ -12,6 +12,7 @@ import {
 import { Insight, LabShell, MetricsPanel } from '@/components/learning';
 import { Badge, Button, SegmentedControl, Slider, Toggle } from '@/components/ui';
 import { useTicker } from '@/simulations/engine';
+import { useLabSetup } from '@/hooks/useLabSetup';
 import { useRerender } from '@/hooks/useRerender';
 import { cn } from '@/utils/cn';
 import { clamp } from '@/utils/math';
@@ -23,7 +24,7 @@ import {
   RESOLVER_RTT_MS,
   TTL_OPTIONS,
   dnsState,
-  formatSeconds,
+  formatTtl,
   frontOf,
   frontRttOf,
   inScope,
@@ -132,11 +133,7 @@ export function UrlJourneyLab({ focus }: LabProps<'url-journey'>) {
   // The page keys this lab by Concept, so the focus never changes under a mounted lab.
   const start = focus ? FOCUS_SETUPS[focus] : DEFAULT_SETUP;
   // Every control lives in one object, so Reset cannot miss one.
-  const [setup, setSetup] = useState(start);
-  const change =
-    <K extends keyof Setup>(key: K) =>
-    (value: Setup[K]) =>
-      setSetup((current) => ({ ...current, [key]: value }));
+  const { setup, setSetup, change } = useLabSetup(start);
 
   const [running, setRunning] = useState(true);
   const sim = useRef<Sim>(createSim(start));
@@ -253,7 +250,7 @@ export function UrlJourneyLab({ focus }: LabProps<'url-journey'>) {
       legend={
         <div className="space-y-1.5">
           <ParticleLegend
-            items={[{ outcome: 'success' }, { outcome: 'cache-hit' }, { outcome: 'warning', label: 'Plain HTTP: readable on the path' }]}
+            outcomes={['success', 'cache-hit', { outcome: 'warning', label: 'Plain HTTP: readable on the path' }]}
           />
           <p className="text-[11px] text-faint">
             One request at a time, slowed down to be followed by eye; a longer hop moves slower. Timings are simplified
@@ -351,7 +348,7 @@ export function UrlJourneyLab({ focus }: LabProps<'url-journey'>) {
             />
             <p className="text-[11px] text-faint">
               {dns.answerCached
-                ? `Cached answer is younger than the TTL: the resolver answers at once, ${formatSeconds(dns.ttlLeftS ?? 0)} left.`
+                ? `Cached answer is younger than the TTL: the resolver answers at once, ${formatTtl(dns.ttlLeftS ?? 0)} left.`
                 : RESOLVER_CACHE_AGE_S[setup.resolverCache] === null
                   ? 'Empty cache: the resolver walks root, .com and the authoritative server.'
                   : 'Cached answer is older than the TTL: expired, so the resolver asks again.'}
@@ -439,7 +436,7 @@ export function UrlJourneyLab({ focus }: LabProps<'url-journey'>) {
           >
             <NodeStatRow
               label="Cache"
-              value={dns.answerCached ? `hit, ${formatSeconds(dns.ttlLeftS ?? 0)} left` : 'miss'}
+              value={dns.answerCached ? `hit, ${formatTtl(dns.ttlLeftS ?? 0)} left` : 'miss'}
               tone={dns.answerCached ? 'text-ok' : 'text-warn'}
             />
           </ArchNode>
@@ -464,7 +461,7 @@ export function UrlJourneyLab({ focus }: LabProps<'url-journey'>) {
           <ArchNode
             kind="dns"
             title="Authoritative"
-            subtitle={`A record, TTL ${formatSeconds(setup.ttlS)}`}
+            subtitle={`A record, TTL ${formatTtl(setup.ttlS)}`}
             placed={LAYOUT.auth}
             selected={touched.has('auth')}
             statusLabel={asked('dns-auth')}
@@ -563,7 +560,7 @@ function detailFor(stage: StagePlan, setup: Setup, dns: DnsState): ReactNode {
   const frontName = NODE_NAME[frontOf(setup)];
   const frontRtt = formatLatency(frontRttOf(setup));
   const age = RESOLVER_CACHE_AGE_S[setup.resolverCache];
-  const ttl = formatSeconds(setup.ttlS);
+  const ttl = formatTtl(setup.ttlS);
   const plaintext =
     ' This is plain HTTP: every router, Wi-Fi hotspot and ISP on the path can read it - the path, the cookies, a password in a form - and can change it on the way. The triangles on the wire mark readable traffic.';
 
@@ -577,10 +574,10 @@ function detailFor(stage: StagePlan, setup: Setup, dns: DnsState): ReactNode {
       );
     case 'dns-ask':
       return dns.answerCached
-        ? `The browser, through the operating system, asks a recursive resolver (usually run by the ISP or a public DNS service) for the address of example.com. The resolver looked it up ${formatSeconds(age ?? 0)} ago and the TTL is ${ttl}, so it answers straight from its cache - the diamond coming back. It may reuse that answer for ${formatSeconds(dns.ttlLeftS ?? 0)} more: a record change made now reaches users of this resolver only after that.`
+        ? `The browser, through the operating system, asks a recursive resolver (usually run by the ISP or a public DNS service) for the address of example.com. The resolver looked it up ${formatTtl(age ?? 0)} ago and the TTL is ${ttl}, so it answers straight from its cache - the diamond coming back. It may reuse that answer for ${formatTtl(dns.ttlLeftS ?? 0)} more: a record change made now reaches users of this resolver only after that.`
         : age === null
           ? 'The browser, through the operating system, asks a recursive resolver (usually run by the ISP or a public DNS service) for the address of example.com. Its cache is empty, so the resolver does the whole walk for the browser: root, then .com, then the authoritative server.'
-          : `The browser asks the recursive resolver for example.com. The resolver looked it up ${formatSeconds(age)} ago, but the TTL is only ${ttl}, so that copy has expired and it must ask again. It still remembers the .com servers, so it skips the root.`;
+          : `The browser asks the recursive resolver for example.com. The resolver looked it up ${formatTtl(age)} ago, but the TTL is only ${ttl}, so that copy has expired and it must ask again. It still remembers the .com servers, so it skips the root.`;
     case 'dns-root':
       return 'A root server does not know the address of example.com. It only refers the resolver to the servers for .com. That referral carries a TTL of two days, so a busy resolver almost never asks a root server - this one does only because its cache is empty.';
     case 'dns-tld':

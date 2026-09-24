@@ -12,9 +12,10 @@ import {
 import { Insight, LabShell, SIMULATED_HINT } from '@/components/learning';
 import { Button, InfoTip, SegmentedControl, Slider, Toggle } from '@/components/ui';
 import { advanceParticles, nextParticleId, useEventLog, useTicker, type Particle } from '@/simulations/engine';
+import { useLabSetup } from '@/hooks/useLabSetup';
 import { useRerender } from '@/hooks/useRerender';
 import { cn } from '@/utils/cn';
-import { formatCompact, formatLatency, formatNumber, formatPercent } from '@/utils/format';
+import { formatCompact, formatLatency, formatNumber, formatPercent, formatSeconds } from '@/utils/format';
 import type { LabFocus, LabProps, RequestOutcome } from '@/types';
 import {
   CRASH_RATE,
@@ -28,7 +29,6 @@ import {
   evaluateKey,
   evaluateReport,
   evaluateSchema,
-  formatSeconds,
   type Setup,
   type View,
   type Workload,
@@ -158,7 +158,7 @@ export function DataModelsLab({ focus }: LabProps<'data-models'>) {
   // The page keys this lab by Concept, so the focus never changes under a mounted lab.
   const start = focus ? FOCUS_SETUPS[focus] : DEFAULT_SETUP;
   // Every control lives in one object, so Reset cannot miss one.
-  const [setup, setSetup] = useState(start);
+  const { setup, setSetup, change } = useLabSetup(start);
   const { view, workload, keyOps, checkouts, sizeIndex, partitions, hotKey, crashRate, docTransactions, onlineMigration } =
     setup;
   const [running, setRunning] = useState(true);
@@ -174,11 +174,6 @@ export function DataModelsLab({ focus }: LabProps<'data-models'>) {
   const report = useMemo(() => evaluateReport(setup), [setup]);
   const schema = useMemo(() => evaluateSchema(setup), [setup]);
   const layout = useMemo(() => buildLayout(view, partitions), [view, partitions]);
-
-  const change =
-    <K extends keyof Setup>(name: K) =>
-    (value: Setup[K]) =>
-      setSetup((current) => ({ ...current, [name]: value }));
 
   const chooseWorkload = (next: Workload) => {
     if (next === workload) return;

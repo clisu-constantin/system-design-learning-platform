@@ -23,6 +23,7 @@ import {
   type Particle,
 } from '@/simulations/engine';
 import { computeLoad } from '@/simulations/models/load';
+import { useLabSetup } from '@/hooks/useLabSetup';
 import { useRerender } from '@/hooks/useRerender';
 import { clamp, sampleArrivals } from '@/utils/math';
 import { formatLatency, formatNumber, formatPercent } from '@/utils/format';
@@ -163,12 +164,8 @@ export function CachingLab({ focus }: LabProps<'caching'>) {
   // The page keys this lab by Concept, so the focus never changes under a mounted lab.
   const start = focus ? FOCUS_SETUPS[focus] : DEFAULT_SETUP;
   // Every control lives in one object, so Reset cannot miss one.
-  const [setup, setSetup] = useState(start);
+  const { setup, setSetup, change } = useLabSetup(start);
   const { enabled, traffic, ttl, size, keyspace, skew, policy } = setup;
-  const change =
-    <K extends keyof Setup>(key: K) =>
-    (value: Setup[K]) =>
-      setSetup((current) => ({ ...current, [key]: value }));
 
   const [running, setRunning] = useState(true);
   const [inspected, setInspected] = useState<SimulatedRequest | null>(null);
@@ -185,7 +182,7 @@ export function CachingLab({ focus }: LabProps<'caching'>) {
     clear();
     resetSeries();
     setInspected(null);
-  }, [start, clear, resetSeries]);
+  }, [start, clear, resetSeries, setSetup]);
 
   const flush = useCallback(() => {
     state.current.entries.clear();
