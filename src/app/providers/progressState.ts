@@ -150,24 +150,29 @@ function latest(a: number | undefined, b: number | undefined): number | undefine
 
 /**
  * Two records of one Concept as one: the latest change to Done wins (Done on
- * a tie), the best quiz score and the first visit are kept. A visit or a quiz
- * from before the latest Reset of either side is dropped - a Reset sets the
- * time of Done too, so it also wins over an older Done.
+ * a tie), the best quiz score and the first visit are kept.
+ *
+ * A Reset starts the visits and the quiz over. Only the side with the latest
+ * Reset counts for them: a record keeps only its first visit and its best
+ * score, not every attempt, so it cannot tell which ones came after a Reset it
+ * did not see. Dropping all of that side is what keeps the merge the same in
+ * any order and grouping, which a sync of three devices needs. The cost: a
+ * visit or a quiz on a device that had not heard of the Reset yet is lost.
+ * Done has its own time, and a Reset sets it too, so a later Done survives.
  */
 function mergeConcept(a: ConceptProgress, b: ConceptProgress): ConceptProgress {
-  const cleared = latest(a.clearedAt, b.clearedAt);
-  const counts = (at: number | undefined) => (at !== undefined && (cleared === undefined || at > cleared) ? at : undefined);
-  const countedQuiz = (result: QuizResult | undefined) => (counts(result?.at) === undefined ? undefined : result);
-
   const doneFrom = b.doneAt > a.doneAt || (b.doneAt === a.doneAt && b.done) ? b : a;
   const record: ConceptProgress = {
     done: doneFrom.done,
     doneAt: doneFrom.doneAt,
     changedAt: Math.max(a.changedAt, b.changedAt),
   };
-  const visitedAt = earliest(counts(a.visitedAt), counts(b.visitedAt));
+  const since = (side: ConceptProgress) => side.clearedAt ?? -Infinity;
+  const cleared = latest(a.clearedAt, b.clearedAt);
+  const counted = [a, b].filter((side) => since(side) === Math.max(since(a), since(b)));
+  const visitedAt = counted.map((side) => side.visitedAt).reduce(earliest);
   if (visitedAt !== undefined) record.visitedAt = visitedAt;
-  const quiz = bestQuiz(countedQuiz(a.quiz), countedQuiz(b.quiz));
+  const quiz = counted.map((side) => side.quiz).reduce(bestQuiz);
   if (quiz) record.quiz = quiz;
   if (cleared !== undefined) record.clearedAt = cleared;
   return record;
@@ -282,7 +287,9 @@ export function resetProgress(state: ProgressState, slugs: readonly string[], no
  * The progress of two devices as one, for the sync of an Account: for each
  * Concept the latest change to Done wins (so un-marking on one device
  * un-marks on the other), a Quiz keeps its best score, and the first visit is
- * the earliest. Either order of `a` and `b` gives the same records.
+ * the earliest; a Reset wins over the visits and scores it did not see (see
+ * mergeConcept). Any order and grouping of merges gives the same records, so
+ * a server and several devices end on the same progress.
  */
 export function mergeProgress(a: ProgressState, b: ProgressState): ProgressState {
   const concepts = { ...a.concepts };

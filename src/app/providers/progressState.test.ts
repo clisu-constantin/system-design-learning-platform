@@ -176,3 +176,31 @@ test('two equal Quiz scores at the same time merge the same in either order', ()
 
   assert.deepEqual(mergeProgress(small, large), mergeProgress(large, small));
 });
+
+test('three devices merge to the same progress in any order and grouping', () => {
+  let visitedEarly = markVisited(EMPTY_PROGRESS, 'caching', 1000);
+  visitedEarly = recordQuiz(visitedEarly, 'caching', 9, 10, 1000);
+  let activeLate = markVisited(EMPTY_PROGRESS, 'caching', 3000);
+  activeLate = recordQuiz(activeLate, 'caching', 5, 10, 3000);
+  const resetBetween = resetProgress(EMPTY_PROGRESS, ['caching'], 2000);
+  const resetLater = resetProgress(EMPTY_PROGRESS, ['caching'], 4000);
+  const markedAfter = toggleDone(markVisited(resetBetween, 'caching', 2500), 'caching', 2600);
+  const devices = [visitedEarly, activeLate, resetBetween, resetLater, markedAfter, EMPTY_PROGRESS];
+
+  for (const a of devices) {
+    assert.deepEqual(mergeProgress(a, a), a);
+    for (const b of devices) {
+      assert.deepEqual(mergeProgress(a, b), mergeProgress(b, a));
+      for (const c of devices)
+        assert.deepEqual(mergeProgress(mergeProgress(a, b), c), mergeProgress(a, mergeProgress(b, c)));
+    }
+  }
+});
+
+test('a device that had not heard of a Reset loses its visits and scores, but not a later Done', () => {
+  let stale = recordQuiz(markVisited(EMPTY_PROGRESS, 'caching', 1000), 'caching', 5, 10, 1000);
+  stale = toggleDone(recordQuiz(stale, 'caching', 6, 10, 6000), 'caching', 6000);
+  const reset = resetProgress(EMPTY_PROGRESS, ['caching'], 5000);
+
+  assert.deepEqual(progressView(mergeProgress(stale, reset)), { visited: {}, completed: { caching: true }, quiz: {} });
+});
