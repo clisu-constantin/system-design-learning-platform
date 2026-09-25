@@ -194,8 +194,10 @@ export function ComparePage() {
               key={item.id}
               type="button"
               onClick={() => setSelected(item.id)}
+              aria-pressed={selected === item.id}
               className={cn(
-                'rounded-xl border px-3.5 py-2 text-xs font-medium transition-colors',
+                // Touch screens get the app-wide 44px target; a mouse keeps the compact chip.
+                'rounded-xl border px-3.5 py-2 text-xs font-medium transition-colors [@media(pointer:coarse)]:min-h-11',
                 selected === item.id
                   ? 'border-brand bg-brand/10 text-brand'
                   : 'border-line text-muted hover:border-brand/50 hover:text-ink',
@@ -230,7 +232,35 @@ export function ComparePage() {
           })}
         </div>
 
-        <div className="mt-4 overflow-hidden rounded-2xl border border-line bg-surface">
+        {/* Phone: one card per dimension, the two values stacked and labelled. */}
+        <ul className="mt-4 overflow-hidden rounded-2xl border border-line bg-surface sm:hidden">
+          {comparison.rows.map((row) => (
+            <li key={row.dimension} className="border-b border-line p-4 last:border-0">
+              <p className="text-sm font-semibold text-ink">{row.dimension}</p>
+              <dl className="mt-2.5 space-y-2">
+                {(['a', 'b'] as const).map((side) => {
+                  const stronger = row.favours === side;
+                  return (
+                    <div
+                      key={side}
+                      className={cn('rounded-xl border px-3 py-2.5', stronger ? 'border-ok/30 bg-ok/5' : 'border-line')}
+                    >
+                      <dt className="flex items-center justify-between gap-2 text-[11px] font-semibold uppercase tracking-wide text-faint">
+                        <span className="min-w-0">{comparison[side].name}</span>
+                        {stronger ? <Badge tone="ok" className="shrink-0 normal-case tracking-normal">stronger</Badge> : null}
+                      </dt>
+                      <dd className={cn('mt-1 text-xs leading-relaxed', stronger ? 'text-ink' : 'text-muted')}>
+                        {row[side]}
+                      </dd>
+                    </div>
+                  );
+                })}
+              </dl>
+            </li>
+          ))}
+        </ul>
+
+        <div className="mt-4 hidden overflow-hidden rounded-2xl border border-line bg-surface sm:block">
           <div className="grid grid-cols-[150px_1fr_1fr] gap-px border-b border-line bg-elevated">
             <span className="px-4 py-2.5 text-[11px] font-semibold uppercase tracking-wide text-faint">Dimension</span>
             <span className="px-4 py-2.5 text-[11px] font-semibold uppercase tracking-wide text-faint">
