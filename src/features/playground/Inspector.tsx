@@ -1,4 +1,4 @@
-import { AlertTriangle, Power, Trash2 } from 'lucide-react';
+import { AlertTriangle, Cable, Power, Trash2 } from 'lucide-react';
 import type { Node } from 'reactflow';
 import { NODE_KINDS } from '@/components/architecture';
 import { Badge, Button, Meter, Slider } from '@/components/ui';
@@ -17,6 +17,8 @@ interface InspectorProps {
   selected: Node<PlaygroundNodeData> | null;
   onToggleFailure: () => void;
   onRemove: () => void;
+  /** Starts tap-to-connect from the selected node: the next node tapped becomes its target. */
+  onConnect: () => void;
 }
 
 /** Traffic, the selected component, the health scores and the detected risks. */
@@ -28,6 +30,7 @@ export function Inspector({
   selected,
   onToggleFailure,
   onRemove,
+  onConnect,
 }: InspectorProps) {
   const totalCapacity = nodes
     .filter((node) => node.data.kind === 'server' || node.data.kind === 'service')
@@ -73,7 +76,11 @@ export function Inspector({
               />
             </div>
           ) : null}
-          <div className="mt-3 flex gap-2">
+          <Button size="sm" variant="secondary" className="mt-3 w-full justify-center" onClick={onConnect}>
+            <Cable className="h-3 w-3" />
+            Connect to another component
+          </Button>
+          <div className="mt-2 flex gap-2">
             <Button
               size="sm"
               variant={selected.data.status === 'down' ? 'success' : 'danger'}
@@ -90,7 +97,7 @@ export function Inspector({
         </div>
       ) : (
         <div className="rounded-xl border border-line p-3 text-[11px] text-muted">
-          Select a component to inspect it, simulate a failure or delete it.
+          Select a component to inspect it, connect it, simulate a failure or delete it.
         </div>
       )}
 

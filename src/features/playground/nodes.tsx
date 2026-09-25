@@ -16,6 +16,9 @@ export interface PlaygroundNodeData {
   bottleneck: boolean;
 }
 
+/** A card's size in flow units: its fixed width, and its usual height with a load meter. Used to center new nodes. */
+export const NODE_SIZE = { width: 190, height: 110 };
+
 /**
  * React Flow node renderer. It reuses the same icon, colour and status language
  * as the fixed lab diagrams so components look identical everywhere.
