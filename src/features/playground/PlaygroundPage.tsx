@@ -14,7 +14,7 @@ import ReactFlow, {
   type ReactFlowInstance,
 } from 'reactflow';
 import 'reactflow/dist/style.css';
-import { Pause, Play, RotateCcw } from 'lucide-react';
+import { Map as MapIcon, Pause, Play, RotateCcw } from 'lucide-react';
 import { useLayout } from '@/app/providers/LayoutProvider';
 import { useThemeColors } from '@/app/providers/ThemeProvider';
 import { Button, Select } from '@/components/ui';
@@ -25,7 +25,7 @@ import { edgeTypes } from './edges';
 import { analyze } from './analysis';
 import { makeNode, PRESETS } from './presets';
 import { withAlpha } from './color';
-import { CanvasToolbar } from './CanvasToolbar';
+import { CanvasToolbar, ToolbarButton } from './CanvasToolbar';
 import { Inspector } from './Inspector';
 import { NODE_DRAG_TYPE, Palette } from './Palette';
 import { SidePanel } from './SidePanel';
@@ -36,6 +36,8 @@ const DEFAULT_PRESET = 'scaled';
 const FIT_VIEW = { padding: 0.2, maxZoom: 1 };
 /** Below this width the sidebar, the component list and the inspector leave the canvas too little room. */
 const ROOMY_QUERY = '(min-width: 1440px)';
+/** Enough to find a node in a diagram that has outgrown the screen, small enough to stay out of the way. */
+const MINIMAP_SIZE = { width: 160, height: 100 };
 
 function PlaygroundCanvas() {
   const initial = useMemo(() => (PRESETS.find((item) => item.id === DEFAULT_PRESET) ?? PRESETS[0]).build(), []);
@@ -45,6 +47,8 @@ function PlaygroundCanvas() {
   const [running, setRunning] = useState(false);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [preset, setPreset] = useState(DEFAULT_PRESET);
+  // A seven node diagram fits on screen, so the minimap waits until the learner asks for it.
+  const [showMap, setShowMap] = useState(false);
   const wrapper = useRef<HTMLDivElement>(null);
   const instance = useRef<ReactFlowInstance | null>(null);
   const store = useStoreApi();
@@ -91,6 +95,16 @@ function PlaygroundCanvas() {
   }, []);
 
   const analysis = useMemo(() => analyze(nodes, edges, traffic), [nodes, edges, traffic]);
+
+  /** The minimap reads the decorated nodes from the store, so each one shows its current health. */
+  const minimapNodeColor = useCallback(
+    (node: Node<PlaygroundNodeData>) => {
+      if (node.data.status === 'down') return colors.danger;
+      if (node.data.bottleneck || node.data.status === 'degraded') return colors.warn;
+      return colors.ok;
+    },
+    [colors],
+  );
 
   /** Nodes and edges decorated with the current simulation results. */
   const viewNodes = nodes.map((node) => ({
@@ -254,8 +268,30 @@ function PlaygroundCanvas() {
           >
             {/* Background, MiniMap: React Flow writes these colors into SVG attributes, so no var() strings. */}
             <Background variant={BackgroundVariant.Dots} gap={18} size={1} color={colors.line} />
-            <CanvasToolbar fitViewOptions={FIT_VIEW} />
-            <MiniMap pannable zoomable nodeColor={colors.faint} maskColor={withAlpha(colors.canvas, 0.7)} />
+            <CanvasToolbar fitViewOptions={FIT_VIEW}>
+              <ToolbarButton
+                aria-label="Minimap"
+                aria-pressed={showMap}
+                title={showMap ? 'Hide the minimap' : 'Show the minimap'}
+                onClick={() => setShowMap((value) => !value)}
+                className="playground-minimap-toggle"
+              >
+                <MapIcon className="h-4 w-4" />
+              </ToolbarButton>
+            </CanvasToolbar>
+            {showMap ? (
+              <MiniMap
+                pannable
+                zoomable
+                ariaLabel="Minimap"
+                className="glass-panel playground-panel playground-minimap"
+                style={MINIMAP_SIZE}
+                nodeColor={minimapNodeColor}
+                maskColor={withAlpha(colors.canvas, 0.6)}
+                maskStrokeColor={colors.brand}
+                maskStrokeWidth={1.5}
+              />
+            ) : null}
           </ReactFlow>
         </div>
 

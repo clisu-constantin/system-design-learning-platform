@@ -114,7 +114,9 @@
 /* Chrome on the canvas recedes: a translucent surface, so the dot grid and the
    wires stay visible behind it. Shared by the canvas toolbar and the minimap. */
 @layer components {
-  .glass-panel {
+  /* The minimap selector out-ranks React Flow's white .react-flow__minimap default. */
+  .glass-panel,
+  .react-flow .react-flow__minimap.glass-panel {
     @apply rounded-xl shadow-card;
     border: 1px solid rgb(var(--c-line) / 0.7);
     background: rgb(var(--c-surface) / 0.7);
@@ -123,7 +125,8 @@
   }
   /* A blur over a panning canvas costs every frame on an older phone; a denser surface reads the same. */
   @media (pointer: coarse) {
-    .glass-panel {
+    .glass-panel,
+    .react-flow .react-flow__minimap.glass-panel {
       background: rgb(var(--c-surface) / 0.92);
       -webkit-backdrop-filter: none;
       backdrop-filter: none;
@@ -137,10 +140,26 @@
 .react-flow .react-flow__panel.playground-panel {
   margin: var(--playground-inset);
 }
-.react-flow .react-flow__minimap {
-  background: rgb(var(--c-surface));
-  border: 1px solid rgb(var(--c-line));
-  border-radius: 12px;
+/* A quiet overview: faded at rest, fully there while the learner uses it. */
+.react-flow .playground-minimap {
+  overflow: hidden;
+  opacity: 0.6;
+  transition: opacity 150ms ease-out;
+}
+.react-flow .playground-minimap:hover,
+.react-flow .playground-minimap:focus-within,
+.react-flow:has(.playground-minimap-toggle:focus-visible) .playground-minimap {
+  opacity: 1;
+}
+/* The current view keeps a thin outline however far the minimap scales the diagram down. */
+.react-flow .playground-minimap .react-flow__minimap-mask {
+  vector-effect: non-scaling-stroke;
+}
+/* Too narrow for toolbar and minimap side by side: the minimap sits above the toolbar row. */
+@media (max-width: 519px) {
+  .react-flow .react-flow__panel.playground-minimap {
+    margin-bottom: calc(var(--playground-inset) + 62px);
+  }
 }
 /* --------------------------- end Playground ------------------------------- */
 
