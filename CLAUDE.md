@@ -254,11 +254,14 @@ These are editorial rules, not style preferences. They are the reason the app is
   compact desktop sizes stay. One base rule in `src/styles/index.css` gives `button`, `a[href]`,
   `select`, `summary`, text inputs and `role` tab/button/switch/option/menuitem a 44px min-height
   and min-width under `@media (pointer: coarse)`, so a raw `<button>` on a new page is covered with
-  no extra class. It uses `:where()` (zero specificity), so a utility on the element wins. For
+  no extra class. It uses `:where()` (zero specificity), so a `min-h-*`/`min-w-*` utility on the
+  element wins; a fixed `h-8` does not make it smaller, because a min size beats a height. For
   something else that is clickable (a `div` with `onClick`, a focusable `span`), give it a real
-  role or `coarse:min-h-11`. A control that must stay visually small opts out with `coarse:min-h-0`
-  and grows its hit area instead: `Toggle` with a `::before`, `InfoTip` with an `::after`,
-  `Slider` with padding and `bg-clip-content`. The `coarse:` Tailwind variant is defined in
+  role or `coarse:min-h-11`. A control that must stay visually small grows an invisible hit area
+  instead: `Toggle` opts out with `coarse:min-h-0` and uses a `::before`; `InfoTip` (a `span`) and
+  `Slider` (a range input) are not matched by the rule and use an `::after` and padding with
+  `bg-clip-content`. Use `coarse:` for touch-only classes, not `[@media(pointer:coarse)]:`. The
+  `coarse:` Tailwind variant is defined in
   `tailwind.config.js`. Controls inside a `DiagramCanvas` (`data-diagram`) are exempt: the diagram
   is fixed geometry, and a taller button in a node would push it over its neighbour.
 

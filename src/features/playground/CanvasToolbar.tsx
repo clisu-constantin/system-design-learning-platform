@@ -65,7 +65,7 @@ export function ToolbarButton({ className, type = 'button', ...props }: ButtonHT
         'flex h-8 w-8 items-center justify-center rounded-lg text-muted transition-colors',
         'hover:bg-elevated/70 hover:text-ink disabled:pointer-events-none disabled:opacity-40',
         'aria-pressed:bg-brand/15 aria-pressed:text-brand',
-        '[@media(pointer:coarse)]:h-11 [@media(pointer:coarse)]:w-11',
+        'coarse:h-11 coarse:w-11',
         className,
       )}
       {...props}

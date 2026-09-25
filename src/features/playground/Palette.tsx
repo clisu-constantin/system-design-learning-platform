@@ -35,7 +35,7 @@ export function Palette({ onAdd }: { onAdd: (kind: NodeKind) => void }) {
                   onDragStart={(event) => event.dataTransfer.setData(NODE_DRAG_TYPE, kind)}
                   onClick={() => onAdd(kind)}
                   aria-label={`Add ${style.label}`}
-                  className="flex min-h-10 min-w-0 flex-1 items-center gap-2 rounded-l-lg px-2.5 py-2 text-left transition-colors hover:bg-elevated [@media(pointer:coarse)]:min-h-11"
+                  className="flex min-h-10 min-w-0 flex-1 items-center gap-2 rounded-l-lg px-2.5 py-2 text-left transition-colors hover:bg-elevated coarse:min-h-11"
                 >
                   <span className={cn('flex h-6 w-6 shrink-0 items-center justify-center rounded', style.accent)}>
                     <style.Icon className="h-3.5 w-3.5" />
@@ -56,7 +56,7 @@ export function Palette({ onAdd }: { onAdd: (kind: NodeKind) => void }) {
                   aria-expanded={infoOpen}
                   aria-controls={infoId}
                   className={cn(
-                    'flex w-9 shrink-0 items-center justify-center rounded-r-lg text-faint transition-colors hover:bg-elevated hover:text-ink [@media(pointer:coarse)]:w-11',
+                    'flex w-9 shrink-0 items-center justify-center rounded-r-lg text-faint transition-colors hover:bg-elevated hover:text-ink coarse:w-11',
                     infoOpen && 'text-brand',
                   )}
                 >

@@ -79,8 +79,10 @@ function PlaygroundCanvas() {
   const roomy = useMediaQuery(ROOMY_QUERY);
   const sheet = isWide ? null : openSheet;
   const paletteFolded = layout.paletteFolded;
+  // Opened by a node selection, not by the learner: shown for this visit, never saved as their choice.
+  const [inspectorPeek, setInspectorPeek] = useState(false);
   // Without a saved choice the inspector starts folded on a laptop, so the canvas keeps its room.
-  const inspectorFolded = layout.inspectorFolded ?? !roomy;
+  const inspectorFolded = !inspectorPeek && (layout.inspectorFolded ?? !roomy);
   /** Set by a fold or unfold; the next canvas resize re-frames the diagram in the new space. */
   const refitPending = useRef(false);
 
@@ -94,6 +96,7 @@ function PlaygroundCanvas() {
   const foldInspector = useCallback(
     (folded: boolean) => {
       refitPending.current = true;
+      setInspectorPeek(false);
       layout.setInspectorFolded(folded);
     },
     [layout],
@@ -237,11 +240,12 @@ function PlaygroundCanvas() {
         return;
       }
       setSelectedId(id);
-      // A selection is a question about that node, so a folded inspector opens to answer it.
+      // A selection is a question about that node, so a folded inspector opens to answer it. It does
+      // not re-frame the diagram, which would move the node away from under the pointer.
       if (!isWide) setOpenSheet('inspector');
-      else if (inspectorFolded) foldInspector(false);
+      else if (inspectorFolded) setInspectorPeek(true);
     },
-    [connecting, onConnect, isWide, inspectorFolded, foldInspector],
+    [connecting, onConnect, isWide, inspectorFolded],
   );
 
   const toggleFailure = useCallback(() => {
@@ -387,7 +391,7 @@ function PlaygroundCanvas() {
               <MiniMap
                 pannable
                 zoomable
-                ariaLabel="Minimap"
+                ariaLabel="Diagram overview"
                 className="glass-panel playground-panel playground-minimap"
                 style={MINIMAP_SIZE}
                 nodeColor={minimapNodeColor}

@@ -197,7 +197,7 @@ export function ComparePage() {
               aria-pressed={selected === item.id}
               className={cn(
                 // Touch screens get the app-wide 44px target; a mouse keeps the compact chip.
-                'rounded-xl border px-3.5 py-2 text-xs font-medium transition-colors [@media(pointer:coarse)]:min-h-11',
+                'rounded-xl border px-3.5 py-2 text-xs font-medium transition-colors coarse:min-h-11',
                 selected === item.id
                   ? 'border-brand bg-brand/10 text-brand'
                   : 'border-line text-muted hover:border-brand/50 hover:text-ink',

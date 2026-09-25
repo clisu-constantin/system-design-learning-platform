@@ -29,7 +29,7 @@ export function ConnectBanner({ sourceLabel, refusedSelf, onCancel }: ConnectBan
         <button
           type="button"
           onClick={onCancel}
-          className="h-8 shrink-0 rounded-lg px-2.5 text-[11px] font-medium text-muted transition-colors hover:bg-elevated/70 hover:text-ink [@media(pointer:coarse)]:h-11"
+          className="h-8 shrink-0 rounded-lg px-2.5 text-[11px] font-medium text-muted transition-colors hover:bg-elevated/70 hover:text-ink coarse:h-11"
         >
           Cancel
         </button>
