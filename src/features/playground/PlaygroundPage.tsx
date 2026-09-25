@@ -3,7 +3,6 @@ import ReactFlow, {
   addEdge,
   Background,
   BackgroundVariant,
-  Controls,
   MiniMap,
   ReactFlowProvider,
   useEdgesState,
@@ -26,6 +25,7 @@ import { edgeTypes } from './edges';
 import { analyze } from './analysis';
 import { makeNode, PRESETS } from './presets';
 import { withAlpha } from './color';
+import { CanvasToolbar } from './CanvasToolbar';
 import { Inspector } from './Inspector';
 import { NODE_DRAG_TYPE, Palette } from './Palette';
 import { SidePanel } from './SidePanel';
@@ -254,7 +254,7 @@ function PlaygroundCanvas() {
           >
             {/* Background, MiniMap: React Flow writes these colors into SVG attributes, so no var() strings. */}
             <Background variant={BackgroundVariant.Dots} gap={18} size={1} color={colors.line} />
-            <Controls showInteractive={false} />
+            <CanvasToolbar fitViewOptions={FIT_VIEW} />
             <MiniMap pannable zoomable nodeColor={colors.faint} maskColor={withAlpha(colors.canvas, 0.7)} />
           </ReactFlow>
         </div>

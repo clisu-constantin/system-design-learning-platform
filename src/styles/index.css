@@ -111,20 +111,31 @@
   width: 9px;
   height: 9px;
 }
-.react-flow .react-flow__controls {
-  box-shadow: none;
-  border: 1px solid rgb(var(--c-line));
-  border-radius: 10px;
-  overflow: hidden;
+/* Chrome on the canvas recedes: a translucent surface, so the dot grid and the
+   wires stay visible behind it. Shared by the canvas toolbar and the minimap. */
+@layer components {
+  .glass-panel {
+    @apply rounded-xl shadow-card;
+    border: 1px solid rgb(var(--c-line) / 0.7);
+    background: rgb(var(--c-surface) / 0.7);
+    -webkit-backdrop-filter: blur(10px);
+    backdrop-filter: blur(10px);
+  }
+  /* A blur over a panning canvas costs every frame on an older phone; a denser surface reads the same. */
+  @media (pointer: coarse) {
+    .glass-panel {
+      background: rgb(var(--c-surface) / 0.92);
+      -webkit-backdrop-filter: none;
+      backdrop-filter: none;
+    }
+  }
 }
-.react-flow .react-flow__controls-button {
-  background: rgb(var(--c-surface));
-  border-bottom: 1px solid rgb(var(--c-line));
-  fill: rgb(var(--c-muted));
+/* One inset for every panel floating on the canvas, so toolbar and minimap sit on one line. */
+.react-flow {
+  --playground-inset: 12px;
 }
-.react-flow .react-flow__controls-button:hover {
-  background: rgb(var(--c-elevated));
-  fill: rgb(var(--c-ink));
+.react-flow .react-flow__panel.playground-panel {
+  margin: var(--playground-inset);
 }
 .react-flow .react-flow__minimap {
   background: rgb(var(--c-surface));
