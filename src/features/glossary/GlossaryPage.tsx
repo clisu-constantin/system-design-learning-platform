@@ -54,11 +54,16 @@ export function GlossaryPage() {
                     <Link
                       key={entry.term}
                       to={`/concepts/${entry.slug}`}
-                      className="group rounded-xl border border-line bg-surface p-4 transition-colors hover:border-brand/50"
+                      className="group rounded-xl border border-line bg-surface p-4 transition-colors hover:border-brand/50 focus-visible:border-brand/50"
                     >
-                      <p className="flex items-center gap-1.5 text-sm font-semibold text-ink group-hover:text-brand">
+                      <p className="flex items-center gap-1.5 text-sm font-semibold text-ink group-hover:text-brand group-focus-visible:text-brand">
                         {entry.term}
-                        <ArrowRight className="h-3 w-3 opacity-0 transition-opacity group-hover:opacity-100" />
+                        {/* The arrow marks the card as a link: revealed by hover or keyboard focus, and always
+                            shown where there is no hover (touch screens). Plain cards never render it. */}
+                        <ArrowRight
+                          aria-hidden
+                          className="h-3 w-3 opacity-0 transition-opacity group-hover:opacity-100 group-focus-visible:opacity-100 [@media(hover:none)]:opacity-100"
+                        />
                       </p>
                       <p className="mt-1 text-xs leading-relaxed text-muted">{entry.definition}</p>
                     </Link>
