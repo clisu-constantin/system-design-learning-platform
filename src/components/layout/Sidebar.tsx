@@ -111,7 +111,7 @@ export function Sidebar({ difficulty, folded = false, onUnfold, onNavigate }: Si
               >
                 <CategoryIcon name={category.icon} className="h-4 w-4 shrink-0 text-faint" />
                 <span className="flex-1 truncate">{category.title}</span>
-                <span className="font-mono text-[10px] tabular-nums text-faint">
+                <span className="font-mono text-[11px] tabular-nums text-faint">
                   {progress.done}/{progress.total}
                 </span>
                 <ChevronDown className={cn('h-3.5 w-3.5 shrink-0 text-faint transition-transform', isOpen && 'rotate-180')} />

@@ -233,7 +233,7 @@ export function CacheStrategiesLab() {
                     {step.from} {'->'} {step.to}
                   </span>
                   <span className="flex-1">{step.label}</span>
-                  {step.async ? <span className="text-[10px] uppercase text-warn">async</span> : null}
+                  {step.async ? <span className="text-[11px] uppercase text-warn">async</span> : null}
                 </li>
               ))}
             </ol>

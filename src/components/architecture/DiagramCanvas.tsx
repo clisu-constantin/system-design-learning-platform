@@ -2,7 +2,16 @@ import { useMemo, type ReactNode } from 'react';
 import { cn } from '@/utils/cn';
 import { useFitScale, type FitRange } from '@/hooks/useFitScale';
 import type { RequestOutcome } from '@/types';
-import { curveBetween, curveToPath, midpoint, pointOnCurve, type Curve, type Layout } from './geometry';
+import {
+  curveBetween,
+  curveToPath,
+  EDGE_LABEL_FONT_SIZE,
+  edgeLabelBox,
+  midpoint,
+  pointOnCurve,
+  type Curve,
+  type Layout,
+} from './geometry';
 
 export type EdgeTone = 'default' | 'brand' | 'ok' | 'warn' | 'danger' | 'violet' | 'info' | 'muted';
 
@@ -127,7 +136,11 @@ export function DiagramCanvas({
     <div ref={ref} className={cn('w-full min-w-0 overflow-x-auto overflow-y-hidden rounded-2xl', className)}>
       {/* Takes the scaled size in layout; the child below is painted scaled into it. */}
       <div className="mx-auto overflow-hidden" style={{ width: width * scale, height: height * scale }}>
+        {/* data-diagram: the touch-size rule in index.css leaves controls in
+            here alone - the layout is fixed geometry, and growing a button
+            inside a node would push the node over its neighbour. */}
         <div
+          data-diagram
           className={cn('relative', grid && 'grid-bg')}
           style={{
             width,
@@ -153,6 +166,7 @@ export function DiagramCanvas({
                   ? midpoint(curve)
                   : pointOnCurve(curve, edge.labelT)
                 : null;
+              const chip = label && edge.label ? edgeLabelBox(label, edge.label) : null;
               return (
                 <g key={`${edge.from}->${edge.to}-${edge.label ?? ''}`} opacity={edge.faded ? 0.25 : 1}>
                   <path
@@ -164,15 +178,15 @@ export function DiagramCanvas({
                     strokeDasharray={edge.dashed ? '5 5' : edge.animated ? '6 6' : undefined}
                     className={edge.animated ? 'animate-dash' : undefined}
                   />
-                  {label && edge.label ? (
+                  {label && chip && edge.label ? (
                     <g>
                       {/* Chip behind the text: edge labels sit over the grid and
                           sometimes near a node, and must stay readable. */}
                       <rect
-                        x={label.x - (edge.label.length * 5.1) / 2 - 5}
-                        y={label.y - 16}
-                        width={edge.label.length * 5.1 + 10}
-                        height={15}
+                        x={chip.x}
+                        y={chip.y}
+                        width={chip.w}
+                        height={chip.h}
                         rx={4}
                         className="fill-[rgb(var(--c-surface))] stroke-[rgb(var(--c-line))]"
                         strokeWidth={1}
@@ -182,7 +196,7 @@ export function DiagramCanvas({
                         y={label.y - 5}
                         textAnchor="middle"
                         className="fill-[rgb(var(--c-muted))] font-mono"
-                        style={{ fontSize: 9.5 }}
+                        style={{ fontSize: EDGE_LABEL_FONT_SIZE }}
                       >
                         {edge.label}
                       </text>

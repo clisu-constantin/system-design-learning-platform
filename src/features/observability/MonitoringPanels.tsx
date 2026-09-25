@@ -183,7 +183,7 @@ export function MetricsView({ setup, chart, gateway, series }: MetricsViewProps)
                 style={{ height: `${Math.max(count > 0 ? 3 : 0, (count / maxBucket) * 72)}px` }}
                 title={`${formatNumber(count)} requests`}
               />
-              <span className="truncate font-mono text-[9px] text-faint">
+              <span className="truncate font-mono text-[11px] text-faint">
                 {Number.isFinite(BUCKETS_MS[index]) ? `${BUCKETS_MS[index] >= 1000 ? `${BUCKETS_MS[index] / 1000}s` : BUCKETS_MS[index]}` : 'inf'}
               </span>
             </div>
@@ -214,7 +214,7 @@ function Cell({ value, level }: { value: string; level?: Level }) {
   return (
     <td className="px-2 py-1.5 text-right">
       <span className={cn('font-mono tabular-nums', level ? LEVEL_TONE[level] : 'text-ink')}>{value}</span>
-      {level ? <span className={cn('ml-1.5 text-[10px]', LEVEL_TONE[level])}>{LEVEL_TEXT[level]}</span> : null}
+      {level ? <span className={cn('ml-1.5 text-[11px]', LEVEL_TONE[level])}>{LEVEL_TEXT[level]}</span> : null}
     </td>
   );
 }
@@ -416,9 +416,9 @@ for:   ${forText}`}
 function Counter({ label, value, tone, hint }: { label: string; value: string; tone: string; hint?: string }) {
   return (
     <div className="rounded-lg border border-line bg-elevated p-2.5" title={hint}>
-      <p className="text-[10px] uppercase tracking-wide text-faint">{label}</p>
+      <p className="text-[11px] uppercase tracking-wide text-faint">{label}</p>
       <p className={cn('mt-0.5 font-mono text-sm font-semibold tabular-nums', tone)}>{value}</p>
-      {hint ? <p className="mt-0.5 text-[10px] leading-snug text-faint">{hint}</p> : null}
+      {hint ? <p className="mt-0.5 text-[11px] leading-snug text-faint">{hint}</p> : null}
     </div>
   );
 }

@@ -702,7 +702,7 @@ export function TracingLab() {
             onChange={(value) => toggle('propagate', value)}
             description="Off: the producer does not copy traceparent into the Kafka headers"
           />
-          <div className="rounded-xl border border-line bg-elevated p-3 font-mono text-[10px] leading-relaxed text-muted">
+          <div className="rounded-xl border border-line bg-elevated p-3 font-mono text-[11px] leading-relaxed text-muted">
             <span className="break-all">traceparent: 00-{TRACE_ID}-{(active ?? root).spanId}-01</span>
             <span className="mt-1 block text-faint">
               version - trace_id - parent span id - flags (01 = sampled). Each service sends its own span id onward, so

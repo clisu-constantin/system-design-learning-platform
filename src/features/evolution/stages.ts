@@ -162,7 +162,7 @@ export const STAGES: Stage[] = [
     // The standby is drawn, not implied: a single balancer in front of three
     // servers is still a system with one box that takes everything down.
     nodes: [
-      { id: 'client', kind: 'client', title: 'Clients', placed: box(400, 16, 180, 64) },
+      { id: 'client', kind: 'client', title: 'Clients', placed: box(400, 16, 180, 69) },
       { id: 'lb', kind: 'load-balancer', title: 'Load Balancer', subtitle: 'active, holds the VIP', placed: box(245, 120, 190, 84), isNew: true },
       { id: 'lb2', kind: 'load-balancer', title: 'Standby LB', subtitle: 'takes over on failure', placed: box(530, 120, 190, 84), isNew: true, standby: true },
       { id: 'api1', kind: 'server', title: 'API 1', placed: box(170, 285, 160, 88), isNew: true },
@@ -224,7 +224,7 @@ export const STAGES: Stage[] = [
     // of the arrows would describe instances that are not interchangeable, which
     // is the opposite of what stage 3 just established.
     nodes: [
-      { id: 'client', kind: 'client', title: 'Clients', placed: box(400, 12, 180, 64) },
+      { id: 'client', kind: 'client', title: 'Clients', placed: box(400, 12, 180, 69) },
       { id: 'lb', kind: 'load-balancer', title: 'Load Balancer', subtitle: '2 nodes, multi-AZ', placed: box(395, 100, 190, 78) },
       { id: 'api1', kind: 'server', title: 'API 1', placed: box(215, 232, 150, 84) },
       { id: 'api2', kind: 'server', title: 'API 2', placed: box(400, 232, 150, 84) },
@@ -336,7 +336,7 @@ export const STAGES: Stage[] = [
       concept: 'cdn',
     },
     nodes: [
-      { id: 'client', kind: 'client', title: 'Global users', placed: box(400, 12, 180, 64) },
+      { id: 'client', kind: 'client', title: 'Global users', placed: box(400, 12, 180, 69) },
       { id: 'cdn', kind: 'cdn', title: 'CDN edge', placed: box(395, 108, 190, 76), isNew: true },
       { id: 'lb', kind: 'load-balancer', title: 'Load Balancer', subtitle: '2 nodes, multi-AZ', placed: box(395, 222, 190, 78) },
       { id: 'api', kind: 'server', title: 'API x3', placed: box(400, 336, 180, 76) },
@@ -386,7 +386,7 @@ export const STAGES: Stage[] = [
       concept: 'message-queues',
     },
     nodes: [
-      { id: 'cdn', kind: 'cdn', title: 'CDN', placed: box(400, 12, 170, 64) },
+      { id: 'cdn', kind: 'cdn', title: 'CDN', placed: box(400, 12, 170, 69) },
       { id: 'lb', kind: 'load-balancer', title: 'Load Balancer', subtitle: '2 nodes, multi-AZ', placed: box(395, 104, 180, 78) },
       { id: 'api', kind: 'server', title: 'API x3', placed: box(395, 220, 180, 76) },
       { id: 'cache', kind: 'cache', title: 'Redis', placed: box(120, 220, 160, 76) },
@@ -440,7 +440,7 @@ export const STAGES: Stage[] = [
       concept: 'microservices',
     },
     nodes: [
-      { id: 'cdn', kind: 'cdn', title: 'CDN', placed: box(410, 10, 160, 64) },
+      { id: 'cdn', kind: 'cdn', title: 'CDN', placed: box(410, 10, 160, 69) },
       { id: 'gw', kind: 'api-gateway', title: 'API Gateway', subtitle: 'redundant pair', placed: box(380, 98, 190, 78) },
       { id: 'monitor', kind: 'monitoring', title: 'Tracing', subtitle: 'every request', placed: box(700, 98, 160, 76), isNew: true },
       { id: 'orders', kind: 'service', title: 'Orders', placed: box(120, 218, 165, 80) },

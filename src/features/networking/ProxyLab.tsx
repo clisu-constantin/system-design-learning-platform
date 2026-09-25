@@ -626,11 +626,11 @@ function Zones() {
   return (
     <g>
       <rect x={6} y={10} width={368} height={HEIGHT - 20} rx={14} className="fill-info/5 stroke-line" strokeDasharray="4 4" />
-      <text x={20} y={30} className="fill-faint font-mono" style={{ fontSize: 10 }}>
+      <text x={20} y={30} className="fill-faint font-mono" style={{ fontSize: 11 }}>
         CLIENT SIDE
       </text>
       <rect x={552} y={10} width={402} height={HEIGHT - 20} rx={14} className="fill-ok/5 stroke-line" strokeDasharray="4 4" />
-      <text x={566} y={30} className="fill-faint font-mono" style={{ fontSize: 10 }}>
+      <text x={566} y={30} className="fill-faint font-mono" style={{ fontSize: 11 }}>
         SERVER SIDE
       </text>
     </g>

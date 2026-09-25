@@ -88,15 +88,18 @@ export function EvolutionPage() {
           </p>
         </header>
 
-        {/* Stage rail */}
-        <ol className="mt-6 flex flex-wrap gap-1.5">
+        {/* Stage rail. Eight 44px touch targets do not fit one phone row, so
+            below sm they sit in two even rows of four instead of wrapping 6 + 2. */}
+        <ol className="mt-6 grid grid-cols-4 gap-1.5 sm:flex sm:flex-wrap">
           {STAGES.map((item, position) => (
             <li key={item.id}>
               <button
                 type="button"
                 onClick={() => go(position)}
+                aria-label={`Stage ${position + 1}: ${item.title}`}
+                aria-current={position === index ? 'step' : undefined}
                 className={cn(
-                  'rounded-lg border px-3 py-1.5 text-xs font-medium transition-colors',
+                  'w-full rounded-lg border px-3 py-1.5 text-xs font-medium transition-colors sm:w-auto',
                   position === index
                     ? 'border-brand bg-brand/10 text-brand'
                     : position < index
@@ -110,10 +113,12 @@ export function EvolutionPage() {
           ))}
         </ol>
 
-        {/* The diagram is the lesson, so it keeps its full 960px: the question
-            column sits beside it only when both fit (1700px with the sidebar),
-            and stacks underneath below that. */}
-        <div className="mt-4 grid grid-cols-1 gap-4 min-[1700px]:grid-cols-[minmax(0,1fr)_360px]">
+        {/* The question column sits beside the diagram from 1280px, where most
+            laptops are. It is 300px wide there so the diagram column keeps about
+            610px with the sidebar open - 0.63x, above the 0.6x floor, so the
+            stage still fits its card without scrolling. From 1700px the page is
+            wide enough for a 360px column and the diagram at its full 960px. */}
+        <div className="mt-4 grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1fr)_300px] min-[1700px]:grid-cols-[minmax(0,1fr)_360px]">
           <div className="space-y-4">
             <div ref={autoplay.ref} className="card overflow-hidden">
               <div className="flex flex-wrap items-center justify-between gap-3 border-b border-line px-5 py-3">
@@ -173,20 +178,27 @@ export function EvolutionPage() {
               </div>
             </div>
 
-            <div className="flex items-center justify-between">
-              <Button variant="secondary" disabled={index === 0} onClick={() => go(index - 1)}>
+            {/* On a phone the buttons say "Previous" / "Next" (the word "stage"
+                is still read out), so the row fits 375px on one line. */}
+            <div className="flex items-center justify-between gap-2">
+              <Button variant="secondary" disabled={index === 0} onClick={() => go(index - 1)} className="shrink-0">
                 <ChevronLeft className="h-4 w-4" />
-                Previous stage
+                <span>
+                  Previous<span className="sr-only sm:not-sr-only"> stage</span>
+                </span>
               </Button>
-              <span className="text-xs text-faint">
+              <span className="whitespace-nowrap text-xs text-faint">
                 Stage {index + 1} of {STAGES.length}
               </span>
               <Button
                 variant={canAdvance ? 'primary' : 'secondary'}
                 disabled={index === STAGES.length - 1}
                 onClick={() => go(index + 1)}
+                className="shrink-0"
               >
-                Next stage
+                <span>
+                  Next<span className="sr-only sm:not-sr-only"> stage</span>
+                </span>
                 <ChevronRight className="h-4 w-4" />
               </Button>
             </div>

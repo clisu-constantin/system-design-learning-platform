@@ -44,7 +44,7 @@ export function DistributionBar({
               {formatValue ? formatValue(item.value) : Math.round(item.value)}
               {item.suffix ? <span className="text-faint"> {item.suffix}</span> : null}
             </span>
-            {item.hot ? <span className="text-[10px] font-semibold uppercase text-danger">hot</span> : null}
+            {item.hot ? <span className="text-[11px] font-semibold uppercase text-danger">hot</span> : null}
           </div>
         );
       })}

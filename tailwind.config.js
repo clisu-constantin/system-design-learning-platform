@@ -1,3 +1,5 @@
+import plugin from 'tailwindcss/plugin';
+
 /** @type {import('tailwindcss').Config} */
 const withVar = (name) => ({ opacityValue }) =>
   opacityValue === undefined
@@ -49,5 +51,11 @@ export default {
       },
     },
   },
-  plugins: [],
+  plugins: [
+    // `coarse:` applies on a touch screen (primary pointer is a finger). See the
+    // touch-target rule in src/styles/index.css.
+    plugin(({ addVariant }) => {
+      addVariant('coarse', '@media (pointer: coarse)');
+    }),
+  ],
 };

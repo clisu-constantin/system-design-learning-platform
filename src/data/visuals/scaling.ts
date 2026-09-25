@@ -38,9 +38,9 @@ export const scalingVisuals: Record<string, VisualSpec> = {
     nodes: [
       { id: 'users', kind: 'client', label: 'Users', sub: '900 req/sec', x: 305, y: 14, w: 150, h: 80 },
       { id: 'lb', kind: 'load-balancer', label: 'Load Balancer', sub: '2 nodes', x: 300, y: 125, w: 160, h: 80 },
-      { id: 's1', kind: 'server', label: 'API 1', x: 80, y: 250, w: 140, h: 84, stat: ['CPU', '56%'] },
-      { id: 's2', kind: 'server', label: 'API 2', x: 310, y: 250, w: 140, h: 84, stat: ['CPU', '57%'] },
-      { id: 's3', kind: 'server', label: 'API 3', x: 540, y: 250, w: 140, h: 84, stat: ['CPU', '55%'] },
+      { id: 's1', kind: 'server', label: 'API 1', x: 80, y: 250, w: 140, h: 90, stat: ['CPU', '56%'] },
+      { id: 's2', kind: 'server', label: 'API 2', x: 310, y: 250, w: 140, h: 90, stat: ['CPU', '57%'] },
+      { id: 's3', kind: 'server', label: 'API 3', x: 540, y: 250, w: 140, h: 90, stat: ['CPU', '55%'] },
       { id: 'db', kind: 'sql', label: 'Database', sub: 'shared by all', x: 305, y: 380, w: 150, h: 80 },
     ],
     edges: [
@@ -68,9 +68,9 @@ export const scalingVisuals: Record<string, VisualSpec> = {
     nodes: [
       { id: 'users', kind: 'client', label: 'Users', sub: '500 req/sec', x: 305, y: 10, w: 150, h: 80 },
       { id: 'lb', kind: 'load-balancer', label: 'Load Balancer', sub: 'round robin', x: 295, y: 120, w: 170, h: 80 },
-      { id: 's1', kind: 'server', label: 'Server 1', x: 70, y: 255, w: 145, h: 84, stat: ['CPU', '35%'] },
-      { id: 's2', kind: 'server', label: 'Server 2', x: 305, y: 255, w: 145, h: 84, stat: ['CPU', '0%'], status: 'down' },
-      { id: 's3', kind: 'server', label: 'Server 3', x: 540, y: 255, w: 145, h: 84, stat: ['CPU', '51%'] },
+      { id: 's1', kind: 'server', label: 'Server 1', x: 70, y: 255, w: 145, h: 90, stat: ['CPU', '35%'] },
+      { id: 's2', kind: 'server', label: 'Server 2', x: 305, y: 255, w: 145, h: 90, stat: ['CPU', '0%'], status: 'down' },
+      { id: 's3', kind: 'server', label: 'Server 3', x: 540, y: 255, w: 145, h: 90, stat: ['CPU', '51%'] },
     ],
     edges: [
       { from: 'users', to: 'lb', tone: 'brand', rate: 5 },
@@ -93,9 +93,9 @@ export const scalingVisuals: Record<string, VisualSpec> = {
     nodes: [
       { id: 'users', kind: 'client', label: 'Traffic doubles', sub: '600 to 1,200 req/sec', x: 290, y: 12, w: 180, h: 80 },
       { id: 'lb', kind: 'load-balancer', label: 'Load Balancer', sub: '2 nodes', x: 300, y: 122, w: 160, h: 80 },
-      { id: 'a1', kind: 'server', label: 'api-1', x: 60, y: 245, w: 135, h: 84, stat: ['CPU', '80%'], alert: true },
-      { id: 'a2', kind: 'server', label: 'api-2', x: 235, y: 245, w: 135, h: 84, stat: ['CPU', '76%'], alert: true },
-      { id: 'a3', kind: 'server', label: 'api-3', x: 410, y: 245, w: 135, h: 84, stat: ['CPU', '78%'], alert: true },
+      { id: 'a1', kind: 'server', label: 'api-1', x: 60, y: 245, w: 135, h: 90, stat: ['CPU', '80%'], alert: true },
+      { id: 'a2', kind: 'server', label: 'api-2', x: 235, y: 245, w: 135, h: 90, stat: ['CPU', '76%'], alert: true },
+      { id: 'a3', kind: 'server', label: 'api-3', x: 410, y: 245, w: 135, h: 90, stat: ['CPU', '78%'], alert: true },
       { id: 'a4', kind: 'server', label: 'api-4', sub: 'booting', x: 585, y: 245, w: 135, h: 84, status: 'starting' },
     ],
     edges: [
@@ -121,7 +121,7 @@ export const scalingVisuals: Record<string, VisualSpec> = {
     height: 359,
     caption: 'Sessions live in Redis, so any server can serve any user.',
     nodes: [
-      { id: 'user', kind: 'client', label: 'User A', x: 305, y: 10, w: 150, h: 68 },
+      { id: 'user', kind: 'client', label: 'User A', x: 305, y: 10, w: 150, h: 69 },
       { id: 'lb', kind: 'load-balancer', label: 'Load Balancer', x: 300, y: 115, w: 160, h: 70 },
       { id: 's1', kind: 'server', label: 'Server 1', sub: 'no local state', x: 100, y: 220, w: 150, h: 80 },
       { id: 's2', kind: 'server', label: 'Server 2', sub: 'no local state', x: 510, y: 220, w: 150, h: 80 },

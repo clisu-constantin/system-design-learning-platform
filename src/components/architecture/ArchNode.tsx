@@ -91,7 +91,7 @@ export function ArchNode({
             <span className="truncate text-xs font-semibold text-ink">{title}</span>
             {badge}
           </div>
-          {subtitle ? <div className="truncate text-[10px] text-faint">{subtitle}</div> : null}
+          {subtitle ? <div className="truncate text-[11px] text-faint">{subtitle}</div> : null}
         </div>
       </div>
       {children ? <div className="space-y-1.5">{children}</div> : null}
@@ -111,7 +111,7 @@ export function NodeStatRow({
   tone?: string;
 }) {
   return (
-    <div className="flex items-baseline justify-between gap-2 text-[10px]">
+    <div className="flex items-baseline justify-between gap-2 text-[11px]">
       <span className="truncate text-faint">{label}</span>
       <span className={cn('font-mono font-semibold tabular-nums', tone)}>{value}</span>
     </div>

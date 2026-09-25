@@ -112,11 +112,11 @@ export const dataVisuals: Record<string, VisualSpec> = {
     height: 343,
     caption: 'Writes go to the primary and stream to replicas. Replicas serve reads - slightly behind.',
     nodes: [
-      { id: 'app', kind: 'server', label: 'Application', x: 305, y: 10, w: 150, h: 68 },
+      { id: 'app', kind: 'server', label: 'Application', x: 305, y: 10, w: 150, h: 69 },
       { id: 'primary', kind: 'sql', label: 'Primary', sub: 'accepts writes', x: 295, y: 120, w: 170, h: 80 },
-      { id: 'r1', kind: 'sql', label: 'Replica 1', x: 70, y: 245, w: 145, h: 84, stat: ['Lag', '40 ms'] },
-      { id: 'r2', kind: 'sql', label: 'Replica 2', x: 305, y: 245, w: 145, h: 84, stat: ['Lag', '120 ms'] },
-      { id: 'r3', kind: 'sql', label: 'Replica 3', x: 540, y: 245, w: 145, h: 84, stat: ['Lag', '90 ms'] },
+      { id: 'r1', kind: 'sql', label: 'Replica 1', x: 70, y: 245, w: 145, h: 90, stat: ['Lag', '40 ms'] },
+      { id: 'r2', kind: 'sql', label: 'Replica 2', x: 305, y: 245, w: 145, h: 90, stat: ['Lag', '120 ms'] },
+      { id: 'r3', kind: 'sql', label: 'Replica 3', x: 540, y: 245, w: 145, h: 90, stat: ['Lag', '90 ms'] },
     ],
     edges: [
       { from: 'app', to: 'primary', tone: 'brand', rate: 2, label: 'writes' },
@@ -167,7 +167,7 @@ export const dataVisuals: Record<string, VisualSpec> = {
     height: 350,
     caption: 'Each shard owns a slice of the data. A skewed key concentrates traffic on one of them.',
     nodes: [
-      { id: 'app', kind: 'server', label: 'Application', x: 305, y: 10, w: 150, h: 68 },
+      { id: 'app', kind: 'server', label: 'Application', x: 305, y: 10, w: 150, h: 69 },
       { id: 'router', kind: 'api-gateway', label: 'Shard router', sub: 'range(user_id)', x: 295, y: 118, w: 170, h: 80 },
       { id: 'a', kind: 'sql', label: 'Shard A', sub: 'users 1-3M', x: 70, y: 240, w: 150, h: 96, stat: ['Load', '90%'], alert: true },
       { id: 'b', kind: 'sql', label: 'Shard B', sub: 'users 3-6M', x: 305, y: 240, w: 150, h: 96, stat: ['Load', '20%'] },
@@ -224,7 +224,7 @@ export const dataVisuals: Record<string, VisualSpec> = {
       { id: 'a2', kind: 'server', label: 'API 2', x: 50, y: 115, w: 140, h: 74 },
       { id: 'a3', kind: 'server', label: 'API 3', x: 50, y: 205, w: 140, h: 74 },
       { id: 'pool', kind: 'api-gateway', label: 'PgBouncer x2', sub: '40 server conns in total', x: 300, y: 110, w: 180, h: 84 },
-      { id: 'db', kind: 'sql', label: 'PostgreSQL', sub: 'max_connections 200', x: 570, y: 110, w: 160, h: 84 },
+      { id: 'db', kind: 'sql', label: 'PostgreSQL', sub: 'max_connections 200', x: 564, y: 110, w: 171, h: 84 },
     ],
     edges: [
       { from: 'a1', to: 'pool', tone: 'brand', rate: 2 },

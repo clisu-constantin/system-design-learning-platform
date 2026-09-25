@@ -289,7 +289,7 @@ export function TransportLab() {
           statusLabel={lossRate > 0 ? `Drops ${formatPercent(lossRate)}` : 'No loss'}
         >
           <NodeStatRow label="Round trip" value={`${rtt} ms`} />
-          <p className="pt-1 text-[10px] font-medium text-muted">Packets dropped</p>
+          <p className="pt-1 text-[11px] font-medium text-muted">Packets dropped</p>
           {LANES.map(({ id, payload, transport }) => (
             <NodeStatRow
               key={id}
@@ -298,7 +298,7 @@ export function TransportLab() {
               tone={state[id].stats.dropped > 0 ? 'text-danger' : 'text-ink'}
             />
           ))}
-          <p className="pt-1 text-[10px] leading-snug text-faint">
+          <p className="pt-1 text-[11px] leading-snug text-faint">
             One network for all four streams. TCP counts its lost resends too.
           </p>
         </ArchNode>

@@ -45,11 +45,16 @@ export function Tooltip({ content, children, className, side = 'top' }: TooltipP
   );
 }
 
-/** Small "?" affordance used next to metric labels. */
+/**
+ * Small "?" affordance used next to metric labels. The icon stays 14px; on a
+ * touch screen an invisible ::after grows its hit area to 44x44 (15px each way).
+ */
 export function InfoTip({ content }: { content: ReactNode }) {
   return (
     <Tooltip content={content}>
-      <HelpCircle className="h-3.5 w-3.5 text-faint transition-colors hover:text-brand" aria-label="More information" />
+      <span className="relative inline-flex coarse:after:absolute coarse:after:-inset-[15px] coarse:after:content-['']">
+        <HelpCircle className="h-3.5 w-3.5 text-faint transition-colors hover:text-brand" aria-label="More information" />
+      </span>
     </Tooltip>
   );
 }

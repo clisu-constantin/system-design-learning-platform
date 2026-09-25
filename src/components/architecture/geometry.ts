@@ -83,6 +83,22 @@ export function pointOnCurve({ p0, p1, p2, p3 }: Curve, t: number): Point {
 
 export const midpoint = (curve: Curve) => pointOnCurve(curve, 0.5);
 
+/**
+ * Edge labels are 11px monospace (the app-wide text floor). One character
+ * advances 6.62px in the Tailwind mono stack as headless Chromium resolves it,
+ * rounded up here. DiagramCanvas draws the chip behind the label from this box
+ * and scripts/check-visuals.mjs checks the same box against the node cards, so
+ * the two cannot disagree about where a label is.
+ */
+export const EDGE_LABEL_FONT_SIZE = 11;
+const EDGE_LABEL_CHAR_W = 6.7;
+
+/** The chip behind an edge label whose anchor point is `point`; the text baseline sits 5px above it. */
+export function edgeLabelBox(point: Point, label: string): Placed {
+  const w = label.length * EDGE_LABEL_CHAR_W + 10;
+  return { x: point.x - w / 2, y: point.y - 17, w, h: 16 };
+}
+
 /** Evenly spaces `count` boxes of width `w` across `span`, centred on `cx`. */
 export function spread(count: number, cx: number, w: number, gap: number) {
   const total = count * w + (count - 1) * gap;
