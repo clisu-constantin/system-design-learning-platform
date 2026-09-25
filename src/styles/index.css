@@ -52,6 +52,35 @@
     @apply outline-none ring-2 ring-brand/70 ring-offset-2 ring-offset-canvas;
   }
 
+  /* Touch targets. On a touch screen (the primary pointer is a finger) every
+     interactive control is at least 44x44px; with a mouse the compact desktop
+     sizes stay as they are. It is written against elements and roles, not
+     components, so a raw <button> on a new page gets it too.
+     - :where() keeps the specificity at zero, so a utility on the element still
+       wins. A control that must stay visually small (the Toggle switch, a
+       slider track) opts out with coarse:min-h-0 and grows its hit area
+       instead, with padding or a pseudo-element.
+     - Controls inside a diagram are left alone: its layout is fixed geometry
+       (see DiagramCanvas, data-diagram), and a taller button inside a node
+       would push the node over its neighbour. */
+  @media (pointer: coarse) {
+    :where(
+        button,
+        a[href],
+        select,
+        summary,
+        [role='button'],
+        [role='tab'],
+        [role='switch'],
+        [role='option'],
+        [role='menuitem'],
+        input:not([type='range'], [type='checkbox'], [type='radio'], [type='hidden'])
+      ):where(:not([data-diagram] *)) {
+      min-height: 44px;
+      min-width: 44px;
+    }
+  }
+
   ::-webkit-scrollbar {
     width: 10px;
     height: 10px;
@@ -93,29 +122,83 @@
   }
 }
 
-/* react-flow theme bridging */
-.react-flow__attribution {
+/* ---------------------------------------------------------------------------
+   Playground (React Flow)
+   React Flow's own stylesheet is imported by the lazy Playground chunk, so it
+   lands after this file. Every bridge rule is scoped under `.react-flow` to
+   out-rank its single-class defaults whatever the load order is.
+   --------------------------------------------------------------------------- */
+.react-flow .react-flow__attribution {
   display: none;
 }
-.react-flow__edge-path {
+.react-flow .react-flow__edge-path {
   stroke: rgb(var(--c-faint));
 }
-.react-flow__handle {
+.react-flow .react-flow__handle {
   background: rgb(var(--c-brand));
   border: 2px solid rgb(var(--c-surface));
   width: 9px;
   height: 9px;
 }
-.react-flow__controls-button {
-  background: rgb(var(--c-surface));
-  border-bottom: 1px solid rgb(var(--c-line));
-  fill: rgb(var(--c-muted));
+/* Chrome on the canvas recedes: a translucent surface, so the dot grid and the
+   wires stay visible behind it. Shared by the canvas toolbar and the minimap. */
+@layer components {
+  /* The minimap selector out-ranks React Flow's white .react-flow__minimap default. */
+  .glass-panel,
+  .react-flow .react-flow__minimap.glass-panel {
+    @apply rounded-xl shadow-card;
+    border: 1px solid rgb(var(--c-line) / 0.7);
+    background: rgb(var(--c-surface) / 0.7);
+    -webkit-backdrop-filter: blur(10px);
+    backdrop-filter: blur(10px);
+  }
+  /* A blur over a panning canvas costs every frame on an older phone; a denser surface reads the same. */
+  @media (pointer: coarse) {
+    .glass-panel,
+    .react-flow .react-flow__minimap.glass-panel {
+      background: rgb(var(--c-surface) / 0.92);
+      -webkit-backdrop-filter: none;
+      backdrop-filter: none;
+    }
+  }
 }
-.react-flow__minimap {
-  background: rgb(var(--c-surface));
-  border: 1px solid rgb(var(--c-line));
-  border-radius: 12px;
+/* One inset for every panel floating on the canvas, so toolbar and minimap sit on one line.
+   The toolbar height is set here, not by its buttons, so the minimap can stack above it:
+   a 32px button (44px on a touch screen) + 4px padding + 1px border on each side. */
+.react-flow {
+  --playground-inset: 12px;
+  --playground-toolbar-h: 42px;
 }
+@media (pointer: coarse) {
+  .react-flow {
+    --playground-toolbar-h: 54px;
+  }
+}
+.react-flow .react-flow__panel.playground-panel {
+  margin: var(--playground-inset);
+}
+/* A quiet overview: faded at rest, fully there while the learner uses it. The minimap SVG cannot
+   take focus, so for a keyboard it is the focused toggle that shows it in full. */
+.react-flow .playground-minimap {
+  overflow: hidden;
+  opacity: 0.6;
+  transition: opacity 150ms ease-out;
+}
+.react-flow .playground-minimap:hover,
+.react-flow:has(.playground-minimap-toggle:focus-visible) .playground-minimap {
+  opacity: 1;
+}
+/* The current view keeps a thin outline however far the minimap scales the diagram down. */
+.react-flow .playground-minimap .react-flow__minimap-mask {
+  vector-effect: non-scaling-stroke;
+}
+/* Too narrow for toolbar and minimap side by side: the minimap sits above the toolbar row. */
+@media (max-width: 519px) {
+  .react-flow .react-flow__panel.playground-minimap {
+    margin-bottom: calc(var(--playground-inset) + var(--playground-toolbar-h) + 8px);
+  }
+}
+/* --------------------------- end Playground ------------------------------- */
 
 /* The OS "reduce motion" setting: CSS animations and transitions (dash, pulse,
    fade-in, hover transitions) finish immediately. Self-running diagrams start

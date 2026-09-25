@@ -140,7 +140,7 @@ function ConceptBody({ concept }: { concept: Concept }) {
   // The notes column sits beside the content only from xl up; below that it
   // stacks under the content and cannot be folded, whatever was saved.
   const isWide = useMediaQuery(XL_QUERY);
-  const { asideFolded: savedFolded, setAsideFolded } = useLayout();
+  const { asideFolded: savedFolded, setFolded } = useLayout();
   const [tab, setTab] = useState('');
   // A lab has its own control column, so the notes step aside while its tab is
   // open. Reopening them there lasts until the learner leaves the tab and never
@@ -237,7 +237,7 @@ function ConceptBody({ concept }: { concept: Concept }) {
     moveFocus.current = true;
     reopened.current = !folded;
     if (inLab) setNotesInLab(!folded);
-    else setAsideFolded(folded);
+    else setFolded('asideFolded', folded);
   };
   useEffect(() => {
     if (!moveFocus.current) return;
@@ -650,7 +650,7 @@ function ExampleCard({ example }: { example: WorkedExample }) {
       <ol className="mt-3 space-y-2">
         {example.walkthrough.map((step, index) => (
           <li key={step} className="flex gap-2.5 text-sm leading-relaxed text-muted">
-            <span className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full border border-info/40 font-mono text-[10px] text-info">
+            <span className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full border border-info/40 font-mono text-[11px] text-info">
               {index + 1}
             </span>
             <span>{step}</span>

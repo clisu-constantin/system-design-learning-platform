@@ -747,7 +747,7 @@ function BTreeView({
   }
   const chip = (onPath: boolean) =>
     cn(
-      'rounded-md border px-2 py-1 font-mono text-[10px]',
+      'rounded-md border px-2 py-1 font-mono text-[11px]',
       onPath && active ? 'border-brand bg-brand/10 text-brand' : 'border-line text-faint',
     );
   return (
@@ -765,7 +765,7 @@ function BTreeView({
                 ({formatNumber(pages)} {pages === 1 ? 'page' : 'pages'})
               </span>
             </span>
-            {start > 0 ? <span className="font-mono text-[10px] text-faint">+{formatNumber(start)}</span> : null}
+            {start > 0 ? <span className="font-mono text-[11px] text-faint">+{formatNumber(start)}</span> : null}
             {Array.from({ length: end - start }, (_, offset) => {
               const index = start + offset;
               const onPath = index === path[level];
@@ -775,7 +775,7 @@ function BTreeView({
                 </span>
               );
             })}
-            {end < pages ? <span className="font-mono text-[10px] text-faint">+{formatNumber(pages - end)}</span> : null}
+            {end < pages ? <span className="font-mono text-[11px] text-faint">+{formatNumber(pages - end)}</span> : null}
           </div>
         );
       })}
@@ -847,7 +847,7 @@ function QueryPanel({
         <span className="text-[11px] text-faint">{subtitle}</span>
       </div>
       <pre className="ascii mt-3">{sql}</pre>
-      <pre className="ascii mt-2 text-[10px]">{plan}</pre>
+      <pre className="ascii mt-2 text-[11px]">{plan}</pre>
       <div className="mt-3 grid grid-cols-2 gap-2">
         <div className="rounded-lg border border-line bg-elevated px-3 py-2">
           <p className="label">Pages read</p>

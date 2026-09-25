@@ -21,9 +21,13 @@ export function LabsPage() {
               algorithms, and watch the consequences in live metrics.
             </p>
           </div>
+          {/* On a phone the filter wraps under the title onto a full-width row
+              that its four options share; from sm up it hugs its labels. */}
           <SegmentedControl
             value={difficulty}
             size="sm"
+            fill
+            className="sm:w-auto"
             options={[
               { value: 'all', label: 'All' },
               { value: 'Beginner', label: 'Beginner' },

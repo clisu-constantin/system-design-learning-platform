@@ -533,7 +533,7 @@ export function ConnectionPoolLab() {
             alert={waiting > 0}
             status={errorRate > 0 ? 'degraded' : 'healthy'}
           >
-            <p className="text-[10px] text-faint">One pool, busy / idle</p>
+            <p className="text-[11px] text-faint">One pool, busy / idle</p>
             <div className="flex flex-wrap gap-[3px]" aria-label={`${busyPerPool} of ${poolSize} connections busy`}>
               {Array.from({ length: poolSize }, (_, index) => (
                 <span

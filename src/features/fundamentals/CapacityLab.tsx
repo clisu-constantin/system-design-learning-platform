@@ -319,17 +319,17 @@ export function CapacityLab({ focus }: LabProps<'capacity'>) {
                 >
                   <span className="text-xs font-medium text-ink">
                     <span className="flex items-center gap-2">
-                      <span className="font-mono text-[10px] text-faint">{index + 1}</span>
+                      <span className="font-mono text-[11px] text-faint">{index + 1}</span>
                       {step.label}
                     </span>
-                    <span className="mt-0.5 block pl-4 text-[10px] font-normal text-faint">sizes: {step.part}</span>
+                    <span className="mt-0.5 block pl-4 text-[11px] font-normal text-faint">sizes: {step.part}</span>
                   </span>
                   <span className="font-mono text-[11px] text-muted">{step.formula}</span>
                   <span className="sm:text-right">
                     <span className={cn('block font-mono text-sm font-semibold', step.emphasis ? 'text-brand' : 'text-ink')}>
                       = {step.result}
                     </span>
-                    {step.exact ? <span className="block font-mono text-[10px] text-faint">exact {step.exact}</span> : null}
+                    {step.exact ? <span className="block font-mono text-[11px] text-faint">exact {step.exact}</span> : null}
                   </span>
                 </li>
               ))}
@@ -457,7 +457,7 @@ export function CapacityLab({ focus }: LabProps<'capacity'>) {
               <span key={index} className="h-[9px] w-[9px] rounded-[2px] bg-brand/70" />
             ))}
           </div>
-          <p className="text-[10px] text-faint">
+          <p className="text-[11px] text-faint">
             {pipSize > 1 ? `1 square = ${formatNumber(pipSize)} servers` : '1 square = 1 server'}
           </p>
           <NodeStatRow label="Needed at peak" value={formatNumber(est.serversAtPeak)} />
@@ -532,7 +532,7 @@ function RoughVersusExact({ rough, exact }: { rough: Estimate; exact: Estimate }
       <div className="overflow-x-auto">
         <table className="w-full min-w-[420px] text-left text-xs">
           <thead>
-            <tr className="text-[10px] uppercase tracking-wide text-faint">
+            <tr className="text-[11px] uppercase tracking-wide text-faint">
               <th className="py-1.5 pr-3 font-medium">Estimate</th>
               <th className="py-1.5 pr-3 font-medium">Rough</th>
               <th className="py-1.5 pr-3 font-medium">Exact</th>

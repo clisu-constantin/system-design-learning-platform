@@ -24,7 +24,7 @@ export function AppShell() {
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const [difficulty, setDifficulty] = useState<Difficulty | 'all'>('all');
   const location = useLocation();
-  const { sidebarFolded, setSidebarFolded } = useLayout();
+  const { sidebarFolded, setFolded } = useLayout();
   const isWide = useMediaQuery(LG_QUERY);
   // A stored fold only applies to the static column; the small-screen drawer always shows everything.
   const folded = isWide && sidebarFolded;
@@ -56,7 +56,7 @@ export function AppShell() {
     <div className="flex h-full flex-col bg-canvas">
       <TopBar
         onOpenSearch={() => setSearchOpen(true)}
-        onToggleSidebar={() => (isWide ? setSidebarFolded(!sidebarFolded) : setMobileNavOpen((open) => !open))}
+        onToggleSidebar={() => (isWide ? setFolded('sidebarFolded', !sidebarFolded) : setMobileNavOpen((open) => !open))}
         sidebarExpanded={isWide ? !sidebarFolded : mobileNavOpen}
         difficulty={difficulty}
         onDifficultyChange={setDifficulty}
@@ -74,7 +74,7 @@ export function AppShell() {
           <Sidebar
             difficulty={difficulty}
             folded={folded}
-            onUnfold={() => setSidebarFolded(false)}
+            onUnfold={() => setFolded('sidebarFolded', false)}
             onNavigate={() => setMobileNavOpen(false)}
           />
         </aside>

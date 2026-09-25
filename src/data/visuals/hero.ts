@@ -13,9 +13,9 @@ export const HERO_VISUAL: VisualSpec = {
   nodes: [
     { id: 'users', kind: 'client', label: 'Users', sub: '3,400 req/sec', x: 300, y: 8, w: 170, h: 80 },
     { id: 'lb', kind: 'load-balancer', label: 'Load Balancer', sub: '2 nodes, multi-AZ', x: 288, y: 104, w: 190, h: 78 },
-    { id: 's1', kind: 'server', label: 'API 1', x: 40, y: 206, w: 140, h: 84, stat: ['CPU', '41%'] },
-    { id: 's2', kind: 'server', label: 'API 2', x: 310, y: 206, w: 140, h: 84, stat: ['CPU', '38%'] },
-    { id: 's3', kind: 'server', label: 'API 3', x: 580, y: 206, w: 140, h: 84, stat: ['CPU', '44%'] },
+    { id: 's1', kind: 'server', label: 'API 1', x: 40, y: 206, w: 140, h: 90, stat: ['CPU', '41%'] },
+    { id: 's2', kind: 'server', label: 'API 2', x: 310, y: 206, w: 140, h: 90, stat: ['CPU', '38%'] },
+    { id: 's3', kind: 'server', label: 'API 3', x: 580, y: 206, w: 140, h: 90, stat: ['CPU', '44%'] },
     { id: 'cache', kind: 'cache', label: 'Redis', sub: 'hit 91%', x: 150, y: 312, w: 150, h: 80 },
     { id: 'db', kind: 'sql', label: 'PostgreSQL', x: 455, y: 312, w: 150, h: 80 },
   ],

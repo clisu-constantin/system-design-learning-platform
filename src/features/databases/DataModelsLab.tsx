@@ -655,7 +655,7 @@ function GroupFrames({ view, partitions }: { view: View; partitions: number }) {
             className="stroke-line"
             strokeWidth={1.5}
           />
-          <text x={frame.x + 12} y={417} className="fill-faint" style={{ fontSize: 10.5 }}>
+          <text x={frame.x + 12} y={417} className="fill-faint" style={{ fontSize: 11 }}>
             {frame.label}
           </text>
         </g>

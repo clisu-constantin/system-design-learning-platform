@@ -40,15 +40,37 @@ const TITLE_CHAR_W = {
   "o": 7.4, "p": 7.7, "q": 7.7, "r": 5, "s": 6.7, "t": 4.8, "u": 7.4, "v": 6.9, "w": 9.9, "x": 6.8,
   "y": 7, "z": 6.7, "{": 5, "|": 3.5, "}": 5, "~": 7.9,
 };
-// Anything outside the table (non-ASCII) is assumed as wide as a "W".
-const titleWidth = (label) => [...label].reduce((sum, ch) => sum + (TITLE_CHAR_W[ch] ?? 12), 0);
+// The same measurement for the subtitle font (text-[11px], weight 400 - 11px is
+// the app-wide text floor). It replaced a flat 5.2px per character that was
+// sized for the old 10px subtitle and already under-shot it (5.5px average).
+const SUB_CHAR_W = {
+  "0": 7, "1": 5.2, "2": 6.8, "3": 7, "4": 7.2, "5": 6.9, "6": 7.1, "7": 6.4, "8": 7.1, "9": 7.1,
+  " ": 3.2, "!": 3.5, "\"": 5.4, "#": 7, "$": 7, "%": 10.3, "&": 7.9, "'": 3.4, "(": 4.3, ")": 4.3,
+  "*": 5.3, "+": 7, ",": 3.4, "-": 5.3, ".": 3.4, "/": 3.5, ":": 3.4, ";": 3.4, "<": 7, "=": 7,
+  ">": 7, "?": 5.8, "@": 10.2, "A": 7.5, "B": 7.3, "C": 8, "D": 8.1, "E": 6.7, "F": 6.4, "G": 8.3,
+  "H": 8.3, "I": 3.1, "J": 6, "K": 7.4, "L": 6.4, "M": 9.7, "N": 8.3, "O": 8.6, "P": 7.1, "Q": 8.6,
+  "R": 7.3, "S": 7.1, "T": 7.1, "U": 8.2, "V": 7.5, "W": 10.8, "X": 7.6, "Y": 7.3, "Z": 7.4,
+  "[": 4.3, "\\": 3.5, "]": 4.3, "^": 7, "_": 6.5, "`": 5.6, "a": 6.2, "b": 6.9, "c": 6.3,
+  "d": 6.9, "e": 6.4, "f": 4.1, "g": 6.8, "h": 6.6, "i": 2.8, "j": 2.8, "k": 6.1, "l": 2.9,
+  "m": 9.7, "n": 6.5, "o": 6.6, "p": 6.8, "q": 6.8, "r": 4.3, "s": 5.9, "t": 4.1, "u": 6.5,
+  "v": 6.1, "w": 8.6, "x": 5.9, "y": 6.1, "z": 6, "{": 4.3, "|": 3, "}": 4.3, "~": 7,
+};
+// Anything outside a table (non-ASCII) is assumed as wide as a "W".
+const textWidth = (table, wide) => (label) => [...label].reduce((sum, ch) => sum + (table[ch] ?? wide), 0);
+const titleWidth = textWidth(TITLE_CHAR_W, 12);
+const subWidth = textWidth(SUB_CHAR_W, 10.8);
 const minWidth = (node) =>
   Math.ceil(
-    CHROME_X +
-      Math.max(titleWidth(node.label) + (node.badge ? BADGE_X : 0), node.sub ? node.sub.length * 5.2 : 0),
+    CHROME_X + Math.max(titleWidth(node.label) + (node.badge ? BADGE_X : 0), node.sub ? subWidth(node.sub) : 0),
   );
-// 16 padding + 28 icon row + 16 status + 2 gaps, then subtitle and stat row
-const minHeight = (node) => 62 + (node.sub ? 12 : 0) + (node.stat ? 16 : 0);
+// Rendered height of a compact ArchNode, measured in headless Chromium with the
+// built stylesheet: 16 padding + 2 border + 28 icon row + 4 gap + 18.5 status
+// line = 68.5. An 11px subtitle under the title makes the title block 32.5px,
+// 4.5 taller than the icon; a stat row adds 16.5 plus a 4px gap and the stat
+// block's own line box (21.5 in all). The old 62 / +12 / +16 estimate
+// under-shot every case, so a node could pass here and still grow over the one
+// below it. Re-measure if ArchNode's padding, gaps or text sizes change.
+const minHeight = (node) => Math.ceil(68.5 + (node.sub ? 4.5 : 0) + (node.stat ? 21.5 : 0));
 
 const overlaps = (a, b) =>
   a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y;
@@ -86,7 +108,7 @@ try {
 
   const { VISUALS, HERO_VISUAL } = await import(pathToFileURL(join(dir, 'visuals.mjs')).href);
   const { STAGES } = await import(pathToFileURL(join(dir, 'stages.mjs')).href);
-  const { curveBetween, pointOnCurve, midpoint } = await import(
+  const { curveBetween, pointOnCurve, midpoint, edgeLabelBox } = await import(
     pathToFileURL(join(dir, 'geometry.mjs')).href
   );
 
@@ -249,13 +271,8 @@ try {
 
       const curve = curveBetween(from, to, edge.curvature);
       const point = edge.labelT === undefined ? midpoint(curve) : pointOnCurve(curve, edge.labelT);
-      const labelBox = {
-        id: `label "${edge.label}"`,
-        x: point.x - (edge.label.length * 5.1) / 2 - 5,
-        y: point.y - 16,
-        w: edge.label.length * 5.1 + 10,
-        h: 15,
-      };
+      // The same chip DiagramCanvas draws, so the check and the page agree.
+      const labelBox = { id: `label "${edge.label}"`, ...edgeLabelBox(point, edge.label) };
 
       for (const box of boxes) {
         if (overlaps(labelBox, box)) {

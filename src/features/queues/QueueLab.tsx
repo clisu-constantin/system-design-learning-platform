@@ -812,7 +812,7 @@ export function QueueLab({ focus }: LabProps<'queue'>) {
                   className={`h-2 w-2 rounded-full ${index > 32 ? 'bg-danger' : index > 24 ? 'bg-warn' : 'bg-brand'}`}
                 />
               ))}
-              {dots === 0 ? <span className="text-[10px] text-faint">empty</span> : null}
+              {dots === 0 ? <span className="text-[11px] text-faint">empty</span> : null}
             </div>
           </ArchNode>
         ) : null}

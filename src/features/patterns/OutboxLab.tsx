@@ -549,7 +549,7 @@ export function OutboxLab() {
         x={DATABASE_BOX.x + 14}
         y={DATABASE_BOX.y + 24}
         className="fill-muted font-mono"
-        style={{ fontSize: 10.5 }}
+        style={{ fontSize: 11 }}
       >
         {outboxOn ? 'Orders DB - order row + outbox row in one transaction' : 'Orders DB - the broker is not in this transaction'}
       </text>

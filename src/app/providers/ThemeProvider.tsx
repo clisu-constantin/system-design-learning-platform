@@ -14,7 +14,21 @@ export type Theme = 'dark' | 'light';
 const STORAGE_KEY = 'sdi:theme';
 
 /** Token names resolved from CSS variables for libraries that need real colours. */
-const TOKENS = ['brand', 'ok', 'warn', 'danger', 'info', 'violet', 'line', 'ink', 'muted', 'faint', 'surface', 'elevated'] as const;
+const TOKENS = [
+  'brand',
+  'ok',
+  'warn',
+  'danger',
+  'info',
+  'violet',
+  'line',
+  'ink',
+  'muted',
+  'faint',
+  'canvas',
+  'surface',
+  'elevated',
+] as const;
 
 export type ColorToken = (typeof TOKENS)[number];
 export type ThemeColors = Record<ColorToken, string>;
@@ -56,6 +70,7 @@ const FALLBACK: ThemeColors = {
   ink: '#e2e8f0',
   muted: '#94a3b8',
   faint: '#64748b',
+  canvas: '#070b14',
   surface: '#0d1422',
   elevated: '#121a2b',
 };
