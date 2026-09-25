@@ -50,6 +50,18 @@ The scenario questions that check one Concept - at least ten, and more when ten 
 Passing it with 70% or more makes the Concept Done.
 _Avoid_: Test, exam, questions
 
+### Tools
+
+**Tools**:
+The six pages that sit above the Categories in the sidebar: Interactive Labs, Playground, System
+Evolution, Compare Mode, Scenarios and Glossary. They are not tied to one Concept.
+_Avoid_: Workspace, features, sections
+
+**Playground**:
+The free-build canvas where the learner adds parts, wires them and runs traffic to see what breaks.
+Unlike a Lab, it has no set lesson and no fixed parts.
+_Avoid_: Sandbox, editor, builder
+
 ### Progress
 
 **Done**:
