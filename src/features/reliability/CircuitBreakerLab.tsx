@@ -417,7 +417,7 @@ export function CircuitBreakerLab() {
                 current.calls.map((call) => <CallGlyph key={call.id} result={call.result} />)
               )}
             </div>
-            <div className="mt-2 flex gap-4 text-[10px] text-faint">
+            <div className="mt-2 flex gap-4 text-[11px] text-faint">
               <span className="flex items-center gap-1">
                 <CallGlyph result="ok" /> success
               </span>

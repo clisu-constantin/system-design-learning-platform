@@ -24,7 +24,7 @@ interface LiveChartProps {
 // Plot insets inside the SVG. The left gutter holds the y-axis labels.
 const TOP = 6;
 const RIGHT = 6;
-const LEFT = 34;
+const LEFT = 37;
 const BOTTOM = 4;
 const LEGEND_HEIGHT = 22;
 const TICK_COUNT = 5;
@@ -125,7 +125,7 @@ export const LiveChart = memo(function LiveChart({
                 stroke={colors.line}
                 strokeDasharray="3 3"
               />
-              <text x={LEFT - 6} y={y(tick)} dy="0.32em" textAnchor="end" fill={colors.faint} fontSize={10}>
+              <text x={LEFT - 6} y={y(tick)} dy="0.32em" textAnchor="end" fill={colors.faint} fontSize={11}>
                 {formatTick(tick)}
               </text>
             </g>

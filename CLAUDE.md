@@ -245,6 +245,22 @@ These are editorial rules, not style preferences. They are the reason the app is
 - Status is never communicated by color alone — particles have distinct shapes (circle, diamond,
   triangle, cross) and every status has a text label (`HealthIndicator`, `ParticleLegend`).
 - Dark mode is the default when the OS does not ask for light (first paint follows `prefers-color-scheme`), and it is the theme diagrams are tuned for; both themes must stay readable.
+- **Text is never smaller than 11px** - labels, captions, monospace numbers, node subtitles and stat
+  rows, SVG `<text>` and edge labels alike. `text-[11px]` is the floor; there is no `text-[9px]` or
+  `text-[10px]` in the app, and an SVG `fontSize` is at least 11. (A diagram scaled below 1x by
+  `useFitScale` shrinks its text with it - that is the one exception, and why a diagram scrolls
+  inside its card instead of shrinking past its floor.)
+- **Touch targets are at least 44x44px on a coarse pointer** (a touch screen); with a mouse the
+  compact desktop sizes stay. One base rule in `src/styles/index.css` gives `button`, `a[href]`,
+  `select`, `summary`, text inputs and `role` tab/button/switch/option/menuitem a 44px min-height
+  and min-width under `@media (pointer: coarse)`, so a raw `<button>` on a new page is covered with
+  no extra class. It uses `:where()` (zero specificity), so a utility on the element wins. For
+  something else that is clickable (a `div` with `onClick`, a focusable `span`), give it a real
+  role or `coarse:min-h-11`. A control that must stay visually small opts out with `coarse:min-h-0`
+  and grows its hit area instead: `Toggle` with a `::before`, `InfoTip` with an `::after`,
+  `Slider` with padding and `bg-clip-content`. The `coarse:` Tailwind variant is defined in
+  `tailwind.config.js`. Controls inside a `DiagramCanvas` (`data-diagram`) are exempt: the diagram
+  is fixed geometry, and a taller button in a node would push it over its neighbour.
 
 ## Gotchas
 
@@ -264,8 +280,9 @@ These are editorial rules, not style preferences. They are the reason the app is
   Write tool for source files.
 - `ArchNode` grows to fit its content and truncates its title, so an undersized box silently
   clips its label or overlaps the node below. `npm run check:visuals` catches both; it runs as part
-  of `npm run build`. Minimum height is 62 + 12 (subtitle) + 16 (stat row); minimum width is
-  54 + the per-letter title width table in `scripts/check-visuals.mjs` (about 7px a letter).
+  of `npm run build`. Minimum height is 69, +4.5 with a subtitle and +21.5 with a stat row (so 73,
+  90 or 95 - measured in headless Chromium); minimum width is 54 + the per-letter title width table
+  in `scripts/check-visuals.mjs` (about 7px a letter), or the subtitle table (about 6px) if wider.
 - Everything persists to `localStorage` only (`sdi:theme`, `sdi:progress:v1`, and `sdi:layout` for
   which side panels the learner folded). No backend, no auth, no network calls at runtime — keep it
   that way.

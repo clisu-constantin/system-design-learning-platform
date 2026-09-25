@@ -8,7 +8,7 @@ export const systemVisuals: Record<string, VisualSpec> = {
     height: 330,
     caption: 'Every level caches the answer for its TTL, so a change is never instant.',
     nodes: [
-      { id: 'browser', kind: 'client', label: 'Browser', sub: 'then the OS cache', x: 30, y: 110, w: 150, h: 80 },
+      { id: 'browser', kind: 'client', label: 'Browser', sub: 'then the OS cache', x: 29, y: 110, w: 152, h: 80 },
       { id: 'resolver', kind: 'dns', label: 'Resolver', sub: 'recursive, caches', x: 250, y: 110, w: 170, h: 80 },
       { id: 'root', kind: 'dns', label: 'Root server', sub: 'refers to .com', x: 520, y: 10, w: 190, h: 74 },
       { id: 'tld', kind: 'dns', label: '.com TLD server', sub: 'refers to example.com', x: 520, y: 105, w: 190, h: 74 },
@@ -40,10 +40,10 @@ export const systemVisuals: Record<string, VisualSpec> = {
     caption: 'Most users are served from an edge a few milliseconds away. Only misses reach the origin.',
     nodes: [
       { id: 'origin', kind: 'server', label: 'Origin', sub: 'us-east', x: 305, y: 12, w: 150, h: 80 },
-      { id: 'eu', kind: 'cdn', label: 'Europe edge', x: 40, y: 130, w: 160, h: 84, stat: ['RTT', '11 ms'] },
-      { id: 'us', kind: 'cdn', label: 'US edge', x: 300, y: 130, w: 160, h: 84, stat: ['RTT', '10 ms'] },
-      { id: 'ap', kind: 'cdn', label: 'Asia edge', x: 560, y: 130, w: 160, h: 84, stat: ['RTT', '13 ms'] },
-      { id: 'users', kind: 'client', label: 'Users worldwide', x: 290, y: 250, w: 180, h: 68 },
+      { id: 'eu', kind: 'cdn', label: 'Europe edge', x: 40, y: 130, w: 160, h: 90, stat: ['RTT', '11 ms'] },
+      { id: 'us', kind: 'cdn', label: 'US edge', x: 300, y: 130, w: 160, h: 90, stat: ['RTT', '10 ms'] },
+      { id: 'ap', kind: 'cdn', label: 'Asia edge', x: 560, y: 130, w: 160, h: 90, stat: ['RTT', '13 ms'] },
+      { id: 'users', kind: 'client', label: 'Users worldwide', x: 290, y: 250, w: 180, h: 69 },
     ],
     edges: [
       { from: 'users', to: 'eu', tone: 'ok', rate: 2 },
@@ -264,9 +264,9 @@ export const systemVisuals: Record<string, VisualSpec> = {
     nodes: [
       { id: 'producer', kind: 'server', label: 'Producer', sub: '100 msg/sec', x: 40, y: 115, w: 160, h: 80 },
       { id: 'queue', kind: 'queue', label: 'Queue', sub: 'depth 240 and growing', x: 280, y: 105, w: 190, h: 96, stat: ['Wait', '4 s'], alert: true },
-      { id: 'w1', kind: 'worker', label: 'Worker 1', x: 560, y: 15, w: 160, h: 84, stat: ['Rate', '20/s'] },
-      { id: 'w2', kind: 'worker', label: 'Worker 2', x: 560, y: 115, w: 160, h: 84, stat: ['Rate', '20/s'] },
-      { id: 'w3', kind: 'worker', label: 'Worker 3', x: 560, y: 215, w: 160, h: 84, stat: ['Rate', '20/s'] },
+      { id: 'w1', kind: 'worker', label: 'Worker 1', x: 560, y: 15, w: 160, h: 90, stat: ['Rate', '20/s'] },
+      { id: 'w2', kind: 'worker', label: 'Worker 2', x: 560, y: 115, w: 160, h: 90, stat: ['Rate', '20/s'] },
+      { id: 'w3', kind: 'worker', label: 'Worker 3', x: 560, y: 215, w: 160, h: 90, stat: ['Rate', '20/s'] },
     ],
     edges: [
       { from: 'producer', to: 'queue', tone: 'brand', rate: 5 },
@@ -568,8 +568,8 @@ export const systemVisuals: Record<string, VisualSpec> = {
     caption: 'N+1: losing one instance still leaves enough capacity for peak traffic.',
     nodes: [
       { id: 'traffic', kind: 'client', label: 'Peak traffic', x: 40, y: 105, w: 160, h: 78 },
-      { id: 's1', kind: 'server', label: 'Zone A', x: 300, y: 15, w: 160, h: 84, stat: ['CPU', '60%'] },
-      { id: 's2', kind: 'server', label: 'Zone B', x: 300, y: 105, w: 160, h: 84, stat: ['CPU', '60%'] },
+      { id: 's1', kind: 'server', label: 'Zone A', x: 300, y: 15, w: 160, h: 90, stat: ['CPU', '60%'] },
+      { id: 's2', kind: 'server', label: 'Zone B', x: 300, y: 105, w: 160, h: 90, stat: ['CPU', '60%'] },
       { id: 's3', kind: 'server', label: 'Zone C', x: 300, y: 195, w: 160, h: 76, status: 'down' },
       { id: 'ok', kind: 'client', label: 'Still serving', x: 560, y: 105, w: 160, h: 78 },
     ],
@@ -674,7 +674,7 @@ export const systemVisuals: Record<string, VisualSpec> = {
     height: 320,
     caption: 'Replication survives a lost region; only a backup undoes a bad write.',
     nodes: [
-      { id: 'users', kind: 'client', label: 'Users', x: 300, y: 10, w: 160, h: 64 },
+      { id: 'users', kind: 'client', label: 'Users', x: 300, y: 10, w: 160, h: 69 },
       { id: 'prod', kind: 'sql', label: 'Primary DB', sub: 'region A', x: 30, y: 130, w: 180, h: 80 },
       { id: 'standby', kind: 'sql', label: 'Standby DB', sub: 'region B, async', x: 550, y: 130, w: 180, h: 80 },
       { id: 'backup', kind: 'storage', label: 'Backups', sub: 'region B, own account', x: 270, y: 226, w: 220, h: 80 },
@@ -882,7 +882,7 @@ export const systemVisuals: Record<string, VisualSpec> = {
     height: 299,
     caption: 'One deployable unit, one database, in-process calls between features.',
     nodes: [
-      { id: 'client', kind: 'client', label: 'Clients', x: 305, y: 10, w: 150, h: 68 },
+      { id: 'client', kind: 'client', label: 'Clients', x: 305, y: 10, w: 150, h: 69 },
       { id: 'app', kind: 'server', label: 'Application', sub: 'users | orders | payments', x: 240, y: 105, w: 280, h: 86 },
       { id: 'db', kind: 'sql', label: 'Database', x: 305, y: 215, w: 150, h: 70 },
     ],
@@ -987,7 +987,7 @@ export const systemVisuals: Record<string, VisualSpec> = {
     nodes: [
       { id: 'cmd', kind: 'client', label: 'Withdraw 30', x: 40, y: 100, w: 160, h: 74 },
       { id: 'stream', kind: 'queue', label: 'account-42 stream', sub: 'immutable events', x: 270, y: 95, w: 200, h: 88 },
-      { id: 'snap', kind: 'storage', label: 'Snapshot', sub: 'balance 100 at event 1000', x: 550, y: 20, w: 190, h: 80 },
+      { id: 'snap', kind: 'storage', label: 'Snapshot', sub: 'balance 100 at event 1000', x: 548, y: 20, w: 194, h: 80 },
       { id: 'state', kind: 'sql', label: 'balance 70', sub: 'derived', x: 550, y: 175, w: 170, h: 80 },
     ],
     edges: [
@@ -1015,7 +1015,7 @@ export const systemVisuals: Record<string, VisualSpec> = {
       { id: 'f2', kind: 'service', label: 'fn instance 2', sub: 'warm', x: 392, y: 104, w: 150, h: 80 },
       { id: 'f3', kind: 'service', label: 'fn instance 3', sub: 'warm', x: 392, y: 196, w: 150, h: 80 },
       { id: 'pool', kind: 'api-gateway', label: 'Connection pooler', sub: 'or the DB falls over', x: 576, y: 96, w: 186, h: 94 },
-      { id: 'db', kind: 'sql', label: 'Database', sub: 'capped connections', x: 796, y: 100, w: 150, h: 86 },
+      { id: 'db', kind: 'sql', label: 'Database', sub: 'capped connections', x: 790, y: 100, w: 162, h: 86 },
     ],
     edges: [
       { from: 'events', to: 'platform', tone: 'brand', rate: 2.4 },
@@ -1418,7 +1418,7 @@ export const systemVisuals: Record<string, VisualSpec> = {
     nodes: [
       { id: 'clients', kind: 'client', label: '10,000 clients', sub: 'every 5 s', x: 40, y: 100, w: 180, h: 82 },
       { id: 'api', kind: 'server', label: 'API', sub: '2,000 req/sec', x: 320, y: 100, w: 170, h: 82, alert: true },
-      { id: 'data', kind: 'sql', label: 'Data store', sub: 'changes once a minute', x: 570, y: 100, w: 170, h: 82 },
+      { id: 'data', kind: 'sql', label: 'Data store', sub: 'changes once a minute', x: 566, y: 100, w: 177, h: 82 },
     ],
     edges: [
       { from: 'clients', to: 'api', tone: 'brand', rate: 6 },
@@ -1679,7 +1679,7 @@ export const systemVisuals: Record<string, VisualSpec> = {
       { id: 'db', kind: 'sql', label: 'orders + outbox', sub: 'committed together', x: 250, y: 94, w: 190, h: 92 },
       { id: 'relay', kind: 'worker', label: 'Relay', sub: 'polls unsent rows', x: 490, y: 15, w: 160, h: 74 },
       { id: 'broker', kind: 'queue', label: 'Kafka', sub: 'order-events', x: 490, y: 190, w: 160, h: 74 },
-      { id: 'consumer', kind: 'worker', label: 'Fulfilment', sub: 'dedupes by event id', x: 690, y: 190, w: 160, h: 74 },
+      { id: 'consumer', kind: 'worker', label: 'Fulfilment', sub: 'dedupes by event id', x: 689, y: 190, w: 162, h: 74 },
     ],
     edges: [
       { from: 'app', to: 'db', tone: 'brand', rate: 2 },

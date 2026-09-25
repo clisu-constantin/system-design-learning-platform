@@ -40,7 +40,7 @@ export function PlaygroundNode({ data, selected }: NodeProps<PlaygroundNodeData>
         </span>
         <div className="min-w-0 flex-1">
           <p className="truncate text-xs font-semibold text-ink">{data.label}</p>
-          <p className="truncate text-[10px] text-faint">
+          <p className="truncate text-[11px] text-faint">
             {data.capacity > 0 ? `${formatNumber(data.capacity)} req/s capacity` : 'traffic source'}
           </p>
         </div>
@@ -54,7 +54,7 @@ export function PlaygroundNode({ data, selected }: NodeProps<PlaygroundNodeData>
 
       <div className="mt-2 flex items-center justify-between">
         <HealthIndicator status={data.status} />
-        {data.bottleneck ? <span className="text-[10px] font-semibold uppercase text-warn">bottleneck</span> : null}
+        {data.bottleneck ? <span className="text-[11px] font-semibold uppercase text-warn">bottleneck</span> : null}
       </div>
       <Handle type="source" position={Position.Bottom} />
     </div>

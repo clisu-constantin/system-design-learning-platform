@@ -196,7 +196,7 @@ function PlaygroundCanvas() {
                   <span className="min-w-0 flex-1">
                     <span className="block truncate text-[11px] font-medium text-ink">{style.label}</span>
                     {style.capacity > 0 ? (
-                      <span className="block font-mono text-[9px] text-faint">
+                      <span className="block font-mono text-[11px] text-faint">
                         {formatNumber(style.capacity)} req/s
                       </span>
                     ) : null}
@@ -310,7 +310,7 @@ function PlaygroundCanvas() {
                 <Badge tone={analysis.cost === 'High' ? 'warn' : 'neutral'}>{analysis.cost}</Badge>
               </div>
             </div>
-            <p className="mt-3 text-[10px] leading-relaxed text-faint">
+            <p className="mt-3 text-[11px] leading-relaxed text-faint">
               These scores are an educational heuristic, not an engineering measurement. They reward redundancy,
               caching and traffic distribution - the same things a reviewer would ask about.
             </p>
@@ -336,7 +336,7 @@ function PlaygroundCanvas() {
                       />
                       <div className="min-w-0">
                         <p className="text-[11px] leading-relaxed text-ink">{risk.message}</p>
-                        <p className="mt-1 text-[10px] leading-relaxed text-faint">+ {risk.fix}</p>
+                        <p className="mt-1 text-[11px] leading-relaxed text-faint">+ {risk.fix}</p>
                       </div>
                       <Badge tone={SEVERITY_TONE[risk.severity]}>{risk.severity}</Badge>
                     </div>
@@ -363,7 +363,7 @@ function PlaygroundCanvas() {
                   </div>
                 );
               })}
-              <p className="mt-2 text-[10px] leading-relaxed text-muted">
+              <p className="mt-2 text-[11px] leading-relaxed text-muted">
                 Possible fixes: add another instance, put a cache in front, move the work to a queue, or make the
                 operation cheaper.
               </p>

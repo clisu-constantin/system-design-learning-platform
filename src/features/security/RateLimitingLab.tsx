@@ -525,7 +525,7 @@ function WindowView({
     <div>
       <div className="flex gap-1">
         <div className="flex-1">
-          <p className="text-[10px] text-faint">previous</p>
+          <p className="text-[11px] text-faint">previous</p>
           <div className="mt-1 h-10 rounded bg-line/60">
             <div
               className="h-full rounded bg-faint/50"
@@ -534,7 +534,7 @@ function WindowView({
           </div>
         </div>
         <div className="flex-1">
-          <p className="text-[10px] text-faint">current ({Math.round(elapsed * 100)}%)</p>
+          <p className="text-[11px] text-faint">current ({Math.round(elapsed * 100)}%)</p>
           <div className="mt-1 h-10 rounded bg-line/60">
             <div
               className={`h-full rounded ${count >= limit ? 'bg-danger' : 'bg-brand'}`}

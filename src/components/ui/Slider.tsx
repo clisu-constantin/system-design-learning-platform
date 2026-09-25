@@ -62,11 +62,16 @@ export function Slider({
         onChange={(event) => onChange(Number(event.target.value))}
         className={cn(
           'h-1.5 w-full cursor-pointer appearance-none rounded-full bg-line disabled:cursor-not-allowed disabled:opacity-50',
+          // On a touch screen the input is 44px tall for the finger, but its
+          // background (the track) is clipped to the 6px content box, so the
+          // track looks the same as with a mouse. The radius is 3px across and
+          // 3 + 19px down, so the clipped track keeps round 3px ends.
+          'coarse:h-11 coarse:bg-clip-content coarse:py-[19px] coarse:rounded-[3px_/_22px]',
           tones[tone],
         )}
       />
       {scale ? (
-        <div className="flex justify-between font-mono text-[10px] text-faint">
+        <div className="flex justify-between font-mono text-[11px] text-faint">
           <span>{scale[0]}</span>
           <span>{scale[1]}</span>
         </div>

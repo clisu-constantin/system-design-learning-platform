@@ -366,7 +366,7 @@ export function IdempotencyLab() {
         x={DATABASE_BOX.x + 14}
         y={DATABASE_BOX.y + 24}
         className="fill-muted font-mono"
-        style={{ fontSize: 10.5 }}
+        style={{ fontSize: 11 }}
       >
         Payments DB - one transaction
       </text>

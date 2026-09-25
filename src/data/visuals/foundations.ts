@@ -88,11 +88,11 @@ export const foundationVisuals: Record<string, VisualSpec> = {
     height: 300,
     caption: '10M DAU x 20 requests = 200M/day = ~2,300 req/sec average, ~11,600 at peak: 18 app servers and 40 GB of new data a day.',
     nodes: [
-      { id: 'clients', kind: 'client', label: 'Clients', sub: '10M DAU x 20 a day', x: 16, y: 110, w: 150, h: 80 },
+      { id: 'clients', kind: 'client', label: 'Clients', sub: '10M DAU x 20 a day', x: 10, y: 110, w: 161, h: 80 },
       { id: 'lb', kind: 'load-balancer', label: 'Load balancer', sub: 'pair, 11,575 req/s peak', x: 192, y: 110, w: 176, h: 80 },
-      { id: 'app', kind: 'server', label: 'App x 18', sub: '1k req/s each + headroom', x: 394, y: 110, w: 182, h: 80 },
+      { id: 'app', kind: 'server', label: 'App x 18', sub: '1k req/s each + headroom', x: 389, y: 110, w: 191, h: 80 },
       { id: 'db', kind: 'sql', label: 'Database', sub: '1,160 writes/s at peak', x: 606, y: 20, w: 170, h: 80 },
-      { id: 'store', kind: 'storage', label: 'Object storage', sub: '40 GB/day, 15 TB/year', x: 606, y: 200, w: 170, h: 80 },
+      { id: 'store', kind: 'storage', label: 'Object storage', sub: '40 GB/day, 15 TB/year', x: 604, y: 200, w: 173, h: 80 },
     ],
     edges: [
       { from: 'clients', to: 'lb', tone: 'brand', rate: 3 },
@@ -115,11 +115,11 @@ export const foundationVisuals: Record<string, VisualSpec> = {
     height: 300,
     caption: 'One request: the ocean round trip (~150 ms) costs 300x the datacenter hop and over 1,000x the SSD read.',
     nodes: [
-      { id: 'user', kind: 'client', label: 'User in Europe', sub: 'app runs in the US', x: 20, y: 104, w: 170, h: 92, stat: ['round trip', '~150 ms'], alert: true },
+      { id: 'user', kind: 'client', label: 'User in Europe', sub: 'app runs in the US', x: 20, y: 104, w: 170, h: 95, stat: ['round trip', '~150 ms'], alert: true },
       { id: 'app', kind: 'server', label: 'App server', sub: 'US datacenter', x: 230, y: 110, w: 150, h: 80 },
-      { id: 'db', kind: 'sql', label: 'Database', sub: 'same datacenter', x: 420, y: 104, w: 150, h: 92, stat: ['hop', '~0.5 ms'] },
-      { id: 'ram', kind: 'cache', label: 'RAM', sub: 'page in memory', x: 610, y: 20, w: 140, h: 92, stat: ['read', '~100 ns'] },
-      { id: 'ssd', kind: 'storage', label: 'SSD', sub: 'page on disk', x: 610, y: 190, w: 140, h: 92, stat: ['read', '~100 us'] },
+      { id: 'db', kind: 'sql', label: 'Database', sub: 'same datacenter', x: 420, y: 104, w: 150, h: 95, stat: ['hop', '~0.5 ms'] },
+      { id: 'ram', kind: 'cache', label: 'RAM', sub: 'page in memory', x: 610, y: 20, w: 140, h: 95, stat: ['read', '~100 ns'] },
+      { id: 'ssd', kind: 'storage', label: 'SSD', sub: 'page on disk', x: 610, y: 190, w: 140, h: 95, stat: ['read', '~100 us'] },
     ],
     edges: [
       { from: 'user', to: 'app', tone: 'danger', rate: 1, outcome: 'warning' },
@@ -144,7 +144,7 @@ export const foundationVisuals: Record<string, VisualSpec> = {
       { id: 'lb', kind: 'load-balancer', label: 'LB', sub: '99.99%', x: 40, y: 100, w: 140, h: 80 },
       { id: 'api', kind: 'server', label: 'API', sub: '99.9%', x: 230, y: 100, w: 140, h: 80 },
       { id: 'db', kind: 'sql', label: 'Database', sub: '99.9%', x: 420, y: 100, w: 150, h: 80 },
-      { id: 'total', kind: 'monitoring', label: '~99.79%', sub: '18 h/year down', x: 610, y: 100, w: 130, h: 80, alert: true },
+      { id: 'total', kind: 'monitoring', label: '~99.79%', sub: '18 h/year down', x: 607, y: 100, w: 135, h: 80, alert: true },
     ],
     edges: [
       { from: 'lb', to: 'api', tone: 'ok', rate: 2.4 },

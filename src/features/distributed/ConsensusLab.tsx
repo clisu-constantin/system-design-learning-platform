@@ -150,7 +150,7 @@ function LogCell({ entry, committed }: { entry: Entry | undefined; committed: bo
     <span
       title={entry.noop ? `term ${entry.term}: empty entry that starts the term` : `term ${entry.term}: write #${entry.writeId}`}
       className={cn(
-        'flex h-4 w-4 shrink-0 items-center justify-center rounded-sm font-mono text-[9px] font-semibold',
+        'flex h-4 w-4 shrink-0 items-center justify-center rounded-sm font-mono text-[11px] font-semibold leading-none',
         committed ? 'border border-brand/60 bg-brand/20 text-brand' : 'border border-dashed border-warn/80 text-warn',
       )}
     >

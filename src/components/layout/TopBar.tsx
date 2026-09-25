@@ -57,7 +57,7 @@ export function TopBar({ onOpenSearch, onToggleSidebar, sidebarExpanded, difficu
         </span>
         <span className="hidden sm:block">
           <span className="block text-sm font-semibold leading-tight text-ink">System Design Interactive</span>
-          <span className="block text-[10px] leading-tight text-faint">Learn. Visualize. Experiment. Design.</span>
+          <span className="block text-[11px] leading-tight text-faint">Learn. Visualize. Experiment. Design.</span>
         </span>
       </Link>
 
@@ -70,7 +70,7 @@ export function TopBar({ onOpenSearch, onToggleSidebar, sidebarExpanded, difficu
       >
         <Search className="h-4 w-4" />
         <span className="hidden md:inline">Search</span>
-        <kbd className="hidden rounded border border-line px-1.5 py-0.5 font-mono text-[10px] md:inline">Ctrl K</kbd>
+        <kbd className="hidden rounded border border-line px-1.5 py-0.5 font-mono text-[11px] md:inline">Ctrl K</kbd>
       </button>
 
       <div className="hidden xl:block">

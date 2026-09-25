@@ -650,7 +650,7 @@ function ExampleCard({ example }: { example: WorkedExample }) {
       <ol className="mt-3 space-y-2">
         {example.walkthrough.map((step, index) => (
           <li key={step} className="flex gap-2.5 text-sm leading-relaxed text-muted">
-            <span className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full border border-info/40 font-mono text-[10px] text-info">
+            <span className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full border border-info/40 font-mono text-[11px] text-info">
               {index + 1}
             </span>
             <span>{step}</span>

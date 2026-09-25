@@ -32,7 +32,7 @@ export function ScenariosPage() {
               <p className="mt-1.5 flex-1 text-xs leading-relaxed text-muted">{scenario.tagline}</p>
               <div className="mt-3 flex flex-wrap gap-1.5">
                 {scenario.concepts.slice(0, 4).map((concept) => (
-                  <span key={concept} className="rounded-full border border-line px-2 py-0.5 text-[10px] text-faint">
+                  <span key={concept} className="rounded-full border border-line px-2 py-0.5 text-[11px] text-faint">
                     {concept.replace(/-/g, ' ')}
                   </span>
                 ))}

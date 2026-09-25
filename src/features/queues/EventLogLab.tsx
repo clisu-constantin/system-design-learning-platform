@@ -703,7 +703,7 @@ export function EventLogLab({ focus }: LabProps<'event-log'>) {
             {projector.balances.map((balance, account) => {
               const off = balance !== projector.correct[account];
               return (
-                <div key={account} className="flex items-baseline justify-between gap-1 text-[10px]">
+                <div key={account} className="flex items-baseline justify-between gap-1 text-[11px]">
                   <span className="text-faint">acct {account + 1}</span>
                   <span className={cn('font-mono font-semibold tabular-nums', off ? 'text-danger' : 'text-ink')}>
                     {off ? '!' : ''}
@@ -798,7 +798,7 @@ function OffsetTrack({ label, offset, end, tone }: { label: string; offset: numb
   const lag = end - offset;
   return (
     <div className="space-y-0.5">
-      <div className="flex items-baseline justify-between gap-2 text-[10px]">
+      <div className="flex items-baseline justify-between gap-2 text-[11px]">
         <span className="text-faint">{label} at offset</span>
         <span className="font-mono tabular-nums text-ink">
           {offset < from ? '< ' : ''}

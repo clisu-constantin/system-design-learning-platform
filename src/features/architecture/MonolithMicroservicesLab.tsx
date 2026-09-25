@@ -289,7 +289,7 @@ function Zone({ x, y, w, h, label, tone = 'line' }: { x: number; y: number; w: n
         strokeDasharray="6 5"
         strokeWidth={1.5}
       />
-      <text x={x + 14} y={y + 22} className="fill-muted font-mono" style={{ fontSize: 10.5 }}>
+      <text x={x + 14} y={y + 22} className="fill-muted font-mono" style={{ fontSize: 11 }}>
         {label}
       </text>
     </g>
@@ -1087,8 +1087,8 @@ export function MonolithMicroservicesLab({ focus }: LabProps<'monolith-microserv
                     key={feature}
                     className={
                       broken === feature
-                        ? 'rounded-md border border-danger bg-danger/10 px-2 py-0.5 text-[10px] text-danger'
-                        : 'rounded-md border border-line px-2 py-0.5 text-[10px] text-muted'
+                        ? 'rounded-md border border-danger bg-danger/10 px-2 py-0.5 text-[11px] text-danger'
+                        : 'rounded-md border border-line px-2 py-0.5 text-[11px] text-muted'
                     }
                   >
                     {feature}

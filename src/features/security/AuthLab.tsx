@@ -537,7 +537,7 @@ export function AuthLab({ focus }: LabProps<'auth'>) {
                 <li key={check.label} className="flex items-start gap-3">
                   <span
                     className={cn(
-                      'mt-0.5 w-11 shrink-0 rounded px-1.5 py-0.5 text-center font-mono text-[10px] font-semibold',
+                      'mt-0.5 w-11 shrink-0 rounded px-1.5 py-0.5 text-center font-mono text-[11px] font-semibold',
                       check.result === 'pass' && 'bg-ok/15 text-ok',
                       check.result === 'fail' && 'bg-danger/15 text-danger',
                       check.result === 'leak' && 'bg-warn/15 text-warn',
@@ -554,7 +554,7 @@ export function AuthLab({ focus }: LabProps<'auth'>) {
                 </li>
               ))}
               <li className="flex items-start gap-3 border-t border-line pt-2">
-                <span className="mt-0.5 w-11 shrink-0 rounded bg-elevated px-1.5 py-0.5 text-center font-mono text-[10px] font-semibold text-ink">
+                <span className="mt-0.5 w-11 shrink-0 rounded bg-elevated px-1.5 py-0.5 text-center font-mono text-[11px] font-semibold text-ink">
                   {decision.status}
                 </span>
                 <span className="text-xs text-muted">

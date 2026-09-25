@@ -878,10 +878,10 @@ function Zones({ nfr, region2, empty }: { nfr: Nfr; region2: boolean; empty: boo
   return (
     <g>
       <rect x={8} y={96} width={944} height={HEIGHT - 104} rx={14} className="fill-info/5 stroke-line" strokeDasharray="4 4" />
-      <text x={24} y={ROW[0] + 16} className="fill-faint font-mono" style={{ fontSize: 10 }}>
+      <text x={24} y={ROW[0] + 16} className="fill-faint font-mono" style={{ fontSize: 11 }}>
         {region2 ? 'REGION 1' : 'ONE REGION'}
       </text>
-      <text x={24} y={ROW[0] + 30} className="fill-faint font-mono" style={{ fontSize: 10 }}>
+      <text x={24} y={ROW[0] + 30} className="fill-faint font-mono" style={{ fontSize: 11 }}>
         {nfr.availability >= 2 ? '3 ZONES' : 'ONE ZONE'}
       </text>
     </g>

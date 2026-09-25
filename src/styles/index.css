@@ -52,6 +52,35 @@
     @apply outline-none ring-2 ring-brand/70 ring-offset-2 ring-offset-canvas;
   }
 
+  /* Touch targets. On a touch screen (the primary pointer is a finger) every
+     interactive control is at least 44x44px; with a mouse the compact desktop
+     sizes stay as they are. It is written against elements and roles, not
+     components, so a raw <button> on a new page gets it too.
+     - :where() keeps the specificity at zero, so a utility on the element still
+       wins. A control that must stay visually small (the Toggle switch, a
+       slider track) opts out with coarse:min-h-0 and grows its hit area
+       instead, with padding or a pseudo-element.
+     - Controls inside a diagram are left alone: its layout is fixed geometry
+       (see DiagramCanvas, data-diagram), and a taller button inside a node
+       would push the node over its neighbour. */
+  @media (pointer: coarse) {
+    :where(
+        button,
+        a[href],
+        select,
+        summary,
+        [role='button'],
+        [role='tab'],
+        [role='switch'],
+        [role='option'],
+        [role='menuitem'],
+        input:not([type='range'], [type='checkbox'], [type='radio'], [type='hidden'])
+      ):where(:not([data-diagram] *)) {
+      min-height: 44px;
+      min-width: 44px;
+    }
+  }
+
   ::-webkit-scrollbar {
     width: 10px;
     height: 10px;
