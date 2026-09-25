@@ -162,21 +162,29 @@
     }
   }
 }
-/* One inset for every panel floating on the canvas, so toolbar and minimap sit on one line. */
+/* One inset for every panel floating on the canvas, so toolbar and minimap sit on one line.
+   The toolbar height is set here, not by its buttons, so the minimap can stack above it:
+   a 32px button (44px on a touch screen) + 4px padding + 1px border on each side. */
 .react-flow {
   --playground-inset: 12px;
+  --playground-toolbar-h: 42px;
+}
+@media (pointer: coarse) {
+  .react-flow {
+    --playground-toolbar-h: 54px;
+  }
 }
 .react-flow .react-flow__panel.playground-panel {
   margin: var(--playground-inset);
 }
-/* A quiet overview: faded at rest, fully there while the learner uses it. */
+/* A quiet overview: faded at rest, fully there while the learner uses it. The minimap SVG cannot
+   take focus, so for a keyboard it is the focused toggle that shows it in full. */
 .react-flow .playground-minimap {
   overflow: hidden;
   opacity: 0.6;
   transition: opacity 150ms ease-out;
 }
 .react-flow .playground-minimap:hover,
-.react-flow .playground-minimap:focus-within,
 .react-flow:has(.playground-minimap-toggle:focus-visible) .playground-minimap {
   opacity: 1;
 }
@@ -187,7 +195,7 @@
 /* Too narrow for toolbar and minimap side by side: the minimap sits above the toolbar row. */
 @media (max-width: 519px) {
   .react-flow .react-flow__panel.playground-minimap {
-    margin-bottom: calc(var(--playground-inset) + 62px);
+    margin-bottom: calc(var(--playground-inset) + var(--playground-toolbar-h) + 8px);
   }
 }
 /* --------------------------- end Playground ------------------------------- */

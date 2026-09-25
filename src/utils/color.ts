@@ -1,6 +1,6 @@
 /**
- * Adds an alpha channel to a resolved theme color. React Flow writes the minimap colors into SVG
- * `fill` attributes, which cannot read var(), so the translucent mask needs a real color string.
+ * Adds an alpha channel to a color from `useThemeColors()`. For places that cannot read var(), such
+ * as an SVG `fill` attribute (the Playground minimap mask), and still need a translucent theme color.
  * Handles the two shapes `useThemeColors()` returns: `rgb(r g b)` and the `#rrggbb` fallbacks.
  */
 export function withAlpha(color: string, alpha: number): string {

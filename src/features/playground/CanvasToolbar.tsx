@@ -29,7 +29,7 @@ export function CanvasToolbar({ fitViewOptions, children }: CanvasToolbarProps) 
 
   return (
     <Panel position="bottom-left" className="playground-panel">
-      <div role="toolbar" aria-label="Canvas view" className="glass-panel flex items-center gap-0.5 p-1">
+      <div role="toolbar" aria-label="Canvas view" className="glass-panel flex h-[var(--playground-toolbar-h)] items-center gap-0.5 p-1">
         <ToolbarButton aria-label="Zoom out" onClick={() => flow.zoomOut()} disabled={zoom <= minZoom}>
           <Minus className="h-4 w-4" />
         </ToolbarButton>
@@ -65,7 +65,6 @@ export function ToolbarButton({ className, type = 'button', ...props }: ButtonHT
         'flex h-8 w-8 items-center justify-center rounded-lg text-muted transition-colors',
         'hover:bg-elevated/70 hover:text-ink disabled:pointer-events-none disabled:opacity-40',
         'aria-pressed:bg-brand/15 aria-pressed:text-brand',
-        'coarse:h-11 coarse:w-11',
         className,
       )}
       {...props}

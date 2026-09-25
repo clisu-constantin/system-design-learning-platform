@@ -38,11 +38,11 @@ function readStoredLayout(): LayoutState {
   }
 }
 
+/** A side panel whose folded state is remembered. */
+export type FoldablePanel = keyof LayoutState;
+
 interface LayoutContextValue extends LayoutState {
-  setSidebarFolded: (folded: boolean) => void;
-  setAsideFolded: (folded: boolean) => void;
-  setPaletteFolded: (folded: boolean) => void;
-  setInspectorFolded: (folded: boolean) => void;
+  setFolded: (panel: FoldablePanel, folded: boolean) => void;
 }
 
 const LayoutContext = createContext<LayoutContextValue | null>(null);
@@ -54,27 +54,12 @@ export function LayoutProvider({ children }: { children: ReactNode }) {
     safeLocalStorage.set(STORAGE_KEY, JSON.stringify(layout));
   }, [layout]);
 
-  const setSidebarFolded = useCallback(
-    (folded: boolean) => setLayout((current) => ({ ...current, sidebarFolded: folded })),
-    [],
-  );
-  const setAsideFolded = useCallback(
-    (folded: boolean) => setLayout((current) => ({ ...current, asideFolded: folded })),
-    [],
-  );
-  const setPaletteFolded = useCallback(
-    (folded: boolean) => setLayout((current) => ({ ...current, paletteFolded: folded })),
-    [],
-  );
-  const setInspectorFolded = useCallback(
-    (folded: boolean) => setLayout((current) => ({ ...current, inspectorFolded: folded })),
+  const setFolded = useCallback(
+    (panel: FoldablePanel, folded: boolean) => setLayout((current) => ({ ...current, [panel]: folded })),
     [],
   );
 
-  const value = useMemo(
-    () => ({ ...layout, setSidebarFolded, setAsideFolded, setPaletteFolded, setInspectorFolded }),
-    [layout, setSidebarFolded, setAsideFolded, setPaletteFolded, setInspectorFolded],
-  );
+  const value = useMemo(() => ({ ...layout, setFolded }), [layout, setFolded]);
 
   return <LayoutContext.Provider value={value}>{children}</LayoutContext.Provider>;
 }

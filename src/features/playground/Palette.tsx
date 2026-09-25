@@ -56,7 +56,7 @@ export function Palette({ onAdd }: { onAdd: (kind: NodeKind) => void }) {
                   aria-expanded={infoOpen}
                   aria-controls={infoId}
                   className={cn(
-                    'flex w-9 shrink-0 items-center justify-center rounded-r-lg text-faint transition-colors hover:bg-elevated hover:text-ink coarse:w-11',
+                    'flex w-9 shrink-0 items-center justify-center rounded-r-lg text-faint transition-colors hover:bg-elevated hover:text-ink',
                     infoOpen && 'text-brand',
                   )}
                 >

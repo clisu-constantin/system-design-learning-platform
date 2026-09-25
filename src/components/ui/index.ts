@@ -4,6 +4,7 @@ export * from './Card';
 export * from './ErrorBoundary';
 export * from './Expandable';
 export * from './Meter';
+export * from './Modal';
 export * from './SegmentedControl';
 export * from './Select';
 export * from './Slider';

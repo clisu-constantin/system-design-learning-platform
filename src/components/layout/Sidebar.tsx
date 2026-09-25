@@ -71,8 +71,9 @@ export function Sidebar({ difficulty, folded = false, onUnfold, onNavigate }: Si
   if (folded) return <SidebarStrip categories={visibleCategories} onOpenCategory={openAt} />;
 
   return (
-    <nav ref={navRef} aria-label="Concept navigation" className="flex h-full flex-col">
-      {/* The Tools stay pinned; only the Category list below the divider scrolls. */}
+    <nav ref={navRef} aria-label="Concept navigation" className="flex h-full flex-col short:overflow-y-auto">
+      {/* The Tools stay pinned; only the Category list below the divider scrolls. On a short screen
+          (a phone held sideways) pinned Tools would leave the Categories no room, so it all scrolls. */}
       <div role="group" aria-labelledby={toolsTitleId} className="shrink-0 space-y-0.5 border-b border-line px-3 pb-3 pt-4">
         <p id={toolsTitleId} className="label px-3 pb-1">
           Tools
@@ -95,7 +96,7 @@ export function Sidebar({ difficulty, folded = false, onUnfold, onNavigate }: Si
         ))}
       </div>
 
-      <div className="min-h-0 flex-1 space-y-1 overflow-y-auto px-3 pb-8 pt-3">
+      <div className="min-h-0 flex-1 space-y-1 overflow-y-auto px-3 pb-8 pt-3 short:flex-none short:overflow-visible">
         {visibleCategories.map((category) => {
           const concepts = conceptsIn(category.id);
           const isOpen = open[category.id] ?? false;

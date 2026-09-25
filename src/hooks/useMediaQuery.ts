@@ -26,3 +26,5 @@ export function useMediaQuery(query: string) {
 export const LG_QUERY = '(min-width: 1024px)';
 /** Tailwind's `xl` breakpoint: the concept page grows its side column from here up. */
 export const XL_QUERY = '(min-width: 1280px)';
+/** Past Tailwind `xl`: wide enough for the sidebar, the Playground component list and its inspector together. */
+export const ROOMY_QUERY = '(min-width: 1440px)';

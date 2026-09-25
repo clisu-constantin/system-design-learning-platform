@@ -2,9 +2,15 @@ import { useEffect, useRef, type ReactNode } from 'react';
 import { PanelLeftClose, PanelLeftOpen, PanelRightClose, PanelRightOpen } from 'lucide-react';
 import { cn } from '@/utils/cn';
 
+/** What differs between a column on the left of the canvas and one on its right. */
+const SIDE = {
+  left: { FoldIcon: PanelLeftClose, OpenIcon: PanelLeftOpen, border: 'border-r' },
+  right: { FoldIcon: PanelRightClose, OpenIcon: PanelRightOpen, border: 'border-l' },
+} as const;
+
 interface SidePanelProps {
   id: string;
-  side: 'left' | 'right';
+  side: keyof typeof SIDE;
   /** Visible heading, also used in the fold controls' accessible names. */
   title: string;
   folded: boolean;
@@ -34,9 +40,7 @@ export function SidePanel({ id, side, title, folded, onFoldedChange, width, chil
     onFoldedChange(next);
   };
 
-  const FoldIcon = side === 'left' ? PanelLeftClose : PanelRightClose;
-  const OpenIcon = side === 'left' ? PanelLeftOpen : PanelRightOpen;
-  const border = side === 'left' ? 'border-r' : 'border-l';
+  const { FoldIcon, OpenIcon, border } = SIDE[side];
 
   return (
     <>

@@ -62,7 +62,7 @@ export function GlossaryPage() {
                             shown where there is no hover (touch screens). Plain cards never render it. */}
                         <ArrowRight
                           aria-hidden
-                          className="h-3 w-3 opacity-0 transition-opacity group-hover:opacity-100 group-focus-visible:opacity-100 [@media(hover:none)]:opacity-100"
+                          className="h-3 w-3 opacity-0 transition-opacity group-hover:opacity-100 group-focus-visible:opacity-100 coarse:opacity-100"
                         />
                       </p>
                       <p className="mt-1 text-xs leading-relaxed text-muted">{entry.definition}</p>

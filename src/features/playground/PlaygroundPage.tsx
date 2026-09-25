@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type DragEvent } from 'react';
+import { useCallback, useMemo, useRef, useState, type DragEvent } from 'react';
 import ReactFlow, {
   addEdge,
   Background,
@@ -18,26 +18,26 @@ import { Boxes, Map as MapIcon, Pause, Play, RotateCcw, SlidersHorizontal } from
 import { useLayout } from '@/app/providers/LayoutProvider';
 import { useThemeColors } from '@/app/providers/ThemeProvider';
 import { Button, Select } from '@/components/ui';
-import { LG_QUERY, useMediaQuery } from '@/hooks/useMediaQuery';
-import type { NodeKind } from '@/types';
+import { LG_QUERY, ROOMY_QUERY, useMediaQuery } from '@/hooks/useMediaQuery';
+import type { NodeKind, NodeStatus } from '@/types';
+import { withAlpha } from '@/utils/color';
 import { NODE_SIZE, nodeTypes, type PlaygroundNodeData } from './nodes';
 import { edgeTypes } from './edges';
 import { analyze } from './analysis';
 import { makeNode, PRESETS } from './presets';
-import { withAlpha } from './color';
 import { BottomSheet } from './BottomSheet';
 import { CanvasToolbar, ToolbarButton } from './CanvasToolbar';
 import { ConnectBanner } from './ConnectBanner';
 import { Inspector } from './Inspector';
 import { NODE_DRAG_TYPE, Palette } from './Palette';
 import { SidePanel } from './SidePanel';
+import { useCanvasResize } from './useCanvasResize';
+import { useTapConnect } from './useTapConnect';
 
 /** The preset shown on first load; the select, the canvas and Reset all read this. */
 const DEFAULT_PRESET = 'scaled';
 /** Never zoom in past 1:1, so a three node preset does not fill the screen with one card. */
 const FIT_VIEW = { padding: 0.2, maxZoom: 1 };
-/** Below this width the sidebar, the component list and the inspector leave the canvas too little room. */
-const ROOMY_QUERY = '(min-width: 1440px)';
 /** Enough to find a node in a diagram that has outgrown the screen, small enough to stay out of the way. */
 const MINIMAP_SIZE = { width: 160, height: 100 };
 /** How far a new node steps aside when the view center already holds one. */
@@ -45,11 +45,13 @@ const STACK_OFFSET = 28;
 
 type Sheet = 'palette' | 'inspector';
 
-/** Tap-to-connect: the node the new wire starts at, and whether the last tap was refused. */
-interface ConnectMode {
-  source: string;
-  refusedSelf: boolean;
-}
+/** The minimap health colors, the same language as the node cards' health labels. */
+const MINIMAP_TONE: Record<NodeStatus, 'ok' | 'warn' | 'danger' | 'info'> = {
+  healthy: 'ok',
+  degraded: 'warn',
+  down: 'danger',
+  starting: 'info',
+};
 
 const newEdge = (connection: Connection) => ({
   ...connection,
@@ -68,7 +70,6 @@ function PlaygroundCanvas() {
   // A seven node diagram fits on screen, so the minimap waits until the learner asks for it.
   const [showMap, setShowMap] = useState(false);
   const [openSheet, setOpenSheet] = useState<Sheet | null>(null);
-  const [connectMode, setConnectMode] = useState<ConnectMode | null>(null);
   const wrapper = useRef<HTMLDivElement>(null);
   const instance = useRef<ReactFlowInstance | null>(null);
   const store = useStoreApi();
@@ -83,51 +84,32 @@ function PlaygroundCanvas() {
   const [inspectorPeek, setInspectorPeek] = useState(false);
   // Without a saved choice the inspector starts folded on a laptop, so the canvas keeps its room.
   const inspectorFolded = !inspectorPeek && (layout.inspectorFolded ?? !roomy);
-  /** Set by a fold or unfold; the next canvas resize re-frames the diagram in the new space. */
-  const refitPending = useRef(false);
+  const { refitOnResize, revealOnResize } = useCanvasResize(wrapper, instance, FIT_VIEW);
+  const { setFolded } = layout;
 
   const foldPalette = useCallback(
     (folded: boolean) => {
-      refitPending.current = true;
-      layout.setPaletteFolded(folded);
+      refitOnResize();
+      setFolded('paletteFolded', folded);
     },
-    [layout],
+    [refitOnResize, setFolded],
   );
   const foldInspector = useCallback(
     (folded: boolean) => {
-      refitPending.current = true;
+      refitOnResize();
       setInspectorPeek(false);
-      layout.setInspectorFolded(folded);
+      setFolded('inspectorFolded', folded);
     },
-    [layout],
+    [refitOnResize, setFolded],
   );
-
-  useEffect(() => {
-    const element = wrapper.current;
-    if (!element || typeof ResizeObserver === 'undefined') return;
-    let frame = 0;
-    const observer = new ResizeObserver(() => {
-      if (!refitPending.current) return;
-      refitPending.current = false;
-      // One frame later, so React Flow has read the new size before it frames the diagram.
-      cancelAnimationFrame(frame);
-      frame = requestAnimationFrame(() => instance.current?.fitView(FIT_VIEW));
-    });
-    observer.observe(element);
-    return () => {
-      observer.disconnect();
-      cancelAnimationFrame(frame);
-    };
-  }, []);
 
   const analysis = useMemo(() => analyze(nodes, edges, traffic), [nodes, edges, traffic]);
 
   /** The minimap reads the decorated nodes from the store, so each one shows its current health. */
   const minimapNodeColor = useCallback(
     (node: Node<PlaygroundNodeData>) => {
-      if (node.data.status === 'down') return colors.danger;
-      if (node.data.bottleneck || node.data.status === 'degraded') return colors.warn;
-      return colors.ok;
+      if (node.data.bottleneck && node.data.status !== 'down') return colors.warn;
+      return colors[MINIMAP_TONE[node.data.status]];
     },
     [colors],
   );
@@ -165,6 +147,8 @@ function PlaygroundCanvas() {
     (connection: Connection) => setEdges((current) => addEdge(newEdge(connection), current)),
     [setEdges],
   );
+  const { source: connectSource, refusedSelf, start: beginConnect, cancel: cancelConnect, tap: tapConnect } =
+    useTapConnect(nodes, onConnect);
 
   /** The flow position that puts a new node's card in the middle of what the learner sees now. */
   const viewCenter = useCallback(() => {
@@ -207,45 +191,28 @@ function PlaygroundCanvas() {
   );
 
   const selected = nodes.find((node) => node.id === selectedId) ?? null;
-  // A removed source ends tap-to-connect on its own.
-  const connecting = connectMode && nodes.some((node) => node.id === connectMode.source) ? connectMode : null;
-  const connectSource = connecting ? nodes.find((node) => node.id === connecting.source) : undefined;
 
   const startConnect = useCallback(() => {
     if (!selectedId) return;
-    setConnectMode({ source: selectedId, refusedSelf: false });
+    beginConnect(selectedId);
     setOpenSheet(null);
-  }, [selectedId]);
-
-  useEffect(() => {
-    if (!connecting) return;
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') setConnectMode(null);
-    };
-    window.addEventListener('keydown', onKeyDown);
-    return () => window.removeEventListener('keydown', onKeyDown);
-  }, [connecting]);
+  }, [selectedId, beginConnect]);
 
   const onNodeClick = useCallback(
     (id: string) => {
-      if (connecting) {
-        // Same rule as a drag between handles: a component cannot send requests to itself.
-        if (id === connecting.source) {
-          setConnectMode({ ...connecting, refusedSelf: true });
-          return;
-        }
-        onConnect({ source: connecting.source, target: id, sourceHandle: null, targetHandle: null });
-        setConnectMode(null);
-        setSelectedId(id);
-        return;
-      }
+      const result = tapConnect(id);
+      if (result === 'refused') return;
       setSelectedId(id);
-      // A selection is a question about that node, so a folded inspector opens to answer it. It does
-      // not re-frame the diagram, which would move the node away from under the pointer.
+      if (result === 'connected') return;
+      // A selection is a question about that node, so a folded inspector opens to answer it. It is
+      // not saved as the learner's choice, and the view pans only if the node would end up under it.
       if (!isWide) setOpenSheet('inspector');
-      else if (inspectorFolded) setInspectorPeek(true);
+      else if (inspectorFolded) {
+        revealOnResize(id);
+        setInspectorPeek(true);
+      }
     },
-    [connecting, onConnect, isWide, inspectorFolded],
+    [tapConnect, isWide, inspectorFolded, revealOnResize],
   );
 
   const toggleFailure = useCallback(() => {
@@ -275,14 +242,14 @@ function PlaygroundCanvas() {
       setEdges(built.edges);
       setPreset(id);
       setSelectedId(null);
-      setConnectMode(null);
+      cancelConnect();
       // Re-frame the new diagram, otherwise the viewport keeps the previous preset's zoom and most
       // of the new one sits off screen. fitView() cannot run yet - the new nodes are unmeasured -
       // so re-arm React Flow's own fit-on-init, which fires once their dimensions arrive.
       if (built.nodes.length === 0) instance.current?.setViewport({ x: 0, y: 0, zoom: 1 });
       else store.setState({ fitViewOnInitDone: false });
     },
-    [setNodes, setEdges, store],
+    [setNodes, setEdges, store, cancelConnect],
   );
 
   const palette = <Palette onAdd={addComponent} />;
@@ -359,7 +326,7 @@ function PlaygroundCanvas() {
             onNodeClick={(_, node: Node) => onNodeClick(node.id)}
             onPaneClick={() => {
               setSelectedId(null);
-              setConnectMode(null);
+              cancelConnect();
             }}
             nodeTypes={nodeTypes}
             edgeTypes={edgeTypes}
@@ -370,11 +337,11 @@ function PlaygroundCanvas() {
           >
             {/* Background, MiniMap: React Flow writes these colors into SVG attributes, so no var() strings. */}
             <Background variant={BackgroundVariant.Dots} gap={18} size={1} color={colors.line} />
-            {connecting && connectSource ? (
+            {connectSource ? (
               <ConnectBanner
                 sourceLabel={connectSource.data.label}
-                refusedSelf={connecting.refusedSelf}
-                onCancel={() => setConnectMode(null)}
+                refusedSelf={refusedSelf}
+                onCancel={cancelConnect}
               />
             ) : null}
             <CanvasToolbar fitViewOptions={FIT_VIEW}>

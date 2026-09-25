@@ -56,6 +56,8 @@ export default {
     // touch-target rule in src/styles/index.css.
     plugin(({ addVariant }) => {
       addVariant('coarse', '@media (pointer: coarse)');
+      // `short:` applies on a screen too short to pin anything, such as a phone held sideways.
+      addVariant('short', '@media (max-height: 639px)');
     }),
   ],
 };
