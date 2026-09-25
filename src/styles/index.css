@@ -93,29 +93,45 @@
   }
 }
 
-/* react-flow theme bridging */
-.react-flow__attribution {
+/* ---------------------------------------------------------------------------
+   Playground (React Flow)
+   React Flow's own stylesheet is imported by the lazy Playground chunk, so it
+   lands after this file. Every bridge rule is scoped under `.react-flow` to
+   out-rank its single-class defaults whatever the load order is.
+   --------------------------------------------------------------------------- */
+.react-flow .react-flow__attribution {
   display: none;
 }
-.react-flow__edge-path {
+.react-flow .react-flow__edge-path {
   stroke: rgb(var(--c-faint));
 }
-.react-flow__handle {
+.react-flow .react-flow__handle {
   background: rgb(var(--c-brand));
   border: 2px solid rgb(var(--c-surface));
   width: 9px;
   height: 9px;
 }
-.react-flow__controls-button {
+.react-flow .react-flow__controls {
+  box-shadow: none;
+  border: 1px solid rgb(var(--c-line));
+  border-radius: 10px;
+  overflow: hidden;
+}
+.react-flow .react-flow__controls-button {
   background: rgb(var(--c-surface));
   border-bottom: 1px solid rgb(var(--c-line));
   fill: rgb(var(--c-muted));
 }
-.react-flow__minimap {
+.react-flow .react-flow__controls-button:hover {
+  background: rgb(var(--c-elevated));
+  fill: rgb(var(--c-ink));
+}
+.react-flow .react-flow__minimap {
   background: rgb(var(--c-surface));
   border: 1px solid rgb(var(--c-line));
   border-radius: 12px;
 }
+/* --------------------------- end Playground ------------------------------- */
 
 /* The OS "reduce motion" setting: CSS animations and transitions (dash, pulse,
    fade-in, hover transitions) finish immediately. Self-running diagrams start

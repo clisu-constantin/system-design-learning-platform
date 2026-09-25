@@ -16,6 +16,7 @@ import ReactFlow, {
 } from 'reactflow';
 import 'reactflow/dist/style.css';
 import { AlertTriangle, Pause, Play, Power, RotateCcw, Trash2 } from 'lucide-react';
+import { useThemeColors } from '@/app/providers/ThemeProvider';
 import { NODE_KINDS, NODE_KIND_LIST } from '@/components/architecture';
 import { Badge, Button, Meter, Select, Slider } from '@/components/ui';
 import { formatNumber, formatPercent } from '@/utils/format';
@@ -25,6 +26,7 @@ import { nodeTypes, type PlaygroundNodeData } from './nodes';
 import { edgeTypes } from './edges';
 import { analyze } from './analysis';
 import { makeNode, PRESETS } from './presets';
+import { withAlpha } from './color';
 
 const SEVERITY_TONE = { high: 'danger', medium: 'warn', low: 'neutral' } as const;
 
@@ -44,6 +46,7 @@ function PlaygroundCanvas() {
   const wrapper = useRef<HTMLDivElement>(null);
   const instance = useRef<ReactFlowInstance | null>(null);
   const store = useStoreApi();
+  const colors = useThemeColors();
 
   const analysis = useMemo(() => analyze(nodes, edges, traffic), [nodes, edges, traffic]);
 
@@ -228,9 +231,10 @@ function PlaygroundCanvas() {
             proOptions={{ hideAttribution: true }}
             className="bg-canvas"
           >
-            <Background variant={BackgroundVariant.Dots} gap={18} size={1} color="rgb(var(--c-line))" />
+            {/* Background, MiniMap: React Flow writes these colors into SVG attributes, so no var() strings. */}
+            <Background variant={BackgroundVariant.Dots} gap={18} size={1} color={colors.line} />
             <Controls showInteractive={false} />
-            <MiniMap pannable zoomable nodeColor={() => 'rgb(var(--c-faint))'} maskColor="rgb(var(--c-canvas) / 0.7)" />
+            <MiniMap pannable zoomable nodeColor={colors.faint} maskColor={withAlpha(colors.canvas, 0.7)} />
           </ReactFlow>
         </div>
 

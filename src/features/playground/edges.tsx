@@ -1,4 +1,5 @@
 import { BaseEdge, getBezierPath, type EdgeProps } from 'reactflow';
+import { useThemeColors, type ColorToken } from '@/app/providers/ThemeProvider';
 
 export interface PlaygroundEdgeData {
   running: boolean;
@@ -7,11 +8,12 @@ export interface PlaygroundEdgeData {
   tone: 'ok' | 'warn' | 'danger' | 'muted';
 }
 
-const TONE: Record<NonNullable<PlaygroundEdgeData['tone']>, string> = {
-  ok: 'rgb(var(--c-brand))',
-  warn: 'rgb(var(--c-warn))',
-  danger: 'rgb(var(--c-danger))',
-  muted: 'rgb(var(--c-faint))',
+/** Theme token per tone. The particles are SVG `fill` attributes, which cannot read var(). */
+const TONE: Record<NonNullable<PlaygroundEdgeData['tone']>, ColorToken> = {
+  ok: 'brand',
+  warn: 'warn',
+  danger: 'danger',
+  muted: 'faint',
 };
 
 /**
@@ -30,8 +32,9 @@ export function PlaygroundEdge({
   markerEnd,
 }: EdgeProps<PlaygroundEdgeData>) {
   const [path] = getBezierPath({ sourceX, sourceY, targetX, targetY, sourcePosition, targetPosition });
+  const colors = useThemeColors();
   const tone = data?.tone ?? 'muted';
-  const color = TONE[tone];
+  const color = colors[TONE[tone]];
   const particleCount = data?.running ? Math.min(4, Math.max(1, Math.round((data.intensity ?? 0) * 3))) : 0;
   const duration = 1.8;
 
