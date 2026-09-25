@@ -29,6 +29,10 @@ jobs:
       - name: Lint
         run: npm run lint
 
+      # Pure logic only (progress rules), on Node's own runner - no test dependency.
+      - name: Test
+        run: npm test
+
       # check:visuals + check:content + typecheck + vite build + bundle budget
       - name: Build
         run: npm run build

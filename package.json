@@ -11,6 +11,7 @@
     "preview": "vite preview",
     "typecheck": "tsc -b",
     "lint": "eslint .",
+    "test": "node --test \"src/**/*.test.ts\"",
     "check:visuals": "node scripts/check-visuals.mjs",
     "check:content": "node scripts/check-content.mjs",
     "check:bundle": "node scripts/check-bundle.mjs"

@@ -17,6 +17,7 @@ npm install      # install dependencies
 npm run dev      # dev server on http://localhost:5173
 npm run build    # check:visuals + check:content + tsc -b + vite build + check:bundle  (must pass)
 npm run lint     # ESLint (typescript-eslint + react-hooks); CI fails on any finding
+npm test         # the src/**/*.test.ts files, on Node's own runner (node --test)
 npm run check:visuals   # diagram geometry + wiring: overlap, overflow, truncated labels, replica consistency
 npm run check:content   # every concept has its long-form lesson, a Lab and a 10-question Quiz, and sits in its category file
 npm run check:bundle    # initial JS (entry + modulepreloads) stays under the gzip budget
@@ -24,10 +25,12 @@ npm run preview  # serve the production build
 npx tsc --noEmit -p tsconfig.app.json   # fast typecheck of src/ only
 ```
 
-There is no test runner and no backend. `npm run build` is the gate: it typechecks in strict mode
-(including `noUnusedLocals`/`noUnusedParameters`), bundles, and enforces the bundle budget.
-`.github/workflows/ci.yml` runs `npm ci`, `lint`, `build` and `npm audit --omit=dev --audit-level=high`
-on every push to master and every PR.
+`npm test` covers pure logic only, with no test dependency: Node (22.18 or later) runs the `.ts` files as they are,
+so tested code imports nothing but types and relative `.ts` files - no React, no `@/` alias
+(`src/app/providers/progressState.ts` is the example). `npm run build` is the gate: it typechecks
+in strict mode (including `noUnusedLocals`/`noUnusedParameters`), bundles, and enforces the bundle
+budget. `.github/workflows/ci.yml` runs `npm ci`, `lint`, `test`, `build` and
+`npm audit --omit=dev --audit-level=high` on every push to master and every PR.
 
 ESLint turns off the React Compiler rules `refs`, `purity` and `immutability` on purpose - they
 forbid the ref-based simulation pattern below. `set-state-in-effect` stays on: derive state during
@@ -287,7 +290,7 @@ These are editorial rules, not style preferences. They are the reason the app is
   of `npm run build`. Minimum height is 69, +4.5 with a subtitle and +21.5 with a stat row (so 73,
   90 or 95 - measured in headless Chromium); minimum width is 54 + the per-letter title width table
   in `scripts/check-visuals.mjs` (about 7px a letter), or the subtitle table (about 6px) if wider.
-- Everything persists to `localStorage` only (`sdi:theme`, `sdi:progress:v1`, and `sdi:layout` for
+- Everything persists to `localStorage` only (`sdi:theme`, `sdi:progress:v2`, and `sdi:layout` for
   which side panels the learner folded). No backend, no auth, no network calls at runtime — keep it
   that way.
 
