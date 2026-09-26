@@ -1,4 +1,5 @@
-import type { VisualSpec } from '@/components/architecture/FlowVisual';
+// A relative path, not the @/ alias: requirementsArchitecture.test.ts reads these specs on Node.
+import type { VisualSpec } from '../../components/architecture/FlowVisual.tsx';
 
 /** Getting started, plus the remaining quality-attribute concepts. */
 export const foundationVisuals: Record<string, VisualSpec> = {
@@ -6,7 +7,9 @@ export const foundationVisuals: Record<string, VisualSpec> = {
     // The Requirements Lab on this Concept at round 2 of the loop, shortened: Instagram at 10M daily
     // users after round 1 put more app servers behind a load balancer, with the Database now red for
     // feed reads. The same parts under the same names and stat rows (Object storage and Queue +
-    // workers are left out); every number is the sizing model (requirementsBottleneck.ts).
+    // workers are left out); every number is the sizing model (requirementsBottleneck.ts), and a
+    // test holds each stat row to the Lab. The steps before round 1 was fixed never travel a wire
+    // through the Load balancer: the Lab has none until that fix, so they stay on one part.
     width: 800,
     height: 320,
     caption:
@@ -35,9 +38,9 @@ export const foundationVisuals: Record<string, VisualSpec> = {
       { from: 'api', to: 'db', tone: 'brand', rate: 1.4 },
     ],
     steps: [
-      { from: 'users', to: 'lb', label: 'Requirements: post, feed, follow, like' },
+      { from: 'users', to: 'users', label: 'Requirements: post, feed, follow, like' },
       { from: 'api', to: 'db', label: 'Simplest design: one server, one database' },
-      { from: 'lb', to: 'api', label: '1M users: App server over limit', outcome: 'failure' },
+      { from: 'api', to: 'api', label: '1M users: App server over limit', outcome: 'failure' },
       { from: 'lb', to: 'api', label: 'Add one component: more servers' },
       { from: 'api', to: 'api', label: 'Its cost: servers must be stateless', outcome: 'warning' },
       { from: 'api', to: 'db', label: 'Repeat at 10M: Database reads over', outcome: 'failure' },
@@ -90,11 +93,11 @@ export const foundationVisuals: Record<string, VisualSpec> = {
     height: 320,
     caption: '99.99% for Uber ride requests: every tier copied into 3 zones (the geo index and queue too, not drawn here) and a database standby promoted automatically. Monthly cost x1 -> x3 (simplified model).',
     nodes: [
-      { id: 'users', kind: 'client', label: 'Users', sub: '1k daily users', x: 16, y: 112, w: 150, h: 95, stat: ['Target', '99.99%'] },
+      { id: 'users', kind: 'client', label: 'Users', sub: '1k daily users', x: 16, y: 112, w: 150, h: 95, stat: ['Peak', '~32 req/s'] },
       { id: 'lb', kind: 'load-balancer', label: 'Load balancer x2', sub: 'skips a dead server', x: 196, y: 115, w: 176, h: 90 },
       { id: 'api', kind: 'server', label: 'App servers x3', sub: 'one in each of 3 zones', x: 402, y: 20, w: 196, h: 95, stat: ['1 for load', '+2 for 99.99%'] },
       { id: 'ws', kind: 'service', label: 'WebSocket x3', sub: 'one in each of 3 zones', x: 402, y: 205, w: 196, h: 95, stat: ['1 for load', '+2 for 99.99%'] },
-      { id: 'db', kind: 'sql', label: 'Database x2', sub: 'primary + standby', x: 628, y: 20, w: 164, h: 95, stat: ['Failover', 'automatic'] },
+      { id: 'db', kind: 'sql', label: 'Database x2', sub: 'primary + standby', x: 628, y: 20, w: 164, h: 95, statusLabel: 'Reads: any copy', stat: ['Peak writes', '<1/s'] },
     ],
     edges: [
       { from: 'users', to: 'lb', tone: 'brand', rate: 1.4 },

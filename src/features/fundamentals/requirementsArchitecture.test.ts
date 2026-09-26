@@ -24,9 +24,12 @@ import {
   switchProduct,
   wireKeyOf,
   type Nfr,
+  type PartId,
   type Setup,
 } from './requirementsArchitecture.ts';
+import { bottleneckStat, findBottleneck } from './requirementsBottleneck.ts';
 import { PRODUCTS, type Product } from './requirementsSizing.ts';
+import { foundationVisuals } from '../../data/visuals/foundations.ts';
 
 const setup = (product: Product, ids: string[], nfr: Partial<Nfr> = {}): Setup => ({
   product,
@@ -766,19 +769,47 @@ test('from the Non-Functional focus, 99.99% draws redundant instances in three z
   assert.deepEqual(arch.singlePoints, []);
 });
 
-test('the Non-Functional Diagram draws the parts of the Lab at 99.99%, under the same names and stat rows', () => {
-  const arch = architecture({ ...NON_FUNCTIONAL, nfr: { ...RELAXED, availability: 2 } });
-
-  assert.equal(arch.parts.users?.reasons[0], '1k daily users');
-  assert.equal(arch.parts.lb?.title, 'Load balancer x2');
-  assert.equal(arch.parts.api?.title, 'App servers x3');
-  assert.equal(arch.parts.ws?.title, 'WebSocket x3');
-  assert.equal(arch.parts.db?.title, 'Database x2');
-  for (const tier of [arch.parts.api, arch.parts.ws]) {
-    assert.deepEqual(tier?.stat, { label: '1 for load', value: '+2 for 99.99%' });
+/**
+ * Every node of a Concept Diagram against the Lab part with the same id, on the Lab setup the
+ * Diagram shows: the same title, the same stat row (the red part shows its load against its limit),
+ * the same status line (none where the Lab has none), the Users subtitle, and only wires the Lab draws.
+ */
+function assertDiagramMatchesLab(slug: string, s: Setup) {
+  const spec = foundationVisuals[slug];
+  const arch = architecture(s);
+  const red = findBottleneck(s, arch);
+  for (const node of spec.nodes) {
+    const part = arch.parts[node.id as PartId];
+    const where = `${slug}: ${node.label}`;
+    assert.ok(part, `${where} is not a part of the Lab`);
+    assert.equal(node.label, part.title, where);
+    const stat = red?.part === node.id ? bottleneckStat(red) : part.stat;
+    assert.deepEqual(node.stat, stat ? [stat.label, stat.value] : undefined, `${where}: stat row`);
+    assert.equal(node.statusLabel, red?.part === node.id ? 'Over its limit' : part.status, `${where}: status`);
+    if (node.id === 'users') assert.equal(node.sub, subtitleFor(part, arch), where);
   }
   const wires = new Set(edgesFor(arch).map((edge) => [edge.from, edge.to].sort().join('|')));
-  for (const wire of ['lb|users', 'api|lb', 'api|db', 'api|ws', 'lb|ws']) assert.ok(wires.has(wire), wire);
+  for (const edge of spec.edges) assert.ok(wires.has([edge.from, edge.to].sort().join('|')), `${slug}: wire ${edge.from} -> ${edge.to}`);
+}
+
+test('the Non-Functional Diagram draws the parts of the Lab at 99.99%, under the same names and stat rows', () => {
+  assertDiagramMatchesLab('non-functional-requirements', { ...NON_FUNCTIONAL, nfr: { ...RELAXED, availability: 2 } });
+});
+
+test('the What is System Design Diagram draws the Lab at round 2, and no step crosses the Load balancer before it is built', () => {
+  const start = FOCUS_SETUPS['what-is-system-design'];
+  const roundOne = { ...start, loop: { users: 1, fixes: [] } };
+  const roundTwo = { ...start, loop: { users: 2, fixes: ['scale-out' as const] } };
+
+  assertDiagramMatchesLab('what-is-system-design', roundTwo);
+  assert.equal(findBottleneck(roundTwo)?.id, 'db-reads');
+  // At 1M users, before its fix, the Lab has no Load balancer and the App server is red.
+  assert.equal(architecture(roundOne).parts.lb, undefined);
+  assert.equal(findBottleneck(roundOne)?.part, 'api');
+  const steps = foundationVisuals['what-is-system-design'].steps ?? [];
+  const firstRed = steps.findIndex((step) => step.outcome === 'failure');
+  assert.deepEqual([steps[firstRed].from, steps[firstRed].to], ['api', 'api']);
+  for (const step of steps.slice(0, firstRed + 1)) assert.ok(step.from !== 'lb' && step.to !== 'lb', step.label);
 });
 
 test('the Non-Functional Lesson numbers: single points 5, 3, 0 and about 32 requests a second', () => {
