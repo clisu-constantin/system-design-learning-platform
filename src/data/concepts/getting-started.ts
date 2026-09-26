@@ -600,18 +600,23 @@ export const gettingStartedConcepts: Concept[] = [
       'Divide by 86,400 to get the average rate per second.',
       'Multiply by a peak factor (2-10x) - traffic is never flat.',
       'Divide the peak by what one server handles (about 1,000 req/sec when each request does real work) and add headroom.',
-      'Multiply object size by writes per day for storage growth; then by 365, the retention period and the replication factor.',
+      'Multiply writes per day by object size for storage per day, then by 365 for storage per year (one copy).',
+      'Multiply storage per year by the retention in years for what you keep, then by the replication factor for what you store.',
       'Compute bandwidth as request rate times payload size, and check it against a single machine.',
     ],
     when: ['Early in any design discussion.', 'Before picking a storage engine or a sharding strategy.'],
     diagram: `10,000,000 DAU x 20 requests/day = 200,000,000 requests/day
 
-200,000,000 / 86,400  ~=  2,315 req/sec  (average)
-2,315 x 5 peak factor ~= 11,575 req/sec  (peak)
-11,575 / 1,000 per server = 12, x 1.5 headroom = 18 servers
+200,000,000 / 86,400   ~=  2,315 req/sec  (average)
+2,315 x 5 peak factor  ~= 11,574 req/sec  (peak)
+11,574 / 1,000 per server = 12, x 1.5 headroom = 18 servers
 
-Writes 10% -> ~230 writes/sec average, ~1,160 at peak
-2 KB per write -> ~40 GB/day -> ~15 TB/year (x 3 copies = 44 TB)`,
+Writes 10% -> ~231 writes/sec average, ~1,157 at peak
+
+20,000,000 writes/day x 2 KB  = 40 GB/day
+40 GB/day x 365 days          = 14.6 TB/year   (per year, one copy)
+14.6 TB/year x 5 years        = 73 TB kept     (retention)
+73 TB x 3 copies              = 219 TB stored  (replication)`,
     tradeoffs: [
       {
         approach: 'Size from explicit estimates (DAU x requests x peak factor)',
@@ -628,7 +633,7 @@ Writes 10% -> ~230 writes/sec average, ~1,160 at peak
       'Designing for the average and being paged during the peak.',
       'Forgetting that reads and writes have wildly different costs.',
       'Forgetting the replication factor and the retention period in the storage estimate.',
-      'Precision theatre: 11,575 and "about 10k" lead to the same decisions.',
+      'Precision theatre: 11,574 and "about 10k" lead to the same decisions.',
     ],
     related: ['back-of-the-envelope', 'non-functional-requirements', 'sharding', 'horizontal-scaling'],
     quiz: [
@@ -680,10 +685,10 @@ Writes 10% -> ~230 writes/sec average, ~1,160 at peak
       {
         id: 'cap-est-5',
         prompt:
-          'The estimate says 10,400 peak reads/sec and 1,160 peak writes/sec. The database primary is struggling, and a teammate adds three read replicas. What does that change?',
+          'The estimate says 10,417 peak reads/sec and 1,157 peak writes/sec. The database primary is struggling, and a teammate adds three read replicas. What does that change?',
         options: [
           'Writes spread across all four machines, so the primary does a quarter of the work',
-          'Reads can move to the replicas; the primary still takes all 1,160 writes/sec',
+          'Reads can move to the replicas; the primary still takes all 1,157 writes/sec',
           'Nothing - replicas exist only for durability, never for load',
           'Both reads and writes roughly halve, since the load now has more machines to use',
         ],
@@ -694,16 +699,16 @@ Writes 10% -> ~230 writes/sec average, ~1,160 at peak
       {
         id: 'cap-est-6',
         prompt:
-          'In the Lab you raise the write share and the Database card turns to "Partition the writes": peak writes are 40,000/sec against a planning limit of about 10,000 for one primary. What does the estimate tell you to plan?',
+          'In the Lab you raise the write share from 10% to 90% and the Database card turns to "Partition the writes": peak writes are 10,417/sec against a planning limit of about 10,000 for one primary. What does the estimate tell you to plan?',
         options: [
           'More app servers, since the writes queue up in them waiting for the database',
           'More read replicas, so the primary spends less time serving reads',
-          'A higher peak factor, so the fleet is sized for spikes above 40,000/sec',
+          'A higher peak factor, so the fleet is sized for spikes above 10,417/sec',
           'Partitioning (sharding) the data, so writes spread across primaries',
         ],
         answer: 3,
         explanation:
-          'Writes are the hard constraint because they all land on the primary. App servers and read replicas do not add write capacity. 10,000 writes/sec is a simplified planning number, not a measured limit - but 4x over it is a clear signal that one primary will not do.',
+          'Writes are the hard constraint because they all land on the primary: at 90% writes, the 11,574 peak requests/sec become 10,417 peak writes/sec. App servers and read replicas do not add write capacity, and only 1,157 reads/sec are left for replicas to take. 10,000 writes/sec is a simplified planning number, not a measured limit - but the estimate is already past it, and every new user pushes it further.',
       },
       {
         id: 'cap-est-7',

@@ -86,13 +86,14 @@ export const foundationVisuals: Record<string, VisualSpec> = {
   'capacity-estimation': {
     width: 786,
     height: 300,
-    caption: '10M DAU x 20 requests = 200M/day = ~2,300 req/sec average, ~11,600 at peak: 18 app servers and 40 GB of new data a day.',
+    // Every number is what the Capacity Lab shows on the capacity-estimation Lab focus (exact mode).
+    caption: '10M DAU x 20 = 200M requests/day = 2,315 req/sec average, 11,574 at peak: 18 app servers, 40 GB a day, 219 TB after 5 years x 3 copies.',
     nodes: [
-      { id: 'clients', kind: 'client', label: 'Clients', sub: '10M DAU x 20 a day', x: 10, y: 110, w: 161, h: 80 },
-      { id: 'lb', kind: 'load-balancer', label: 'Load balancer', sub: 'pair, 11,575 req/s peak', x: 192, y: 110, w: 176, h: 80 },
-      { id: 'app', kind: 'server', label: 'App x 18', sub: '1k req/s each + headroom', x: 389, y: 110, w: 191, h: 80 },
-      { id: 'db', kind: 'sql', label: 'Database', sub: '1,160 writes/s at peak', x: 606, y: 20, w: 170, h: 80 },
-      { id: 'store', kind: 'storage', label: 'Object storage', sub: '40 GB/day, 15 TB/year', x: 604, y: 200, w: 173, h: 80 },
+      { id: 'clients', kind: 'client', label: 'Clients', sub: '10M DAU x 20/day', x: 10, y: 102, w: 161, h: 95, stat: ['Average', '2,315/s'] },
+      { id: 'lb', kind: 'load-balancer', label: 'Load balancer', sub: 'pair, sees all traffic', x: 192, y: 102, w: 176, h: 95, stat: ['Peak', '11,574 req/s'] },
+      { id: 'app', kind: 'server', label: 'App tier x 18', sub: '1,000 req/s each', x: 389, y: 102, w: 191, h: 95, stat: ['Needed at peak', '12'] },
+      { id: 'db', kind: 'sql', label: 'Database', sub: 'primary + read replicas', x: 604, y: 10, w: 178, h: 95, stat: ['Peak writes', '1,157/s'] },
+      { id: 'store', kind: 'storage', label: 'Object storage', sub: '2 KB per write', x: 604, y: 195, w: 178, h: 95, stat: ['5 yr x 3 copies', '219 TB'] },
     ],
     edges: [
       { from: 'clients', to: 'lb', tone: 'brand', rate: 3 },
@@ -103,10 +104,13 @@ export const foundationVisuals: Record<string, VisualSpec> = {
     steps: [
       { from: 'clients', to: 'lb', label: 'Users x 20 = 200M/day' },
       { from: 'clients', to: 'lb', label: 'Divide by 86,400: 2,315/sec' },
-      { from: 'lb', to: 'app', label: 'Times 5 at peak: 11,575/sec', outcome: 'warning' },
-      { from: 'lb', to: 'app', label: '1k each, plus headroom: 18' },
-      { from: 'app', to: 'db', label: '10% writes: 1,160/sec peak' },
+      { from: 'lb', to: 'app', label: 'Times 5 at peak: 11,574/sec', outcome: 'warning' },
+      { from: 'lb', to: 'app', label: '1,000 each: 12, x 1.5: 18' },
+      { from: 'app', to: 'db', label: '10% writes: 1,157/sec peak' },
       { from: 'app', to: 'store', label: '2 KB each: 40 GB/day' },
+      { from: 'app', to: 'store', label: 'Times 365: 15 TB/year' },
+      { from: 'app', to: 'store', label: 'Keep 5 years: 73 TB' },
+      { from: 'app', to: 'store', label: 'Times 3 copies: 219 TB' },
     ],
   },
 

@@ -254,7 +254,9 @@ peak req/sec   = avg x peak factor            (2x to 10x)
 
 writes/sec     = peak req/sec x write share
 storage/day    = writes/day x bytes per object
-storage/year   = storage/day x 365 x replication factor
+storage/year   = storage/day x 365            (one copy)
+kept           = storage/year x retention years
+stored         = kept x replication factor    (what you pay for)
 
 bandwidth      = req/sec x avg response bytes
 hot set in RAM = active objects x bytes per object`,
@@ -271,14 +273,14 @@ hot set in RAM = active objects x bytes per object`,
       {
         heading: 'Round aggressively, then sanity-check against one machine',
         paragraphs: [
-          'Use 100,000 seconds for a day instead of 86,400, round the big inputs (users, requests, bytes) to powers of ten and the small factors to one significant figure. The estimate is not trying to be accurate; it is trying to answer "which order of magnitude is this?" Getting 11,575 req/sec instead of 10,000 req/sec changes no decision you will make today.',
+          'Use 100,000 seconds for a day instead of 86,400, round the big inputs (users, requests, bytes) to powers of ten and the small factors to one significant figure. The estimate is not trying to be accurate; it is trying to answer "which order of magnitude is this?" Getting 11,574 req/sec instead of 10,000 req/sec changes no decision you will make today.',
           'The decision you are actually making is a category. Under roughly 1,000 requests per second, one well-tuned machine plus a spare is usually enough and the interesting problems are elsewhere. That boundary comes from a common planning number: about 1,000 requests per second per app server when each request does real work, such as a database call. A server returning cached or static answers can do ten times more, so say which one you assumed. Between 1,000 and 50,000 you need horizontal scaling, caching and a serious look at the database. Above that, partitioning and per-region deployment stop being optional.',
           'Storage has the same categories. Under a terabyte, a single database instance is fine for years. Tens of terabytes means partitioning, archival tiers and a real retention policy. Do the multiplication before choosing, because "how much data per year" is the question that decides whether sharding is in your future.',
         ],
         bullets: [
           '1 KB x 1M/day is about 1 GB/day, about 365 GB/year - one machine, no problem.',
           '1 MB x 1M/day is about 1 TB/day, about 365 TB/year - object storage and a retention policy.',
-          'Always multiply storage by the replication factor. Three copies means three times the bill.',
+          'Per year is one copy. Multiply it by the years you keep the data, then by the replication factor: 3 copies means 3 times the bill.',
         ],
       },
     ],
@@ -286,18 +288,19 @@ hot set in RAM = active objects x bytes per object`,
       {
         title: 'Sizing a chat app end to end',
         setup:
-          'A messaging app with 10 million daily active users, each sending 40 messages per day and reading roughly 4x what they send. Average message 200 bytes, plus metadata call it 500 bytes stored.',
+          'A messaging app with 10 million daily active users, each sending 40 messages per day and reading roughly 4x what they send. Average message 200 bytes, plus metadata call it 500 bytes stored. Messages are kept 5 years, in 3 copies. To replay it in the Lab: 200 requests per user, 20% writes, 0.5 KB, peak factor 4.',
         walkthrough: [
           'Writes per day: 10M x 40 = 400M messages. Divided by 86,400, that is about 4,600 writes per second on average.',
           'Reads per day: 4x writes = 1.6B, about 18,500 reads per second on average.',
-          'Peak factor for a single-region consumer app, evening heavy: use 4x. Peak is roughly 18,000 writes/sec and 74,000 reads/sec.',
-          'Storage: 400M x 500 bytes is 200 GB/day. Times 365 is about 73 TB/year, and with 3 replicas about 220 TB/year.',
+          'Peak factor for a single-region consumer app, evening heavy: use 4x. Peak is about 18,500 writes/sec and 74,000 reads/sec.',
+          'Storage per day: 400M x 500 bytes is 200 GB. Per year, one copy: times 365 is 73 TB.',
+          'Retention, then replication: 5 years kept is 365 TB, and 3 copies of it is about 1.1 PB stored.',
           'App tier: about 92,500 peak requests/sec in total, at 1,000 per server, is 93 servers; with 50% headroom call it 140.',
           'Bandwidth on reads: 74,000/sec x 500 bytes is about 37 MB/sec, roughly 300 Mbit/sec - comfortable for a fleet, impossible to ignore for one box.',
           'Hot set: messages from the last day are what people actually re-read. 200 GB does not fit in one cache node, so the cache is either sharded or holds only the last hours of conversations.',
         ],
         result:
-          '74,000 peak reads per second and 73 TB per year is firmly in "partition the data, cache aggressively, many app servers" territory. Ten minutes of arithmetic ruled out the single-database design before anyone wrote code.',
+          '74,000 peak reads per second, 18,500 peak writes per second (past one primary) and 1.1 PB after 5 years is firmly in "partition the data, cache aggressively, many app servers" territory. Ten minutes of arithmetic ruled out the single-database design before anyone wrote code.',
       },
     ],
     jargon: [
@@ -306,13 +309,13 @@ hot set in RAM = active objects x bytes per object`,
       { term: 'Peak factor', plain: 'How much busier the busiest moment is than the average. Typically 2x to 10x.' },
       { term: 'Read/write ratio', plain: 'How many reads happen per write. Decides whether caching and replicas will help at all.' },
       { term: 'Working set', plain: 'The slice of data actually being touched right now. If it fits in RAM, your system feels fast.' },
-      { term: 'Replication factor', plain: 'How many copies of each byte you keep. Multiply all storage estimates by it.' },
+      { term: 'Replication factor', plain: 'How many copies of each byte you keep. The last storage step: multiply the storage you retain by it.' },
     ],
     remember: [
       'A day is about 100,000 seconds. That one rounding does most of the work.',
       'Average load never happens - multiply by a peak factor of 2x to 10x.',
       'Estimates pick a category (one machine, a fleet, a partitioned fleet), not an exact number.',
-      'Storage per year = writes/day x object size x 365 x replicas.',
+      'Storage in three steps: per day x 365 is one year (one copy), x retention years is what you keep, x copies is what you store.',
       'If reads hugely outnumber writes, caching and replicas will help. If not, they will not.',
     ],
   },
