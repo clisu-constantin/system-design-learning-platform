@@ -49,7 +49,7 @@ so tested code imports nothing but types and relative `.ts` files - no React, no
 (`src/app/providers/progressState.ts` is the example). `npm run build` is the gate: it typechecks
 in strict mode (including `noUnusedLocals`/`noUnusedParameters`), bundles, and enforces the bundle
 budget. `.github/workflows/ci.yml` runs `npm ci`, `lint`, `test`, `build` and
-`npm audit --omit=dev --audit-level=high` on every push to master and every PR, and a second
+`npm audit --omit=dev --audit-level=high` on every push to master or staging and every PR, and a second
 `server` job runs ruff, mypy and pytest against a Postgres service.
 
 ESLint turns off the React Compiler rules `refs`, `purity` and `immutability` on purpose - they
@@ -134,7 +134,9 @@ server/             the optional Account API (FastAPI)
   `VITE_FIREBASE_AUTH_DOMAIN`. Edit the template or `scripts/security-headers.ts`, never `dist/`. The
   dev server does not apply serve.json. With the `VITE_FIREBASE_*` vars missing, the build is
   Guest-only: no Sign in button, and the CSP is the plain 'self' one.
-- Deploy: the web app and the API are two Railway services. The API service has Root Directory
+- Deploy: Railway deploys the `staging` branch to the staging environment and `master` to
+  production, each after CI passes ("Wait for CI"), so CI runs on pushes to both. To deploy staging,
+  merge `master` into `staging` and push. The web app and the API are two Railway services. The API service has Root Directory
   `server/` and its config file path set to `/server/railway.json` (Railway does not look for the
   config file inside the Root Directory).
 
