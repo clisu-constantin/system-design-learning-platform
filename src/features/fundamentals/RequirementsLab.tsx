@@ -17,8 +17,16 @@ import { useRerender } from '@/hooks/useRerender';
 import { sampleArrivals } from '@/utils/math';
 import { formatCompact, formatNumber } from '@/utils/format';
 import type { LabFocus, LabProps, NodeKind, RequestOutcome } from '@/types';
-
-type Product = 'whatsapp' | 'instagram' | 'uber';
+import {
+  CACHE_HIT,
+  DAU,
+  TRAFFIC,
+  scaleImplications,
+  sizeRequirements,
+  type Product,
+  type Sizing,
+  type TierSize,
+} from './requirementsSizing';
 
 const PRODUCTS: { value: Product; label: string }[] = [
   { value: 'whatsapp', label: 'Design WhatsApp' },
@@ -140,12 +148,9 @@ const NFRS: NfrSpec[] = [
     id: 'users',
     label: 'Daily active users',
     values: ['1k', '100k', '10M', '100M'],
-    implications: [
-      ['One server and one database'],
-      ['Horizontal app tier', 'Read replicas'],
-      ['Caching, sharding or a partitioned store', 'Async processing for anything slow', 'Capacity planning and autoscaling'],
-      ['Multi-region', 'Sharded data with a routing layer', 'Dedicated platform and SRE investment'],
-    ],
+    // Read from the sizing instead (`scaleImplications`): what a user count forces depends on the
+    // traffic of the product, so fixed lines would name replicas the diagram does not draw.
+    implications: [],
   },
   {
     id: 'consistency',
@@ -213,16 +218,9 @@ const FOCUS_SETUPS: Record<LabFocus<'requirements'>, Setup> = {
 // ---------------------------------------------------------------------------
 
 /**
- * Traffic model behind the server counts. Simplified, not a measurement: 20
- * requests per user per day, a peak of 5x the daily average, and about 1,000
- * requests per second per app server.
+ * Server counts and the database decision come from `sizeRequirements`, the Capacity Lab model with
+ * a traffic profile per product. Share of files the CDN serves from its edge: illustrative.
  */
-const DAU = [1_000, 100_000, 10_000_000, 100_000_000];
-const REQUESTS_PER_USER = 20;
-const PEAK_FACTOR = 5;
-const RPS_PER_SERVER = 1000;
-/** Share of reads the cache answers and share of files the CDN serves from its edge. Illustrative. */
-const CACHE_HIT = 0.8;
 const CDN_HIT = 0.85;
 
 interface PartView {
@@ -231,6 +229,8 @@ interface PartView {
   title: string;
   reasons: string[];
   stat?: { label: string; value: string; tone?: string };
+  /** Replaces the status line, e.g. the database decision. */
+  status?: string;
 }
 
 interface Architecture {
@@ -238,8 +238,7 @@ interface Architecture {
   /** Traffic classes, one entry per requirement that creates them (a multiset). */
   flows: FlowKind[];
   region2: boolean;
-  instances: number;
-  peakRps: number;
+  sizing: Sizing;
   dbCopies: number;
   syncToRegion2: boolean;
   singlePoints: string[];
@@ -285,11 +284,18 @@ function architecture(setup: Setup): Architecture {
     if (!part.reasons.includes(reason)) part.reasons.push(reason);
   };
 
-  const peakRps = (DAU[nfr.users] * REQUESTS_PER_USER * PEAK_FACTOR) / 86_400;
+  const sizeFor = (cache: boolean) =>
+    sizeRequirements({
+      product,
+      dau: DAU[nfr.users],
+      availability: nfr.availability,
+      locationWrites: chosen.some((option) => option.flows.includes('index-write')),
+      cache,
+    });
   add('users', `${valueOf('users', nfr.users)} daily users`);
 
   if (chosen.length === 0) {
-    return { parts, flows, region2: false, instances: 0, peakRps, dbCopies: 0, syncToRegion2: false, singlePoints: [] };
+    return { parts, flows, region2: false, sizing: sizeFor(false), dbCopies: 0, syncToRegion2: false, singlePoints: [] };
   }
 
   for (const option of chosen) {
@@ -303,9 +309,14 @@ function architecture(setup: Setup): Architecture {
   const users = `${valueOf('users', nfr.users)} users`;
   const latency = `p95 ${valueOf('latency', nfr.latency)}`;
 
+  const cached = flows.includes('read') && (nfr.latency >= 2 || nfr.users >= 2);
+  const sizing = sizeFor(cached);
+  const { app, ws, database } = sizing;
+
   // Quality targets. Every requirement goes through the app servers, so they exist here.
+  // A load balancer fronts more than one server: for the availability target or for the load.
   if (nfr.availability >= 1) add('lb', availability);
-  if (nfr.users >= 1) add('lb', users);
+  if (app.forLoad > 1) add('lb', users);
 
   const region2 = nfr.availability >= 3 || nfr.users >= 3;
   if (nfr.availability >= 3) add('region2', availability);
@@ -322,50 +333,59 @@ function architecture(setup: Setup): Architecture {
     flows.push('job');
     for (const id of FLOW_PARTS.job) add(id, users);
   }
-  if (flows.includes('read')) {
+  if (cached) {
     if (nfr.latency >= 2) add('cache', latency);
     if (nfr.users >= 2) add('cache', users);
   }
 
-  // App tier size: enough copies for the availability target, enough servers for the load.
-  const perRegion = region2 ? peakRps / 2 : peakRps;
-  const instances = Math.max([1, 2, 3, 3][nfr.availability], nfr.users >= 1 ? 2 : 1, Math.ceil(perRegion / RPS_PER_SERVER));
+  // App tier size: the Capacity Lab count for the load, or the copies the availability target asks
+  // for when that is more. Each region is a full copy, sized to take all traffic if the other fails.
   if (nfr.availability >= 1) add('api', availability);
-  const api = parts.api;
-  if (api) {
-    api.title = instances > 1 ? `App servers x${instances}` : 'App server';
-    api.stat = { label: 'Peak load', value: `~${formatCompact(perRegion)} req/s` };
+  if (parts.api) {
+    parts.api.title = app.count > 1 ? `App servers x${app.count}` : 'App server';
+    parts.api.stat = tierStat(app, availability, { label: 'Peak load', value: `~${formatCompact(sizing.peakQps)} req/s` });
   }
-  if (parts.ws) parts.ws.title = instances > 1 ? `WebSocket x${instances}` : 'WebSocket server';
+  // The WebSocket tier holds connections open, so it is sized by how many, not by requests.
+  if (parts.ws) {
+    parts.ws.title = ws.count > 1 ? `WebSocket x${ws.count}` : 'WebSocket server';
+    parts.ws.stat = tierStat(ws, availability, { label: 'Open connections', value: `~${formatCompact(ws.connections)}` });
+  }
 
   let dbCopies = 0;
   const syncToRegion2 = region2 && nfr.consistency >= 2;
   if (parts.db) {
     const db = parts.db;
     const standby = nfr.availability >= 2 || nfr.durability >= 1 ? 1 : 0;
-    const readReplicas = nfr.users >= 1 ? 2 : 0;
-    const shards = [1, 1, 4, 16][nfr.users];
+    const { readReplicas, partitioned, partitions } = database;
     dbCopies = 1 + standby + readReplicas;
     if (nfr.availability >= 2) add('db', `${availability} failover`);
     if (nfr.durability >= 1) add('db', `${valueOf('durability', nfr.durability).toLowerCase()} durability`);
-    if (readReplicas > 0) add('db', users);
-    db.title = shards > 1 ? `DB: ${shards} shards x${dbCopies}` : dbCopies > 1 ? `Database x${dbCopies}` : 'Database';
+    if (readReplicas > 0 || partitioned) add('db', users);
+    db.title = partitioned
+      ? `DB: ${partitions} partitions x${dbCopies}`
+      : dbCopies > 1
+        ? `Database x${dbCopies}`
+        : 'Database';
     db.stat = {
-      label: 'Reads from',
-      value:
-        nfr.consistency === 2
-          ? 'leader only'
-          : readReplicas === 0
-            ? 'primary'
-            : nfr.consistency === 1
-              ? 'own writes: primary'
-              : 'any replica',
-      tone: nfr.consistency === 0 && readReplicas > 0 ? 'text-warn' : 'text-ink',
+      label: 'Peak writes',
+      value: `~${formatCompact(database.peakWriteQps)}/s`,
+      tone: partitioned ? 'text-warn' : 'text-ink',
     };
+    // With replicas, where reads go is the consistency choice; without, the Capacity Lab decision.
+    db.status =
+      readReplicas > 0
+        ? ['Reads: any replica', 'Reads: own writes on primary', 'Reads: leader only'][nfr.consistency]
+        : partitioned
+          ? 'Partition the writes'
+          : 'One primary is enough';
   }
   if (parts.index) {
     parts.index.title = product === 'uber' ? 'Geo index' : 'Search index';
     parts.index.kind = product === 'uber' ? 'nosql' : 'search';
+    // Drivers publishing locations: the write rate that sets Uber apart.
+    if (sizing.index.peakWriteQps > 0) {
+      parts.index.stat = { label: 'Peak writes', value: `~${formatCompact(sizing.index.peakWriteQps)}/s`, tone: 'text-warn' };
+    }
   }
   if (parts.cache) parts.cache.stat = { label: 'Hit rate', value: `${CACHE_HIT * 100}% (model)`, tone: 'text-ok' };
   if (parts.cdn) parts.cdn.stat = { label: 'Edge hits', value: `${CDN_HIT * 100}% (model)`, tone: 'text-ok' };
@@ -373,10 +393,20 @@ function architecture(setup: Setup): Architecture {
   if (parts.lb) parts.lb.title = 'Load balancer x2';
 
   const singlePoints: string[] = [];
-  if (instances === 1) singlePoints.push(parts.ws ? 'app and WebSocket server' : 'app server');
+  if (app.count === 1) singlePoints.push('app server');
+  if (parts.ws && ws.count === 1) singlePoints.push('WebSocket server');
   if (parts.db && dbCopies === 1) singlePoints.push('database');
 
-  return { parts, flows, region2, instances, peakRps, dbCopies, syncToRegion2, singlePoints };
+  return { parts, flows, region2, sizing, dbCopies, syncToRegion2, singlePoints };
+}
+
+/**
+ * The stat row of a sized tier: its load, or - when the availability target asked for more copies
+ * than the load needs - how many are for the load and how many for availability.
+ */
+function tierStat(tier: TierSize, availability: string, load: { label: string; value: string }) {
+  if (tier.setBy === 'load') return load;
+  return { label: `${tier.forLoad} for load`, value: `+${tier.count - tier.forLoad} for ${availability}` };
 }
 
 // ---------------------------------------------------------------------------
@@ -616,6 +646,10 @@ export function RequirementsLab({ focus }: LabProps<'requirements'>) {
   const implications = useMemo(() => {
     const set = new Set<string>();
     for (const spec of NFRS) {
+      if (spec.id === 'users') {
+        for (const item of scaleImplications(arch.sizing, nfr.users)) set.add(item);
+        continue;
+      }
       const level = nfr[spec.id] ?? 0;
       // Index 0 is the relaxed baseline ("single instance is acceptable"). It only
       // holds while the target stays at that level; stricter targets replace it.
@@ -624,7 +658,7 @@ export function RequirementsLab({ focus }: LabProps<'requirements'>) {
       }
     }
     return [...set];
-  }, [nfr]);
+  }, [nfr, arch.sizing]);
 
   const complexity = Math.min(
     100,
@@ -662,8 +696,8 @@ export function RequirementsLab({ focus }: LabProps<'requirements'>) {
         <div className="flex flex-wrap items-center justify-between gap-2">
           <ParticleLegend outcomes={['success', 'cache-hit']} />
           <span className="text-[11px] text-muted">
-            Violet wires: pushes to phones. Cyan: background work. Dashed: copy to region 2. Server counts and hit
-            rates are a simplified model.
+            Violet wires: pushes to phones. Cyan: background work. Dashed: copy to region 2. Server counts use the
+            Capacity Lab model (1,000 req/s per server, 50% headroom); they and the hit rates are a simplified model.
           </span>
         </div>
       }
@@ -716,9 +750,20 @@ export function RequirementsLab({ focus }: LabProps<'requirements'>) {
               {
                 key: 'peak',
                 label: 'Peak traffic',
-                value: formatNumber(arch.peakRps),
+                value: formatNumber(arch.sizing.peakQps),
                 unit: 'req/s',
-                hint: `${valueOf('users', nfr.users)} daily users x ${REQUESTS_PER_USER} requests each, spread over a day, times ${PEAK_FACTOR} for the peak.`,
+                hint: `${valueOf('users', nfr.users)} daily users x ${formatNumber(arch.sizing.requestsPerUser)} requests each, spread over a day, times ${TRAFFIC[product].peakFactor} for the peak. The Capacity Lab gives the same servers for the same numbers.`,
+                simulated: true,
+              },
+              {
+                key: 'writes',
+                label: 'Peak writes',
+                value: formatNumber(arch.sizing.peakWriteQps),
+                unit: '/s',
+                hint:
+                  arch.sizing.index.peakWriteQps > 0
+                    ? `Most of these are driver locations into the geo index; the database takes ${formatNumber(arch.sizing.database.peakWriteQps)}/s. One primary absorbs about 10,000/s.`
+                    : 'Every write goes to the database primary, which absorbs about 10,000/s before the writes must be partitioned.',
                 simulated: true,
               },
               {
@@ -758,8 +803,10 @@ export function RequirementsLab({ focus }: LabProps<'requirements'>) {
               {chosen.length === 0
                 ? 'Nothing selected - with no functional requirements there is nothing to design.'
                 : `Designing for ${chosen.length} requirement${chosen.length > 1 ? 's' : ''} at ${valueOf('users', nfr.users)} daily active users (about ${formatCompact(
-                    DAU[nfr.users] * REQUESTS_PER_USER,
-                  )} requests/day at ${REQUESTS_PER_USER} requests per user).`}
+                    DAU[nfr.users] * arch.sizing.requestsPerUser,
+                  )} requests/day at ${formatNumber(arch.sizing.requestsPerUser)} requests per user, ${Math.round(
+                    arch.sizing.writeShare * 100,
+                  )}% of them writes).`}
             </p>
           </div>
         </>
@@ -840,7 +887,7 @@ export function RequirementsLab({ focus }: LabProps<'requirements'>) {
             key="region2"
             kind="server"
             title="Region 2"
-            subtitle={`Full copy of region 1 below, data copied ${arch.syncToRegion2 ? 'synchronously' : 'asynchronously'} - for ${arch.parts.region2.reasons.join(', ')}`}
+            subtitle={`Full copy of region 1 below, sized to take all traffic, data copied ${arch.syncToRegion2 ? 'synchronously' : 'asynchronously'} - for ${arch.parts.region2.reasons.join(', ')}`}
             placed={REGION2}
             compact
           />
@@ -852,6 +899,7 @@ export function RequirementsLab({ focus }: LabProps<'requirements'>) {
             <ArchNode
               key={id}
               kind={part.kind}
+              statusLabel={part.status}
               title={part.title}
               subtitle={id === 'users' ? part.reasons[0] : `for ${part.reasons.join(', ')}`}
               placed={SLOTS[id]}
