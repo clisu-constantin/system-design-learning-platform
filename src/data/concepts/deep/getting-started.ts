@@ -387,7 +387,7 @@ Useful conversions
       {
         title: 'Rounding an estimate and checking it against the exact one',
         setup:
-          'A new app expects 12 million daily active users making 8 requests each, with a 5x peak factor. One app server handles about 1,000 requests per second doing real work. This is the setup the Lab opens on for this Concept.',
+          'A new app expects 12 million daily active users making 8 requests each, with a 5x peak factor. One app server handles about 1,000 requests per second doing real work. This is the setup the Size view of the Lab opens on for this Concept.',
         walkthrough: [
           'Round the big numbers to powers of ten: 12M becomes 10^7 and 8 becomes 10. One went down, one went up.',
           'Requests per day: 10^7 x 10 = 10^8. Exact: 12M x 8 = 96M.',

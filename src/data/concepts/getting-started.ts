@@ -854,7 +854,7 @@ Round trip California -> Netherlands ~150 ms
         ],
         answer: 1,
         explanation:
-          'An SSD random read is about 100 us, so 50 x 100 us = 5 ms. A spinning-disk seek is about 10 ms, so 50 x 10 ms = 500 ms. Knowing the two orders of magnitude settles it in seconds - the reads here are random, so the sequential-read argument does not apply.',
+          'An SSD random read is about 100 us, so 50 x 100 us = 5 ms. A spinning-disk seek is about 10 ms, so 50 x 10 ms = 500 ms. Knowing the two orders of magnitude settles it in seconds - the reads here are random, so the sequential-read argument does not apply. In the Speed view of the Lab, set 50 database calls with 0% of reads in RAM, then switch a miss from SSD to Spinning disk: the storage line goes from 5 ms to 500 ms.',
       },
       {
         id: 'botec-2',
@@ -868,12 +868,12 @@ Round trip California -> Netherlands ~150 ms
         ],
         answer: 2,
         explanation:
-          'A transatlantic round trip is about 150 ms, set by distance, not by server speed, so 30 calls take 4.5 s - nine times the budget. Faster code or more servers do not shorten the trip. Removing round trips (one batched call) or shortening the distance (a local cache) is the only fix.',
+          'A transatlantic round trip is about 150 ms, set by distance, not by server speed, so 30 calls take 4.5 s - nine times the budget. Faster code or more servers do not shorten the trip. Removing round trips (one batched call) or shortening the distance (a local cache) is the only fix. In the Speed view of the Lab, put the user on another continent and set 30 calls from the user: the round trips alone come to 4.5 s, and one call brings them back to 150 ms.',
       },
       {
         id: 'botec-3',
         prompt:
-          'In the Lab with rounding on, 12M users x 8 requests becomes 10^7 x 10. The rough peak is 5,000 req/sec and the exact one is 5,556. What does the "1.1x" in the Rough against exact table mean for the design?',
+          'In the Size view of the Lab, with rounding on, 12M users x 8 requests becomes 10^7 x 10. The rough peak is 5,000 req/sec and the exact one is 5,556. What does the "1.1x" in the Rough against exact table mean for the design?',
         options: [
           'The rough answer is 10% off, so it must be redone with exact numbers before any design',
           'Both land in one category, a fleet behind a load balancer, so the design is the same',
@@ -901,7 +901,7 @@ Round trip California -> Netherlands ~150 ms
       {
         id: 'botec-5',
         prompt:
-          'In the Lab with rounding on, move Requests per user to 20 and Average object size to 2 KB. Rough against exact now puts stored data about 4x below exact, where it was about 1x. What happened?',
+          'In the Size view of the Lab, with rounding on, move Requests per user to 20 and Average object size to 2 KB. Rough against exact now puts stored data about 4x below exact, where it was about 1x. What happened?',
         options: [
           'Rounding to powers of ten is always about 4x off; the earlier 1x match was luck',
           'The replication factor of 3 is ignored in rough mode, which removes most of the total',
@@ -937,7 +937,7 @@ Round trip California -> Netherlands ~150 ms
         ],
         answer: 1,
         explanation:
-          'Divide bits by 8: 1 Gbit/sec is about 125 MB/sec, so 500 MB/sec (4 Gbit/sec, not 40) needs about four links, more with protocol overhead. Reading Gbit as GB is the classic 8x mistake.',
+          'Divide bits by 8: 1 Gbit/sec is about 125 MB/sec, so 500 MB/sec (4 Gbit/sec, not 40) needs about four links, more with protocol overhead. Reading Gbit as GB is the classic 8x mistake. In the Speed view of the Lab, set Response size to 500 MB: one 1 Gbit/s link needs about 4 s to move it, so one second of it needs four links.',
       },
       {
         id: 'botec-8',
@@ -951,7 +951,7 @@ Round trip California -> Netherlands ~150 ms
         ],
         answer: 3,
         explanation:
-          'Light in fibre covers roughly 200 km per millisecond, and the path is never straight, so a round trip between Europe and the US costs tens to a hundred-plus milliseconds. No hardware upgrade removes it; only avoiding the synchronous cross-region wait does.',
+          'Light in fibre covers roughly 200 km per millisecond, and the path is never straight, so a round trip between Europe and the US costs tens to a hundred-plus milliseconds. No hardware upgrade removes it; only avoiding the synchronous cross-region wait does. In the Speed view of the Lab, put the user on another continent and every read in RAM: the request still never drops below about 150 ms.',
       },
       {
         id: 'botec-9',
@@ -965,7 +965,7 @@ Round trip California -> Netherlands ~150 ms
         ],
         answer: 0,
         explanation:
-          'A round trip within a datacenter is about 0.5 ms, so 200 of them are about 100 ms before the database does any work. That is the N+1 query problem: the cost is the number of trips, which is why batching beats faster code.',
+          'A round trip within a datacenter is about 0.5 ms, so 200 of them are about 100 ms before the database does any work. That is the N+1 query problem: the cost is the number of trips, which is why batching beats faster code. In the Speed view of the Lab, keep the user in the same region and set 200 database calls: the datacenter hops come to 100 ms and dominate the request.',
       },
       {
         id: 'botec-10',
@@ -979,7 +979,7 @@ Round trip California -> Netherlands ~150 ms
         ],
         answer: 2,
         explanation:
-          'SSD is about 1,000x slower than memory, so the 10% of misses cost far more than the 90% of hits: 10 us against 0.09 us. Raising the hit rate from 90% to 99% cuts the average almost tenfold.',
+          'SSD is about 1,000x slower than memory, so the 10% of misses cost far more than the 90% of hits: 10 us against 0.09 us. Raising the hit rate from 90% to 99% cuts the average almost tenfold. In the Speed view of the Lab, Reads found in RAM starts at 90%: the SSD line is 10 us against 90 ns for RAM, and 99% takes the average read from about 10 us to 1.1 us.',
       },
       {
         id: 'botec-11',

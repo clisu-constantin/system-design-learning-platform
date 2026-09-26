@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from 'react';
+import { useMemo, useRef, useState, type ReactNode } from 'react';
 import { Calculator, Scale } from 'lucide-react';
 import {
   ArchNode,
@@ -10,14 +10,14 @@ import {
   type ParticleView,
 } from '@/components/architecture';
 import { Insight, LabShell, MetricsPanel } from '@/components/learning';
-import { Slider, Toggle } from '@/components/ui';
+import { SegmentedControl, Slider, Toggle } from '@/components/ui';
 import { advanceParticles, nextParticleId, useTicker, type Particle } from '@/simulations/engine';
 import { useLabSetup } from '@/hooks/useLabSetup';
 import { useRerender } from '@/hooks/useRerender';
 import { cn } from '@/utils/cn';
 import { clamp, sampleArrivals } from '@/utils/math';
 import { formatCompact, formatNumber } from '@/utils/format';
-import type { LabFocus, LabProps, RequestOutcome } from '@/types';
+import type { LabProps, RequestOutcome } from '@/types';
 import {
   PRIMARY_WRITE_LIMIT,
   SCALE_LABEL,
@@ -37,36 +37,16 @@ import {
   sameDecision,
   scaleOf,
   writeDecisionOf,
-  type CapacityInputs,
   type Estimate,
 } from './capacityModel';
+import { CapacitySpeedView } from './CapacitySpeedView';
+import { startOf, type CapacityView, type SizeSetup } from './capacitySetup';
+import type { SpeedInputs } from './latencyModel';
 
-interface Setup extends CapacityInputs {
-  /** Napkin mode: big numbers become powers of ten, small factors keep one significant figure. */
-  rounding: boolean;
-}
-
-/** What the lab opens on at /labs/capacity, with no Lab focus. */
-const DEFAULT_SETUP: Setup = {
-  dau: 10_000_000,
-  requestsPerUser: 20,
-  writeShare: 0.1,
-  objectSizeKb: 2,
-  peakFactor: 5,
-  retentionYears: 5,
-  replicationFactor: 3,
-  rounding: false,
-};
-
-/**
- * Capacity estimation opens on the full step-by-step estimate with exact arithmetic. Back-of-the-
- * envelope opens in napkin mode on inputs that are not round (12M users, 8 requests, 1.2 KB), so the
- * learner watches them become powers of ten and the rough answer land close to the exact one.
- */
-const FOCUS_SETUPS: Record<LabFocus<'capacity'>, Setup> = {
-  'capacity-estimation': { ...DEFAULT_SETUP, rounding: false },
-  'back-of-the-envelope': { ...DEFAULT_SETUP, dau: 12_000_000, requestsPerUser: 8, objectSizeKb: 1.2, rounding: true },
-};
+const VIEWS: { value: CapacityView; label: string }[] = [
+  { value: 'size', label: 'Size' },
+  { value: 'speed', label: 'Speed' },
+];
 
 const LAYOUT: Layout = {
   clients: { x: 16, y: 170, w: 176, h: 122 },
@@ -89,9 +69,35 @@ const formatOffBy = (factor: number) => (Number.isFinite(factor) ? `${factor < 1
 
 export function CapacityLab({ focus }: LabProps<'capacity'>) {
   // The page keys this lab by Concept, so the focus never changes under a mounted lab.
-  const start = focus ? FOCUS_SETUPS[focus] : DEFAULT_SETUP;
-  // Every control lives in one object, so Reset cannot miss one.
+  const start = startOf(focus);
+  // Every control of both views lives in one object, so Reset cannot miss one - not even the view.
   const { setup, setSetup, change } = useLabSetup(start);
+  const reset = () => setSetup(start);
+  // Each view changes only its own keys of the one Setup.
+  const changeSpeed =
+    <K extends keyof SpeedInputs>(key: K) =>
+    (value: SpeedInputs[K]) =>
+      setSetup((current) => ({ ...current, [key]: value }));
+  const changeSize =
+    <K extends keyof SizeSetup>(key: K) =>
+    (value: SizeSetup[K]) =>
+      setSetup((current) => ({ ...current, [key]: value }));
+  const viewSwitch = <SegmentedControl value={setup.view} options={VIEWS} onChange={change('view')} />;
+  return setup.view === 'speed' ? (
+    <CapacitySpeedView inputs={setup} change={changeSpeed} onReset={reset} viewSwitch={viewSwitch} />
+  ) : (
+    <CapacitySizeView setup={setup} change={changeSize} onReset={reset} viewSwitch={viewSwitch} />
+  );
+}
+
+interface SizeViewProps {
+  setup: SizeSetup;
+  change: <K extends keyof SizeSetup>(key: K) => (value: SizeSetup[K]) => void;
+  onReset: () => void;
+  viewSwitch: ReactNode;
+}
+
+function CapacitySizeView({ setup, change, onReset, viewSwitch }: SizeViewProps) {
   const { dau, requestsPerUser, writeShare, objectSizeKb, peakFactor, retentionYears, replicationFactor, rounding } = setup;
 
   const exact = useMemo(() => exactEstimate(setup), [setup]);
@@ -164,9 +170,10 @@ export function CapacityLab({ focus }: LabProps<'capacity'>) {
       onToggleRun={() => setRunning((value) => !value)}
       onReset={() => {
         // Back to this Concept's starting setup, not the lab's global default.
-        setSetup(start);
+        onReset();
         particles.current = [];
       }}
+      actions={viewSwitch}
       legend={<CapacityLegend writeShare={writeShare} />}
       insight={
         <Insight>
