@@ -132,7 +132,7 @@ function AccountButton() {
       to="/account"
       aria-label={status === 'restoring' ? 'Account' : `Account: ${email ?? 'signed in'}`}
       title={email ?? 'Account'}
-      className="flex h-9 min-w-9 shrink-0 items-center justify-center gap-2 rounded-xl text-sm text-muted transition-colors hover:bg-elevated hover:text-ink md:px-1.5"
+      className="flex h-9 min-w-9 coarse:min-w-11 shrink-0 items-center justify-center gap-2 rounded-xl text-sm text-muted transition-colors hover:bg-elevated hover:text-ink md:px-1.5"
     >
       <span
         className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-xs font-semibold ${

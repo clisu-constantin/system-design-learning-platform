@@ -52,7 +52,13 @@ test('each failure has its own reason, so the caller can react to a deleted Acco
   const cases: [number, string][] = [
     [401, 'unauthorized'],
     [410, 'gone'],
+    [400, 'rejected'],
+    [413, 'rejected'],
     [422, 'rejected'],
+    // Not about the body: a proxy, a rate limit or a timeout. Sending again later can work.
+    [404, 'server'],
+    [408, 'server'],
+    [429, 'server'],
     [500, 'server'],
     [503, 'server'],
   ];

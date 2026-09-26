@@ -26,6 +26,18 @@ const ALL_SLUGS = CONCEPTS.map((concept) => concept.slug);
 
 const hasAccountMark = () => safeLocalStorage.get(ACCOUNT_MARK_KEY) !== null;
 
+/**
+ * Another tab signing in or out sets or removes the mark. A tab that loaded as a Guest never loads
+ * Firebase, so this is how it learns that a Reset here must clear the Account too.
+ */
+const subscribeAccountMark = (onChange: () => void) => {
+  const handler = (event: StorageEvent) => {
+    if (event.key === ACCOUNT_MARK_KEY || event.key === null) onChange();
+  };
+  window.addEventListener('storage', handler);
+  return () => window.removeEventListener('storage', handler);
+};
+
 /** One per page, like the Account store: the rules are in progressSync.ts and progressState.ts. */
 const sync = createProgressSync({
   storage: safeLocalStorage,
@@ -52,7 +64,8 @@ export function ProgressProvider({ children }: { children: ReactNode }) {
   const state = useSyncExternalStore(sync.subscribe, sync.getState);
   const { status, request, onSignedOut } = useAccount();
   // Restoring, or signed in here but the sign-in SDK could not load yet: still the Account's progress.
-  const synced = status !== 'guest' || hasAccountMark();
+  const accountMark = useSyncExternalStore(subscribeAccountMark, hasAccountMark);
+  const synced = status !== 'guest' || accountMark;
 
   // Signing out (or a 410) leaves an empty Guest, so the next person on a shared
   // computer sees nothing. Emptied, not Reset: a Reset keeps "cleared at"

@@ -45,7 +45,9 @@ export const DEFAULT_TIMEOUT_MS = 10_000;
 function failureOf(status: number): ApiFailure {
   if (status === 401) return 'unauthorized';
   if (status === 410) return 'gone';
-  if (status >= 400 && status < 500) return 'rejected';
+  // Only these say the body itself is wrong, so sending it again cannot work. Any other 4xx (a proxy
+  // 404, a 408, a 429 rate limit) is about this moment, and is retried like a server error.
+  if (status === 400 || status === 413 || status === 422) return 'rejected';
   return 'server';
 }
 

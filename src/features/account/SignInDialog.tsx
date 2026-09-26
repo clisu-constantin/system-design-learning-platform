@@ -20,12 +20,12 @@ interface SignInDialogProps {
 
 const MODES: { value: Exclude<Mode, 'reset'>; label: string }[] = [
   { value: 'sign-in', label: 'Sign in' },
-  { value: 'sign-up', label: 'Create account' },
+  { value: 'sign-up', label: 'Create Account' },
 ];
 
 const SUBMIT: Record<Mode, { idle: string; pending: string }> = {
   'sign-in': { idle: 'Sign in', pending: 'Signing in...' },
-  'sign-up': { idle: 'Create account', pending: 'Creating your Account...' },
+  'sign-up': { idle: 'Create Account', pending: 'Creating your Account...' },
   reset: { idle: 'Send reset link', pending: 'Sending...' },
 };
 
