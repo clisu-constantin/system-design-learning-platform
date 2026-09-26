@@ -19,6 +19,7 @@ import {
   routesFor,
   subtitleFor,
   switchProduct,
+  wireKeyOf,
   type Nfr,
   type Setup,
 } from './requirementsArchitecture.ts';
@@ -66,10 +67,12 @@ test('every wire tone drawn has a legend line, and every legend line is drawn', 
     setup('instagram', ['upload', 'feed', 'search'], { users: 2 }),
     setup('uber', ['location', 'match', 'track'], { availability: 3 }),
     DEFAULT_SETUP,
+    FOCUS_SETUPS['functional-requirements'],
+    { ...FOCUS_SETUPS['functional-requirements'], nfr: { ...RELAXED, availability: 3 } },
   ];
   for (const s of settings) {
     const arch = architecture(s);
-    const drawn = new Set(edgesFor(arch).map((edge) => (edge.dashed ? 'dashed' : edge.tone)));
+    const drawn = new Set(edgesFor(arch).map(wireKeyOf));
     const listed = new Set(legendFor(arch).wires.map((wire) => wire.tone));
     assert.deepEqual([...listed].sort(), [...drawn].sort(), JSON.stringify(s));
   }
@@ -276,8 +279,8 @@ function* everySetting(): Generator<Setup> {
 test('no part title, subtitle, stat or status line is truncated at any setting', () => {
   let checked = 0;
   for (const s of everySetting()) {
-    const arch = architecture(s);
-    for (const part of Object.values(arch.parts)) {
+    const arch = architecture({ ...s, showNotBuilt: true });
+    for (const part of [...Object.values(arch.parts), ...Object.values(arch.notBuilt)]) {
       if (!part) continue;
       const w = part.id === 'region2' ? REGION2.w : SLOTS[part.id].w;
       const where = `${part.id} in ${JSON.stringify(s)}`;
@@ -478,6 +481,113 @@ test('a 20 ms target keeps the hot data in memory, so the cache answers more rea
 test('Uber pooling batches requests through the workers into the geo index', () => {
   const routes = allRoutes(setup('uber', ['location', 'match', 'pool']));
   assert.ok(routes.some(({ route }) => walks(route, ['api', 'async', 'index'])));
+});
+
+// ---------------------------------------------------------------------------
+// The Functional Requirements focus: features only, and what saying no leaves out
+// ---------------------------------------------------------------------------
+
+const FUNCTIONAL = FOCUS_SETUPS['functional-requirements'];
+
+test('the Functional Requirements focus opens on the WhatsApp core features at relaxed targets', () => {
+  assert.equal(FUNCTIONAL.product, 'whatsapp');
+  assert.deepEqual(FUNCTIONAL.selected, coreOf('whatsapp'));
+  assert.deepEqual(FUNCTIONAL.nfr, RELAXED);
+  assert.equal(FUNCTIONAL.panel, 'features');
+});
+
+test('on the Functional Requirements focus every built part names a picked feature as its reason', () => {
+  const picked = new Set(REQUIREMENTS.whatsapp.filter((option) => FUNCTIONAL.selected[option.id]).map((option) => option.short));
+  const arch = architecture(FUNCTIONAL);
+  const built = Object.values(arch.parts).filter((part) => part && part.id !== 'users');
+
+  assert.ok(built.length > 0);
+  for (const part of built) {
+    assert.ok(part);
+    for (const reason of part.reasons) assert.ok(picked.has(reason), `${part.title}: "${reason}" is not a picked feature`);
+  }
+});
+
+test('on the Functional Requirements focus each unpicked feature draws its parts as not built', () => {
+  const arch = architecture(FUNCTIONAL);
+  const notBuilt = Object.fromEntries(Object.values(arch.notBuilt).map((part) => [part?.id, part?.reasons]));
+
+  assert.deepEqual(notBuilt, { cdn: ['images', 'stories'], media: ['calls'], objects: ['images', 'stories'] });
+  assert.equal(arch.notBuilt.media?.title, 'Media servers');
+  assert.equal(arch.notBuilt.media?.kind, 'server');
+});
+
+test('a not-built part is wired with dashed grey wires that no request travels', () => {
+  const arch = architecture(FUNCTIONAL);
+  const notBuilt = new Set(Object.keys(arch.notBuilt));
+  const touching = edgesFor(arch).filter((edge) => notBuilt.has(edge.from) || notBuilt.has(edge.to));
+
+  assert.ok(touching.some((edge) => [edge.from, edge.to].sort().join('|') === 'media|users'));
+  for (const edge of touching) {
+    assert.equal(edge.dashed, true, `${edge.from} -> ${edge.to}`);
+    assert.equal(wireKeyOf(edge), 'not-built');
+  }
+  for (const { route } of allRoutes(FUNCTIONAL)) {
+    assert.ok(!route.some((id) => notBuilt.has(id)), route.join(' -> '));
+  }
+});
+
+test('a part is never both built and not built, and no request reaches a not-built part', () => {
+  let checked = 0;
+  for (const s of everySetting()) {
+    const shown: Setup = { ...s, showNotBuilt: true };
+    const arch = architecture(shown);
+    for (const id of Object.keys(arch.notBuilt)) {
+      assert.equal(arch.parts[id as keyof typeof arch.parts], undefined, `${id} in ${JSON.stringify(s)}`);
+    }
+    const notBuilt = new Set(Object.keys(arch.notBuilt));
+    if (notBuilt.size === 0) continue;
+    for (const flow of arch.flows) {
+      for (const { route } of routesFor(flow, arch)) assert.ok(!route.some((id) => notBuilt.has(id)), route.join(' -> '));
+    }
+    checked += 1;
+  }
+  assert.ok(checked > 100);
+});
+
+test('not-built parts are drawn only on the Functional Requirements focus', () => {
+  const others = [DEFAULT_SETUP, FOCUS_SETUPS['what-is-system-design'], FOCUS_SETUPS['non-functional-requirements']];
+  for (const s of others) {
+    const arch = architecture(s);
+    assert.deepEqual(arch.notBuilt, {}, JSON.stringify(s));
+    assert.ok(!edgesFor(arch).some((edge) => wireKeyOf(edge) === 'not-built'));
+  }
+});
+
+test('with nothing picked there is nothing to leave out', () => {
+  assert.deepEqual(architecture({ ...FUNCTIONAL, selected: {} }).notBuilt, {});
+});
+
+test('the legend explains the dashed not-built wires only while they are drawn', () => {
+  const label = (s: Setup) => legendFor(architecture(s)).wires.find((wire) => wire.tone === 'not-built')?.label;
+
+  assert.match(label(FUNCTIONAL) ?? '', /not built/i);
+  assert.equal(label({ ...FUNCTIONAL, showNotBuilt: false }), undefined);
+  // Every extra feature picked: nothing is left out, so the legend line goes too.
+  const everything = Object.fromEntries(REQUIREMENTS.whatsapp.map((option) => [option.id, true]));
+  assert.equal(label({ ...FUNCTIONAL, selected: everything }), undefined);
+});
+
+test('ticking an unpicked feature turns its not-built parts into built ones', () => {
+  const withCalls = architecture({ ...FUNCTIONAL, selected: { ...FUNCTIONAL.selected, calls: true } });
+
+  assert.equal(withCalls.notBuilt.media, undefined);
+  assert.equal(withCalls.parts.media?.title, 'Media servers');
+});
+
+test('switching product keeps the not-built parts and the focus start of each product', () => {
+  const away = switchProduct(FUNCTIONAL, 'instagram');
+  const back = switchProduct(away, 'whatsapp');
+
+  assert.equal(away.showNotBuilt, true);
+  assert.deepEqual(away.selected, coreOf('instagram'));
+  assert.ok(architecture(away).notBuilt.index, 'search is not picked, so the Search index is not built');
+  assert.deepEqual(back, FUNCTIONAL);
 });
 
 test('consistency can be set only while there is a second copy to be inconsistent with', () => {

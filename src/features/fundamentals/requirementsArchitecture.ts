@@ -101,8 +101,8 @@ export interface RequirementOption {
 export const REQUIREMENTS: Record<Product, RequirementOption[]> = {
   whatsapp: [
     { id: 'send', label: 'Send messages', short: 'send', core: true, implication: 'An App server that stores each message in a Database', flows: ['write', 'read'] },
-    { id: 'receive', label: 'Receive messages in real time', short: 'live delivery', core: true, implication: 'A WebSocket tier that holds a connection open to every phone and pushes new messages down it', flows: ['push', 'read'] },
-    { id: 'groups', label: 'Group conversations', short: 'group fan-out', core: true, implication: 'Queue + workers that copy a group message to every member, through the WebSocket tier', flows: ['fan-out'] },
+    { id: 'receive', label: 'Receive messages in real time', short: 'live delivery', core: true, implication: 'A WebSocket server that holds a connection open to every phone and pushes new messages down it', flows: ['push', 'read'] },
+    { id: 'groups', label: 'Group conversations', short: 'group fan-out', core: true, implication: 'Queue + workers that copy a group message to every member, through the WebSocket server', flows: ['fan-out'] },
     {
       id: 'receipts',
       label: 'Delivery and read receipts',
@@ -146,7 +146,7 @@ export const REQUIREMENTS: Record<Product, RequirementOption[]> = {
       marks: [{ part: 'async', status: 'Counts likes in batches' }],
     },
     { id: 'search', label: 'Search users and tags', short: 'search', core: false, implication: 'A Search index, kept in step with the Database by workers', flows: ['index-sync', 'index-read'] },
-    { id: 'dm', label: 'Direct messages', short: 'DMs', core: false, implication: 'A WebSocket tier to push messages - a chat system, see the WhatsApp design', flows: ['write', 'push'] },
+    { id: 'dm', label: 'Direct messages', short: 'DMs', core: false, implication: 'A WebSocket server to push messages - a chat system, see the WhatsApp design', flows: ['write', 'push'] },
     { id: 'reels', label: 'Short video', short: 'video', core: false, implication: 'Object storage, transcoding workers and a CDN to stream the video', flows: ['upload', 'process', 'media'] },
   ],
   uber: [
@@ -161,7 +161,7 @@ export const REQUIREMENTS: Record<Product, RequirementOption[]> = {
       flows: ['index-read'],
       marks: [{ part: 'index', status: 'Searched by nearby cells' }],
     },
-    { id: 'track', label: 'Track the trip live', short: 'live tracking', core: true, implication: 'A WebSocket tier that streams the driver position to the rider app', flows: ['push'] },
+    { id: 'track', label: 'Track the trip live', short: 'live tracking', core: true, implication: 'A WebSocket server that streams the driver position to the rider app', flows: ['push'] },
     { id: 'pay', label: 'Automatic payment', short: 'payments', core: true, implication: 'Workers charge the card after the trip - once, even when a retry runs twice', flows: ['job', 'write'] },
     { id: 'pool', label: 'Ride pooling', short: 'pooling', core: false, implication: 'Workers collect pool requests for a few seconds and match them together against the Geo index', flows: ['batch-match'] },
     {
@@ -312,6 +312,11 @@ export interface Setup {
   nfr: Nfr;
   panel: Panel;
   start: Start;
+  /**
+   * Draw the parts only unpicked features would need, greyed out as not built, with dashed wires
+   * no request travels - so the diagram shows what saying no to a feature left out.
+   */
+  showNotBuilt?: boolean;
 }
 
 export const coreOf = (product: Product) =>
@@ -340,19 +345,23 @@ export const DEFAULT_SETUP: Setup = {
  * The Lab focus of each Concept that hosts this lab.
  * - What is System Design? starts from one requirement at relaxed targets, so the
  *   diagram is three boxes and every tick adds the parts that requirement forces.
- * - Functional Requirements opens on the feature checklist at the default targets.
+ * - Functional Requirements opens on the WhatsApp core features at relaxed targets, so every part
+ *   drawn names a picked feature as its reason, and the parts of the unpicked features stand
+ *   greyed out as not built. Only this focus shows them: scope - what saying no leaves out - is
+ *   its lesson, while on the others they would crowd the three-box start or the targets.
  * - Non-Functional Requirements keeps the core features and opens on the quality
  *   sliders at their relaxed baseline, so every raised target adds parts.
  */
 export const FOCUS_SETUPS: Record<LabFocus<'requirements'>, Setup> = {
   'what-is-system-design': { ...DEFAULT_SETUP, selected: firstOf('whatsapp'), nfr: RELAXED, start: 'first' },
-  'functional-requirements': DEFAULT_SETUP,
+  'functional-requirements': { ...DEFAULT_SETUP, nfr: RELAXED, showNotBuilt: true },
   'non-functional-requirements': { ...DEFAULT_SETUP, nfr: RELAXED, panel: 'targets' },
 };
 
 /**
  * Another product, with the features the focus starts from for it - so a focus that opens on one
- * requirement still has one after switching away and back. The targets stay as they are.
+ * requirement still has one after switching away and back. The targets, and whether not-built
+ * parts are drawn, stay as they are.
  */
 export function switchProduct(setup: Setup, product: Product): Setup {
   return { ...setup, product, selected: selectionFor(product, setup.start) };
@@ -384,6 +393,13 @@ export interface Architecture {
   parts: Partial<Record<PartId, PartView>>;
   /** Traffic classes, one entry per requirement that creates them (a multiset). */
   flows: FlowKind[];
+  /**
+   * With `showNotBuilt`: the parts only unpicked features need, each naming those features as its
+   * reasons. Never billed, never a single point, and no request travels to them.
+   */
+  notBuilt: Partial<Record<PartId, PartView>>;
+  /** The traffic the unpicked features would send - drawn as dashed wires only, never animated. */
+  notBuiltFlows: FlowKind[];
   region2: boolean;
   /**
    * Availability zones region 1 runs in: one; two when Critical durability puts a synchronous
@@ -423,10 +439,10 @@ const PART_TITLE: Record<PartId, string> = {
   media: 'Media servers',
   objects: 'Object storage',
   api: 'App server',
-  ws: 'WebSocket tier',
+  ws: 'WebSocket server',
   db: 'Database',
   async: 'Queue + workers',
-  index: 'Index',
+  index: 'Search index',
   cache: 'Cache',
   region2: 'Region 2',
 };
@@ -436,15 +452,36 @@ export const PART_ORDER: PartId[] = ['region2', 'users', 'cdn', 'lb', 'media', '
 
 export const chosenOf = (setup: Setup) => REQUIREMENTS[setup.product].filter((option) => setup.selected[option.id]);
 
+/** A part as first drawn, before sizing: the Uber index is a geo index, the others search. */
+function newPart(id: PartId, product: Product): PartView {
+  if (id === 'index' && product === 'uber') return { id, kind: 'nosql', title: 'Geo index', reasons: [] };
+  return { id, kind: PART_KIND[id], title: PART_TITLE[id], reasons: [] };
+}
+
+function addReason(parts: Partial<Record<PartId, PartView>>, id: PartId, reason: string, product: Product) {
+  const part = parts[id] ?? (parts[id] = newPart(id, product));
+  if (!part.reasons.includes(reason)) part.reasons.push(reason);
+}
+
+/** The parts and traffic of the unpicked features that no picked one already builds. */
+function notBuiltOf(setup: Setup, built: Partial<Record<PartId, PartView>>) {
+  const parts: Partial<Record<PartId, PartView>> = {};
+  const flows: FlowKind[] = [];
+  for (const option of REQUIREMENTS[setup.product].filter((item) => !setup.selected[item.id])) {
+    for (const flow of option.flows) {
+      flows.push(flow);
+      for (const id of FLOW_PARTS[flow]) if (!built[id]) addReason(parts, id, option.short, setup.product);
+    }
+  }
+  return { notBuilt: parts, notBuiltFlows: flows };
+}
+
 export function architecture(setup: Setup): Architecture {
   const { product, nfr } = setup;
   const chosen = chosenOf(setup);
   const parts: Partial<Record<PartId, PartView>> = {};
   const flows: FlowKind[] = [];
-  const add = (id: PartId, reason: string) => {
-    const part = parts[id] ?? (parts[id] = { id, kind: PART_KIND[id], title: PART_TITLE[id], reasons: [] });
-    if (!part.reasons.includes(reason)) part.reasons.push(reason);
-  };
+  const add = (id: PartId, reason: string) => addReason(parts, id, reason, product);
 
   const sizeFor = (cache: boolean) =>
     sizeRequirements({
@@ -458,9 +495,12 @@ export function architecture(setup: Setup): Architecture {
 
   if (chosen.length === 0) {
     const zones = nfr.availability >= 2 ? 3 : 1;
+    // With nothing picked there is nothing to leave out: the diagram says so in words instead.
     return {
       parts,
       flows,
+      notBuilt: {},
+      notBuiltFlows: [],
       region2: false,
       zones,
       sizing: sizeFor(false),
@@ -554,8 +594,6 @@ export function architecture(setup: Setup): Architecture {
           : 'One primary is enough';
   }
   if (parts.index) {
-    parts.index.title = product === 'uber' ? 'Geo index' : 'Search index';
-    parts.index.kind = product === 'uber' ? 'nosql' : 'search';
     // Drivers publishing locations: the write rate that sets Uber apart.
     if (sizing.index.peakWriteQps > 0) {
       parts.index.stat = { label: 'Peak writes', value: `${about(sizing.index.peakWriteQps)}/s`, tone: 'text-warn' };
@@ -584,7 +622,9 @@ export function architecture(setup: Setup): Architecture {
   if (parts.ws && ws.count === 1) singlePoints.push('WebSocket server');
   if (parts.db && dbCopies === 1) singlePoints.push('database');
 
-  return { parts, flows, region2, zones, sizing, cacheHit, dbCopies, syncStandby, syncToRegion2, singlePoints };
+  const { notBuilt, notBuiltFlows } = setup.showNotBuilt ? notBuiltOf(setup, parts) : { notBuilt: {}, notBuiltFlows: [] };
+
+  return { parts, flows, notBuilt, notBuiltFlows, region2, zones, sizing, cacheHit, dbCopies, syncStandby, syncToRegion2, singlePoints };
 }
 
 /** A model number on a stat row: "~12", "~11.6K", or "<1" rather than "~0" for a trickle. */
@@ -772,7 +812,13 @@ function toneFor(a: string, b: string): EdgeTone {
 /** Region 2 is drawn as one band; these are where wires meet it, not parts of region 1. */
 const REGION2_PORTS = new Set(['r2-users', 'r2-db']);
 
-/** One wire per pair of parts that some request actually travels between. */
+/** The tone of a wire to a not-built part: drawn dashed, and fainter than any wire with traffic. */
+const NOT_BUILT_TONE: EdgeTone = 'muted';
+
+/**
+ * One wire per pair of parts that some request actually travels between, then a dashed grey wire
+ * for each hop an unpicked feature would add to a not-built part. No request travels those.
+ */
 export function edgesFor(arch: Architecture): DiagramEdge[] {
   const edges = new Map<string, DiagramEdge>();
   const addEdge = (edge: DiagramEdge) => {
@@ -799,6 +845,18 @@ export function edgesFor(arch: Architecture): DiagramEdge[] {
       );
     }
   }
+  // Routed as if the not-built parts were there; only the hops that reach one are drawn.
+  const wouldBe: Architecture = { ...arch, parts: { ...arch.parts, ...arch.notBuilt } };
+  for (const flow of new Set(arch.notBuiltFlows)) {
+    for (const { route } of routesFor(flow, wouldBe)) {
+      for (let index = 0; index < route.length - 1; index += 1) {
+        const [from, to] = [route[index], route[index + 1]];
+        if (REGION2_PORTS.has(from) || REGION2_PORTS.has(to)) continue;
+        if (!(from in arch.notBuilt) && !(to in arch.notBuilt)) continue;
+        addEdge({ from, to, tone: NOT_BUILT_TONE, width: 2, dashed: true });
+      }
+    }
+  }
   return [...edges.values()];
 }
 
@@ -806,8 +864,17 @@ export function edgesFor(arch: Architecture): DiagramEdge[] {
 // Legend
 // ---------------------------------------------------------------------------
 
-/** A wire tone, or 'dashed' for the later copy to region 2 (drawn dashed whatever its tone). */
-export type WireKey = EdgeTone | 'dashed';
+/**
+ * A wire tone, 'dashed' for the later copy to region 2, or 'not-built' for the dashed grey wires of
+ * features that are not picked.
+ */
+export type WireKey = EdgeTone | 'dashed' | 'not-built';
+
+/** Which legend line a wire belongs to. */
+export function wireKeyOf(edge: DiagramEdge): WireKey {
+  if (edge.dashed) return edge.tone === NOT_BUILT_TONE ? 'not-built' : 'dashed';
+  return edge.tone ?? 'default';
+}
 
 export interface Legend {
   wires: { tone: WireKey; label: string }[];
@@ -821,12 +888,13 @@ const WIRE_LABEL: Partial<Record<WireKey, string>> = {
   ok: 'Green: answered by a cache or the CDN edge',
   warn: 'Amber: writes wait for region 2 before the reply',
   dashed: 'Dashed: writes copied to region 2 a moment later',
+  'not-built': 'Grey dashed: a feature not picked, so its parts are not built and carry nothing',
 };
-const WIRE_ORDER: WireKey[] = ['brand', 'violet', 'info', 'ok', 'warn', 'dashed'];
+const WIRE_ORDER: WireKey[] = ['brand', 'violet', 'info', 'ok', 'warn', 'dashed', 'not-built'];
 
 /** The legend for what is on screen: only the wire tones drawn and the particle shapes that travel. */
 export function legendFor(arch: Architecture): Legend {
-  const drawn = new Set<WireKey>(edgesFor(arch).map((edge) => (edge.dashed ? 'dashed' : (edge.tone ?? 'default'))));
+  const drawn = new Set<WireKey>(edgesFor(arch).map(wireKeyOf));
   const wires = WIRE_ORDER.filter((tone) => drawn.has(tone)).map((tone) => ({ tone, label: WIRE_LABEL[tone] ?? '' }));
 
   const travelling = new Set<RequestOutcome>(

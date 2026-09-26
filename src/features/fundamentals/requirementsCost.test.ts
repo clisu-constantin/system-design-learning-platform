@@ -49,6 +49,17 @@ test('the Non-Functional Requirements focus opens on x1', () => {
   assert.equal(relativeCost(FOCUS_SETUPS['non-functional-requirements']), 1);
 });
 
+test('the Functional Requirements focus opens on x1: its not-built parts are not billed', () => {
+  const focus = FOCUS_SETUPS['functional-requirements'];
+  const arch = architecture(focus);
+  const billed = new Set(costLines(arch).map((line) => line.id));
+
+  assert.ok(Object.keys(arch.notBuilt).length > 0);
+  for (const id of Object.keys(arch.notBuilt)) assert.ok(!billed.has(id as never), `${id} is not built but billed`);
+  assert.equal(relativeCost(focus), 1);
+  assert.equal(monthlyCost(arch), monthlyCost(architecture({ ...focus, showNotBuilt: false })));
+});
+
 test('with nothing to build there is no cost', () => {
   const empty: Setup = { ...DEFAULT_SETUP, selected: {} };
   assert.equal(monthlyCost(architecture(empty)), 0);

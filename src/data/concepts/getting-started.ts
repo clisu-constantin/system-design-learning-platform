@@ -221,11 +221,12 @@ export const gettingStartedConcepts: Concept[] = [
     ],
     diagram: `Design WhatsApp
 
-  [x] Send a 1:1 message        -> needs durable message store
-  [x] Receive messages live     -> needs push transport (WebSocket)
-  [x] Group conversations       -> needs fan-out on write or read
-  [ ] Video calls               -> needs media servers: different system
-  [ ] Stories                   -> needs object storage + CDN`,
+  [x] Send messages              -> App server + Database
+  [x] Receive messages live      -> WebSocket server
+  [x] Group conversations        -> Queue + workers
+  [x] Delivery and read receipts -> 3 pushes per message
+  [ ] Voice and video calls      -> Media servers: not built
+  [ ] Send images, Stories       -> Object storage + CDN: not built`,
     tradeoffs: [
       {
         approach: 'Pin down a short feature list before designing',
@@ -338,7 +339,7 @@ export const gettingStartedConcepts: Concept[] = [
       },
       {
         id: 'fr-8',
-        prompt: 'In the Requirements Lab (Design WhatsApp) you tick "Voice and video calls". Media servers appear and "Beyond core" goes up. The product manager says it is just one more checkbox. What is the honest answer?',
+        prompt: 'In the Requirements Lab (Design WhatsApp) you tick "Voice and video calls". The grey Media servers box turns into a built part and "Beyond core" goes up. The product manager says it is just one more checkbox. What is the honest answer?',
         options: [
           'Agree - the app servers already hold a WebSocket to each phone and can relay audio',
           'Calls are a separate system (media relays, signalling): scope them out or plan a subsystem',
@@ -347,7 +348,7 @@ export const gettingStartedConcepts: Concept[] = [
         ],
         answer: 1,
         explanation:
-          'Real-time audio and video need media relays built for it, with their own scaling and bandwidth costs - the Lab marks the feature as extra for that reason. App servers built for small messages are the wrong place to relay media, and the WebSocket tier is still needed to ring the other phone.',
+          'Real-time audio and video need media relays built for it, with their own scaling and bandwidth costs - the Lab marks the feature as extra for that reason. App servers built for small messages are the wrong place to relay media, and the WebSocket server is still needed to ring the other phone.',
       },
       {
         id: 'fr-9',

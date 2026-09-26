@@ -21,6 +21,8 @@ export interface VisualNode {
   w?: number;
   h?: number;
   status?: NodeStatus;
+  /** Replaces the status text, e.g. "Not built" for a part a cut feature would need. */
+  statusLabel?: string;
   /** One short metric line inside the card, e.g. "CPU 38%". */
   stat?: [string, string];
   alert?: boolean;
@@ -147,6 +149,7 @@ const renderNodes = (spec: VisualSpec, layout: Layout, activeIds?: Set<string>) 
       subtitle={node.sub}
       placed={layout[node.id]}
       status={node.status ?? 'healthy'}
+      statusLabel={node.statusLabel}
       alert={node.alert}
       selected={activeIds?.has(node.id)}
       compact

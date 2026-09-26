@@ -82,7 +82,7 @@ export function RequirementsLab({ focus }: LabProps<'requirements'>) {
   const layout = useMemo<Layout>(() => {
     const placed: Layout = {};
     for (const id of PART_ORDER) {
-      if (!arch.parts[id]) continue;
+      if (!arch.parts[id] && !arch.notBuilt[id]) continue;
       if (id === 'region2') Object.assign(placed, REGION2_BOXES);
       else placed[id] = SLOTS[id];
     }
@@ -188,7 +188,7 @@ export function RequirementsLab({ focus }: LabProps<'requirements'>) {
                 label: 'Parts on diagram',
                 value: partCount,
                 tone: 'brand',
-                hint: 'Boxes the requirements forced, not counting the users. Each one is built, paid for and operated.',
+                hint: 'Boxes the requirements forced, not counting the users or the grey not-built ones. Each one is built, paid for and operated.',
               },
               {
                 key: 'cost',
@@ -388,6 +388,22 @@ export function RequirementsLab({ focus }: LabProps<'requirements'>) {
         ) : null}
         {PART_ORDER.filter((id) => id !== 'region2').map((id) => {
           const part = arch.parts[id];
+          const cut = arch.notBuilt[id];
+          if (cut) {
+            // Greyed out like the not-built part of the Diagram: named by the feature left out.
+            return (
+              <ArchNode
+                key={id}
+                kind={cut.kind}
+                status="down"
+                statusLabel="Not built"
+                title={cut.title}
+                subtitle={subtitleFor(cut, arch)}
+                placed={SLOTS[id]}
+                compact
+              />
+            );
+          }
           if (!part) return null;
           return (
             <ArchNode
@@ -416,6 +432,7 @@ const WIRE_SWATCH: Partial<Record<WireKey, string>> = {
   ok: 'bg-ok',
   warn: 'bg-warn',
   dashed: 'border-t-2 border-dashed border-faint',
+  'not-built': 'border-t-2 border-dashed border-faint/40',
 };
 
 /** Only what is on screen: the wire tones drawn and the particle shapes that travel. */
@@ -425,7 +442,7 @@ function RequirementsLegend({ legend }: { legend: Legend }) {
       <ParticleLegend outcomes={legend.outcomes}>
         {legend.wires.map((wire) => (
           <span key={wire.tone} className="flex items-center gap-1.5 text-[11px] text-muted">
-            <span aria-hidden className={cn('inline-block w-4', wire.tone === 'dashed' ? '' : 'h-0.5 rounded', WIRE_SWATCH[wire.tone])} />
+            <span aria-hidden className={cn('inline-block w-4', wire.tone === 'dashed' || wire.tone === 'not-built' ? '' : 'h-0.5 rounded', WIRE_SWATCH[wire.tone])} />
             {wire.label}
           </span>
         ))}
@@ -475,6 +492,13 @@ function insightFor(setup: Setup, arch: Architecture, forced: number, scopeCreep
       {forced} structural decision{forced === 1 ? '' : 's'}.
       {arch.singlePoints.length > 0 ? (
         <> Still one copy of: {arch.singlePoints.join(', ')} - fine at 99%, not above it.</>
+      ) : null}
+      {Object.keys(arch.notBuilt).length > 0 ? (
+        <>
+          {' '}
+          The grey boxes are what the unticked features would need: saying no to them keeps those parts off the
+          bill.
+        </>
       ) : null}
       {scopeCreep > 0 ? (
         <>

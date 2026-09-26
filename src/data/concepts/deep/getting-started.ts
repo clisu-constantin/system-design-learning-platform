@@ -123,17 +123,17 @@ export const gettingStartedDepth: DepthMap = {
     ],
     examples: [
       {
-        title: 'Turning "design Instagram" into a design',
-        setup: 'You are given three words. Here is how to turn them into something you can actually draw boxes for.',
+        title: 'Turning "design WhatsApp" into a design',
+        setup: 'You are given two words. Here is how to turn them into parts you can draw, each with a reason - the same picture the Requirements Lab opens on for this Concept.',
         walkthrough: [
-          'List candidate features in user language: post a photo, follow a user, view a home feed, like a post, comment, search users, stories, DMs, reels.',
-          'Pick the core three: post a photo, follow a user, view a home feed. Everything else is explicitly out of scope, said out loud.',
-          'Annotate reads and writes: "post a photo" writes one row plus one large object. "View a home feed" reads the follow graph plus recent posts - and is called perhaps 100x more often than posting.',
-          'Notice the ratio: a read-heavy feed with a write-light post path. That single observation is what justifies a CDN, a feed cache, and possibly fan-out on write.',
-          'Check the ugly ones: "a user can delete a photo" means the CDN copy, the feed caches and the object storage all have to forget it. That is a real design constraint you would have missed.',
+          'List candidate features in user language - 7 of them: send messages, receive messages live, group conversations, delivery and read receipts, send images, voice and video calls, stories.',
+          'Pick the core 4: send, receive live, groups and receipts. Say the other 3 out loud as out of scope: images, calls and stories.',
+          'Annotate reads and writes at 1,000 daily users: 20 requests each is 20,000 a day, 10% of them writes, so 2,000 messages stored a day. At a peak of 5x the average that is about 1 request a second - one App server and one Database carry it.',
+          'Map each core feature to the part it forces: send needs an App server and a Database; receiving live needs a WebSocket server holding about 100 connections open (10% of users online at peak); groups need Queue + workers, so a message to a group of 20 becomes 20 deliveries; receipts add no box but make 3 pushes per message.',
+          'Name what the 3 cut features would have added: calls need Media servers, a separate system that relays voice and video; images and stories need Object storage and a CDN. That is 3 parts not built.',
         ],
         result:
-          'Three sentences of scope produced a read/write ratio, a cache requirement and an invalidation problem - the entire skeleton of the architecture, before a single technology was named.',
+          'Four sentences of scope produced 4 parts, each named by the feature that forced it, and kept 3 more - Media servers, Object storage and a CDN - off the bill, before a single technology was argued about.',
       },
     ],
     jargon: [
