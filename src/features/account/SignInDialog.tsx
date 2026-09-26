@@ -257,7 +257,7 @@ export function SignInDialog({ ready, onGoogle, emailAuth, onClose }: SignInDial
 
           {mode === 'sign-up' ? (
             <p className="text-xs text-muted">
-              We email you a link to confirm the address. Your Account saves progress before you click it.
+              We email you a link to confirm the address - it may land in spam. Your Account saves progress before you click it.
             </p>
           ) : null}
 

@@ -135,7 +135,7 @@ function ConfirmEmail({ email }: { email: string | null }) {
         <div className="min-w-0">
           <h2 className="text-sm font-semibold text-ink">Confirm your email</h2>
           <p className="mt-1 text-xs text-muted">
-            We sent a link to {email ?? 'your email'}. Your progress saves either way, but until you confirm it,
+            We sent a link to {email ?? 'your email'} - look in your spam folder too. Your progress saves either way, but until you confirm it,
             signing in with Google for this email replaces your password.
           </p>
           <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-2">
