@@ -349,13 +349,14 @@ export const DEFAULT_SETUP: Setup = {
  *   drawn names a picked feature as its reason, and the parts of the unpicked features stand
  *   greyed out as not built. Only this focus shows them: scope - what saying no leaves out - is
  *   its lesson, while on the others they would crowd the three-box start or the targets.
- * - Non-Functional Requirements keeps the core features and opens on the quality
- *   sliders at their relaxed baseline, so every raised target adds parts.
+ * - Non-Functional Requirements opens on the Uber core features, on the quality sliders at their
+ *   relaxed baseline, so every raised target adds parts. Uber is its Example product: "99.99% for
+ *   ride requests" is a real, hard target, and raising availability to it is its Diagram.
  */
 export const FOCUS_SETUPS: Record<LabFocus<'requirements'>, Setup> = {
   'what-is-system-design': { ...DEFAULT_SETUP, selected: firstOf('whatsapp'), nfr: RELAXED, start: 'first' },
   'functional-requirements': { ...DEFAULT_SETUP, nfr: RELAXED, showNotBuilt: true },
-  'non-functional-requirements': { ...DEFAULT_SETUP, nfr: RELAXED, panel: 'targets' },
+  'non-functional-requirements': { ...DEFAULT_SETUP, product: 'uber', selected: coreOf('uber'), nfr: RELAXED, panel: 'targets' },
 };
 
 /**

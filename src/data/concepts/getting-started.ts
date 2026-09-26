@@ -546,16 +546,16 @@ export const gettingStartedConcepts: Concept[] = [
       },
       {
         id: 'nfr-9',
-        prompt: 'The payments database must lose no acknowledged payment if the machine holding it dies. Which design meets that target?',
+        prompt: 'Uber must lose no acknowledged payment if the machine holding its database dies. Which design meets that target?',
         options: [
-          'Synchronous replication to a second copy, plus backups that are restored in tests',
-          'Asynchronous replication to a replica in another zone, promoted when the primary dies',
-          'Nightly backups copied to object storage in another region',
-          'A bigger RAID disk array on the one machine, so no single disk failure loses data',
+          'A synchronous standby in a second zone, so a payment is confirmed only once both copies hold it',
+          'An asynchronous replica in another zone, promoted to primary when the machine holding the data dies',
+          'Nightly backups copied to object storage in another region, restored when the machine dies',
+          'A bigger RAID disk array on the one machine, so that no single disk failure can lose a payment',
         ],
         answer: 0,
         explanation:
-          'With asynchronous replication the primary confirms before the copy arrives, so the last moments of writes can vanish with the machine. Nightly backups lose up to a day, and a bigger disk dies with its machine. Only a copy confirmed before the acknowledgement meets "no acknowledged write lost" - the Critical durability level in the Lab.',
+          'With asynchronous replication the primary confirms before the copy arrives, so the last moments of writes can vanish with the machine. Nightly backups lose up to a day, and a bigger disk dies with its machine. Only a copy confirmed before the acknowledgement meets "no acknowledged write lost". In the Lab that is Critical durability: the Database becomes Database x2, a synchronous standby in a second zone, its stat turns to Peak sync writes because each write waits for the standby, and the monthly cost goes from x1 to x1.5.',
       },
       {
         id: 'nfr-10',
@@ -572,16 +572,16 @@ export const gettingStartedConcepts: Concept[] = [
       },
       {
         id: 'nfr-11',
-        prompt: 'In the Requirements Lab you keep the features and move Daily active users from 100k to 10M. Which change do you see, and why?',
+        prompt: 'In the Requirements Lab on Uber you keep the core features and move Daily active users from 100k to 10M. Which change do you see, and why?',
         options: [
-          'App servers grow to 18 behind a load balancer and a cache appears; one primary still takes writes',
-          'Only the number of app servers changes, because each app server handles a fixed number of users',
-          'The database is split into shards, because 10M users send more writes than one primary can take',
-          'Nothing changes - user count is a functional requirement, not a quality target',
+          'App servers go from 6 to 479 and a Cache appears; one database primary still takes the trip writes',
+          'Only the app servers grow, from 6 to 60, since each app server serves a fixed share of the riders',
+          'The database is split into partitions, since 10M riders send more trip writes than one primary can take',
+          'A second region appears, since 10M daily users are too many to serve from one region of 3 zones',
         ],
         answer: 0,
         explanation:
-          'Peak traffic rises 100x, from about 116 to 11,600 requests per second (20 requests a user, 5x peak), so one app server becomes 18 - the count the Capacity Lab gives for the same users - behind a load balancer, and a cache takes the hot reads. Peak writes are about 1,160 a second, far under the 10,000 one primary absorbs, so the database is not split. A second region only appears at 100M users or 99.999%.',
+          'Every online driver sends a location every 4 seconds - 540 writes a day for each daily user on average, against 10 rider requests - so the peak is about 318,000 requests a second, and at 1,000 each plus 50% headroom that is 479 app servers (6 at 100k). Those location writes land in the in-memory Geo index (about 312,500 a second), not the database: trips add only about 1,160 writes a second at peak, far under the 10,000 one primary absorbs, so the database is not split. A Cache appears for the hot reads, and the Queue + workers already drawn for payments also take anything slow. A second region only appears at 100M users or 99.999%.',
       },
     ],
   },

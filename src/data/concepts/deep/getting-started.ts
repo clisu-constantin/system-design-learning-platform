@@ -201,18 +201,19 @@ export const gettingStartedDepth: DepthMap = {
     ],
     examples: [
       {
-        title: 'What "99.99%" actually commits you to',
+        title: 'What "99.99% for ride requests" commits Uber to',
         setup:
-          'A product owner asks for 99.99% availability on a service that currently runs as a single instance behind a single database. Here is the arithmetic that turns the request into an architecture.',
+          'Uber with its core features - drivers publish their location, riders request a ride and are matched, the trip is tracked live, payment is automatic - at 1k daily users and 99%. The Requirements Lab draws one copy of each part: App server, WebSocket server, Database, Geo index, Queue + workers. It bills 8.5 units a month (one app server = 1) and calls that x1. A ride request that fails is a rider who opens another app, so the target is 99.99%. Here is what the Lab draws on the way there.',
         walkthrough: [
-          '99.99% of a year is 52 minutes of allowed downtime. That is the total budget for the whole year.',
-          'A single ordinary deploy with a restart costs 30-60 seconds. Twelve deploys a month would eat the entire yearly budget on planned work alone, so deploys must become zero-downtime: at least two instances behind a load balancer.',
-          'An unplanned machine failure takes 5-15 minutes to notice and replace by hand. One such incident consumes 20 percent of the budget, so detection and replacement must be automated: health checks plus an auto-scaling group.',
-          'The database is still single. A failover done by a human is 15+ minutes; a managed automatic failover typically takes one to two minutes. So the database needs a standby replica with automated promotion.',
-          'One availability zone going down would exceed the budget by itself, so instances and replicas spread across two or three zones. With a full copy in each, the bill grows roughly 2-3x.',
+          '99.99% of a year is 52 minutes of allowed downtime (525,600 minutes x 0.0001). That is the whole budget for the year, deploys included.',
+          'At 99% the Lab shows three single points: the app server, the WebSocket server and the database. One failure noticed and fixed by hand in 15 minutes uses 29 percent of the 52-minute budget, so a single copy of anything cannot stay.',
+          '99.9% draws redundant instances: App servers x2 and WebSocket x2 behind a Load balancer x2 that health-checks each server and skips a dead one. The load is about 32 requests a second, which one server carries, so the stat row reads 1 for load, +1 for 99.9%. The bill goes from x1 to x1.3.',
+          '99.99% draws multi-zone: region 1 now runs in 3 zones, with one copy of each server tier in every zone - App servers x3 and WebSocket x3, 1 for load, +2 for 99.99%. Losing a whole zone still leaves 2 of the 3 copies serving.',
+          'It also draws automated failover: a failover done by a human takes 15 minutes or more, so the Database becomes Database x2 - a standby copy, promoted automatically when the primary dies. Single points: 3 at 99%, 1 (the database) at 99.9%, 0 now.',
+          'The bill: 3 app servers (3) + 3 WebSocket servers (3) + 2 database copies (2 x 3 = 6) + the load balancer pair (0.6) + Queue + workers (1.5) + Geo index (2) = 16.1, plus 10% for the traffic between the 3 zones = 17.7 units. 17.7 / 8.5 is x2.1.',
         ],
         result:
-          'Moving to four nines turned into: load balancer, 2+ app instances, automated health checks, database standby with auto-failover, multi-zone deployment, and roughly 2-3x the bill. None of that was a configuration flag - which is exactly the honest answer to give.',
+          'Four nines for ride requests turned into a load balancer pair, a copy of every server tier in each of 3 zones and a database standby promoted automatically - and the monthly bill went from x1 to x2.1 in the model, inside the 2-3x rule of thumb. None of it was a configuration flag, which is exactly the honest answer to give a product owner.',
       },
     ],
     jargon: [

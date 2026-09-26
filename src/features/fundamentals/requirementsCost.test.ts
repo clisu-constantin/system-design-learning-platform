@@ -84,6 +84,28 @@ test('raising availability from 99.9% to 99.99% moves the cost into 2x-3x', () =
   }
 });
 
+test('from the Non-Functional focus on Uber, raising availability 99.9% -> 99.99% lands the cost in 2x-3x', () => {
+  const focus = FOCUS_SETUPS['non-functional-requirements'];
+  assert.equal(focus.product, 'uber');
+
+  const threeNines = relativeCost(withAvailability(focus, 1));
+  const fourNines = relativeCost(withAvailability(focus, 2));
+  assert.ok(threeNines < 2, `99.9%: x${threeNines.toFixed(2)}`);
+  inRange(fourNines, 2, 3, '99.99%');
+});
+
+test('the cost multipliers the Non-Functional Diagram, Lesson and Quiz quote come from the model', () => {
+  const focus = FOCUS_SETUPS['non-functional-requirements'];
+  // Diagram and Lesson: 99.9% then 99.99% from the focus start.
+  assert.equal(formatCost(relativeCost(withAvailability(focus, 1))), 'x1.3');
+  assert.equal(formatCost(relativeCost(withAvailability(focus, 2))), 'x2.1');
+  // Lesson: the x1 design bills 8.5 units, the 99.99% one 17.7.
+  assert.equal(monthlyCost(architecture(focus)), 8.5);
+  assert.equal(monthlyCost(architecture(withAvailability(focus, 2))).toFixed(1), '17.7');
+  // Quiz nfr-9: Critical durability on its own.
+  assert.equal(formatCost(relativeCost({ ...focus, nfr: { ...focus.nfr, durability: 1 } })), 'x1.5');
+});
+
 test('every availability step costs more than the one before', () => {
   for (const product of PRODUCTS) {
     let previous = 0;

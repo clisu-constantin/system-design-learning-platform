@@ -63,29 +63,37 @@ export const foundationVisuals: Record<string, VisualSpec> = {
   },
 
   'non-functional-requirements': {
-    width: 760,
-    height: 300,
-    caption: '99.99% is not a setting - it is redundancy, failover and multi-zone deployment.',
+    // The Requirements Lab on this Concept after raising Availability to 99.99%: Uber, the same
+    // parts under the same names and stat rows, shortened to the ride request and its live
+    // tracking (the Geo index and Queue + workers are left out). The Lab draws zones as an
+    // underlay, not a part, so here they live in the subtitles. x2.1 is `relativeCost` for that
+    // setup (requirementsCost.ts), inside the 2-3x a test holds it to.
+    width: 800,
+    height: 320,
+    caption: '99.99% for Uber ride requests: every server tier copied into 3 zones and a database standby promoted automatically. Monthly cost x1 -> x2.1 (simplified model).',
     nodes: [
-      { id: 'target', kind: 'client', label: '99.99% availability', x: 30, y: 110, w: 190, h: 82 },
-      { id: 'redundancy', kind: 'server', label: 'Redundant instances', x: 300, y: 15, w: 200, h: 74 },
-      { id: 'zones', kind: 'cdn', label: 'Multi-zone', x: 300, y: 105, w: 200, h: 74 },
-      { id: 'failover', kind: 'sql', label: 'Automated failover', x: 300, y: 195, w: 200, h: 74 },
-      { id: 'cost', kind: 'monitoring', label: 'Cost 2-3x', x: 580, y: 105, w: 150, h: 80, alert: true },
+      { id: 'users', kind: 'client', label: 'Users', sub: '1k daily users', x: 16, y: 112, w: 150, h: 95, stat: ['Target', '99.99%'] },
+      { id: 'lb', kind: 'load-balancer', label: 'Load balancer x2', sub: 'skips a dead server', x: 196, y: 115, w: 176, h: 90 },
+      { id: 'api', kind: 'server', label: 'App servers x3', sub: 'one in each of 3 zones', x: 402, y: 20, w: 196, h: 95, stat: ['1 for load', '+2 for 99.99%'] },
+      { id: 'ws', kind: 'service', label: 'WebSocket x3', sub: 'one in each of 3 zones', x: 402, y: 205, w: 196, h: 95, stat: ['1 for load', '+2 for 99.99%'] },
+      { id: 'db', kind: 'sql', label: 'Database x2', sub: 'primary + standby', x: 628, y: 20, w: 164, h: 95, stat: ['Failover', 'automatic'] },
     ],
     edges: [
-      { from: 'target', to: 'redundancy', tone: 'ok', rate: 1.4 },
-      { from: 'target', to: 'zones', tone: 'ok', rate: 1.4 },
-      { from: 'target', to: 'failover', tone: 'ok', rate: 1.4 },
-      { from: 'redundancy', to: 'cost', tone: 'warn', rate: 1, outcome: 'warning' },
-      { from: 'zones', to: 'cost', tone: 'warn', rate: 1, outcome: 'warning' },
+      { from: 'users', to: 'lb', tone: 'brand', rate: 1.4 },
+      { from: 'lb', to: 'api', tone: 'brand', rate: 1.4 },
+      { from: 'api', to: 'db', tone: 'brand', rate: 1.2 },
+      { from: 'api', to: 'ws', tone: 'violet', rate: 1 },
+      { from: 'ws', to: 'lb', tone: 'violet', rate: 1 },
     ],
     steps: [
-      { from: 'target', to: 'redundancy', label: 'No single instance may matter' },
-      { from: 'target', to: 'zones', label: 'Survive losing a whole zone' },
-      { from: 'target', to: 'failover', label: 'Recover without waking a human' },
-      { from: 'redundancy', to: 'cost', label: 'Every extra copy is billed', outcome: 'warning' },
-      { from: 'zones', to: 'cost', label: 'Cross-zone traffic is billed too', outcome: 'warning' },
+      { from: 'users', to: 'lb', label: 'Ride request reaches the balancer pair' },
+      { from: 'lb', to: 'api', label: 'Health check skips a dead server' },
+      { from: 'lb', to: 'api', label: 'One app server per zone' },
+      { from: 'api', to: 'ws', label: 'One WebSocket server per zone' },
+      { from: 'ws', to: 'lb', label: 'Driver position streamed to rider' },
+      { from: 'api', to: 'db', label: 'Trip stored, copied to standby' },
+      { from: 'db', to: 'db', label: 'Primary dies: standby promoted automatically', outcome: 'warning' },
+      { from: 'api', to: 'api', label: 'Monthly cost: x1 becomes x2.1', outcome: 'warning' },
     ],
   },
 

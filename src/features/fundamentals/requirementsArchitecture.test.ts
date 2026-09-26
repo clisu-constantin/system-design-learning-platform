@@ -597,3 +597,81 @@ test('consistency can be set only while there is a second copy to be inconsisten
   assert.equal(consistencyApplies(architecture(setup('whatsapp', core, { availability: 3 }))), true, 'region 2');
   assert.equal(consistencyApplies(architecture(setup('whatsapp', []))), false, 'no database');
 });
+
+// ---------------------------------------------------------------------------
+// The Non-Functional Requirements focus: Uber, on the quality targets
+// ---------------------------------------------------------------------------
+
+const NON_FUNCTIONAL = FOCUS_SETUPS['non-functional-requirements'];
+
+test('the Non-Functional Requirements focus opens on the Uber core features, on the targets panel, at relaxed targets', () => {
+  assert.equal(NON_FUNCTIONAL.product, 'uber');
+  assert.deepEqual(NON_FUNCTIONAL.selected, coreOf('uber'));
+  assert.deepEqual(NON_FUNCTIONAL.nfr, RELAXED);
+  assert.equal(NON_FUNCTIONAL.panel, 'targets');
+  assert.equal(NON_FUNCTIONAL.showNotBuilt, undefined);
+});
+
+test('from the Non-Functional focus, 99.99% draws redundant instances in three zones and an automated standby', () => {
+  const arch = architecture({ ...NON_FUNCTIONAL, nfr: { ...RELAXED, availability: 2 } });
+
+  assert.equal(arch.zones, 3);
+  assert.equal(arch.parts.lb?.title, 'Load balancer x2');
+  assert.ok(arch.sizing.app.count > 1, 'more than one app server');
+  assert.ok(arch.sizing.ws.count > 1, 'more than one WebSocket server');
+  assert.equal(arch.dbCopies, 2, 'the primary and its standby');
+  assert.ok(arch.parts.db?.reasons.includes('99.99% failover'));
+  assert.deepEqual(arch.singlePoints, []);
+});
+
+test('the Non-Functional Diagram draws the parts of the Lab at 99.99%, under the same names and stat rows', () => {
+  const arch = architecture({ ...NON_FUNCTIONAL, nfr: { ...RELAXED, availability: 2 } });
+
+  assert.equal(arch.parts.users?.reasons[0], '1k daily users');
+  assert.equal(arch.parts.lb?.title, 'Load balancer x2');
+  assert.equal(arch.parts.api?.title, 'App servers x3');
+  assert.equal(arch.parts.ws?.title, 'WebSocket x3');
+  assert.equal(arch.parts.db?.title, 'Database x2');
+  for (const tier of [arch.parts.api, arch.parts.ws]) {
+    assert.deepEqual(tier?.stat, { label: '1 for load', value: '+2 for 99.99%' });
+  }
+  const wires = new Set(edgesFor(arch).map((edge) => [edge.from, edge.to].sort().join('|')));
+  for (const wire of ['lb|users', 'api|lb', 'api|db', 'api|ws', 'lb|ws']) assert.ok(wires.has(wire), wire);
+});
+
+test('the Non-Functional Lesson numbers: single points 3, 1, 0 and about 32 requests a second', () => {
+  const at = (availability: number) => architecture({ ...NON_FUNCTIONAL, nfr: { ...RELAXED, availability } });
+
+  assert.deepEqual(at(0).singlePoints, ['app server', 'WebSocket server', 'database']);
+  assert.deepEqual(at(1).singlePoints, ['database']);
+  assert.deepEqual(at(2).singlePoints, []);
+  assert.equal(Math.round(at(0).sizing.peakQps), 32);
+  assert.deepEqual(at(1).parts.api?.stat, { label: '1 for load', value: '+1 for 99.9%' });
+  assert.equal(at(1).parts.ws?.title, 'WebSocket x2');
+});
+
+test('Critical durability on its own turns the Uber database into a synchronous standby in a second zone (quiz nfr-9)', () => {
+  const arch = architecture({ ...NON_FUNCTIONAL, nfr: { ...RELAXED, durability: 1 } });
+
+  assert.equal(arch.parts.db?.title, 'Database x2');
+  assert.equal(arch.parts.db?.stat?.label, 'Peak sync writes');
+  assert.equal(arch.syncStandby, true);
+  assert.equal(arch.zones, 2);
+});
+
+test('Uber at 10M daily users: 479 app servers and a cache, one database primary, workers already there (quiz nfr-11)', () => {
+  const at = (users: number) => architecture({ ...NON_FUNCTIONAL, nfr: { ...RELAXED, users } });
+  const [before, after] = [at(1), at(2)];
+
+  assert.equal(before.sizing.app.count, 6);
+  assert.equal(after.sizing.app.count, 479);
+  assert.equal(before.parts.cache, undefined);
+  assert.ok(after.parts.cache);
+  assert.ok(before.parts.async, 'Queue + workers are there for payments before 10M');
+  assert.equal(after.parts.db?.title, 'Database');
+  assert.equal(after.parts.db?.status, 'One primary is enough');
+  assert.equal(Math.round(after.sizing.peakQps), 318_287);
+  assert.equal(Math.round(after.sizing.database.peakWriteQps), 1_157);
+  assert.equal(Math.round(after.sizing.index.peakWriteQps), 312_500);
+  assert.equal(after.region2, false);
+});
