@@ -68,16 +68,16 @@ export const gettingStartedConcepts: Concept[] = [
       },
       {
         id: 'wsd-2',
-        prompt: 'In the Requirements Lab you tick only "Send messages", at 99% availability and 1k daily users. The diagram shows Users, one App server and one Database. A teammate says the design is too simple to be real. What is the right response?',
+        prompt: 'In the Requirements Lab, Instagram at 100k daily users runs on one App server and one Database, and nothing is over its limit: about 174 requests/s at peak against the 1,000 one server handles. A teammate says the design is too simple to be real. What is the right response?',
         options: [
-          'Add a cache and a queue now, so later growth does not force a rewrite of the design',
+          'Add a cache and read replicas now, so later growth does not force a rewrite of the design',
           'Add a second region now, because moving to multi-region later means a painful migration',
           'It meets these requirements; add a part only when a requirement or a bottleneck forces it',
-          'Replace the database with a NoSQL store, because messaging apps at scale all use NoSQL',
+          'Replace the database with a NoSQL store, because social apps at scale all use NoSQL',
         ],
         answer: 2,
         explanation:
-          'A design is right relative to its requirements. At 1k users and 99%, one server and one database meet every stated number. A cache or a second region would be parts no requirement pays for - they cost money and operations every day. The Lab shows the same thing: nothing else appears until you raise a target or tick a feature.',
+          'A design is right relative to its requirements. At 100k daily users the peak is about 174 requests/s, far below what one App server handles, so every stated number is met. A cache, replicas or a second region would be parts no requirement pays for - they cost money and operations every day. The Lab shows the same thing: nothing turns red until you raise the users, and only then is one component added.',
       },
       {
         id: 'wsd-3',
@@ -133,16 +133,16 @@ export const gettingStartedConcepts: Concept[] = [
       },
       {
         id: 'wsd-7',
-        prompt: 'In the Requirements Lab (Design WhatsApp) you tick "Send images". Object storage, a CDN and a Queue + workers box appear on the diagram. What does that show?',
+        prompt: 'In the Requirements Lab, Instagram at 1M daily users sends 1,736 requests/s and the App server turns red. You pick one 8x machine and it turns green. At 10M daily users (17,361 requests/s) it is red again. What does that show?',
         options: [
-          'Every chat app needs a CDN and a queue from day one, whatever it sends',
-          'Images made the database the bottleneck, so work moved off it',
-          'A new requirement brings in the parts its own traffic needs',
-          'A quality target was raised, so the design added capacity',
+          'The 8x machine was sized wrong: a bigger machine should always last until the target',
+          'A bigger machine multiplies capacity once, while a pool of servers grows with the load',
+          'The Database is the real bottleneck, and the App server only looks overloaded to us',
+          'The fix should have been a cache, because a cache takes load off the App server too',
         ],
-        answer: 2,
+        answer: 1,
         explanation:
-          'Each box names the requirement that forced it: images need somewhere to keep large files, a way to process them off the request path, and a CDN to serve them close to users. No slider moved, so no quality target changed, and the database is not on the image path at all.',
+          'An 8x machine handles 8,000 requests/s: enough for 1M daily users, not for 10M. A fix that multiplies capacity by a fixed factor buys one round; more app servers behind a load balancer grow with the load, at the price of stateless servers. A cache sits in front of the Database, so it takes reads off the Database, not requests off the App server.',
       },
       {
         id: 'wsd-8',
@@ -181,7 +181,7 @@ export const gettingStartedConcepts: Concept[] = [
         ],
         answer: 0,
         explanation:
-          'A diagram is not finished until every box has been asked "what if this dies?". A recovery done by hand takes a large part of the 52-minute yearly budget, so 99.99% forces a standby with automatic promotion - which is what the Lab adds when you move Availability to 99.99%. More CPU or a cache do nothing when the machine is gone.',
+          'A diagram is not finished until every box has been asked "what if this dies?". A recovery done by hand takes a large part of the 52-minute yearly budget, so 99.99% forces a standby with automatic promotion. More CPU or a cache do nothing when the machine is gone.',
       },
       {
         id: 'wsd-11',
@@ -195,6 +195,19 @@ export const gettingStartedConcepts: Concept[] = [
         answer: 2,
         explanation:
           'Code answers "is the output correct for this input?". Design answers "does it keep working at scale, with a dead node, during a partition?". The tests can be perfect and the function correct; with one machine, its reboot is an outage. Skipping security updates just trades this outage for a worse one.',
+      },
+      {
+        id: 'wsd-12',
+        prompt: 'A photo app at 10M daily users runs on one app server (1,000 requests/s) and one database copy (10,000 reads/s). At peak the users send 17,361 requests/s, 16,493 of them reads. Which part is the bottleneck to fix first?',
+        options: [
+          'The app server: it passes on at most 1,000 requests/s, so the database never sees more',
+          'The database: 16,493 reads/s is the bigger overload, so it saturates before anything else',
+          'Both at once: fix them in one change, or the one left alone caps the fix of the other',
+          'Neither: at peak both queue the extra work and then catch up during the quiet hours',
+        ],
+        answer: 0,
+        explanation:
+          'Requests meet the app server first, and it turns away everything past its 1,000 requests/s - so the database behind it sees fewer than 1,000, well under its limit. Fix the app server and the full 16,493 reads/s reach the database, which becomes the next bottleneck: that is the order the Lab shows at 1M and then 10M daily users. A peak that lasts an hour does not wait for the quiet hours.',
       },
     ],
   },

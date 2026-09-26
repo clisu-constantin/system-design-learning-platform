@@ -54,18 +54,18 @@ export const gettingStartedDepth: DepthMap = {
     ],
     examples: [
       {
-        title: 'Designing a URL shortener, one bottleneck at a time',
+        title: 'Growing Instagram, one bottleneck at a time',
         setup:
-          'A URL shortener with 100 million redirects per day and 1 million new links per day. Watch how the design grows only when a number forces it.',
+          'Instagram must let people upload a photo, view a home feed, follow accounts and like. Each daily user sends about 30 requests a day, 5% of them writes, and the busiest hour runs at 5 times the daily average. The limits are round planning numbers: 1,000 requests/s for one app server, 10,000 reads/s for one database copy, 10,000 writes/s for one primary. This is the loop the Lab runs, from 100k to 200M daily users.',
         walkthrough: [
-          'Simplest design: one web server plus one Postgres table (short_code, long_url). This genuinely works - do not skip it.',
-          'Estimate: 100M redirects / 86,400 s is about 1,160 reads per second, and 1M / 86,400 is about 12 writes per second. Reads are roughly 100x writes.',
-          'First bottleneck: 1,160 reads per second against one Postgres instance is possible but leaves no headroom at peak. Add a cache in front keyed by short_code. New cost: a deleted link can still resolve until the cache entry expires.',
-          'Second bottleneck: one web server is one point of failure. Add a load balancer and three stateless app servers. New cost: deployments now touch three machines and sessions cannot live in local memory.',
-          'Third bottleneck: storage. 1M links/day x 500 bytes is about 0.5 GB/day, roughly 180 GB/year - one machine handles that for years. So no sharding. Stop here.',
+          'Simplest design at 100k daily users: 100,000 x 30 / 86,400 s x 5 is about 174 requests/s at peak. One App server and one Database carry it with room to spare. Monthly cost x1.',
+          'Round 1, 1M daily users: 1,736 requests/s at peak, and one App server handles 1,000, so the App server is the bottleneck. Three fixes: more servers behind a load balancer (x1 to x1.4, every server must be stateless), an autoscaling pool (x1.2, a spike waits for new servers) or one 8x machine (x2.7, still one server and no bigger size). Pick the load balancer: 3 app servers.',
+          'Round 2, 10M daily users: 27 app servers carry 17,361 requests/s, but 95% of them are feed reads - 16,493 reads/s against 10,000 for one database copy. The Database is the bottleneck. A cache that answers 80% of reads leaves 3,299 reads/s for it and adds x0.2 (x5.3 in all). Its cost: a slightly stale feed.',
+          'Round 3, 200M daily users: 329,861 reads/s at peak, and after the cache 65,972 still reach the Database - the cache bought one round, not three. Six read replicas share them (7 copies, +x2.8). Their cost: replica lag, so you may not see your own post for a moment.',
+          'Still round 3: writes are 5% of 347,222 requests/s, so 17,361 writes/s against 10,000 for one primary. Split the writes into 2 partitions (+x0.5). Their cost: a feed that spans partitions must read them all, and the partition key is hard to change later.',
         ],
         result:
-          'The final design is four boxes, and every one of them was forced by a number. Sharding, Kafka and microservices never appeared because nothing in the estimate asked for them - that restraint is the skill being taught.',
+          'Three rounds, four bottlenecks, each found by a number and fixed with one component whose cost was named. At 200M daily users nothing is over its limit and the bill is about x85 the simplest design - and 522 app servers are most of it: the price of the users, not of the fixes.',
       },
     ],
     jargon: [
@@ -79,6 +79,7 @@ export const gettingStartedDepth: DepthMap = {
       'Design is the set of decisions that are hard to undo; everything else is just code you can rewrite.',
       'Start with the simplest thing that works, then fix exactly one bottleneck at a time.',
       'Every component you add solves one problem and creates another - say the new one out loud.',
+      'A fix that multiplies capacity (a cache, a bigger machine) buys a round; one that grows with the load (servers, replicas, partitions) keeps up, at a price.',
       'Requirements justify architecture. If no number forces a component, delete it.',
     ],
   },

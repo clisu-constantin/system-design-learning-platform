@@ -8,9 +8,12 @@
 import type { DiagramEdge, EdgeTone } from '../../components/architecture/DiagramCanvas.tsx';
 import type { LabFocus, NodeKind, RequestOutcome } from '../../types/index.ts';
 import { formatCompact } from '../../utils/format.ts';
+import { PRIMARY_WRITE_LIMIT } from './capacityModel.ts';
 import {
+  AVAILABILITY_COPIES,
   CACHE_HIT,
   DAU,
+  READS_PER_COPY,
   scaleImplications,
   sizeRequirements,
   type Product,
@@ -300,34 +303,71 @@ export const valueOf = (id: NfrId, level: number) => NFRS.find((spec) => spec.id
 // Setups and Lab focuses
 // ---------------------------------------------------------------------------
 
-/** Which half of the controls is open: the feature checklist or the quality targets. */
-export type Panel = 'features' | 'targets';
+/**
+ * Which part of the controls is open: the feature checklist, the quality targets, or - on the
+ * What is System Design focus only - the find-the-bottleneck loop.
+ */
+export type Panel = 'features' | 'targets' | 'load';
 
-/** What a switch of product ticks: every core feature, or only the first one. */
-export type Start = 'core' | 'first';
+/**
+ * A fix the find-the-bottleneck loop can pick (requirementsBottleneck.ts names and prices them):
+ * - `scale-out`: a pool of app servers behind a load balancer, sized for the peak with headroom;
+ * - `autoscale`: the same pool, running only the servers the peak needs;
+ * - `bigger-app` / `bigger-db`: the largest machine, BIGGER_MACHINE times a standard one;
+ * - `cache`: a cache in front of the database for the reads;
+ * - `replicas`: read replicas, as many as the reads need;
+ * - `partition`: the writes split across partitions, as many as the writes need.
+ */
+export type FixId = 'scale-out' | 'autoscale' | 'bigger-app' | 'cache' | 'replicas' | 'bigger-db' | 'partition';
+
+/** The find-the-bottleneck loop: the users step reached and the fixes picked, in order. */
+export interface Loop {
+  /** Index into LOOP_DAU. */
+  users: number;
+  fixes: FixId[];
+}
+
+/**
+ * Daily users at each round of the loop on Instagram: the start, then three raises. Chosen with the
+ * sizing model so that each raise passes one new limit: one app server (1,000 req/s) near 580k
+ * users, one database copy (10,000 reads/s) near 6.1M, one primary (10,000 writes/s) near 115M.
+ */
+export const LOOP_DAU = [100_000, 1_000_000, 10_000_000, 200_000_000];
+export const LOOP_USERS = ['100k', '1M', '10M', '200M'];
+
+/** The largest machine: this many times the capacity of a standard one. Simplified. */
+export const BIGGER_MACHINE = 8;
+/**
+ * What the largest machine costs, in standard ones: more than its capacity, because the top sizes
+ * carry a premium per unit of work. Illustrative.
+ */
+export const BIGGER_MACHINE_PRICE = 12;
 
 export interface Setup {
   product: Product;
   selected: Record<string, boolean>;
   nfr: Nfr;
   panel: Panel;
-  start: Start;
   /**
    * Draw the parts only unpicked features would need, greyed out as not built, with dashed wires
    * no request travels - so the diagram shows what saying no to a feature left out.
    */
   showNotBuilt?: boolean;
+  /**
+   * The find-the-bottleneck loop. With it, the users come from LOOP_DAU and only what the picked
+   * fixes built is drawn, so a part can be over its limit; without it, every tier is sized for the load.
+   */
+  loop?: Loop;
 }
 
 export const coreOf = (product: Product) =>
   Object.fromEntries(REQUIREMENTS[product].filter((item) => item.core).map((item) => [item.id, true]));
 
-const firstOf = (product: Product): Record<string, boolean> => {
-  const first = REQUIREMENTS[product].find((item) => item.core);
-  return first ? { [first.id]: true } : {};
-};
+/** The daily users a setup designs for. */
+export const dauOf = (setup: Setup) => (setup.loop ? LOOP_DAU[setup.loop.users] : DAU[setup.nfr.users]);
 
-const selectionFor = (product: Product, start: Start) => (start === 'core' ? coreOf(product) : firstOf(product));
+/** The same, as the slider or the loop labels it: "10M". */
+export const usersLabelOf = (setup: Setup) => (setup.loop ? LOOP_USERS[setup.loop.users] : valueOf('users', setup.nfr.users));
 
 /** Every target at its lowest. Durability starts at Normal: a message store is durable from the start. */
 export const RELAXED: Nfr = { availability: 0, latency: 0, users: 0, consistency: 0, durability: 0 };
@@ -338,34 +378,42 @@ export const DEFAULT_SETUP: Setup = {
   selected: coreOf('whatsapp'),
   nfr: { availability: 1, latency: 0, users: 1, consistency: 0, durability: 0 },
   panel: 'features',
-  start: 'core',
 };
 
 /**
  * The Lab focus of each Concept that hosts this lab.
- * - What is System Design? starts from one requirement at relaxed targets, so the
- *   diagram is three boxes and every tick adds the parts that requirement forces.
+ * - What is System Design? opens the find-the-bottleneck loop on Instagram: its core features at
+ *   the relaxed targets and 100k daily users, one copy of each part and nothing over its limit.
+ *   Raising the users turns one part red at a time, and the fixes picked live in `loop`, so Reset
+ *   clears them. Instagram is its Example product: its read-heavy feed passes the limits in turn.
+ *   Its controls are only the users and the fixes: the loop is tuned to that product and targets.
  * - Functional Requirements opens on the WhatsApp core features at relaxed targets, so every part
  *   drawn names a picked feature as its reason, and the parts of the unpicked features stand
  *   greyed out as not built. Only this focus shows them: scope - what saying no leaves out - is
- *   its lesson, while on the others they would crowd the three-box start or the targets.
+ *   its lesson, while on the others they would crowd the loop or the targets.
  * - Non-Functional Requirements opens on the Uber core features, on the quality sliders at their
  *   relaxed baseline, so every raised target adds parts. Uber is its Example product: "99.99% for
  *   ride requests" is a real, hard target, and raising availability to it is its Diagram.
  */
 export const FOCUS_SETUPS: Record<LabFocus<'requirements'>, Setup> = {
-  'what-is-system-design': { ...DEFAULT_SETUP, selected: firstOf('whatsapp'), nfr: RELAXED, start: 'first' },
+  'what-is-system-design': {
+    ...DEFAULT_SETUP,
+    product: 'instagram',
+    selected: coreOf('instagram'),
+    nfr: RELAXED,
+    panel: 'load',
+    loop: { users: 0, fixes: [] },
+  },
   'functional-requirements': { ...DEFAULT_SETUP, nfr: RELAXED, showNotBuilt: true },
   'non-functional-requirements': { ...DEFAULT_SETUP, product: 'uber', selected: coreOf('uber'), nfr: RELAXED, panel: 'targets' },
 };
 
 /**
- * Another product, with the features the focus starts from for it - so a focus that opens on one
- * requirement still has one after switching away and back. The targets, and whether not-built
- * parts are drawn, stay as they are.
+ * Another product, with its core features. The targets, and whether not-built parts are drawn,
+ * stay as they are.
  */
 export function switchProduct(setup: Setup, product: Product): Setup {
-  return { ...setup, product, selected: selectionFor(product, setup.start) };
+  return { ...setup, product, selected: coreOf(product) };
 }
 
 // ---------------------------------------------------------------------------
@@ -412,6 +460,11 @@ export interface Architecture {
   cacheHit: number;
   /** Database copies per partition: the primary, a standby and read replicas. */
   dbCopies: number;
+  /**
+   * Parts running on a bigger machine than the standard one, as a multiple of it (the loop fixes
+   * `bigger-app` and `bigger-db`). A part not listed runs on the standard machine.
+   */
+  machineSize: Partial<Record<PartId, number>>;
   /** A write waits for the standby before it is confirmed. */
   syncStandby: boolean;
   syncToRegion2: boolean;
@@ -477,8 +530,43 @@ function notBuiltOf(setup: Setup, built: Partial<Record<PartId, PartView>>) {
   return { notBuilt: parts, notBuiltFlows: flows };
 }
 
+/**
+ * The loop design as built: only the fixes picked, so the load can outgrow it. The demand (peak
+ * requests, reads and writes) stays as sized; the tiers become what the fixes built:
+ * - one app server (or the copies the availability target asks for) until a pool is picked; the
+ *   pool is sized for the peak with headroom, the autoscaling one for the peak alone;
+ * - one database copy until read replicas are picked, then as many as the reads need;
+ * - one primary until the writes are partitioned, then as many partitions as the writes need.
+ */
+function builtFor(demand: Sizing, loop: Loop, availability: number) {
+  const has = (fix: FixId) => loop.fixes.includes(fix);
+  const machineSize: Partial<Record<PartId, number>> = {};
+  if (has('bigger-app')) machineSize.api = BIGGER_MACHINE;
+  if (has('bigger-db')) machineSize.db = BIGGER_MACHINE;
+  const dbSize = machineSize.db ?? 1;
+
+  const copies = AVAILABILITY_COPIES[availability] ?? 1;
+  const tierOf = (forLoad: number): TierSize => ({
+    atPeak: demand.app.atPeak,
+    forLoad,
+    forAvailability: copies,
+    count: Math.max(forLoad, copies),
+    setBy: copies > forLoad ? 'availability' : 'load',
+  });
+  const app = has('scale-out') ? demand.app : tierOf(has('autoscale') ? demand.app.atPeak : 1);
+
+  const { peakReadQps, peakWriteQps } = demand.database;
+  const partitions = has('partition') ? Math.max(1, Math.ceil(peakWriteQps / (PRIMARY_WRITE_LIMIT * dbSize))) : 1;
+  const readsPerPartition = (peakReadQps * (demand.cached ? 1 - CACHE_HIT : 1)) / partitions;
+  const readReplicas = has('replicas') ? Math.max(0, Math.ceil(readsPerPartition / (READS_PER_COPY * dbSize)) - 1) : 0;
+
+  const database = { ...demand.database, partitions, partitioned: partitions > 1, readReplicas };
+  const sizing: Sizing = { ...demand, app, database };
+  return { sizing, machineSize };
+}
+
 export function architecture(setup: Setup): Architecture {
-  const { product, nfr } = setup;
+  const { product, nfr, loop } = setup;
   const chosen = chosenOf(setup);
   const parts: Partial<Record<PartId, PartView>> = {};
   const flows: FlowKind[] = [];
@@ -487,12 +575,12 @@ export function architecture(setup: Setup): Architecture {
   const sizeFor = (cache: boolean) =>
     sizeRequirements({
       product,
-      dau: DAU[nfr.users],
+      dau: dauOf(setup),
       availability: nfr.availability,
       locationWrites: chosen.some((option) => option.flows.includes('index-write')),
       cache,
     });
-  add('users', `${valueOf('users', nfr.users)} daily users`);
+  add('users', `${usersLabelOf(setup)} daily users`);
 
   if (chosen.length === 0) {
     const zones = nfr.availability >= 2 ? 3 : 1;
@@ -507,6 +595,7 @@ export function architecture(setup: Setup): Architecture {
       sizing: sizeFor(false),
       cacheHit: 0,
       dbCopies: 0,
+      machineSize: {},
       syncStandby: false,
       syncToRegion2: false,
       singlePoints: [],
@@ -521,13 +610,16 @@ export function architecture(setup: Setup): Architecture {
   }
 
   const availability = valueOf('availability', nfr.availability);
-  const users = `${valueOf('users', nfr.users)} users`;
+  const users = `${usersLabelOf(setup)} users`;
   const latency = `p95 ${valueOf('latency', nfr.latency)}`;
 
-  const cached = flows.includes('read') && (nfr.latency >= 1 || nfr.users >= 2);
+  // In the loop there is a cache only once it is picked as a fix.
+  const cached = flows.includes('read') && (loop ? loop.fixes.includes('cache') : nfr.latency >= 1 || nfr.users >= 2);
   // Read replicas stay sized for the everyday hit rate even at 20 ms: after a restart the cache is
   // cold, and the database must still carry the reads it misses.
-  const sizing = sizeFor(cached);
+  const { sizing, machineSize } = loop
+    ? builtFor(sizeFor(cached), loop, nfr.availability)
+    : { sizing: sizeFor(cached), machineSize: {} };
   const cacheHit = cached ? (nfr.latency >= 2 ? HOT_SET_HIT : CACHE_HIT) : 0;
   const { app, ws, database } = sizing;
 
@@ -549,7 +641,7 @@ export function architecture(setup: Setup): Architecture {
   }
   if (cached) {
     if (nfr.latency >= 1) add('cache', latency);
-    if (nfr.users >= 2) add('cache', users);
+    if (nfr.users >= 2 || loop) add('cache', users);
   }
 
   // App tier size: the Capacity Lab count for the load, or the copies the availability target asks
@@ -558,6 +650,8 @@ export function architecture(setup: Setup): Architecture {
   if (parts.api) {
     parts.api.title = app.count > 1 ? `App servers x${app.count}` : 'App server';
     parts.api.stat = tierStat(app, availability, { label: 'Peak load', value: `${about(sizing.peakQps)} req/s` });
+    if (machineSize.api) parts.api.status = `Largest machine: ${machineSize.api}x`;
+    else if (loop?.fixes.includes('autoscale')) parts.api.status = 'Autoscales with the load';
   }
   // The WebSocket tier holds connections open, so it is sized by how many, not by requests.
   if (parts.ws) {
@@ -592,7 +686,9 @@ export function architecture(setup: Setup): Architecture {
         ? ['Reads: any copy', 'Reads: own writes on primary', 'Reads: primary only'][nfr.consistency]
         : partitioned
           ? 'Partition the writes'
-          : 'One primary is enough';
+          : machineSize.db
+            ? `Largest machine: ${machineSize.db}x`
+            : 'One primary is enough';
   }
   if (parts.index) {
     // Drivers publishing locations: the write rate that sets Uber apart.
@@ -625,7 +721,21 @@ export function architecture(setup: Setup): Architecture {
 
   const { notBuilt, notBuiltFlows } = setup.showNotBuilt ? notBuiltOf(setup, parts) : { notBuilt: {}, notBuiltFlows: [] };
 
-  return { parts, flows, notBuilt, notBuiltFlows, region2, zones, sizing, cacheHit, dbCopies, syncStandby, syncToRegion2, singlePoints };
+  return {
+    parts,
+    flows,
+    notBuilt,
+    notBuiltFlows,
+    region2,
+    zones,
+    sizing,
+    cacheHit,
+    dbCopies,
+    machineSize,
+    syncStandby,
+    syncToRegion2,
+    singlePoints,
+  };
 }
 
 /** A model number on a stat row: "~12", "~11.6K", or "<1" rather than "~0" for a trickle. */
@@ -699,6 +809,8 @@ export function implicationsFor(setup: Setup, arch: Architecture): string[] {
   for (const spec of NFRS) {
     const level = setup.nfr[spec.id] ?? 0;
     if (spec.id === 'users') {
+      // In the loop, the users step and the fixes picked say what the load forced, on their own panel.
+      if (setup.loop) continue;
       for (const line of scaleImplications(arch.sizing, level, Boolean(arch.parts.db))) lines.add(line);
       continue;
     }

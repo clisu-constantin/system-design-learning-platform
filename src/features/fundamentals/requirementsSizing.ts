@@ -91,6 +91,8 @@ export interface Sizing {
   app: TierSize;
   ws: TierSize & { connections: number };
   database: {
+    /** Every read at peak that the product sends the database, before any cache answers it. */
+    peakReadQps: number;
     peakWriteQps: number;
     /** The Capacity Lab decision: past one primary write limit, the writes are partitioned. */
     partitioned: boolean;
@@ -142,7 +144,7 @@ export function sizeRequirements({ product, dau, availability, locationWrites, c
     peakWriteQps: all.peakWriteQps,
     app: tier(all.serversAtPeak, all.servers, availability),
     ws: { ...tier(wsAtPeak, Math.ceil(wsAtPeak * HEADROOM), availability), connections },
-    database: { peakWriteQps: db.peakWriteQps, partitioned, partitions, readReplicas },
+    database: { peakReadQps: db.peakReadQps, peakWriteQps: db.peakWriteQps, partitioned, partitions, readReplicas },
     index: { peakWriteQps: total ? total.peakWriteQps - db.peakWriteQps : 0 },
     cached: cache,
   };

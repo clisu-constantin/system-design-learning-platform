@@ -76,6 +76,7 @@ export function ArchNode({
         'z-10 flex flex-col rounded-xl border bg-surface text-left shadow-node transition-all duration-200',
         compact ? 'gap-1 p-2' : 'gap-1.5 p-3',
         status === 'down' ? 'border-danger/60 opacity-70 saturate-0' : 'border-line',
+        status === 'overloaded' && 'border-danger ring-2 ring-danger/35',
         selected && 'border-brand shadow-glow',
         alert && 'border-warn ring-2 ring-warn/35',
         interactive && 'hover:border-brand/60 hover:shadow-glow',

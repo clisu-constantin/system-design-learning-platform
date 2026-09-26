@@ -18,7 +18,6 @@ const core = (product: Product, nfr: Partial<Nfr> = {}): Setup => ({
   selected: coreOf(product),
   nfr: { ...RELAXED, ...nfr },
   panel: 'targets',
-  start: 'core',
 });
 
 const withAvailability = (setup: Setup, availability: number): Setup => ({ ...setup, nfr: { ...setup.nfr, availability } });
@@ -213,8 +212,7 @@ test('an extra feature that adds a part adds to the bill, and none takes from it
 });
 
 test('one requirement on its own costs less than the whole core', () => {
-  // The What is System Design focus starts from one requirement: less than the simplest product.
-  const cost = relativeCost(FOCUS_SETUPS['what-is-system-design']);
+  const cost = relativeCost({ ...core('whatsapp'), selected: { send: true } });
   assert.ok(cost > 0 && cost < 1, `x${cost}`);
 });
 

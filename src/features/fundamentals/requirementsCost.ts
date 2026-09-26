@@ -2,13 +2,14 @@
  * The monthly bill of a Requirements Lab design, relative to the simplest design of the same product.
  *
  * Simplified model: every part drawn is billed per instance at a fixed weight (one app server = 1),
+ * times BIGGER_MACHINE_PRICE when it runs on the largest machine,
  * three zones add the traffic between them, and region 2 is billed as a full copy of region 1 plus
  * the writes copied to it. Real bills depend on the provider, the machine sizes and the traffic;
  * the weights are round ratios chosen so the comparisons point the right way, not a price list.
  *
  * Pure: no React and only relative imports, so `npm test` runs it.
  */
-import { RELAXED, architecture, coreOf, type Architecture, type PartId, type Setup } from './requirementsArchitecture.ts';
+import { BIGGER_MACHINE_PRICE, RELAXED, architecture, coreOf, type Architecture, type PartId, type Setup } from './requirementsArchitecture.ts';
 import type { Product } from './requirementsSizing.ts';
 
 /** A part with a bill of its own. Users are not billed; region 2 is billed as a copy of region 1. */
@@ -88,7 +89,9 @@ export function costLines(arch: Architecture): CostLine[] {
   for (const id of COSTED) {
     if (!arch.parts[id]) continue;
     const instances = instancesOf(id, arch);
-    lines.push({ id, label: LINE_LABEL[id], instances, cost: instances * PART_COST[id] });
+    // The largest machine is billed at its price in standard ones, a premium over its capacity.
+    const price = arch.machineSize[id] ? BIGGER_MACHINE_PRICE : 1;
+    lines.push({ id, label: LINE_LABEL[id], instances, cost: instances * PART_COST[id] * price });
   }
   if (lines.length === 0) return lines;
 
@@ -118,7 +121,6 @@ export const simplestSetup = (product: Product): Setup => ({
   selected: coreOf(product),
   nfr: RELAXED,
   panel: 'targets',
-  start: 'core',
 });
 
 /** Monthly cost as a multiple of the simplest design of the same product (x1). */

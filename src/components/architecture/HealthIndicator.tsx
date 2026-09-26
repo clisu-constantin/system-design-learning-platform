@@ -6,6 +6,7 @@ const STATUS = {
   degraded: { dot: 'bg-warn', text: 'text-warn', label: 'Degraded' },
   down: { dot: 'bg-danger', text: 'text-danger', label: 'Down' },
   starting: { dot: 'bg-brand', text: 'text-brand', label: 'Starting' },
+  overloaded: { dot: 'bg-danger', text: 'text-danger', label: 'Overloaded' },
 } as const satisfies Record<NodeStatus, { dot: string; text: string; label: string }>;
 
 interface HealthIndicatorProps {

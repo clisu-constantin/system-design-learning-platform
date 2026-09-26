@@ -30,7 +30,6 @@ const setup = (product: Product, ids: string[], nfr: Partial<Nfr> = {}): Setup =
   selected: Object.fromEntries(ids.map((id) => [id, true])),
   nfr: { ...RELAXED, ...nfr },
   panel: 'features',
-  start: 'core',
 });
 
 const allRoutes = (s: Setup) => {
@@ -201,7 +200,7 @@ test('no forced-decision line names a part that is not drawn', () => {
 });
 
 test('the relaxed baseline of one text feature is Users, one app server and one database', () => {
-  const arch = architecture(FOCUS_SETUPS['what-is-system-design']);
+  const arch = architecture(setup('whatsapp', ['send']));
   const drawn = Object.values(arch.parts).map((part) => part?.title);
 
   assert.deepEqual(drawn, ['Users', 'App server', 'Database']);
@@ -210,16 +209,6 @@ test('the relaxed baseline of one text feature is Users, one app server and one 
 // ---------------------------------------------------------------------------
 // Switching product
 // ---------------------------------------------------------------------------
-
-test('switching product and back restores the focus start, not every core feature', () => {
-  const start = FOCUS_SETUPS['what-is-system-design'];
-  const away = switchProduct(start, 'instagram');
-  const back = switchProduct(away, 'whatsapp');
-
-  assert.equal(Object.keys(away.selected).length, 1);
-  assert.deepEqual(back.selected, start.selected);
-  assert.deepEqual(back.nfr, start.nfr);
-});
 
 test('a focus that starts on the core features gets the core features of the other product', () => {
   const away = switchProduct(FOCUS_SETUPS['functional-requirements'], 'uber');

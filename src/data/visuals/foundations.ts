@@ -3,27 +3,45 @@ import type { VisualSpec } from '@/components/architecture/FlowVisual';
 /** Getting started, plus the remaining quality-attribute concepts. */
 export const foundationVisuals: Record<string, VisualSpec> = {
   'what-is-system-design': {
+    // The Requirements Lab on this Concept at round 2 of the loop, shortened: Instagram at 10M daily
+    // users after round 1 put more app servers behind a load balancer, with the Database now red for
+    // feed reads. The same parts under the same names and stat rows (Object storage and Queue +
+    // workers are left out); every number is the sizing model (requirementsBottleneck.ts).
     width: 800,
-    height: 300,
-    caption: 'Find the bottleneck, remove it with one component, name the cost it added. Repeat.',
+    height: 320,
+    caption:
+      'Instagram, one bottleneck at a time: at 1M daily users the App server passed its limit; at 10M the Database passes 10,000 reads/s.',
     nodes: [
-      { id: 'req', kind: 'client', label: 'Requirements', x: 30, y: 110, w: 160, h: 78 },
-      { id: 'simple', kind: 'server', label: 'Simplest design', x: 240, y: 30, w: 180, h: 78 },
-      { id: 'bottleneck', kind: 'sql', label: 'Bottleneck', sub: 'measured', x: 240, y: 190, w: 180, h: 80, alert: true },
-      { id: 'fix', kind: 'cache', label: 'One component', x: 470, y: 110, w: 170, h: 78 },
-      { id: 'cost', kind: 'monitoring', label: 'New cost', x: 668, y: 110, w: 118, h: 78 },
+      { id: 'users', kind: 'client', label: 'Users', sub: '10M daily users', x: 16, y: 112, w: 150, h: 95, stat: ['Peak', '~17.4K req/s'] },
+      { id: 'lb', kind: 'load-balancer', label: 'Load balancer x2', sub: 'round 1 fix', x: 196, y: 115, w: 176, h: 90 },
+      { id: 'api', kind: 'server', label: 'App servers x27', sub: 'stateless now', x: 402, y: 112, w: 180, h: 95, stat: ['Peak load', '~17.4K req/s'] },
+      {
+        id: 'db',
+        kind: 'sql',
+        label: 'Database',
+        sub: 'one copy, feed reads',
+        x: 606,
+        y: 112,
+        w: 186,
+        h: 95,
+        status: 'overloaded',
+        statusLabel: 'Over its limit',
+        stat: ['Peak reads', '~16.5K of 10K/s'],
+      },
     ],
     edges: [
-      { from: 'req', to: 'simple', tone: 'brand', rate: 1.6 },
-      { from: 'simple', to: 'bottleneck', tone: 'warn', rate: 1.6, outcome: 'warning' },
-      { from: 'bottleneck', to: 'fix', tone: 'ok', rate: 1.6 },
-      { from: 'fix', to: 'cost', tone: 'violet', rate: 1.6, outcome: 'warning' },
+      { from: 'users', to: 'lb', tone: 'brand', rate: 1.6 },
+      { from: 'lb', to: 'api', tone: 'brand', rate: 1.6 },
+      { from: 'api', to: 'db', tone: 'brand', rate: 1.4 },
     ],
     steps: [
-      { from: 'req', to: 'simple', label: 'Start from requirements' },
-      { from: 'simple', to: 'bottleneck', label: 'Run it, find the limit', outcome: 'warning' },
-      { from: 'bottleneck', to: 'fix', label: 'Add one component' },
-      { from: 'fix', to: 'cost', label: 'Name what it cost', outcome: 'warning' },
+      { from: 'users', to: 'lb', label: 'Requirements: post, feed, follow, like' },
+      { from: 'api', to: 'db', label: 'Simplest design: one server, one database' },
+      { from: 'lb', to: 'api', label: '1M users: App server over limit', outcome: 'failure' },
+      { from: 'lb', to: 'api', label: 'Add one component: more servers' },
+      { from: 'api', to: 'api', label: 'Its cost: servers must be stateless', outcome: 'warning' },
+      { from: 'api', to: 'db', label: 'Repeat at 10M: Database reads over', outcome: 'failure' },
+      { from: 'db', to: 'db', label: 'Next: cache, replicas or bigger machine' },
     ],
   },
 

@@ -51,6 +51,7 @@ const MINIMAP_TONE: Record<NodeStatus, 'ok' | 'warn' | 'danger' | 'info'> = {
   degraded: 'warn',
   down: 'danger',
   starting: 'info',
+  overloaded: 'danger',
 };
 
 const newEdge = (connection: Connection) => ({
