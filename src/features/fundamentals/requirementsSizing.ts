@@ -152,14 +152,14 @@ export function sizeRequirements({ product, dau, availability, locationWrites, c
  * What the daily-users target forces, read from the sizing rather than from the slider alone - so
  * 100k users at 116 req/sec do not claim a horizontal tier and read replicas the diagram does not draw.
  */
-export function scaleImplications(sizing: Sizing, usersLevel: number): string[] {
+export function scaleImplications(sizing: Sizing, usersLevel: number, database: boolean): string[] {
   const lines: string[] = [];
   if (sizing.app.forLoad > 1) lines.push('Horizontal app tier behind a load balancer');
   if (sizing.cached && usersLevel >= 2) lines.push('Caching layer for hot reads');
-  if (sizing.database.readReplicas > 0) lines.push('Read replicas');
-  if (sizing.database.partitioned) lines.push('Partitioned writes with a routing layer');
+  if (database && sizing.database.readReplicas > 0) lines.push('Read replicas');
+  if (database && sizing.database.partitioned) lines.push('Partitioned writes with a routing layer');
   if (usersLevel >= 2) lines.push('Async processing for anything slow', 'Capacity planning and autoscaling');
   if (usersLevel >= 3) lines.push('Multi-region', 'Dedicated platform and SRE investment');
-  if (lines.length === 0) lines.push('One app server and one database still carry the load');
+  if (lines.length === 0) lines.push('One app server still carries the load');
   return lines;
 }

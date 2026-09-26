@@ -152,10 +152,13 @@ test('read replicas appear only when reads outgrow one copy, and a cache in fron
 });
 
 test('the scale lines name only what the sizing actually adds', () => {
-  const small = scaleImplications(sizeRequirements(input('whatsapp', 100_000)), 1);
-  const huge = scaleImplications(sizeRequirements(input('whatsapp', 100_000_000)), 3);
+  const small = scaleImplications(sizeRequirements(input('whatsapp', 100_000)), 1, true);
+  const huge = scaleImplications(sizeRequirements(input('whatsapp', 100_000_000)), 3, true);
+  // Uber with only locations ticked has no database to replicate or partition.
+  const noDatabase = scaleImplications(sizeRequirements(input('uber', 100_000_000)), 3, false);
 
-  assert.deepEqual(small, ['One app server and one database still carry the load']);
+  assert.deepEqual(small, ['One app server still carries the load']);
+  assert.ok(!noDatabase.some((line) => /replica|partition/i.test(line)));
   assert.ok(huge.includes('Horizontal app tier behind a load balancer'));
   assert.ok(huge.includes('Partitioned writes with a routing layer'));
   assert.ok(huge.includes('Multi-region'));
