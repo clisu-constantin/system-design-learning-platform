@@ -302,7 +302,10 @@ export interface Architecture {
   /** Traffic classes, one entry per requirement that creates them (a multiset). */
   flows: FlowKind[];
   region2: boolean;
+  /** Availability zones region 1 runs in: one, or three from 99.99% up. */
+  zones: 1 | 3;
   sizing: Sizing;
+  /** Database copies per partition: the primary, a standby and read replicas. */
   dbCopies: number;
   syncToRegion2: boolean;
   singlePoints: string[];
@@ -362,9 +365,10 @@ export function architecture(setup: Setup): Architecture {
       cache,
     });
   add('users', `${valueOf('users', nfr.users)} daily users`);
+  const zones = nfr.availability >= 2 ? 3 : 1;
 
   if (chosen.length === 0) {
-    return { parts, flows, region2: false, sizing: sizeFor(false), dbCopies: 0, syncToRegion2: false, singlePoints: [] };
+    return { parts, flows, region2: false, zones, sizing: sizeFor(false), dbCopies: 0, syncToRegion2: false, singlePoints: [] };
   }
 
   for (const option of chosen) {
@@ -459,7 +463,7 @@ export function architecture(setup: Setup): Architecture {
   if (parts.ws && ws.count === 1) singlePoints.push('WebSocket server');
   if (parts.db && dbCopies === 1) singlePoints.push('database');
 
-  return { parts, flows, region2, sizing, dbCopies, syncToRegion2, singlePoints };
+  return { parts, flows, region2, zones, sizing, dbCopies, syncToRegion2, singlePoints };
 }
 
 /** A model number on a stat row: "~12", "~11.6K", or "<1" rather than "~0" for a trickle. */

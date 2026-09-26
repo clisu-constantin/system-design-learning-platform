@@ -33,18 +33,16 @@ import {
   valueOf,
   type Architecture,
   type Legend,
-  type Nfr,
   type NfrId,
   type RouteVariant,
   type Setup,
   type WireKey,
 } from './requirementsArchitecture';
+import { formatCost, relativeCost } from './requirementsCost';
 
-const PRODUCTS: { value: Product; label: string }[] = [
-  { value: 'whatsapp', label: 'Design WhatsApp' },
-  { value: 'instagram', label: 'Design Instagram' },
-  { value: 'uber', label: 'Design Uber' },
-];
+const PRODUCT_NAME: Record<Product, string> = { whatsapp: 'WhatsApp', instagram: 'Instagram', uber: 'Uber' };
+
+const PRODUCTS = (Object.keys(PRODUCT_NAME) as Product[]).map((value) => ({ value, label: `Design ${PRODUCT_NAME[value]}` }));
 
 function pick(variants: RouteVariant[]) {
   let roll = Math.random() * variants.reduce((sum, variant) => sum + variant.weight, 0);
@@ -76,6 +74,7 @@ export function RequirementsLab({ focus }: LabProps<'requirements'>) {
   const { product, selected, nfr, panel } = setup;
   const arch = useMemo(() => architecture(setup), [setup]);
   const edges = useMemo(() => edgesFor(arch), [arch]);
+  const cost = useMemo(() => relativeCost(setup, arch), [setup, arch]);
   const legend = useMemo(() => legendFor(arch), [arch]);
   const implications = useMemo(() => implicationsFor(setup, arch), [setup, arch]);
   const variants = useMemo(() => arch.flows.map((flow) => routesFor(flow, arch)), [arch]);
@@ -103,6 +102,11 @@ export function RequirementsLab({ focus }: LabProps<'requirements'>) {
       if (!was && now) log(`Added ${now.title} - for ${now.reasons.join(', ')}`, 'ok');
       else if (was && !now) log(`Removed ${was.title} - no requirement needs it now`, 'warn');
       else if (was && now && was.title !== now.title) log(`${was.title} became ${now.title}`, 'info');
+    }
+    // Name what the change cost (or saved), in the same units as the metric.
+    const [costBefore, costAfter] = [relativeCost(setup, before), relativeCost(next, after)];
+    if (costBefore > 0 && costAfter > 0 && formatCost(costBefore) !== formatCost(costAfter)) {
+      log(`Monthly cost ${formatCost(costBefore)} -> ${formatCost(costAfter)}`, costAfter > costBefore ? 'warn' : 'info');
     }
     // Drop requests travelling through parts that just disappeared.
     const alive = new Set<string>(PART_ORDER.filter((id) => after.parts[id]));
@@ -182,6 +186,15 @@ export function RequirementsLab({ focus }: LabProps<'requirements'>) {
                 value: partCount,
                 tone: 'brand',
                 hint: 'Boxes the requirements forced, not counting the users. Each one is built, paid for and operated.',
+              },
+              {
+                key: 'cost',
+                label: 'Monthly cost',
+                value: chosen.length === 0 ? '-' : formatCost(cost),
+                tone: chosen.length === 0 ? 'neutral' : cost >= 2 ? 'warn' : 'neutral',
+                sub: 'Simplified model',
+                hint: `x1 is the simplest ${PRODUCT_NAME[product]} design: its core features at the relaxed targets, one copy of each part. Every copy drawn is billed - app servers, database copies, the load balancer pair - plus the traffic between zones and a full copy in region 2. Round ratios (one app server = 1, a database copy = 3), not a price list.`,
+                simulated: true,
               },
               {
                 key: 'spof',
@@ -352,7 +365,7 @@ export function RequirementsLab({ focus }: LabProps<'requirements'>) {
         particles={particleViews}
         height={HEIGHT}
         className="bg-canvas"
-        underlay={<Zones nfr={nfr} region2={arch.region2} empty={chosen.length === 0} />}
+        underlay={<Zones zones={arch.zones} region2={arch.region2} empty={chosen.length === 0} />}
       >
         {arch.parts.region2 ? (
           <ArchNode
@@ -416,7 +429,7 @@ function RequirementsLegend({ legend }: { legend: Legend }) {
 }
 
 /** The data center or zones everything runs in, drawn under the wiring. */
-function Zones({ nfr, region2, empty }: { nfr: Nfr; region2: boolean; empty: boolean }) {
+function Zones({ zones, region2, empty }: { zones: number; region2: boolean; empty: boolean }) {
   if (empty) {
     return (
       <text x={560} y={MID + 50} textAnchor="middle" className="fill-faint" style={{ fontSize: 13 }}>
@@ -431,7 +444,7 @@ function Zones({ nfr, region2, empty }: { nfr: Nfr; region2: boolean; empty: boo
         {region2 ? 'REGION 1' : 'ONE REGION'}
       </text>
       <text x={24} y={ROW[0] + 30} className="fill-faint font-mono" style={{ fontSize: 11 }}>
-        {nfr.availability >= 2 ? '3 ZONES' : 'ONE ZONE'}
+        {zones > 1 ? `${zones} ZONES` : 'ONE ZONE'}
       </text>
     </g>
   );
