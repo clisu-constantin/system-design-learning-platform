@@ -175,7 +175,8 @@ try {
       }
       // The Walkthrough is read as the story of the drawn system, so a step may
       // only travel a wire the Diagram draws (either way: a response goes back).
-      const drawn = spec.edges.some(
+      // A step from a part to itself is work inside that part and travels no wire.
+      const drawn = step.from === step.to || spec.edges.some(
         (edge) => (edge.from === step.from && edge.to === step.to) || (edge.from === step.to && edge.to === step.from),
       );
       if (!drawn) problems.push(`${name}: step ${step.from} -> ${step.to} follows no drawn edge`);

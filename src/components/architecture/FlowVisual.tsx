@@ -41,6 +41,11 @@ export interface VisualEdge {
 }
 
 export interface VisualStep {
+  /**
+   * The hop this step walks. `from` equal to `to` is work done inside one part
+   * (a browser rendering, a server computing): that part lights up and no
+   * request travels, as a Lab stage with no hops shows it.
+   */
   from: string;
   to: string;
   /** Six words or fewer - this is a caption, not a paragraph. */
@@ -190,6 +195,8 @@ export function FlowVisual({
   const activeFrom = active?.from;
   const activeTo = active?.to;
   const activeSkipped = active?.skipped ?? false;
+  // Work inside one part: no wire is travelled, so every wire fades and only the part lights up.
+  const activeInside = activeFrom !== undefined && activeFrom === activeTo;
 
   // Only the particles change from frame to frame. Keeping layout, edges and
   // node elements referentially stable lets DiagramCanvas reuse its curves and
@@ -220,11 +227,11 @@ export function FlowVisual({
     });
     // check:visuals keeps every step on a drawn edge; this only stops an
     // undrawn hop from showing nothing at all.
-    if (activeFrom && activeTo && !wire) {
+    if (activeFrom && activeTo && !wire && !activeInside) {
       wiring.push({ from: activeFrom, to: activeTo, tone: 'brand', animated: true });
     }
     return wiring;
-  }, [spec, wire, activeFrom, activeTo, activeSkipped]);
+  }, [spec, wire, activeFrom, activeTo, activeSkipped, activeInside]);
   const nodes = useMemo(
     () =>
       renderNodes(
@@ -270,7 +277,7 @@ export function FlowVisual({
 
   const stepT = Math.min(1, progress.current);
   const particleViews: ParticleView[] = active
-    ? active.skipped
+    ? active.skipped || activeInside
       ? []
       : [
           {
