@@ -573,14 +573,14 @@ export const gettingStartedConcepts: Concept[] = [
         id: 'nfr-11',
         prompt: 'In the Requirements Lab you keep the features and move Daily active users from 100k to 10M. Which change do you see, and why?',
         options: [
-          'The database shards, a cache and workers appear, and the app tier grows - peak rises 100x',
+          'App servers grow to 18 behind a load balancer and a cache appears; one primary still takes writes',
           'Only the number of app servers changes, because each app server handles a fixed number of users',
-          'A second region appears, because 10M users are spread across continents',
+          'The database is split into shards, because 10M users send more writes than one primary can take',
           'Nothing changes - user count is a functional requirement, not a quality target',
         ],
         answer: 0,
         explanation:
-          'At 10M users a single database and uncached reads no longer hold, and slow work has to leave the request path. The Lab model puts peak traffic near 11,600 requests per second (20 requests a user, 5x peak), so the app tier grows too. A second region only appears at 100M users or 99.999%.',
+          'Peak traffic rises 100x, from about 116 to 11,600 requests per second (20 requests a user, 5x peak), so one app server becomes 18 - the count the Capacity Lab gives for the same users - behind a load balancer, and a cache takes the hot reads. Peak writes are about 1,160 a second, far under the 10,000 one primary absorbs, so the database is not split. A second region only appears at 100M users or 99.999%.',
       },
     ],
   },
