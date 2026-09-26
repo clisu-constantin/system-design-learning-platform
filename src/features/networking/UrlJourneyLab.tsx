@@ -17,7 +17,7 @@ import { useRerender } from '@/hooks/useRerender';
 import { cn } from '@/utils/cn';
 import { clamp } from '@/utils/math';
 import { formatLatency } from '@/utils/format';
-import type { LabFocus, LabProps } from '@/types';
+import type { LabProps } from '@/types';
 import {
   EDGE_RTT_MS,
   RESOLVER_CACHE_AGE_S,
@@ -31,41 +31,13 @@ import {
   journeyTotals,
   planJourney,
   type DnsState,
-  type JourneySetup,
   type NodeId,
   type ResolverCache,
   type Scope,
   type StageId,
   type StagePlan,
 } from './urlJourneyModel';
-
-type Setup = JourneySetup;
-
-/** What the lab opens on at /labs/url-journey, with no Lab focus: the whole cold journey. */
-const DEFAULT_SETUP: Setup = {
-  scope: 'all',
-  startStage: 'browser',
-  https: true,
-  tls: '1.3',
-  warm: false,
-  ttlS: 300,
-  resolverCache: 'never',
-  cdn: true,
-  originRttMs: 80,
-  cacheHit: false,
-};
-
-/**
- * The Lab focus of each Concept that hosts this lab. Everything starts cold so
- * every stage happens; each Concept loops the part of the journey it teaches.
- * HTTP / HTTPS opens on plain HTTP, so one toggle shows what HTTPS adds and costs.
- */
-const FOCUS_SETUPS: Record<LabFocus<'url-journey'>, Setup> = {
-  'what-happens-when-you-type-a-url': DEFAULT_SETUP,
-  dns: { ...DEFAULT_SETUP, scope: 'dns', startStage: 'dns-ask' },
-  'http-https': { ...DEFAULT_SETUP, scope: 'http', startStage: 'request', https: false },
-  'tls-https': { ...DEFAULT_SETUP, scope: 'connect', startStage: 'tls' },
-};
+import { drawnOutcomes, playedStages, shownControls, startSetup, type Setup } from './urlJourneySetup';
 
 const SCOPES: { value: Scope; label: string; note: string }[] = [
   { value: 'all', label: 'All', note: 'The whole journey, from Enter to painted pixels.' },
@@ -131,7 +103,7 @@ const NODE_NAME: Record<NodeId, string> = {
 
 export function UrlJourneyLab({ focus }: LabProps<'url-journey'>) {
   // The page keys this lab by Concept, so the focus never changes under a mounted lab.
-  const start = focus ? FOCUS_SETUPS[focus] : DEFAULT_SETUP;
+  const start = startSetup(focus);
   // Every control lives in one object, so Reset cannot miss one.
   const { setup, setSetup, change } = useLabSetup(start);
 
@@ -143,7 +115,10 @@ export function UrlJourneyLab({ focus }: LabProps<'url-journey'>) {
   const dns = dnsState(setup);
   const totals = journeyTotals(plans);
   const coldSetup = journeyTotals(planJourney({ ...setup, warm: false, resolverCache: 'never' })).setup;
-  const order = plans.filter((stage) => inScope(stage, setup.scope) && !stage.skipped);
+  const order = playedStages(plans, setup.scope);
+  // The legend lists only the shapes this setup draws, and the focus decides which controls show.
+  const outcomes = drawnOutcomes(setup, plans);
+  const shows = new Set(shownControls(setup));
 
   useTicker(running, (dt) => {
     const state = sim.current;
@@ -249,9 +224,13 @@ export function UrlJourneyLab({ focus }: LabProps<'url-journey'>) {
       }
       legend={
         <div className="space-y-1.5">
-          <ParticleLegend
-            outcomes={['success', 'cache-hit', { outcome: 'warning', label: 'Plain HTTP: readable on the path' }]}
-          />
+          {outcomes.length > 0 ? (
+            <ParticleLegend
+              outcomes={outcomes.map((outcome) =>
+                outcome === 'warning' ? { outcome, label: 'Plain HTTP: readable on the path' } : outcome,
+              )}
+            />
+          ) : null}
           <p className="text-[11px] text-faint">
             One request at a time, slowed down to be followed by eye; a longer hop moves slower. Timings are simplified
             round trips for illustration, not measurements.
@@ -308,59 +287,74 @@ export function UrlJourneyLab({ focus }: LabProps<'url-journey'>) {
       }
       controls={
         <>
-          <div className="space-y-2">
-            <p className="text-xs font-medium text-muted">Play</p>
-            <SegmentedControl
-              size="sm"
-              className="w-full"
-              value={setup.scope}
-              options={SCOPES.map(({ value, label }) => ({ value, label }))}
-              onChange={(value) => {
-                change('scope')(value);
-                const first = plans.find((stage) => inScope(stage, value) && !stage.skipped);
-                sim.current = { stageId: first?.id ?? sim.current.stageId, hop: 0, t: 0, gap: 0 };
-              }}
+          {shows.has('scope') ? (
+            <div className="space-y-2">
+              <p className="text-xs font-medium text-muted">Play</p>
+              <SegmentedControl
+                size="sm"
+                className="w-full"
+                value={setup.scope}
+                options={SCOPES.map(({ value, label }) => ({ value, label }))}
+                onChange={(value) => {
+                  change('scope')(value);
+                  const first = plans.find((stage) => inScope(stage, value) && !stage.skipped);
+                  sim.current = { stageId: first?.id ?? sim.current.stageId, hop: 0, t: 0, gap: 0 };
+                }}
+              />
+              <p className="text-[11px] text-faint">{scopeNote} The request walks it in a loop.</p>
+            </div>
+          ) : null}
+          {shows.has('warm') ? (
+            <Toggle
+              label="Warm connection"
+              checked={setup.warm}
+              onChange={change('warm')}
+              description="Reuse an open, encrypted connection: no DNS, TCP or TLS"
             />
-            <p className="text-[11px] text-faint">{scopeNote} The request walks it in a loop.</p>
-          </div>
-          <Toggle
-            label="Warm connection"
-            checked={setup.warm}
-            onChange={change('warm')}
-            description="Reuse an open, encrypted connection: no DNS, TCP or TLS"
-          />
-          <div className={cn('space-y-2', setup.warm && 'opacity-50')}>
-            <p className="text-xs font-medium text-muted">Resolver last looked up example.com</p>
-            <SegmentedControl
-              size="sm"
-              className="w-full"
-              value={setup.resolverCache}
-              options={RESOLVER_OPTIONS}
-              onChange={change('resolverCache')}
-            />
-            <p className="text-xs font-medium text-muted">Record TTL</p>
-            <SegmentedControl
-              size="sm"
-              className="w-full"
-              value={String(setup.ttlS)}
-              options={TTL_OPTIONS.map(({ value, label }) => ({ value: String(value), label }))}
-              onChange={(value) => change('ttlS')(Number(value))}
-            />
-            <p className="text-[11px] text-faint">
-              {dns.answerCached
-                ? `Cached answer is younger than the TTL: the resolver answers at once, ${formatTtl(dns.ttlLeftS ?? 0)} left.`
-                : RESOLVER_CACHE_AGE_S[setup.resolverCache] === null
-                  ? 'Empty cache: the resolver walks root, .com and the authoritative server.'
-                  : 'Cached answer is older than the TTL: expired, so the resolver asks again.'}
+          ) : null}
+          {!shows.has('resolver') && dns.answerCached ? (
+            <p className={cn('text-[11px] text-faint', setup.warm && 'opacity-50')}>
+              The resolver looked example.com up {formatTtl(RESOLVER_CACHE_AGE_S[setup.resolverCache] ?? 0)} ago and the
+              TTL is {formatTtl(setup.ttlS)}, so it answers from its cache: root, .com and the authoritative server are not
+              asked. HTTPS uses TLS 1.3.
             </p>
-          </div>
-          <Toggle
-            label="HTTPS"
-            checked={setup.https}
-            onChange={change('https')}
-            description="Off: plain HTTP, no TLS handshake, readable on the path"
-          />
-          {setup.https ? (
+          ) : null}
+          {shows.has('resolver') ? (
+            <div className={cn('space-y-2', setup.warm && 'opacity-50')}>
+              <p className="text-xs font-medium text-muted">Resolver last looked up example.com</p>
+              <SegmentedControl
+                size="sm"
+                className="w-full"
+                value={setup.resolverCache}
+                options={RESOLVER_OPTIONS}
+                onChange={change('resolverCache')}
+              />
+              <p className="text-xs font-medium text-muted">Record TTL</p>
+              <SegmentedControl
+                size="sm"
+                className="w-full"
+                value={String(setup.ttlS)}
+                options={TTL_OPTIONS.map(({ value, label }) => ({ value: String(value), label }))}
+                onChange={(value) => change('ttlS')(Number(value))}
+              />
+              <p className="text-[11px] text-faint">
+                {dns.answerCached
+                  ? `Cached answer is younger than the TTL: the resolver answers at once, ${formatTtl(dns.ttlLeftS ?? 0)} left.`
+                  : RESOLVER_CACHE_AGE_S[setup.resolverCache] === null
+                    ? 'Empty cache: the resolver walks root, .com and the authoritative server.'
+                    : 'Cached answer is older than the TTL: expired, so the resolver asks again.'}
+              </p>
+            </div>
+          ) : null}
+          {shows.has('https') ? (
+            <Toggle
+              label="HTTPS"
+              checked={setup.https}
+              onChange={change('https')}
+              description="Off: plain HTTP, no TLS handshake, readable on the path"
+            />
+          ) : null}
+          {shows.has('tls') ? (
             <SegmentedControl
               size="sm"
               className="w-full"
@@ -372,28 +366,34 @@ export function UrlJourneyLab({ focus }: LabProps<'url-journey'>) {
               onChange={change('tls')}
             />
           ) : null}
-          <Toggle
-            label="CDN in front"
-            checked={setup.cdn}
-            onChange={change('cdn')}
-            description={`Handshakes end at an edge ${EDGE_RTT_MS} ms away. This page is dynamic, so the edge forwards it`}
-          />
-          <Slider
-            label="Round trip to the origin"
-            value={setup.originRttMs}
-            min={20}
-            max={250}
-            step={10}
-            onChange={change('originRttMs')}
-            format={(value) => `${value} ms`}
-            hint="About 20 ms in the same country, 100-150 ms across an ocean. Simplified."
-          />
-          <Toggle
-            label="Cache hit"
-            checked={setup.cacheHit}
-            onChange={change('cacheHit')}
-            description="Off: the request reaches the database"
-          />
+          {shows.has('cdn') ? (
+            <Toggle
+              label="CDN in front"
+              checked={setup.cdn}
+              onChange={change('cdn')}
+              description={`Handshakes end at an edge ${EDGE_RTT_MS} ms away. This page is dynamic, so the edge forwards it`}
+            />
+          ) : null}
+          {shows.has('originRtt') ? (
+            <Slider
+              label="Round trip to the origin"
+              value={setup.originRttMs}
+              min={20}
+              max={250}
+              step={10}
+              onChange={change('originRttMs')}
+              format={(value) => `${value} ms`}
+              hint="About 20 ms in the same country, 100-150 ms across an ocean. Simplified."
+            />
+          ) : null}
+          {shows.has('cacheHit') ? (
+            <Toggle
+              label="Cache hit"
+              checked={setup.cacheHit}
+              onChange={change('cacheHit')}
+              description="Off: the request reaches the database"
+            />
+          ) : null}
           <div className="rounded-xl border border-line bg-elevated p-3 text-[11px] text-muted">
             <p className="label mb-2">Notice</p>
             <p>
