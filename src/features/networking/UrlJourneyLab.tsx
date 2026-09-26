@@ -19,10 +19,13 @@ import { clamp } from '@/utils/math';
 import { formatLatency } from '@/utils/format';
 import type { LabProps } from '@/types';
 import {
+  CDN_HOST,
   EDGE_RTT_MS,
+  MACHINE_CACHES,
   RESOLVER_CACHE_AGE_S,
   RESOLVER_RTT_MS,
   TTL_OPTIONS,
+  dnsAnswer,
   dnsState,
   formatTtl,
   frontOf,
@@ -55,7 +58,7 @@ const RESOLVER_OPTIONS: { value: ResolverCache; label: string }[] = [
 
 const LAYOUT: Record<NodeId, Layout[string]> = {
   browser: { x: 30, y: 170, w: 160, h: 100 },
-  resolver: { x: 290, y: 100, w: 180, h: 100 },
+  resolver: { x: 290, y: 100, w: 180, h: 122 },
   root: { x: 580, y: 10, w: 190, h: 76 },
   tld: { x: 580, y: 104, w: 190, h: 76 },
   auth: { x: 580, y: 198, w: 190, h: 76 },
@@ -113,6 +116,7 @@ export function UrlJourneyLab({ focus }: LabProps<'url-journey'>) {
 
   const plans = useMemo(() => planJourney(setup), [setup]);
   const dns = dnsState(setup);
+  const answer = dnsAnswer(setup);
   const totals = journeyTotals(plans);
   const coldSetup = journeyTotals(planJourney({ ...setup, warm: false, resolverCache: 'never' })).setup;
   const order = playedStages(plans, setup.scope);
@@ -316,7 +320,7 @@ export function UrlJourneyLab({ focus }: LabProps<'url-journey'>) {
             <p className={cn('text-[11px] text-faint', setup.warm && 'opacity-50')}>
               The resolver looked example.com up {formatTtl(RESOLVER_CACHE_AGE_S[setup.resolverCache] ?? 0)} ago and the
               TTL is {formatTtl(setup.ttlS)}, so it answers from its cache: root, .com and the authoritative server are not
-              asked. HTTPS uses TLS 1.3.
+              asked. The cached answer is the {answer.address}. HTTPS uses TLS 1.3.
             </p>
           ) : null}
           {shows.has('resolver') ? (
@@ -371,7 +375,7 @@ export function UrlJourneyLab({ focus }: LabProps<'url-journey'>) {
               label="CDN in front"
               checked={setup.cdn}
               onChange={change('cdn')}
-              description={`Handshakes end at an edge ${EDGE_RTT_MS} ms away. This page is dynamic, so the edge forwards it`}
+              description={`DNS points example.com at the CDN, so handshakes end at an edge ${EDGE_RTT_MS} ms away. This page is dynamic, so the edge forwards it`}
             />
           ) : null}
           {shows.has('originRtt') ? (
@@ -439,6 +443,7 @@ export function UrlJourneyLab({ focus }: LabProps<'url-journey'>) {
               value={dns.answerCached ? `hit, ${formatTtl(dns.ttlLeftS ?? 0)} left` : 'miss'}
               tone={dns.answerCached ? 'text-ok' : 'text-warn'}
             />
+            <NodeStatRow label="Answer" value={answer.address} />
           </ArchNode>
           <ArchNode
             kind="dns"
@@ -461,14 +466,14 @@ export function UrlJourneyLab({ focus }: LabProps<'url-journey'>) {
           <ArchNode
             kind="dns"
             title="Authoritative"
-            subtitle={`A record, TTL ${formatTtl(setup.ttlS)}`}
+            subtitle={answer.authSubtitle}
             placed={LAYOUT.auth}
             selected={touched.has('auth')}
             statusLabel={asked('dns-auth')}
             className={cn(skipped('dns-auth') && 'opacity-60')}
           />
           {setup.cdn ? (
-            <ArchNode kind="cdn" title="CDN edge" subtitle={`${EDGE_RTT_MS} ms away`} placed={LAYOUT.edge} selected={touched.has('edge')}>
+            <ArchNode kind="cdn" title="CDN edge" subtitle={`anycast, ${EDGE_RTT_MS} ms away`} placed={LAYOUT.edge} selected={touched.has('edge')}>
               <NodeStatRow label="This page" value="miss, forward" tone="text-warn" />
             </ArchNode>
           ) : null}
@@ -567,14 +572,21 @@ function detailFor(stage: StagePlan, setup: Setup, dns: DnsState): ReactNode {
   switch (stage.id) {
     case 'browser':
       return (
-        'The browser parses the URL and checks its own HTTP cache, its service worker and its HSTS list. A fresh cached response ends the journey right here - the fastest request is the one never sent.' +
+        `The browser parses the URL and checks its HSTS list. Then it looks for a stored copy of the page, in this order: a ${MACHINE_CACHES[0]}, if the site registered one, sees the request first; then the ${MACHINE_CACHES[1]}. A fresh copy in either ends the journey right here - the fastest request is the one never sent.` +
+        (setup.warm
+          ? ' Neither has one, and a connection to example.com is already open, so the browser needs no address: the request goes out on that connection.'
+          : ` Neither has one, so the browser needs the address of example.com: it checks the ${MACHINE_CACHES[2]}, then the ${MACHINE_CACHES[3]} (and the hosts file). This browser has not visited lately, so all ${MACHINE_CACHES.length} caches on the machine miss. The fifth, the resolver cache, comes next.`) +
         (setup.https
           ? ''
           : ' This Lab pretends example.com is not on the HSTS list: if it were, the browser would rewrite http:// to https:// at this point, before anything leaves the machine.')
       );
     case 'dns-ask':
       return dns.answerCached
-        ? `The browser, through the operating system, asks a recursive resolver (usually run by the ISP or a public DNS service) for the address of example.com. The resolver looked it up ${formatTtl(age ?? 0)} ago and the TTL is ${ttl}, so it answers straight from its cache - the diamond coming back. It may reuse that answer for ${formatTtl(dns.ttlLeftS ?? 0)} more: a record change made now reaches users of this resolver only after that.`
+        ? `The browser, through the operating system, asks a recursive resolver (usually run by the ISP or a public DNS service) for the address of example.com. The resolver looked it up ${formatTtl(age ?? 0)} ago and the TTL is ${ttl}, so it answers straight from its cache - the diamond coming back. ${
+            setup.cdn
+              ? 'The address it stored is that of a CDN edge: the owner points example.com at the CDN, so the edge is where the browser connects next.'
+              : 'The address it stored is that of the origin load balancer.'
+          } It may reuse that answer for ${formatTtl(dns.ttlLeftS ?? 0)} more: a record change made now reaches users of this resolver only after that.`
         : age === null
           ? 'The browser, through the operating system, asks a recursive resolver (usually run by the ISP or a public DNS service) for the address of example.com. Its cache is empty, so the resolver does the whole walk for the browser: root, then .com, then the authoritative server.'
           : `The browser asks the recursive resolver for example.com. The resolver looked it up ${formatTtl(age)} ago, but the TTL is only ${ttl}, so that copy has expired and it must ask again. It still remembers the .com servers, so it skips the root.`;
@@ -583,11 +595,15 @@ function detailFor(stage: StagePlan, setup: Setup, dns: DnsState): ReactNode {
     case 'dns-tld':
       return 'The .com TLD server does not know the address either. It refers the resolver to the authoritative nameservers that the owner of example.com registered.';
     case 'dns-auth':
-      return `The authoritative nameserver owns the answer: the A record of example.com, with a TTL of ${ttl}. The resolver caches it for that long and hands the address back to the browser. A long TTL means fewer lookups; a short one means a change takes effect sooner. Nothing is pushed to caches - they simply wait for the TTL to run out.`;
+      return `${
+        setup.cdn
+          ? `The authoritative nameserver owns the answer, and the owner has pointed example.com at the CDN name ${CDN_HOST}. On a name such as www that is a CNAME; a bare domain cannot hold one, so here it is an ALIAS: the authoritative server looks the CDN name up itself and returns the address of an edge. CDNs usually give every edge the same anycast address, so the network carries the browser to the nearest one. The answer has a TTL of ${ttl}; the resolver caches it for that long and hands the edge address back to the browser.`
+          : `The authoritative nameserver owns the answer: the A record of example.com, the address of the origin load balancer, with a TTL of ${ttl}. The resolver caches it for that long and hands the address back to the browser.`
+      } A long TTL means fewer lookups; a short one means a change takes effect sooner. Nothing is pushed to caches - they simply wait for the TTL to run out.`;
     case 'tcp':
       return `SYN, then SYN-ACK: one full round trip to ${frontName} (${frontRtt}) before any data can move; the final ACK travels with the next message. ${
         setup.cdn
-          ? 'With a CDN the browser connects to an edge nearby, not to the far origin - so this handshake is cheap.'
+          ? 'DNS gave the browser the address of an edge nearby, so it connects there, not to the far origin - and this handshake is cheap.'
           : 'With no CDN this round trip goes all the way to the origin. Turn the CDN on and watch it shrink.'
       }`;
     case 'tls':
