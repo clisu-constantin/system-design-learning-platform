@@ -1,4 +1,4 @@
-import type { LabFocus, RequestOutcome } from '@/types';
+import type { LabFocus, RequestOutcome } from '../../types/index.ts';
 import { inScope, planJourney, type JourneySetup, type Scope, type StagePlan } from './urlJourneyModel.ts';
 
 /**

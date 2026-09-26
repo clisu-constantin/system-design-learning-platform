@@ -1,4 +1,4 @@
-import type { RequestOutcome } from '@/types';
+import type { RequestOutcome } from '../../types/index.ts';
 
 /**
  * The URL journey as a list of stages, each one a set of hops between the parts
