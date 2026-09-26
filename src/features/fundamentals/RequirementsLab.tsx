@@ -26,7 +26,6 @@ import {
   SLOTS,
   architecture,
   chosenOf,
-  consistencyApplies,
   dauOf,
   edgesFor,
   implicationsFor,
@@ -34,6 +33,8 @@ import {
   routesFor,
   subtitleFor,
   switchProduct,
+  targetApplies,
+  targetOffHint,
   usersLabelOf,
   type Architecture,
   type Legend,
@@ -430,12 +431,8 @@ export function RequirementsLab({ focus }: LabProps<'requirements'>) {
                     format={(value) => spec.values[value]}
                     scale={[spec.values[0], spec.values[spec.values.length - 1]]}
                     tone={nfr[spec.id] >= spec.values.length - 1 ? 'danger' : 'brand'}
-                    disabled={spec.id === 'consistency' && !consistencyApplies(arch)}
-                    hint={
-                      spec.id === 'consistency' && !consistencyApplies(arch)
-                        ? 'Needs a second database copy. With one copy, every read already sees the latest write.'
-                        : undefined
-                    }
+                    disabled={!targetApplies(spec.id, arch)}
+                    hint={targetOffHint(spec.id, arch)}
                   />
                 ))}
                 <div className="rounded-xl border border-line bg-elevated p-3 text-[11px] text-muted">

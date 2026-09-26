@@ -189,19 +189,22 @@ export type Nfr = Record<NfrId, number>;
 /**
  * Something a forced-decision line talks about. A line is shown only while it is on the diagram,
  * so no line names a part that is not drawn.
+ * - `reads`: a picked feature reads from the database;
  * - `copies`: the database has more than one copy in region 1 (a standby or read replicas);
  * - `one-copy`: it has exactly one, and no region 2 - so every read already sees the latest write;
  * - `sync-standby`: a write waits for the standby (Critical durability, or Strong with copies);
+ * - `db-region2`: a database, copied to region 2 (two regions can take conflicting writes);
  * - `sync-region2`: a write waits for region 2 (Strong with region 2).
  */
 type Needs =
   | 'db'
+  | 'reads'
   | 'cache'
   | 'cdn'
   | 'replicas'
   | 'copies'
   | 'one-copy'
-  | 'region2'
+  | 'db-region2'
   | 'async-region2'
   | 'sync-standby'
   | 'sync-region2';
@@ -243,7 +246,7 @@ export const NFRS: NfrSpec[] = [
     // so it drew nothing.
     values: ['500 ms', '100 ms', '20 ms'],
     implications: [
-      [{ text: 'Each read is one query to the database', needs: 'db' }],
+      [{ text: 'Each read is one query to the database', needs: 'reads' }],
       [
         { text: 'Caching layer for hot reads', needs: 'cache' },
         { text: 'CDN for images and static files', needs: 'cdn' },
@@ -269,7 +272,7 @@ export const NFRS: NfrSpec[] = [
         ONE_COPY,
         { text: 'Reads may come from any database copy, even one a moment behind', needs: 'copies' },
         { text: 'Writes reach region 2 a moment later (the dashed wire)', needs: 'async-region2' },
-        { text: 'Conflict resolution between regions must be designed', needs: 'region2' },
+        { text: 'Conflict resolution between regions must be designed', needs: 'db-region2' },
       ],
       [
         ONE_COPY,
@@ -629,6 +632,8 @@ export function architecture(setup: Setup): Architecture {
 
   if (chosen.length === 0) {
     const zones = nfr.availability >= 2 ? 3 : 1;
+    const sizing = sizeFor(false);
+    usersStat(parts, sizing);
     // With nothing picked there is nothing to leave out: the diagram says so in words instead.
     return {
       parts,
@@ -637,7 +642,7 @@ export function architecture(setup: Setup): Architecture {
       notBuiltFlows: [],
       region2: false,
       zones,
-      sizing: sizeFor(false),
+      sizing,
       cacheHit: 0,
       dbCopies: 0,
       machineSize: {},
@@ -668,6 +673,7 @@ export function architecture(setup: Setup): Architecture {
     : { sizing: sizeFor(cached), machineSize: {} };
   const cacheHit = cached ? (nfr.latency >= 2 ? HOT_SET_HIT : CACHE_HIT) : 0;
   const { app, ws, database } = sizing;
+  usersStat(parts, sizing);
 
   // Quality targets. Every requirement goes through the app servers, so they exist here.
   // A load balancer fronts more than one server: for the availability target or for the load.
@@ -678,8 +684,9 @@ export function architecture(setup: Setup): Architecture {
   if (nfr.availability >= 3) add('region2', availability);
   if (nfr.users >= 3) add('region2', users);
 
-  // A tight latency target serves files from the edge - but only when a feature sends files.
-  if (nfr.latency >= 1 && parts.cdn) add('cdn', latency);
+  // A tight latency target serves files from the edge too - but only when a feature sends files,
+  // and only while some feature reads: with no read the latency target is off (`targetApplies`).
+  if (nfr.latency >= 1 && parts.cdn && flows.includes('read')) add('cdn', latency);
   if (nfr.users >= 2) {
     // Anything slow (emails, notifications, exports) leaves the request path.
     flows.push('job');
@@ -802,6 +809,15 @@ export function architecture(setup: Setup): Architecture {
 const about = (value: number) => (value < 1 ? '<1' : `~${formatCompact(value)}`);
 
 /**
+ * The Users part carries the peak requests the daily users send, so every step of the users target
+ * changes a number on the diagram - even while one server still carries the load and the tier stat
+ * shows the copies the availability target asked for rather than the load.
+ */
+function usersStat(parts: Partial<Record<PartId, PartView>>, sizing: Sizing) {
+  if (parts.users) parts.users.stat = { label: 'Peak', value: `${about(sizing.peakQps)} req/s` };
+}
+
+/**
  * The stat row of a sized tier: its load, or - when the availability target asked for more copies
  * than the load needs - how many are for the load and how many for availability.
  */
@@ -832,6 +848,8 @@ function isDrawn(needs: Needs, arch: Architecture) {
   switch (needs) {
     case 'db':
       return db;
+    case 'reads':
+      return db && arch.flows.includes('read');
     case 'cache':
       return Boolean(arch.parts.cache);
     case 'cdn':
@@ -842,8 +860,8 @@ function isDrawn(needs: Needs, arch: Architecture) {
       return db && arch.dbCopies > 1;
     case 'one-copy':
       return db && arch.dbCopies === 1 && !arch.region2;
-    case 'region2':
-      return arch.region2;
+    case 'db-region2':
+      return db && arch.region2;
     case 'async-region2':
       return db && arch.region2 && !arch.syncToRegion2;
     case 'sync-standby':
@@ -854,12 +872,39 @@ function isDrawn(needs: Needs, arch: Architecture) {
 }
 
 /**
- * Consistency only has something to choose once the database has a second copy (a standby,
- * replicas or region 2); with one copy every read already sees the latest write, so the Lab
- * turns the control off rather than let it change nothing.
+ * The targets that can have nothing to act on, what they need, and what the Lab says on the
+ * slider it turns off - so a slider is never left on with nothing to change. While off, a level set
+ * earlier is kept but draws nothing and forces no line (`architecture` and `implicationsFor`
+ * ignore it), so ticking the feature back brings it back. Availability and users always apply.
+ * - P95 latency speeds up reads: the cache it adds sits in front of the database reads, and a
+ *   CDN is already drawn by the features that serve files. No read, nothing to make faster.
+ * - Durability decides how the database keeps a write. No database, nothing to keep.
+ * - Consistency chooses which copy a read may come from: it needs a second database copy (a
+ *   standby, replicas or region 2); with one, every read already sees the latest write.
  */
-export function consistencyApplies(arch: Architecture): boolean {
-  return Boolean(arch.parts.db) && (arch.dbCopies > 1 || arch.region2);
+const TARGET_NEEDS: Partial<Record<NfrId, { applies: (arch: Architecture) => boolean; hint: string }>> = {
+  latency: {
+    applies: (arch) => arch.flows.includes('read'),
+    hint: 'No picked feature reads from the database, so there is no read to make faster.',
+  },
+  durability: {
+    applies: (arch) => Boolean(arch.parts.db),
+    hint: 'No picked feature stores anything in a database, so there is no write to keep safe.',
+  },
+  consistency: {
+    applies: (arch) => Boolean(arch.parts.db) && (arch.dbCopies > 1 || arch.region2),
+    hint: 'Needs a second database copy. With one copy, every read already sees the latest write.',
+  },
+};
+
+/** Whether a target has something on this diagram to change; the Lab turns its slider off when not. */
+export function targetApplies(id: NfrId, arch: Architecture): boolean {
+  return TARGET_NEEDS[id]?.applies(arch) ?? true;
+}
+
+/** Why a target is off, for the hint on its slider, or undefined while it applies. */
+export function targetOffHint(id: NfrId, arch: Architecture): string | undefined {
+  return targetApplies(id, arch) ? undefined : TARGET_NEEDS[id]?.hint;
 }
 
 /** The structural decisions the quality targets force, naming only parts that are drawn. */
@@ -867,7 +912,8 @@ export function implicationsFor(setup: Setup, arch: Architecture): string[] {
   if (chosenOf(setup).length === 0) return [];
   const lines = new Set<string>();
   for (const spec of NFRS) {
-    const level = setup.nfr[spec.id] ?? 0;
+    // A target that is off counts as its lowest level: its slider hint says why, not a line here.
+    const level = targetApplies(spec.id, arch) ? (setup.nfr[spec.id] ?? 0) : 0;
     if (spec.id === 'users') {
       // In the loop, the users step and the fixes picked say what the load forced, on their own panel.
       if (setup.loop) continue;

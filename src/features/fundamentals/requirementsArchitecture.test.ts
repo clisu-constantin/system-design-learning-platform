@@ -12,7 +12,8 @@ import {
   SLOTS,
   WRITE_FLOWS,
   architecture,
-  consistencyApplies,
+  targetApplies,
+  targetOffHint,
   coreOf,
   edgesFor,
   implicationsFor,
@@ -391,6 +392,15 @@ function drawn(s: Setup): string {
   return JSON.stringify({ parts, wires, zones: arch.zones });
 }
 
+/** The part subtitles, which `drawn` leaves out: a target that is off must not add its name to one either. */
+function subtitles(s: Setup): string[] {
+  const arch = architecture(s);
+  return PART_ORDER.flatMap((id) => {
+    const part = arch.parts[id];
+    return part ? [subtitleFor(part, arch)] : [];
+  });
+}
+
 const TARGETS: [string, Nfr][] = [
   ['relaxed targets', RELAXED],
   ['default targets', DEFAULT_SETUP.nfr],
@@ -422,18 +432,88 @@ test('every extra feature ticked on top of the core changes the diagram', () => 
   }
 });
 
-test('every step of availability, latency, users and durability changes the diagram', () => {
+/** The feature sets the target tests walk, per product: each feature alone, the core, and every one. */
+const featureSets = (product: Product): string[][] => [
+  ...REQUIREMENTS[product].map((option) => [option.id]),
+  Object.keys(coreOf(product)),
+  REQUIREMENTS[product].map((option) => option.id),
+];
+
+/** The targets the other targets are stepped from: the two starts, and each way of a second database copy. */
+const BASELINES: [string, Nfr][] = [
+  ...TARGETS,
+  ['a standby at 99.99%', { ...RELAXED, availability: 2 }],
+  ['a sync standby for Critical durability', { ...RELAXED, durability: 1 }],
+  ['region 2 at 99.999%', { ...RELAXED, availability: 3 }],
+];
+
+/**
+ * The one known level that draws nothing new: 99.9% asks for two of each server behind a load
+ * balancer pair, and when the load has already built exactly that (Uber drivers publishing their
+ * location alone, at 100k users: six app servers and no other server tier), there is nothing left
+ * to add - the step only names 99.9% in the part subtitles. Kept narrow so any other case fails.
+ */
+const loadAlreadyRedundant = (s: Setup) => {
+  const arch = architecture(s);
+  const tiers = (['api', 'ws'] as const).filter((id) => arch.parts[id]);
+  return Boolean(arch.parts.lb) && !arch.parts.db && tiers.every((id) => instancesOf(id, arch) > 1);
+};
+
+test('every target level changes the diagram, or the target does not apply and its slider is off', () => {
   for (const product of PRODUCTS) {
-    const core = Object.keys(coreOf(product));
-    for (const [name, nfr] of TARGETS) {
-      for (const spec of NFRS.filter((entry) => entry.id !== 'consistency')) {
-        for (let level = 1; level < spec.values.length; level += 1) {
-          const before = setup(product, core, { ...nfr, [spec.id]: level - 1 });
-          const after = setup(product, core, { ...nfr, [spec.id]: level });
-          assert.notEqual(drawn(after), drawn(before), `${product}: ${spec.label} ${spec.values[level]} at ${name}`);
+    for (const ids of featureSets(product)) {
+      for (const [name, nfr] of BASELINES) {
+        for (const spec of NFRS) {
+          for (let level = 1; level < spec.values.length; level += 1) {
+            const before = setup(product, ids, { ...nfr, [spec.id]: level - 1 });
+            const after = setup(product, ids, { ...nfr, [spec.id]: level });
+            if (!targetApplies(spec.id, architecture(before))) continue;
+            if (spec.id === 'availability' && level === 1 && loadAlreadyRedundant(before)) continue;
+            const where = `${product} [${ids.join(', ')}]: ${spec.label} ${spec.values[level]} at ${name}`;
+            assert.notEqual(drawn(after), drawn(before), where);
+          }
         }
       }
     }
+  }
+});
+
+test('a target that does not apply draws nothing and says nothing at any level', () => {
+  let off = 0;
+  for (const product of PRODUCTS) {
+    for (const ids of featureSets(product)) {
+      for (const [, nfr] of BASELINES) {
+        for (const spec of NFRS) {
+          const at = (level: number) => setup(product, ids, { ...nfr, [spec.id]: level });
+          if (targetApplies(spec.id, architecture(at(0)))) continue;
+          off += 1;
+          for (let level = 1; level < spec.values.length; level += 1) {
+            const where = `${product} [${ids.join(', ')}]: ${spec.label} ${spec.values[level]}`;
+            assert.equal(targetApplies(spec.id, architecture(at(level))), false, where);
+            assert.equal(drawn(at(level)), drawn(at(0)), where);
+            assert.deepEqual(subtitles(at(level)), subtitles(at(0)), where);
+            assert.deepEqual(implicationsFor(at(level), architecture(at(level))), implicationsFor(at(0), architecture(at(0))), where);
+          }
+        }
+      }
+    }
+  }
+  assert.ok(off > 0);
+});
+
+test('P95 latency is off while no picked feature reads, and durability while nothing is stored', () => {
+  const off = (product: Product, ids: string[], id: 'latency' | 'durability') => !targetApplies(id, architecture(setup(product, ids)));
+
+  assert.equal(off('whatsapp', ['groups'], 'latency'), true);
+  assert.equal(off('instagram', ['like'], 'latency'), true);
+  assert.equal(off('uber', ['location'], 'latency'), true);
+  assert.equal(off('whatsapp', ['send'], 'latency'), false);
+  assert.equal(off('uber', ['location'], 'durability'), true);
+  assert.equal(off('whatsapp', ['calls'], 'durability'), true);
+  assert.equal(off('uber', ['request'], 'durability'), false);
+  for (const id of ['latency', 'durability', 'consistency'] as const) {
+    assert.match(targetOffHint(id, architecture(setup('uber', ['location']))) ?? '', /\w/, id);
+    assert.equal(targetOffHint(id, architecture(setup('whatsapp', ['send'], { availability: 2 }))), undefined, id);
   }
 });
 
@@ -653,10 +733,11 @@ test('switching product keeps the not-built parts and the focus start of each pr
 
 test('consistency can be set only while there is a second copy to be inconsistent with', () => {
   const core = Object.keys(coreOf('whatsapp'));
-  assert.equal(consistencyApplies(architecture(setup('whatsapp', core))), false, 'one database copy');
-  assert.equal(consistencyApplies(architecture(setup('whatsapp', core, { availability: 2 }))), true, 'a standby');
-  assert.equal(consistencyApplies(architecture(setup('whatsapp', core, { availability: 3 }))), true, 'region 2');
-  assert.equal(consistencyApplies(architecture(setup('whatsapp', []))), false, 'no database');
+  const applies = (s: Setup) => targetApplies('consistency', architecture(s));
+  assert.equal(applies(setup('whatsapp', core)), false, 'one database copy');
+  assert.equal(applies(setup('whatsapp', core, { availability: 2 })), true, 'a standby');
+  assert.equal(applies(setup('whatsapp', core, { availability: 3 })), true, 'region 2');
+  assert.equal(applies(setup('whatsapp', [])), false, 'no database');
 });
 
 // ---------------------------------------------------------------------------
