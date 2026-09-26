@@ -8,6 +8,7 @@ import {
   RELAXED,
   REQUIREMENTS,
   REGION2,
+  SINGLE_POINT_EXEMPT,
   SLOTS,
   WRITE_FLOWS,
   architecture,
@@ -15,6 +16,7 @@ import {
   coreOf,
   edgesFor,
   implicationsFor,
+  instancesOf,
   legendFor,
   routesFor,
   subtitleFor,
@@ -288,6 +290,76 @@ test('no part title, subtitle, stat or status line is truncated at any setting',
     }
   }
   assert.ok(checked > 1000);
+});
+
+// ---------------------------------------------------------------------------
+// Single points: no hidden single instance
+// ---------------------------------------------------------------------------
+
+test('the parts exempt from single points are the managed ones: object storage and the CDN', () => {
+  assert.deepEqual([...SINGLE_POINT_EXEMPT].sort(), ['cdn', 'objects']);
+});
+
+test('from 99.99% up no drawn part is a single instance, for every product with every feature ticked', () => {
+  for (const product of PRODUCTS) {
+    const every = REQUIREMENTS[product].map((option) => option.id);
+    for (const availability of [2, 3]) {
+      for (const users of [0, 1, 2, 3]) {
+        for (const latency of [0, 1, 2]) {
+          const arch = architecture(setup(product, every, { availability, users, latency }));
+          for (const id of PART_ORDER) {
+            if (!arch.parts[id] || id === 'users' || id === 'region2' || SINGLE_POINT_EXEMPT.has(id)) continue;
+            const where = `${product} ${id} at ${JSON.stringify({ availability, users, latency })}`;
+            assert.ok(instancesOf(id, arch) > 1, where);
+            // A tier with more than one copy says so in its title.
+            assert.match(arch.parts[id]?.title ?? '', /x\d/, where);
+          }
+          assert.deepEqual(arch.singlePoints, [], `${product} at ${JSON.stringify({ availability, users, latency })}`);
+        }
+      }
+    }
+  }
+});
+
+test('from 99.99% the cache, queue + workers, index and media servers run one copy in each of the 3 zones', () => {
+  const at = (product: Product, availability: number) =>
+    architecture(setup(product, REQUIREMENTS[product].map((option) => option.id), { availability, latency: 1 }));
+  const titles = (arch: ReturnType<typeof architecture>) =>
+    (['cache', 'async', 'index', 'media'] as const).map((id) => arch.parts[id]?.title);
+
+  assert.deepEqual(titles(at('whatsapp', 1)), ['Cache', 'Queue + workers', undefined, 'Media servers']);
+  assert.deepEqual(titles(at('whatsapp', 2)), ['Cache x3', 'Queue + workers x3', undefined, 'Media servers x3']);
+  assert.deepEqual(titles(at('instagram', 2)), ['Cache x3', 'Queue + workers x3', 'Search index x3', undefined]);
+  assert.deepEqual(titles(at('uber', 3)), ['Cache x3', 'Queue + workers x3', 'Geo index x3', undefined]);
+  const four = at('uber', 2);
+  assert.equal(four.zones, 3);
+  for (const id of ['cache', 'async', 'index'] as const) {
+    assert.equal(instancesOf(id, four), 3, id);
+    assert.ok(four.parts[id]?.reasons.includes('99.99%'), `${id} names the target that copied it`);
+  }
+});
+
+test('Single points counts every drawn single-instance part that is not exempt, at every setting', () => {
+  let counted = 0;
+  for (const s of everySetting()) {
+    const arch = architecture({ ...s, showNotBuilt: true });
+    const single = PART_ORDER.filter(
+      (id) => arch.parts[id] && id !== 'users' && id !== 'region2' && !SINGLE_POINT_EXEMPT.has(id) && instancesOf(id, arch) === 1,
+    );
+    assert.equal(arch.singlePoints.length, single.length, `${single.join(', ')} vs ${arch.singlePoints.join(', ')} in ${JSON.stringify(s)}`);
+    counted += single.length;
+  }
+  assert.ok(counted > 1000);
+});
+
+test('below 99.99% a single cache, queue + workers or index is a single point, named as drawn', () => {
+  const arch = architecture(setup('instagram', ['upload', 'feed', 'search'], { availability: 1, latency: 1 }));
+
+  assert.deepEqual(arch.singlePoints, ['database', 'queue + workers', 'search index', 'cache']);
+  // Not built parts are never billed and never a single point.
+  const functional = architecture(FOCUS_SETUPS['functional-requirements']);
+  assert.ok(functional.notBuilt.media);
+  assert.ok(!functional.singlePoints.includes('media servers'));
 });
 
 test('a part with several reasons names the first and counts the rest', () => {
@@ -628,12 +700,14 @@ test('the Non-Functional Diagram draws the parts of the Lab at 99.99%, under the
   for (const wire of ['lb|users', 'api|lb', 'api|db', 'api|ws', 'lb|ws']) assert.ok(wires.has(wire), wire);
 });
 
-test('the Non-Functional Lesson numbers: single points 3, 1, 0 and about 32 requests a second', () => {
+test('the Non-Functional Lesson numbers: single points 5, 3, 0 and about 32 requests a second', () => {
   const at = (availability: number) => architecture({ ...NON_FUNCTIONAL, nfr: { ...RELAXED, availability } });
 
-  assert.deepEqual(at(0).singlePoints, ['app server', 'WebSocket server', 'database']);
-  assert.deepEqual(at(1).singlePoints, ['database']);
+  assert.deepEqual(at(0).singlePoints, ['app server', 'WebSocket server', 'database', 'queue + workers', 'geo index']);
+  assert.deepEqual(at(1).singlePoints, ['database', 'queue + workers', 'geo index']);
   assert.deepEqual(at(2).singlePoints, []);
+  assert.equal(at(2).parts.async?.title, 'Queue + workers x3');
+  assert.equal(at(2).parts.index?.title, 'Geo index x3');
   assert.equal(Math.round(at(0).sizing.peakQps), 32);
   assert.deepEqual(at(1).parts.api?.stat, { label: '1 for load', value: '+1 for 99.9%' });
   assert.equal(at(1).parts.ws?.title, 'WebSocket x2');

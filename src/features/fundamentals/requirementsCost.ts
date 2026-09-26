@@ -9,11 +9,20 @@
  *
  * Pure: no React and only relative imports, so `npm test` runs it.
  */
-import { BIGGER_MACHINE_PRICE, RELAXED, architecture, coreOf, type Architecture, type PartId, type Setup } from './requirementsArchitecture.ts';
+import {
+  BIGGER_MACHINE_PRICE,
+  RELAXED,
+  architecture,
+  coreOf,
+  instancesOf,
+  type Architecture,
+  type InstancedPart,
+  type Setup,
+} from './requirementsArchitecture.ts';
 import type { Product } from './requirementsSizing.ts';
 
 /** A part with a bill of its own. Users are not billed; region 2 is billed as a copy of region 1. */
-export type CostedPart = Exclude<PartId, 'users' | 'region2'>;
+export type CostedPart = InstancedPart;
 
 /**
  * Relative monthly cost of one instance, one app server = 1. Illustrative ratios:
@@ -64,23 +73,6 @@ export interface CostLine {
   /** Instances billed; 1 for the traffic and region lines. */
   instances: number;
   cost: number;
-}
-
-/** How many copies of a part the diagram draws, zone copies included. */
-function instancesOf(id: CostedPart, arch: Architecture): number {
-  switch (id) {
-    case 'api':
-      return arch.sizing.app.count;
-    case 'ws':
-      return arch.sizing.ws.count;
-    case 'db':
-      return arch.dbCopies * arch.sizing.database.partitions;
-    case 'lb':
-      // "Load balancer x2": anything that fronts the whole system runs as a pair.
-      return 2;
-    default:
-      return 1;
-  }
 }
 
 /** The bill line by line: each part drawn, then zone traffic, then region 2. */

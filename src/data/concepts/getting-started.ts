@@ -503,7 +503,7 @@ export const gettingStartedConcepts: Concept[] = [
         ],
         answer: 3,
         explanation:
-          'At 99.99% a manual database recovery or one lost zone would use up the yearly budget, so the database gets a standby that is promoted automatically and the app servers spread across zones. A second region is what the Lab adds at 99.999%, where even a region outage must be survived.',
+          'At 99.99% a manual database recovery or one lost zone would use up the yearly budget, so the database gets a standby that is promoted automatically and every other tier - app servers, cache, queue, index - keeps a copy in each of 3 zones. A second region is what the Lab adds at 99.999%, where even a region outage must be survived.',
       },
       {
         id: 'nfr-5',

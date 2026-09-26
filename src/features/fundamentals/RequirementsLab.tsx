@@ -261,7 +261,7 @@ export function RequirementsLab({ focus }: LabProps<'requirements'>) {
                 value: chosen.length === 0 ? '-' : formatCost(cost),
                 tone: chosen.length === 0 ? 'neutral' : cost >= 2 ? 'warn' : 'neutral',
                 sub: 'Simplified model',
-                hint: `x1 is the simplest ${PRODUCT_NAME[product]} design: its core features at the relaxed targets, one copy of each part. Every copy drawn is billed - app servers, database copies, the load balancer pair - plus the traffic between zones and a full copy in region 2. Round ratios (one app server = 1, a database copy = 3), not a price list.`,
+                hint: `x1 is the simplest ${PRODUCT_NAME[product]} design: its core features at the relaxed targets, one copy of each part. Every copy drawn is billed - app servers, database copies, the load balancer pair, a cache, queue or index in each zone - plus the traffic between zones and a full copy in region 2. Round ratios (one app server = 1, a database copy = 3), not a price list.`,
                 simulated: true,
               },
               {
@@ -269,10 +269,11 @@ export function RequirementsLab({ focus }: LabProps<'requirements'>) {
                 label: 'Single points',
                 value: chosen.length === 0 ? '-' : arch.singlePoints.length,
                 tone: chosen.length === 0 ? 'neutral' : arch.singlePoints.length > 0 ? 'warn' : 'ok',
-                hint:
+                hint: `${
                   arch.singlePoints.length > 0
-                    ? `Parts with one copy, so their failure stops the system: ${arch.singlePoints.join(', ')}.`
-                    : 'Parts with only one copy, so their failure stops the system.',
+                    ? `Parts drawn as one copy, so one failure stops the traffic through them: ${arch.singlePoints.join(', ')}.`
+                    : 'Parts drawn as one copy, so one failure stops the traffic through them. None here: every part drawn has a second copy.'
+                } Not counted: object storage and the CDN, managed services the provider already spreads over several zones.`,
               },
               {
                 key: 'creep',

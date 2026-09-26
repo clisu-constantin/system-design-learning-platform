@@ -1,6 +1,16 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { DEFAULT_SETUP, FOCUS_SETUPS, RELAXED, REQUIREMENTS, architecture, coreOf, type Nfr, type Setup } from './requirementsArchitecture.ts';
+import {
+  DEFAULT_SETUP,
+  FOCUS_SETUPS,
+  RELAXED,
+  REQUIREMENTS,
+  architecture,
+  coreOf,
+  instancesOf,
+  type Nfr,
+  type Setup,
+} from './requirementsArchitecture.ts';
 import { PRODUCTS, type Product } from './requirementsSizing.ts';
 import {
   CROSS_REGION_SHARE,
@@ -75,8 +85,13 @@ test('raising availability from 99.9% to 99.99% moves the cost into 2x-3x', () =
       ['relaxed baseline', core(product)],
       ['default targets', { ...DEFAULT_SETUP, product, selected: coreOf(product) }],
     ] as const) {
-      const threeNines = relativeCost(withAvailability(start, 1));
-      const fourNines = relativeCost(withAvailability(start, 2));
+      // What availability alone costs: against the same design at 99%. From the relaxed baseline that
+      // is the x1 yardstick itself; at the default targets (100k users) the yardstick is the 1k-user
+      // design, so relativeCost would also count the raise in users.
+      const at99 = monthlyCost(architecture(withAvailability(start, 0)));
+      if (name === 'relaxed baseline') assert.equal(relativeCost(withAvailability(start, 0)), 1);
+      const threeNines = monthlyCost(architecture(withAvailability(start, 1))) / at99;
+      const fourNines = monthlyCost(architecture(withAvailability(start, 2))) / at99;
       assert.ok(threeNines < 2, `${product} at ${name}, 99.9%: x${threeNines.toFixed(2)}`);
       inRange(fourNines, 2, 3, `${product} at ${name}, 99.99%`);
     }
@@ -97,10 +112,18 @@ test('the cost multipliers the Non-Functional Diagram, Lesson and Quiz quote com
   const focus = FOCUS_SETUPS['non-functional-requirements'];
   // Diagram and Lesson: 99.9% then 99.99% from the focus start.
   assert.equal(formatCost(relativeCost(withAvailability(focus, 1))), 'x1.3');
-  assert.equal(formatCost(relativeCost(withAvailability(focus, 2))), 'x2.1');
-  // Lesson: the x1 design bills 8.5 units, the 99.99% one 17.7.
+  assert.equal(formatCost(relativeCost(withAvailability(focus, 2))), 'x3');
+  // Lesson: the x1 design bills 8.5 units, the 99.9% one 11.1 and the 99.99% one 25.4.
   assert.equal(monthlyCost(architecture(focus)), 8.5);
-  assert.equal(monthlyCost(architecture(withAvailability(focus, 2))).toFixed(1), '17.7');
+  assert.equal(monthlyCost(architecture(withAvailability(focus, 1))).toFixed(1), '11.1');
+  assert.equal(monthlyCost(architecture(withAvailability(focus, 2))).toFixed(1), '25.4');
+  // Lesson: the parts of the 99.99% bill before the zone traffic, line by line.
+  const fourNines = costLines(architecture(withAvailability(focus, 2)));
+  assert.deepEqual(
+    fourNines.map((line) => [line.id, line.instances, line.cost]),
+    [['lb', 2, 0.6], ['api', 3, 3], ['ws', 3, 3], ['db', 2, 6], ['async', 3, 4.5], ['index', 3, 6], ['zones', 1, fourNines[6].cost]],
+  );
+  assert.equal(fourNines.slice(0, 6).reduce((total, line) => total + line.cost, 0).toFixed(1), '23.1');
   // Quiz nfr-9: Critical durability on its own.
   assert.equal(formatCost(relativeCost({ ...focus, nfr: { ...focus.nfr, durability: 1 } })), 'x1.5');
 });
@@ -112,6 +135,19 @@ test('every availability step costs more than the one before', () => {
       const cost = relativeCost(core(product, { availability }));
       assert.ok(cost > previous, `${product} at availability level ${availability}`);
       previous = cost;
+    }
+  }
+});
+
+test('every copy the diagram draws is billed: the bill counts what instancesOf counts', () => {
+  for (const product of PRODUCTS) {
+    const every = Object.fromEntries(REQUIREMENTS[product].map((option) => [option.id, true]));
+    for (const availability of [0, 1, 2, 3]) {
+      const arch = architecture({ ...core(product, { availability, latency: 1 }), selected: every });
+      for (const line of costLines(arch)) {
+        if (line.id === 'zones' || line.id === 'region2' || line.id === 'cross-region') continue;
+        assert.equal(line.instances, instancesOf(line.id, arch), `${product} ${line.id} at availability ${availability}`);
+      }
     }
   }
 });
@@ -140,6 +176,10 @@ test('each part is billed per instance drawn', () => {
   assert.equal(line('ws')?.instances, arch.sizing.ws.count);
   assert.equal(line('db')?.instances, arch.dbCopies * arch.sizing.database.partitions);
   assert.equal(line('lb')?.instances, 2);
+  // One copy of the geo index and of the queue + workers in each of the 3 zones.
+  assert.equal(line('async')?.instances, 3);
+  assert.equal(line('index')?.instances, 3);
+  assert.equal(line('cache')?.instances, 3);
   for (const entry of lines) {
     if (entry.id === 'zones' || entry.id === 'region2' || entry.id === 'cross-region') continue;
     assert.equal(entry.cost, entry.instances * PART_COST[entry.id], entry.label);

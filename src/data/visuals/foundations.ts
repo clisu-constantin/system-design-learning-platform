@@ -83,12 +83,12 @@ export const foundationVisuals: Record<string, VisualSpec> = {
   'non-functional-requirements': {
     // The Requirements Lab on this Concept after raising Availability to 99.99%: Uber, the same
     // parts under the same names and stat rows, shortened to the ride request and its live
-    // tracking (the Geo index and Queue + workers are left out). The Lab draws zones as an
-    // underlay, not a part, so here they live in the subtitles. x2.1 is `relativeCost` for that
-    // setup (requirementsCost.ts), inside the 2-3x a test holds it to.
+    // tracking (the Geo index x3 and Queue + workers x3 are left out, and the caption says so). The
+    // Lab draws zones as an underlay, not a part, so here they live in the subtitles. x3 is
+    // `relativeCost` for that setup (requirementsCost.ts), inside the 2-3x a test holds it to.
     width: 800,
     height: 320,
-    caption: '99.99% for Uber ride requests: every server tier copied into 3 zones and a database standby promoted automatically. Monthly cost x1 -> x2.1 (simplified model).',
+    caption: '99.99% for Uber ride requests: every tier copied into 3 zones (the geo index and queue too, not drawn here) and a database standby promoted automatically. Monthly cost x1 -> x3 (simplified model).',
     nodes: [
       { id: 'users', kind: 'client', label: 'Users', sub: '1k daily users', x: 16, y: 112, w: 150, h: 95, stat: ['Target', '99.99%'] },
       { id: 'lb', kind: 'load-balancer', label: 'Load balancer x2', sub: 'skips a dead server', x: 196, y: 115, w: 176, h: 90 },
@@ -111,7 +111,7 @@ export const foundationVisuals: Record<string, VisualSpec> = {
       { from: 'ws', to: 'lb', label: 'Driver position streamed to rider' },
       { from: 'api', to: 'db', label: 'Trip stored, copied to standby' },
       { from: 'db', to: 'db', label: 'Primary dies: standby promoted automatically', outcome: 'warning' },
-      { from: 'api', to: 'api', label: 'Monthly cost: x1 becomes x2.1', outcome: 'warning' },
+      { from: 'api', to: 'api', label: 'Monthly cost: x1 becomes x3', outcome: 'warning' },
     ],
   },
 

@@ -465,10 +465,52 @@ export interface Architecture {
    * `bigger-app` and `bigger-db`). A part not listed runs on the standard machine.
    */
   machineSize: Partial<Record<PartId, number>>;
+  /**
+   * Copies of each part the load does not size - the cache, queue + workers, the index and the
+   * media servers: one, or one per zone from 99.99% up.
+   */
+  zoneCopies: number;
   /** A write waits for the standby before it is confirmed. */
   syncStandby: boolean;
   syncToRegion2: boolean;
+  /**
+   * Every drawn part with one instance, in PART_ORDER, named as drawn ("geo index"): when it fails,
+   * the traffic through it stops until it is replaced. SINGLE_POINT_EXEMPT parts are not counted.
+   */
   singlePoints: string[];
+}
+
+/** A part the diagram draws as instances: everything but the users and the region 2 band. */
+export type InstancedPart = Exclude<PartId, 'users' | 'region2'>;
+
+/**
+ * Parts never counted as a single point, although drawn as one box: object storage and the CDN are
+ * managed services billed by use, and the provider already keeps each file in several zones (object
+ * storage) or at many edge locations (the CDN). The load balancer is not here: it is always a pair.
+ */
+export const SINGLE_POINT_EXEMPT: ReadonlySet<PartId> = new Set<PartId>(['objects', 'cdn']);
+
+/** How many instances of a part the diagram draws, zone copies included - what the bill counts. */
+export function instancesOf(id: InstancedPart, arch: Architecture): number {
+  switch (id) {
+    case 'api':
+      return arch.sizing.app.count;
+    case 'ws':
+      return arch.sizing.ws.count;
+    case 'db':
+      return arch.dbCopies * arch.sizing.database.partitions;
+    case 'lb':
+      // "Load balancer x2": anything that fronts the whole system runs as a pair.
+      return 2;
+    case 'cache':
+    case 'async':
+    case 'index':
+    case 'media':
+      return arch.zoneCopies;
+    case 'objects':
+    case 'cdn':
+      return 1;
+  }
 }
 
 const PART_KIND: Record<PartId, NodeKind> = {
@@ -503,6 +545,9 @@ const PART_TITLE: Record<PartId, string> = {
 
 /** The parts in the order they are laid out and logged. */
 export const PART_ORDER: PartId[] = ['region2', 'users', 'cdn', 'lb', 'media', 'objects', 'api', 'ws', 'db', 'async', 'index', 'cache'];
+
+/** The parts copied into every zone from 99.99% up, rather than sized by the load. */
+const ZONE_COPIED: InstancedPart[] = ['media', 'async', 'index', 'cache'];
 
 export const chosenOf = (setup: Setup) => REQUIREMENTS[setup.product].filter((option) => setup.selected[option.id]);
 
@@ -596,6 +641,7 @@ export function architecture(setup: Setup): Architecture {
       cacheHit: 0,
       dbCopies: 0,
       machineSize: {},
+      zoneCopies: 1,
       syncStandby: false,
       syncToRegion2: false,
       singlePoints: [],
@@ -701,6 +747,21 @@ export function architecture(setup: Setup): Architecture {
   // Anything that fronts the whole system runs as a pair.
   if (parts.lb) parts.lb.title = 'Load balancer x2';
 
+  // Three zones from 99.99%; below that, a synchronous standby still lives in a second zone.
+  const zones = nfr.availability >= 2 ? 3 : syncStandby ? 2 : 1;
+  // The parts the load does not size run one copy in each zone from 99.99%: a zone outage must not
+  // take the only cache, queue, index or media relay with it. Below that they stay one box each, and
+  // Single points says so - the 99.9% step copies only the servers behind the load balancer.
+  const zoneCopies = nfr.availability >= 2 ? zones : 1;
+  if (zoneCopies > 1) {
+    for (const id of ZONE_COPIED) {
+      const part = parts[id];
+      if (!part) continue;
+      add(id, availability);
+      part.title = `${part.title} x${zoneCopies}`;
+    }
+  }
+
   // What a requirement adds to a part its flows already drew: a status line or a stat row.
   for (const option of chosen) {
     for (const mark of option.marks ?? []) {
@@ -711,17 +772,9 @@ export function architecture(setup: Setup): Architecture {
     }
   }
 
-  // Three zones from 99.99%; below that, a synchronous standby still lives in a second zone.
-  const zones = nfr.availability >= 2 ? 3 : syncStandby ? 2 : 1;
-
-  const singlePoints: string[] = [];
-  if (app.count === 1) singlePoints.push('app server');
-  if (parts.ws && ws.count === 1) singlePoints.push('WebSocket server');
-  if (parts.db && dbCopies === 1) singlePoints.push('database');
-
   const { notBuilt, notBuiltFlows } = setup.showNotBuilt ? notBuiltOf(setup, parts) : { notBuilt: {}, notBuiltFlows: [] };
 
-  return {
+  const arch: Architecture = {
     parts,
     flows,
     notBuilt,
@@ -732,10 +785,17 @@ export function architecture(setup: Setup): Architecture {
     cacheHit,
     dbCopies,
     machineSize,
+    zoneCopies,
     syncStandby,
     syncToRegion2,
-    singlePoints,
+    singlePoints: [],
   };
+  for (const id of PART_ORDER) {
+    const part = parts[id];
+    if (!part || id === 'users' || id === 'region2' || SINGLE_POINT_EXEMPT.has(id)) continue;
+    if (instancesOf(id, arch) === 1) arch.singlePoints.push(id === 'ws' ? part.title : part.title.toLowerCase());
+  }
+  return arch;
 }
 
 /** A model number on a stat row: "~12", "~11.6K", or "<1" rather than "~0" for a trickle. */
@@ -1030,7 +1090,8 @@ export const H = 90;
 export const MID = 260;
 export const ROW = [104, 208, 312, 416];
 const COL = [
-  { x: 16, w: 152 },
+  // 160 wide so "Media servers x3" (one relay per zone from 99.99%) fits its title column.
+  { x: 16, w: 160 },
   { x: 224, w: 176 },
   { x: 456, w: 196 },
   { x: 708, w: 236 },
