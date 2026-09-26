@@ -426,17 +426,17 @@ Useful conversions
     },
     deepDive: [
       {
-        heading: 'Stage 1: finding the address (and the five caches before it)',
+        heading: 'Stage 1: finding the address, and the five caches on the way',
         paragraphs: [
-          'Before any network traffic happens, the browser checks its own caches: is this URL in the HTTP cache, is there a service worker, is the hostname in the browser DNS cache, then in the operating system (its own cache and the hosts file). A surprising number of "requests" never leave the machine at all, which is why cache headers are among the highest-leverage settings you control.',
-          'If the name is still unresolved, a DNS query goes to a resolver, usually run by your ISP or a public provider. The resolver walks the hierarchy - root servers, then the .com nameservers, then the nameservers for the domain - and caches every answer for as long as its TTL says (the list of .com servers for two days, so a busy resolver almost never needs a root server). A cold lookup can take 20-120 ms; a warm one is free.',
+          'Before any network traffic happens, the browser checks four caches on the machine, in this order. A service worker, if the site registered one, sees the request first and may answer it from its own storage. Next comes the HTTP cache: a fresh stored copy of the page ends the journey right there. Only then does the browser need an address, so it checks the browser DNS cache, then the operating system DNS cache (and the hosts file). A surprising number of "requests" never leave the machine at all, which is why cache headers are among the highest-leverage settings you control.',
+          'If the name is still unresolved, a DNS query goes to a resolver, usually run by your ISP or a public provider. The resolver cache is the fifth cache: if someone asked for this name within its TTL, the answer comes straight back. Otherwise the resolver walks the hierarchy - root servers, then the .com nameservers, then the nameservers for the domain - and caches every answer for as long as its TTL says (the list of .com servers for two days, so a busy resolver almost never needs a root server). A cold lookup can take 20-120 ms; a warm one is free.',
           'This is why DNS TTL is an operational decision, not a detail. A 24-hour TTL makes lookups cheap but means a failover takes a day to be noticed by some clients. A 60-second TTL makes failover fast and multiplies DNS traffic. Teams usually lower the TTL days before a planned migration.',
         ],
       },
       {
         heading: 'Stage 2: opening the pipe, and why the first request is expensive',
         paragraphs: [
-          'With an IP address the browser opens a TCP connection: SYN, SYN-ACK, ACK - one full round trip before a single byte of your data moves. Then TLS negotiates keys, which is one more round trip with TLS 1.3 (two with 1.2). On a 50 ms link, that is 100-150 ms spent before the HTTP request is even sent.',
+          'With an IP address the browser opens a TCP connection: SYN, SYN-ACK, ACK - one full round trip before a single byte of your data moves. Then TLS negotiates keys, which is one more round trip with TLS 1.3 (two with 1.2). On a 50 ms link, that is 100-150 ms spent before the HTTP request is even sent. HTTP/3 runs over QUIC, which merges the transport and TLS handshakes into one round trip.',
           'That fixed cost is why connection reuse matters so much. HTTP keep-alive, HTTP/2 multiplexing and connection pools all exist to avoid paying setup again. It is also why a page that pulls resources from eight different domains is slow in a way no backend optimisation can fix - each new origin means a fresh DNS lookup, TCP handshake and TLS handshake.',
           'It is also the clearest argument for a CDN. The handshake cost depends on distance, so terminating TLS at an edge node 20 km away instead of an origin 8,000 km away cuts the setup cost by an order of magnitude, even for content the edge has to fetch from the origin anyway.',
         ],
@@ -455,7 +455,7 @@ Warm connection: ~50 ms. Same server, same code.`,
       {
         heading: 'Stage 3: inside your system, and stage 4: the browser',
         paragraphs: [
-          'The request usually meets a CDN edge first. Static assets are answered there and your origin never hears about them. A dynamic request passes through to a load balancer, which picks a healthy application server; that server checks a cache, and only on a miss does it query the database. Each of those hops is a place where the request can be answered early - that is the whole design philosophy of the stack.',
+          'The request usually meets a CDN edge first, because DNS sent it there: the owner points the name at the CDN (a CNAME on a name such as www, an ALIAS on the bare example.com), so the address the browser got back belongs to an edge near the user. Static assets are answered there and your origin never hears about them. A dynamic request passes through to a load balancer, which picks a healthy application server; that server checks a cache, and only on a miss does it query the database. Each of those hops is a place where the request can be answered early - that is the whole design philosophy of the stack.',
           'On the way back, the response carries the headers that control the next request: Cache-Control, ETag, Set-Cookie, compression. Getting those right is what turns the second visit into a 304 Not Modified or a pure cache hit, which is the cheapest request you will ever serve.',
           'Then the browser does its own pipeline: parse HTML, discover sub-resources, build the DOM and CSSOM, run blocking scripts, lay out, paint. This half is invisible in server metrics and frequently dominates what the user actually experiences. A 50 ms API response inside a page that blocks on a 2 MB JavaScript bundle is still a slow page.',
         ],
