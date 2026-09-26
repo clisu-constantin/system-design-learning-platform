@@ -157,9 +157,9 @@ export function scaleImplications(sizing: Sizing, usersLevel: number, database: 
   if (sizing.app.forLoad > 1) lines.push('Horizontal app tier behind a load balancer');
   if (sizing.cached && usersLevel >= 2) lines.push('Caching layer for hot reads');
   if (database && sizing.database.readReplicas > 0) lines.push('Read replicas');
-  if (database && sizing.database.partitioned) lines.push('Partitioned writes with a routing layer');
-  if (usersLevel >= 2) lines.push('Async processing for anything slow', 'Capacity planning and autoscaling');
-  if (usersLevel >= 3) lines.push('Multi-region', 'Dedicated platform and SRE investment');
+  if (database && sizing.database.partitioned) lines.push('Writes split across database partitions');
+  if (usersLevel >= 2) lines.push('Async processing for anything slow');
+  if (usersLevel >= 3) lines.push('Region 2: a full copy of region 1, and DNS sends users to the nearest');
   if (lines.length === 0) lines.push('One app server still carries the load');
   return lines;
 }

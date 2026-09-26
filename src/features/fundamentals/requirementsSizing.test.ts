@@ -160,6 +160,6 @@ test('the scale lines name only what the sizing actually adds', () => {
   assert.deepEqual(small, ['One app server still carries the load']);
   assert.ok(!noDatabase.some((line) => /replica|partition/i.test(line)));
   assert.ok(huge.includes('Horizontal app tier behind a load balancer'));
-  assert.ok(huge.includes('Partitioned writes with a routing layer'));
-  assert.ok(huge.includes('Multi-region'));
+  assert.ok(huge.includes('Writes split across database partitions'));
+  assert.ok(huge.some((line) => line.startsWith('Region 2')));
 });

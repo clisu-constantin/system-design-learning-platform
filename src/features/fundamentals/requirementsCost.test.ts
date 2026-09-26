@@ -128,12 +128,28 @@ test('more users means more instances, and more instances cost more', () => {
 
 test('a database standby for critical durability is billed', () => {
   for (const product of PRODUCTS) {
-    assert.ok(relativeCost(core(product, { durability: 2 })) > relativeCost(core(product)), product);
+    assert.ok(relativeCost(core(product, { durability: 1 })) > relativeCost(core(product)), product);
   }
 });
 
+test('the synchronous standby of critical durability bills the traffic to its second zone', () => {
+  const lines = costLines(architecture(core('whatsapp', { durability: 1 })));
+  const zones = lines.find((line) => line.id === 'zones');
+
+  assert.equal(zones?.label, 'Traffic between 2 zones');
+  assert.equal(lines.find((line) => line.id === 'db')?.instances, 2);
+});
+
 test('a cache for a tight latency target is billed', () => {
-  assert.ok(relativeCost(core('whatsapp', { latency: 2 })) > relativeCost(core('whatsapp', { latency: 1 })));
+  assert.ok(relativeCost(core('whatsapp', { latency: 1 })) > relativeCost(core('whatsapp', { latency: 0 })));
+});
+
+test('stories bill the queue and workers of their cleanup job when nothing else needs them', () => {
+  const plain = costLines(architecture({ ...core('whatsapp'), selected: { send: true, images: true } }));
+  const stories = costLines(architecture({ ...core('whatsapp'), selected: { send: true, stories: true } }));
+
+  assert.ok(plain.some((line) => line.id === 'async'), 'images already queue their resizing');
+  assert.ok(stories.some((line) => line.id === 'async' && line.cost === PART_COST.async));
 });
 
 test('region 2 is a full copy of region 1, plus the writes copied to it', () => {

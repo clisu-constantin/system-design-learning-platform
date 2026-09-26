@@ -102,7 +102,9 @@ export function RequirementsLab({ focus }: LabProps<'requirements'>) {
       if (!was && now) log(`Added ${now.title} - for ${now.reasons.join(', ')}`, 'ok');
       else if (was && !now) log(`Removed ${was.title} - no requirement needs it now`, 'warn');
       else if (was && now && was.title !== now.title) log(`${was.title} became ${now.title}`, 'info');
+      else if (was && now && now.status && was.status !== now.status) log(`${now.title}: ${now.status}`, 'info');
     }
+    if (before.zones !== after.zones && after.parts.api) log(`Region 1 now runs in ${after.zones === 1 ? 'one zone' : `${after.zones} zones`}`, 'info');
     // Name what the change cost (or saved), in the same units as the metric.
     const [costBefore, costAfter] = [relativeCost(setup, before), relativeCost(next, after)];
     if (costBefore > 0 && costAfter > 0 && formatCost(costBefore) !== formatCost(costAfter)) {
@@ -405,6 +407,7 @@ const WIRE_SWATCH: Partial<Record<WireKey, string>> = {
   violet: 'bg-violet',
   info: 'bg-info',
   ok: 'bg-ok',
+  warn: 'bg-warn',
   dashed: 'border-t-2 border-dashed border-faint',
 };
 

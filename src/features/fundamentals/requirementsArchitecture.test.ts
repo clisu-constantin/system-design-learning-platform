@@ -4,6 +4,7 @@ import {
   DEFAULT_SETUP,
   FOCUS_SETUPS,
   NFRS,
+  PART_ORDER,
   RELAXED,
   REQUIREMENTS,
   REGION2,
@@ -58,7 +59,9 @@ test('the legend lists only the wire tones and particle shapes on screen', () =>
 
 test('every wire tone drawn has a legend line, and every legend line is drawn', () => {
   const settings: Setup[] = [
-    setup('whatsapp', ['send', 'receive', 'groups', 'images'], { latency: 2, users: 3 }),
+    setup('whatsapp', ['send', 'receive', 'groups', 'images'], { latency: 1, users: 3 }),
+    setup('whatsapp', Object.keys(coreOf('whatsapp')).concat('stories'), { availability: 3, consistency: 2 }),
+    setup('uber', Object.keys(coreOf('uber')).concat('pool', 'schedule'), { durability: 1 }),
     setup('instagram', ['upload', 'feed', 'search'], { users: 2 }),
     setup('uber', ['location', 'match', 'track'], { availability: 3 }),
     DEFAULT_SETUP,
@@ -117,12 +120,12 @@ test('an image upload reaches object storage without passing through the queue',
 test('with only text features picked, no latency level adds a CDN', () => {
   for (const product of PRODUCTS) {
     const text = REQUIREMENTS[product].filter((option) => !option.flows.includes('media')).map((option) => option.id);
-    for (let latency = 0; latency <= 3; latency += 1) {
+    for (let latency = 0; latency <= 2; latency += 1) {
       const arch = architecture(setup(product, text, { latency }));
       assert.equal(arch.parts.cdn, undefined, `${product} at latency level ${latency}`);
     }
   }
-  assert.ok(architecture(setup('whatsapp', ['send', 'images'], { latency: 2 })).parts.cdn);
+  assert.ok(architecture(setup('whatsapp', ['send', 'images'], { latency: 1 })).parts.cdn);
 });
 
 test('only write traffic is drawn going to region 2', () => {
@@ -173,9 +176,9 @@ test('no forced-decision line names a part that is not drawn', () => {
   for (const product of PRODUCTS) {
     for (const option of REQUIREMENTS[product]) {
       for (const users of [0, 1, 2, 3]) {
-        for (const latency of [0, 2, 3]) {
+        for (const latency of [0, 1, 2]) {
           for (const consistency of [0, 1, 2]) {
-            for (const [availability, durability] of [[0, 1], [2, 2], [3, 0]]) {
+            for (const [availability, durability] of [[0, 0], [1, 1], [2, 1], [3, 0]]) {
               settings.push(setup(product, [option.id], { users, latency, consistency, availability, durability }));
             }
           }
@@ -256,9 +259,9 @@ function* everySetting(): Generator<Setup> {
       const chosen = ids.filter((_, index) => mask & (1 << index));
       for (const availability of [0, 1, 2, 3]) {
         for (const users of [0, 1, 2, 3]) {
-          for (const latency of [0, 2, 3]) {
+          for (const latency of [0, 1, 2]) {
             for (const consistency of [0, 2]) {
-              for (const durability of [0, 2]) {
+              for (const durability of [0, 1]) {
                 yield setup(product, chosen, { availability, users, latency, consistency, durability });
               }
             }
@@ -300,4 +303,178 @@ test('a part with several reasons names the first and counts the rest', () => {
 
   assert.ok(api);
   assert.equal(subtitleFor(api, arch), 'for send +3 more');
+});
+
+// ---------------------------------------------------------------------------
+// Every control changes the diagram
+// ---------------------------------------------------------------------------
+
+/**
+ * What the learner sees change: each part with its title, stat row and status line, each wire with
+ * its tone, and the zones. Not the subtitles - "for send +3 more" counting one more reason is not a
+ * new part, wire or number.
+ */
+function drawn(s: Setup): string {
+  const arch = architecture(s);
+  const parts = PART_ORDER.flatMap((id) => {
+    const part = arch.parts[id];
+    return part ? [[id, part.title, part.stat?.label, part.stat?.value, part.status]] : [];
+  });
+  const wires = edgesFor(arch)
+    .map((edge) => [edge.from, edge.to, edge.tone, Boolean(edge.dashed)].join(' '))
+    .sort();
+  return JSON.stringify({ parts, wires, zones: arch.zones });
+}
+
+const TARGETS: [string, Nfr][] = [
+  ['relaxed targets', RELAXED],
+  ['default targets', DEFAULT_SETUP.nfr],
+];
+
+test('ticking the features in list order, every tick changes the diagram', () => {
+  for (const product of PRODUCTS) {
+    const ids = REQUIREMENTS[product].map((option) => option.id);
+    for (const [name, nfr] of TARGETS) {
+      for (let index = 1; index < ids.length; index += 1) {
+        const before = setup(product, ids.slice(0, index), nfr);
+        const after = setup(product, ids.slice(0, index + 1), nfr);
+        assert.notEqual(drawn(after), drawn(before), `${product}: ticking ${ids[index]} at ${name}`);
+      }
+    }
+  }
+});
+
+test('every extra feature ticked on top of the core changes the diagram', () => {
+  for (const product of PRODUCTS) {
+    const core = Object.keys(coreOf(product));
+    for (const [name, nfr] of TARGETS) {
+      for (const option of REQUIREMENTS[product].filter((entry) => !entry.core)) {
+        const before = setup(product, core, nfr);
+        const after = setup(product, [...core, option.id], nfr);
+        assert.notEqual(drawn(after), drawn(before), `${product}: ticking ${option.id} at ${name}`);
+      }
+    }
+  }
+});
+
+test('every step of availability, latency, users and durability changes the diagram', () => {
+  for (const product of PRODUCTS) {
+    const core = Object.keys(coreOf(product));
+    for (const [name, nfr] of TARGETS) {
+      for (const spec of NFRS.filter((entry) => entry.id !== 'consistency')) {
+        for (let level = 1; level < spec.values.length; level += 1) {
+          const before = setup(product, core, { ...nfr, [spec.id]: level - 1 });
+          const after = setup(product, core, { ...nfr, [spec.id]: level });
+          assert.notEqual(drawn(after), drawn(before), `${product}: ${spec.label} ${spec.values[level]} at ${name}`);
+        }
+      }
+    }
+  }
+});
+
+test('once the database has a second copy, every consistency level changes the diagram', () => {
+  const consistency = NFRS.find((spec) => spec.id === 'consistency');
+  assert.ok(consistency);
+  for (const product of PRODUCTS) {
+    const core = Object.keys(coreOf(product));
+    // A standby (99.99%), a sync standby (Critical durability) and a whole region 2 (99.999%).
+    for (const copies of [{ availability: 2 }, { durability: 1 }, { availability: 3 }]) {
+      for (let level = 1; level < consistency.values.length; level += 1) {
+        const before = setup(product, core, { ...copies, consistency: level - 1 });
+        const after = setup(product, core, { ...copies, consistency: level });
+        assert.notEqual(drawn(after), drawn(before), `${product}: ${consistency.values[level]} with ${JSON.stringify(copies)}`);
+      }
+    }
+  }
+});
+
+test('with one database copy the consistency level draws nothing, and the lab says why', () => {
+  for (const product of PRODUCTS) {
+    const core = Object.keys(coreOf(product));
+    const shapes = new Set([0, 1, 2].map((consistency) => drawn(setup(product, core, { consistency }))));
+    assert.equal(shapes.size, 1, product);
+    for (const consistency of [0, 1, 2]) {
+      const s = setup(product, core, { consistency });
+      assert.ok(
+        implicationsFor(s, architecture(s)).some((line) => /one database copy/i.test(line)),
+        `${product} at consistency ${consistency}`,
+      );
+    }
+  }
+});
+
+test('the target levels that drew nothing are gone', () => {
+  const values = (id: string) => NFRS.find((spec) => spec.id === id)?.values;
+
+  assert.deepEqual(values('latency'), ['500 ms', '100 ms', '20 ms']);
+  assert.deepEqual(values('durability'), ['Normal', 'Critical']);
+});
+
+test('receipts push each message back to the sender over the WebSocket tier', () => {
+  const without = architecture(setup('whatsapp', ['send', 'receive', 'groups']));
+  const withReceipts = architecture(setup('whatsapp', ['send', 'receive', 'groups', 'receipts']));
+
+  assert.equal(without.parts.ws?.status, undefined);
+  assert.equal(withReceipts.parts.ws?.status, '3 pushes per message');
+  // The receipt comes up the recipient connection, is stored, and goes back down to the sender.
+  const routes = allRoutes(setup('whatsapp', ['send', 'receive', 'receipts']));
+  const receipts = routes.filter(({ flow }) => flow === 'receipt');
+  assert.ok(receipts.some(({ route }) => walks(route, ['ws', 'api', 'db'])));
+  assert.ok(receipts.some(({ route }) => walks(route, ['api', 'ws']) && route[route.length - 1] === 'users'));
+});
+
+test('stories are kept 24 hours and a scheduled job deletes them', () => {
+  const images = setup('whatsapp', ['send', 'images']);
+  const stories = setup('whatsapp', ['send', 'images', 'stories']);
+
+  assert.equal(architecture(images).parts.objects?.stat, undefined);
+  assert.deepEqual(architecture(stories).parts.objects?.stat, { label: 'Stories kept', value: '24 h' });
+  const routes = allRoutes(setup('whatsapp', ['send', 'stories']));
+  assert.ok(routes.some(({ flow, route }) => flow === 'expire' && walks(route, ['async', 'objects'])));
+});
+
+test('critical durability adds a synchronous standby in a second zone', () => {
+  const normal = architecture(setup('whatsapp', ['send']));
+  const critical = architecture(setup('whatsapp', ['send'], { durability: 1 }));
+
+  assert.equal(normal.dbCopies, 1);
+  assert.equal(normal.zones, 1);
+  assert.equal(normal.parts.db?.stat?.label, 'Peak writes');
+  assert.equal(critical.dbCopies, 2);
+  assert.equal(critical.zones, 2);
+  assert.equal(critical.parts.db?.stat?.label, 'Peak sync writes');
+  // At 99.99% the standby is already there: critical durability makes it synchronous.
+  const failover = architecture(setup('whatsapp', ['send'], { availability: 2 }));
+  const syncFailover = architecture(setup('whatsapp', ['send'], { availability: 2, durability: 1 }));
+  assert.equal(failover.parts.db?.stat?.label, 'Peak writes');
+  assert.equal(syncFailover.parts.db?.stat?.label, 'Peak sync writes');
+});
+
+test('strong consistency with region 2 draws the copy as a solid amber wire the write waits for', () => {
+  const eventual = architecture(setup('whatsapp', ['send'], { availability: 3 }));
+  const strong = architecture(setup('whatsapp', ['send'], { availability: 3, consistency: 2 }));
+  const copy = (arch: ReturnType<typeof architecture>) => edgesFor(arch).find((edge) => edge.to === 'r2-db');
+
+  assert.equal(copy(eventual)?.dashed, true);
+  assert.equal(copy(strong)?.dashed, undefined);
+  assert.equal(copy(strong)?.tone, 'warn');
+  const legend = legendFor(strong).wires;
+  assert.ok(legend.some((wire) => wire.tone === 'warn' && /^Amber/.test(wire.label)));
+  assert.ok(!legend.some((wire) => wire.tone === 'dashed'));
+});
+
+test('a 20 ms target keeps the hot data in memory, so the cache answers more reads', () => {
+  const hundred = architecture(setup('whatsapp', ['send'], { latency: 1 }));
+  const twenty = architecture(setup('whatsapp', ['send'], { latency: 2 }));
+
+  assert.equal(hundred.parts.cache?.stat?.value, '80% (model)');
+  assert.equal(twenty.parts.cache?.stat?.value, '99% (model)');
+  const hits = (arch: ReturnType<typeof architecture>) =>
+    routesFor('read', arch).find((variant) => variant.outcome === 'cache-hit')?.weight;
+  assert.equal(hits(twenty), 0.99);
+});
+
+test('Uber pooling batches requests through the workers into the geo index', () => {
+  const routes = allRoutes(setup('uber', ['location', 'match', 'pool']));
+  assert.ok(routes.some(({ route }) => walks(route, ['api', 'async', 'index'])));
 });

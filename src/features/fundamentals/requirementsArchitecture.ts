@@ -35,7 +35,10 @@ export type FlowKind =
   | 'index-write' // the app writes straight into an in-memory index
   | 'index-read' // the app queries that index
   | 'call' // voice and video relayed by media servers
-  | 'media'; // images, video or static files served by the CDN
+  | 'media' // images, video or static files served by the CDN
+  | 'receipt' // a phone sends a receipt up its connection; it is stored and pushed back to the sender
+  | 'expire' // a scheduled job deletes files whose time is up
+  | 'batch-match'; // workers match requests collected over a few seconds against the geo index
 
 export type PartId =
   | 'users'
@@ -64,10 +67,24 @@ const FLOW_PARTS: Record<FlowKind, PartId[]> = {
   'index-read': ['api', 'index'],
   call: ['media'],
   media: ['cdn', 'objects'],
+  receipt: ['api', 'ws', 'db'],
+  expire: ['async', 'objects'],
+  'batch-match': ['api', 'async', 'index'],
 };
 
 /** Flows that store something in the database - the only traffic copied to region 2. */
-export const WRITE_FLOWS: ReadonlySet<FlowKind> = new Set<FlowKind>(['write', 'job']);
+export const WRITE_FLOWS: ReadonlySet<FlowKind> = new Set<FlowKind>(['write', 'job', 'receipt']);
+
+/**
+ * What a requirement writes on a part that its flows alone would not show: a status line or a stat
+ * row. `with` names another requirement that must be picked too (a fan-out to followers needs a feed).
+ */
+export interface Mark {
+  part: PartId;
+  status?: string;
+  stat?: { label: string; value: string };
+  with?: string;
+}
 
 export interface RequirementOption {
   id: string;
@@ -75,38 +92,87 @@ export interface RequirementOption {
   /** How the part subtitles name this requirement. */
   short: string;
   core: boolean;
-  /** What including this requirement forces into the architecture. */
+  /** What ticking this requirement draws: the parts, wires and lines it adds. */
   implication: string;
   flows: FlowKind[];
+  marks?: Mark[];
 }
 
 export const REQUIREMENTS: Record<Product, RequirementOption[]> = {
   whatsapp: [
-    { id: 'send', label: 'Send messages', short: 'send', core: true, implication: 'Durable message store plus an ordered write path per conversation', flows: ['write', 'read'] },
-    { id: 'receive', label: 'Receive messages in real time', short: 'live delivery', core: true, implication: 'Persistent connections (WebSocket) and a connection registry', flows: ['push', 'read'] },
-    { id: 'groups', label: 'Group conversations', short: 'group fan-out', core: true, implication: 'Fan-out on write or read, done by background workers', flows: ['fan-out'] },
-    { id: 'receipts', label: 'Delivery and read receipts', short: 'receipts', core: true, implication: 'A second message class and per-device state', flows: ['write', 'push'] },
-    { id: 'images', label: 'Send images', short: 'images', core: false, implication: 'Object storage, a CDN and a processing pipeline', flows: ['upload', 'process', 'media'] },
-    { id: 'calls', label: 'Voice and video calls', short: 'calls', core: false, implication: 'Media servers (TURN relays) and call signalling - a different system', flows: ['call', 'push'] },
-    { id: 'stories', label: 'Stories', short: 'stories', core: false, implication: 'Ephemeral storage with a 24 hour TTL and a separate read path', flows: ['upload', 'media'] },
+    { id: 'send', label: 'Send messages', short: 'send', core: true, implication: 'An App server that stores each message in a Database', flows: ['write', 'read'] },
+    { id: 'receive', label: 'Receive messages in real time', short: 'live delivery', core: true, implication: 'A WebSocket tier that holds a connection open to every phone and pushes new messages down it', flows: ['push', 'read'] },
+    { id: 'groups', label: 'Group conversations', short: 'group fan-out', core: true, implication: 'Queue + workers that copy a group message to every member, through the WebSocket tier', flows: ['fan-out'] },
+    {
+      id: 'receipts',
+      label: 'Delivery and read receipts',
+      short: 'receipts',
+      core: true,
+      implication: 'Each receipt comes up the WebSocket, is stored, and is pushed back to the sender: 3 pushes per message',
+      flows: ['receipt'],
+      marks: [{ part: 'ws', status: '3 pushes per message' }],
+    },
+    { id: 'images', label: 'Send images', short: 'images', core: false, implication: 'Object storage for the files, workers that resize them and a CDN that serves them', flows: ['upload', 'process', 'media'] },
+    { id: 'calls', label: 'Voice and video calls', short: 'calls', core: false, implication: 'Media servers that relay voice and video beside the chat path - a different system', flows: ['call', 'push'] },
+    {
+      id: 'stories',
+      label: 'Stories',
+      short: 'stories',
+      core: false,
+      implication: 'Object storage keeps each story 24 hours, a scheduled job deletes it, and viewers load it from the CDN',
+      flows: ['upload', 'media', 'expire'],
+      marks: [{ part: 'objects', stat: { label: 'Stories kept', value: '24 h' } }],
+    },
   ],
   instagram: [
-    { id: 'upload', label: 'Upload a photo', short: 'upload', core: true, implication: 'Object storage for the file plus async thumbnailing', flows: ['upload', 'process', 'write'] },
-    { id: 'feed', label: 'View a home feed', short: 'home feed', core: true, implication: 'Precomputed timelines - a join at read time will not hold up', flows: ['read', 'job'] },
-    { id: 'follow', label: 'Follow accounts', short: 'follows', core: true, implication: 'A social graph, and the celebrity problem it brings', flows: ['write', 'read'] },
-    { id: 'like', label: 'Like and comment', short: 'likes', core: true, implication: 'Denormalised counters updated asynchronously', flows: ['job'] },
-    { id: 'search', label: 'Search users and tags', short: 'search', core: false, implication: 'A separate search index kept in sync via events', flows: ['index-sync', 'index-read'] },
-    { id: 'dm', label: 'Direct messages', short: 'DMs', core: false, implication: 'A chat system - see the WhatsApp design', flows: ['write', 'push'] },
-    { id: 'reels', label: 'Short video', short: 'video', core: false, implication: 'Video transcoding, adaptive bitrate, far more bandwidth', flows: ['upload', 'process', 'media'] },
+    { id: 'upload', label: 'Upload a photo', short: 'upload', core: true, implication: 'Object storage for the file, and workers that make the thumbnails', flows: ['upload', 'process', 'write'] },
+    { id: 'feed', label: 'View a home feed', short: 'home feed', core: true, implication: 'Workers precompute each home feed into the Database, so a read is one lookup, not a join', flows: ['read', 'job'] },
+    {
+      id: 'follow',
+      label: 'Follow accounts',
+      short: 'follows',
+      core: true,
+      implication: 'A follow graph in the Database; with a home feed, workers copy each post to every follower',
+      flows: ['write', 'read'],
+      marks: [{ part: 'async', stat: { label: 'Fan-out', value: '1 per follower' }, with: 'feed' }],
+    },
+    {
+      id: 'like',
+      label: 'Like and comment',
+      short: 'likes',
+      core: true,
+      implication: 'Likes wait in the queue, and workers add them to the counters in batches',
+      flows: ['job'],
+      marks: [{ part: 'async', status: 'Counts likes in batches' }],
+    },
+    { id: 'search', label: 'Search users and tags', short: 'search', core: false, implication: 'A Search index, kept in step with the Database by workers', flows: ['index-sync', 'index-read'] },
+    { id: 'dm', label: 'Direct messages', short: 'DMs', core: false, implication: 'A WebSocket tier to push messages - a chat system, see the WhatsApp design', flows: ['write', 'push'] },
+    { id: 'reels', label: 'Short video', short: 'video', core: false, implication: 'Object storage, transcoding workers and a CDN to stream the video', flows: ['upload', 'process', 'media'] },
   ],
   uber: [
-    { id: 'location', label: 'Drivers publish location', short: 'locations', core: true, implication: 'Very high write rate into an in-memory geospatial index', flows: ['index-write'] },
-    { id: 'request', label: 'Request a ride', short: 'ride requests', core: true, implication: 'A trip state machine with strong consistency', flows: ['write', 'read'] },
-    { id: 'match', label: 'Match rider to driver', short: 'matching', core: true, implication: 'Cell-based proximity search, sharded by city', flows: ['index-read'] },
-    { id: 'track', label: 'Track the trip live', short: 'live tracking', core: true, implication: 'Streaming updates to the rider app', flows: ['push'] },
-    { id: 'pay', label: 'Automatic payment', short: 'payments', core: true, implication: 'Idempotent charges and a saga with compensation', flows: ['job', 'write'] },
-    { id: 'pool', label: 'Ride pooling', short: 'pooling', core: false, implication: 'A much harder optimisation problem and shared trip state', flows: ['index-read', 'job'] },
-    { id: 'schedule', label: 'Scheduled rides', short: 'scheduling', core: false, implication: 'A scheduler plus capacity forecasting', flows: ['job', 'write'] },
+    { id: 'location', label: 'Drivers publish location', short: 'locations', core: true, implication: 'Every online driver sends a location every 4 seconds, into an in-memory Geo index', flows: ['index-write'] },
+    { id: 'request', label: 'Request a ride', short: 'ride requests', core: true, implication: 'The trip and its state live in the Database', flows: ['write', 'read'] },
+    {
+      id: 'match',
+      label: 'Match rider to driver',
+      short: 'matching',
+      core: true,
+      implication: 'A proximity search in the Geo index, over the cells near the rider',
+      flows: ['index-read'],
+      marks: [{ part: 'index', status: 'Searched by nearby cells' }],
+    },
+    { id: 'track', label: 'Track the trip live', short: 'live tracking', core: true, implication: 'A WebSocket tier that streams the driver position to the rider app', flows: ['push'] },
+    { id: 'pay', label: 'Automatic payment', short: 'payments', core: true, implication: 'Workers charge the card after the trip - once, even when a retry runs twice', flows: ['job', 'write'] },
+    { id: 'pool', label: 'Ride pooling', short: 'pooling', core: false, implication: 'Workers collect pool requests for a few seconds and match them together against the Geo index', flows: ['batch-match'] },
+    {
+      id: 'schedule',
+      label: 'Scheduled rides',
+      short: 'scheduling',
+      core: false,
+      implication: 'The booking is stored, and the queue holds the ride until its pickup time',
+      flows: ['job', 'write'],
+      marks: [{ part: 'async', status: 'Holds rides until pickup' }],
+    },
   ],
 };
 
@@ -120,8 +186,22 @@ export type Nfr = Record<NfrId, number>;
 /**
  * Something a forced-decision line talks about. A line is shown only while it is on the diagram,
  * so no line names a part that is not drawn.
+ * - `copies`: the database has more than one copy in region 1 (a standby or read replicas);
+ * - `one-copy`: it has exactly one, and no region 2 - so every read already sees the latest write;
+ * - `sync-standby`: a write waits for the standby (Critical durability, or Strong with copies);
+ * - `sync-region2`: a write waits for region 2 (Strong with region 2).
  */
-type Needs = 'db' | 'cache' | 'cdn' | 'replicas' | 'one-read-copy' | 'region2';
+type Needs =
+  | 'db'
+  | 'cache'
+  | 'cdn'
+  | 'replicas'
+  | 'copies'
+  | 'one-copy'
+  | 'region2'
+  | 'async-region2'
+  | 'sync-standby'
+  | 'sync-region2';
 
 type Implication = string | { text: string; needs: Needs };
 
@@ -134,7 +214,12 @@ export interface NfrSpec {
    * baseline and is dropped as soon as the target is raised.
    */
   implications: Implication[][];
+  /** The levels of this target are alternatives, not steps: only the lines of the chosen one show. */
+  alternatives?: boolean;
 }
+
+/** The one line every consistency level shows while there is nothing to be inconsistent with. */
+const ONE_COPY: Implication = { text: 'One database copy: every read already sees the latest write', needs: 'one-copy' };
 
 export const NFRS: NfrSpec[] = [
   {
@@ -142,30 +227,25 @@ export const NFRS: NfrSpec[] = [
     label: 'Availability',
     values: ['99%', '99.9%', '99.99%', '99.999%'],
     implications: [
-      ['Single instance is acceptable', 'Manual recovery is fine'],
-      ['Redundant instances behind a load balancer', 'Health checks and automated restarts'],
-      [
-        'Multi-zone deployment',
-        { text: 'Automated database failover', needs: 'db' },
-        { text: 'A standby database copy', needs: 'db' },
-        'On-call rotation with runbooks',
-      ],
-      ['Multi-region active-active', 'Automated failover measured in seconds', 'No manual step in any recovery path', 'Usually requires weaker consistency'],
+      ['One copy of each server, recovered by hand when it fails'],
+      ['Redundant instances behind a load balancer pair', 'The load balancer health-checks each server and skips a dead one'],
+      ['Three zones, with a copy of each server tier in every zone', { text: 'A standby database copy, promoted automatically', needs: 'db' }],
+      ['Region 2: a full copy of region 1 that takes all traffic if region 1 fails', 'DNS sends each user to the nearest region'],
     ],
   },
   {
     id: 'latency',
     label: 'P95 latency',
-    values: ['500 ms', '200 ms', '100 ms', '20 ms'],
+    // No 200 ms step: at these loads it is met by the same App server and Database as 500 ms,
+    // so it drew nothing.
+    values: ['500 ms', '100 ms', '20 ms'],
     implications: [
-      [{ text: 'A straightforward database query per request is fine', needs: 'db' }],
-      [{ text: 'Indexes on every query path', needs: 'db' }, { text: 'Connection pooling', needs: 'db' }],
+      [{ text: 'Each read is one query to the database', needs: 'db' }],
       [
         { text: 'Caching layer for hot reads', needs: 'cache' },
-        { text: 'Denormalised read models', needs: 'db' },
         { text: 'CDN for images and static files', needs: 'cdn' },
       ],
-      ['In-memory data for the hot path', 'Edge compute close to users', 'Precomputed answers - no joins at read time'],
+      [{ text: 'Hot data held in memory: the cache answers 99% of reads (model)', needs: 'cache' }],
     ],
   },
   {
@@ -180,38 +260,36 @@ export const NFRS: NfrSpec[] = [
     id: 'consistency',
     label: 'Consistency',
     values: ['Eventual', 'Read-your-writes', 'Strong'],
+    alternatives: true,
     implications: [
       [
-        { text: 'Replicas can serve all reads', needs: 'replicas' },
+        ONE_COPY,
+        { text: 'Reads may come from any database copy, even one a moment behind', needs: 'copies' },
+        { text: 'Writes reach region 2 a moment later (the dashed wire)', needs: 'async-region2' },
         { text: 'Conflict resolution between regions must be designed', needs: 'region2' },
-        { text: 'Reads come from one copy, so they already see the latest write', needs: 'one-read-copy' },
       ],
       [
-        { text: 'Route a user to the primary briefly after a write', needs: 'replicas' },
-        { text: 'Session-aware routing', needs: 'replicas' },
-        { text: 'Reads come from one copy, so they already see the latest write', needs: 'one-read-copy' },
+        ONE_COPY,
+        { text: 'A user reads from the primary right after their own write', needs: 'copies' },
+        { text: 'Writes reach region 2 a moment later (the dashed wire)', needs: 'async-region2' },
       ],
       [
-        { text: 'Quorum or leader reads', needs: 'replicas' },
-        { text: 'Higher write latency', needs: 'replicas' },
-        { text: 'Synchronous copy to region 2: higher write latency', needs: 'region2' },
-        { text: 'Reduced availability during partitions (CP)', needs: 'replicas' },
-        { text: 'Reads come from one copy, so they already see the latest write', needs: 'one-read-copy' },
+        ONE_COPY,
+        { text: 'Reads come from the primary only', needs: 'copies' },
+        { text: 'Each write waits for the standby copy: slower writes', needs: 'sync-standby' },
+        { text: 'Each write waits for region 2: a cross-region round trip (the amber wire)', needs: 'sync-region2' },
       ],
     ],
   },
   {
     id: 'durability',
     label: 'Durability',
-    values: ['Best effort', 'Normal', 'Critical'],
+    // No "Best effort" step: none of these products may lose a stored message, trip or photo, and
+    // the Database drawn is the same either way.
+    values: ['Normal', 'Critical'],
     implications: [
-      ['In-memory storage acceptable for some data'],
-      [{ text: 'Replicated disks under the database', needs: 'db' }, { text: 'Daily backups', needs: 'db' }],
-      [
-        { text: 'Synchronous replication to a standby', needs: 'db' },
-        { text: 'Point-in-time recovery', needs: 'db' },
-        { text: 'Cross-region backups with tested restores', needs: 'db' },
-      ],
+      [{ text: 'Replicated disks and daily backups inside the database service', needs: 'db' }],
+      [{ text: 'A synchronous standby in a second zone: a write is confirmed once both copies have it', needs: 'db' }],
     ],
   },
 ];
@@ -246,14 +324,14 @@ const firstOf = (product: Product): Record<string, boolean> => {
 
 const selectionFor = (product: Product, start: Start) => (start === 'core' ? coreOf(product) : firstOf(product));
 
-/** Every target at its lowest, except durability: a message store is durable from the start. */
-export const RELAXED: Nfr = { availability: 0, latency: 0, users: 0, consistency: 0, durability: 1 };
+/** Every target at its lowest. Durability starts at Normal: a message store is durable from the start. */
+export const RELAXED: Nfr = { availability: 0, latency: 0, users: 0, consistency: 0, durability: 0 };
 
 /** What the lab opens on at /labs/requirements: the core features at everyday targets. */
 export const DEFAULT_SETUP: Setup = {
   product: 'whatsapp',
   selected: coreOf('whatsapp'),
-  nfr: { availability: 1, latency: 1, users: 1, consistency: 0, durability: 1 },
+  nfr: { availability: 1, latency: 0, users: 1, consistency: 0, durability: 0 },
   panel: 'features',
   start: 'core',
 };
@@ -286,6 +364,11 @@ export function switchProduct(setup: Setup, product: Product): Setup {
 
 /** Share of files the CDN serves from its edge. Illustrative. */
 export const CDN_HIT = 0.85;
+/**
+ * Share of reads the cache answers at a 20 ms target: a database round trip no longer fits the
+ * budget of most reads, so the whole hot set is kept in memory. Illustrative.
+ */
+export const HOT_SET_HIT = 0.99;
 
 export interface PartView {
   id: PartId;
@@ -302,11 +385,18 @@ export interface Architecture {
   /** Traffic classes, one entry per requirement that creates them (a multiset). */
   flows: FlowKind[];
   region2: boolean;
-  /** Availability zones region 1 runs in: one, or three from 99.99% up. */
-  zones: 1 | 3;
+  /**
+   * Availability zones region 1 runs in: one; two when Critical durability puts a synchronous
+   * standby in a second zone; three from 99.99% up.
+   */
+  zones: 1 | 2 | 3;
   sizing: Sizing;
+  /** Share of reads the cache answers (0 without a cache). */
+  cacheHit: number;
   /** Database copies per partition: the primary, a standby and read replicas. */
   dbCopies: number;
+  /** A write waits for the standby before it is confirmed. */
+  syncStandby: boolean;
   syncToRegion2: boolean;
   singlePoints: string[];
 }
@@ -365,10 +455,21 @@ export function architecture(setup: Setup): Architecture {
       cache,
     });
   add('users', `${valueOf('users', nfr.users)} daily users`);
-  const zones = nfr.availability >= 2 ? 3 : 1;
 
   if (chosen.length === 0) {
-    return { parts, flows, region2: false, zones, sizing: sizeFor(false), dbCopies: 0, syncToRegion2: false, singlePoints: [] };
+    const zones = nfr.availability >= 2 ? 3 : 1;
+    return {
+      parts,
+      flows,
+      region2: false,
+      zones,
+      sizing: sizeFor(false),
+      cacheHit: 0,
+      dbCopies: 0,
+      syncStandby: false,
+      syncToRegion2: false,
+      singlePoints: [],
+    };
   }
 
   for (const option of chosen) {
@@ -382,8 +483,11 @@ export function architecture(setup: Setup): Architecture {
   const users = `${valueOf('users', nfr.users)} users`;
   const latency = `p95 ${valueOf('latency', nfr.latency)}`;
 
-  const cached = flows.includes('read') && (nfr.latency >= 2 || nfr.users >= 2);
+  const cached = flows.includes('read') && (nfr.latency >= 1 || nfr.users >= 2);
+  // Read replicas stay sized for the everyday hit rate even at 20 ms: after a restart the cache is
+  // cold, and the database must still carry the reads it misses.
   const sizing = sizeFor(cached);
+  const cacheHit = cached ? (nfr.latency >= 2 ? HOT_SET_HIT : CACHE_HIT) : 0;
   const { app, ws, database } = sizing;
 
   // Quality targets. Every requirement goes through the app servers, so they exist here.
@@ -396,14 +500,14 @@ export function architecture(setup: Setup): Architecture {
   if (nfr.users >= 3) add('region2', users);
 
   // A tight latency target serves files from the edge - but only when a feature sends files.
-  if (nfr.latency >= 2 && parts.cdn) add('cdn', latency);
+  if (nfr.latency >= 1 && parts.cdn) add('cdn', latency);
   if (nfr.users >= 2) {
     // Anything slow (emails, notifications, exports) leaves the request path.
     flows.push('job');
     for (const id of FLOW_PARTS.job) add(id, users);
   }
   if (cached) {
-    if (nfr.latency >= 2) add('cache', latency);
+    if (nfr.latency >= 1) add('cache', latency);
     if (nfr.users >= 2) add('cache', users);
   }
 
@@ -421,26 +525,30 @@ export function architecture(setup: Setup): Architecture {
   }
 
   let dbCopies = 0;
-  const syncToRegion2 = region2 && nfr.consistency >= 2;
+  let syncStandby = false;
+  const syncToRegion2 = region2 && Boolean(parts.db) && nfr.consistency >= 2;
   if (parts.db) {
     const db = parts.db;
-    // A standby for automated failover (99.99%) or for synchronous replication (critical durability).
-    const standby = nfr.availability >= 2 || nfr.durability >= 2 ? 1 : 0;
+    // A standby for automated failover (99.99%), or a synchronous one in a second zone (critical durability).
+    const standby = nfr.availability >= 2 || nfr.durability >= 1 ? 1 : 0;
     const { readReplicas, partitioned, partitions } = database;
     dbCopies = 1 + standby + readReplicas;
+    // A write waits for the standby when losing it is not allowed (critical durability), or when a
+    // promoted standby must not miss a confirmed write (strong consistency).
+    syncStandby = standby > 0 && (nfr.durability >= 1 || nfr.consistency >= 2);
     if (nfr.availability >= 2) add('db', `${availability} failover`);
-    if (nfr.durability >= 2) add('db', `${valueOf('durability', nfr.durability).toLowerCase()} durability`);
+    if (nfr.durability >= 1) add('db', `${valueOf('durability', nfr.durability).toLowerCase()} durability`);
     if (readReplicas > 0 || partitioned) add('db', users);
     db.title = partitioned ? `DB: ${partitions} partitions x${dbCopies}` : dbCopies > 1 ? `Database x${dbCopies}` : 'Database';
     db.stat = {
-      label: 'Peak writes',
+      label: syncStandby || syncToRegion2 ? 'Peak sync writes' : 'Peak writes',
       value: `${about(database.peakWriteQps)}/s`,
       tone: partitioned ? 'text-warn' : 'text-ink',
     };
-    // With replicas, where reads go is the consistency choice; without, the Capacity Lab decision.
+    // With more than one copy, where reads go is the consistency choice; with one, the Capacity Lab decision.
     db.status =
-      readReplicas > 0
-        ? ['Reads: any replica', 'Reads: own writes on primary', 'Reads: leader only'][nfr.consistency]
+      dbCopies > 1
+        ? ['Reads: any copy', 'Reads: own writes on primary', 'Reads: primary only'][nfr.consistency]
         : partitioned
           ? 'Partition the writes'
           : 'One primary is enough';
@@ -453,17 +561,30 @@ export function architecture(setup: Setup): Architecture {
       parts.index.stat = { label: 'Peak writes', value: `${about(sizing.index.peakWriteQps)}/s`, tone: 'text-warn' };
     }
   }
-  if (parts.cache) parts.cache.stat = { label: 'Hit rate', value: `${CACHE_HIT * 100}% (model)`, tone: 'text-ok' };
+  if (parts.cache) parts.cache.stat = { label: 'Hit rate', value: `${Math.round(cacheHit * 100)}% (model)`, tone: 'text-ok' };
   if (parts.cdn) parts.cdn.stat = { label: 'Edge hits', value: `${CDN_HIT * 100}% (model)`, tone: 'text-ok' };
   // Anything that fronts the whole system runs as a pair.
   if (parts.lb) parts.lb.title = 'Load balancer x2';
+
+  // What a requirement adds to a part its flows already drew: a status line or a stat row.
+  for (const option of chosen) {
+    for (const mark of option.marks ?? []) {
+      const part = parts[mark.part];
+      if (!part || (mark.with && !setup.selected[mark.with])) continue;
+      if (mark.status) part.status = mark.status;
+      if (mark.stat) part.stat = mark.stat;
+    }
+  }
+
+  // Three zones from 99.99%; below that, a synchronous standby still lives in a second zone.
+  const zones = nfr.availability >= 2 ? 3 : syncStandby ? 2 : 1;
 
   const singlePoints: string[] = [];
   if (app.count === 1) singlePoints.push('app server');
   if (parts.ws && ws.count === 1) singlePoints.push('WebSocket server');
   if (parts.db && dbCopies === 1) singlePoints.push('database');
 
-  return { parts, flows, region2, zones, sizing, dbCopies, syncToRegion2, singlePoints };
+  return { parts, flows, region2, zones, sizing, cacheHit, dbCopies, syncStandby, syncToRegion2, singlePoints };
 }
 
 /** A model number on a stat row: "~12", "~11.6K", or "<1" rather than "~0" for a trickle. */
@@ -496,20 +617,28 @@ export function subtitleFor(part: PartView, arch: Architecture): string {
 // ---------------------------------------------------------------------------
 
 function isDrawn(needs: Needs, arch: Architecture) {
-  const replicas = Boolean(arch.parts.db) && arch.sizing.database.readReplicas > 0;
+  const db = Boolean(arch.parts.db);
   switch (needs) {
     case 'db':
-      return Boolean(arch.parts.db);
+      return db;
     case 'cache':
       return Boolean(arch.parts.cache);
     case 'cdn':
       return Boolean(arch.parts.cdn);
     case 'replicas':
-      return replicas;
-    case 'one-read-copy':
-      return Boolean(arch.parts.db) && !replicas && !arch.region2;
+      return db && arch.sizing.database.readReplicas > 0;
+    case 'copies':
+      return db && arch.dbCopies > 1;
+    case 'one-copy':
+      return db && arch.dbCopies === 1 && !arch.region2;
     case 'region2':
       return arch.region2;
+    case 'async-region2':
+      return db && arch.region2 && !arch.syncToRegion2;
+    case 'sync-standby':
+      return arch.syncStandby;
+    case 'sync-region2':
+      return arch.syncToRegion2;
   }
 }
 
@@ -525,7 +654,8 @@ export function implicationsFor(setup: Setup, arch: Architecture): string[] {
     }
     // Index 0 is the relaxed baseline ("single instance is acceptable"). It only
     // holds while the target stays at that level; stricter targets replace it.
-    for (let index = level === 0 ? 0 : 1; index <= level; index += 1) {
+    // Levels that are alternatives (Eventual, Read-your-writes, Strong) show only their own lines.
+    for (let index = level === 0 || spec.alternatives ? level : 1; index <= level; index += 1) {
       for (const item of spec.implications[index] ?? []) {
         if (typeof item === 'string') lines.add(item);
         else if (isDrawn(item.needs, arch)) lines.add(item.text);
@@ -565,8 +695,18 @@ export function routesFor(flow: FlowKind, arch: Architecture): RouteVariant[] {
       break;
     case 'read':
       variants = parts.cache
-        ? [viaApp(['cache'], 'cache-hit', CACHE_HIT), viaApp(['db'], 'success', 1 - CACHE_HIT)]
+        ? [viaApp(['cache'], 'cache-hit', arch.cacheHit), viaApp(['db'], 'success', 1 - arch.cacheHit)]
         : [viaApp(['db'])];
+      break;
+    case 'receipt':
+      // Up the connection of the phone that got the message, stored, then down to the sender.
+      variants = [
+        { route: [...entry, 'ws', 'api', ...stored(['db'])], outcome: 'success', weight: 1 },
+        { route: ['api', ...toPhones], outcome: 'success', weight: 1 },
+      ];
+      break;
+    case 'batch-match':
+      variants = [viaApp(['async', 'index'])];
       break;
     case 'upload':
       variants = [viaApp(['objects'])];
@@ -594,6 +734,9 @@ export function routesFor(flow: FlowKind, arch: Architecture): RouteVariant[] {
       return [{ route: ['api', ...toPhones], outcome: 'success', weight: 1 }];
     case 'call':
       return [{ route: ['users', 'media'], outcome: 'success', weight: 1 }];
+    case 'expire':
+      // A scheduled job: it starts at the workers, not with a request.
+      return [{ route: ['async', 'objects'], outcome: 'success', weight: 1 }];
     case 'media':
       return [
         { route: ['users', 'cdn'], outcome: 'cache-hit', weight: CDN_HIT },
@@ -638,7 +781,14 @@ export function edgesFor(arch: Architecture): DiagramEdge[] {
   }
   if (arch.region2) {
     addEdge({ from: 'users', to: 'r2-users', tone: 'brand', width: 2, label: 'nearest region' });
-    if (arch.parts.db) addEdge({ from: 'db', to: 'r2-db', tone: 'default', width: 2, dashed: true });
+    // Strong consistency: the write waits for region 2 (solid amber); otherwise it follows later (dashed).
+    if (arch.parts.db) {
+      addEdge(
+        arch.syncToRegion2
+          ? { from: 'db', to: 'r2-db', tone: 'warn', width: 2 }
+          : { from: 'db', to: 'r2-db', tone: 'default', width: 2, dashed: true },
+      );
+    }
   }
   return [...edges.values()];
 }
@@ -647,7 +797,7 @@ export function edgesFor(arch: Architecture): DiagramEdge[] {
 // Legend
 // ---------------------------------------------------------------------------
 
-/** A wire tone, or 'dashed' for the copy to region 2 (drawn dashed whatever its tone). */
+/** A wire tone, or 'dashed' for the later copy to region 2 (drawn dashed whatever its tone). */
 export type WireKey = EdgeTone | 'dashed';
 
 export interface Legend {
@@ -660,9 +810,10 @@ const WIRE_LABEL: Partial<Record<WireKey, string>> = {
   violet: 'Violet: pushed to phones over held-open connections',
   info: 'Indigo: queued work for background workers',
   ok: 'Green: answered by a cache or the CDN edge',
-  dashed: 'Dashed: writes copied to region 2',
+  warn: 'Amber: writes wait for region 2 before the reply',
+  dashed: 'Dashed: writes copied to region 2 a moment later',
 };
-const WIRE_ORDER: WireKey[] = ['brand', 'violet', 'info', 'ok', 'dashed'];
+const WIRE_ORDER: WireKey[] = ['brand', 'violet', 'info', 'ok', 'warn', 'dashed'];
 
 /** The legend for what is on screen: only the wire tones drawn and the particle shapes that travel. */
 export function legendFor(arch: Architecture): Legend {
