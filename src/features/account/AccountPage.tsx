@@ -1,6 +1,6 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { ArrowRight, CircleCheck, Loader2, LogIn, LogOut, MonitorSmartphone, Trash2, UserRound } from 'lucide-react';
+import { ArrowRight, CircleCheck, Loader2, LogIn, LogOut, MailCheck, MonitorSmartphone, Trash2, UserRound } from 'lucide-react';
 import { Button, Meter } from '@/components/ui';
 import { useAccount } from '@/app/providers/AccountProvider';
 import { useProgress } from '@/app/providers/ProgressProvider';
@@ -33,7 +33,7 @@ export function AccountPage() {
 }
 
 function SignedIn({ onDeleted }: { onDeleted: (firebaseUserDeleted: boolean) => void }) {
-  const { email, signOut } = useAccount();
+  const { email, confirmPending, signOut } = useAccount();
   const { overall, visited } = useProgress();
   const [pending, setPending] = useState(false);
   const [deleting, setDeleting] = useState(false);
@@ -55,6 +55,8 @@ function SignedIn({ onDeleted }: { onDeleted: (firebaseUserDeleted: boolean) => 
           </div>
         </div>
       </section>
+
+      {confirmPending ? <ConfirmEmail email={email} /> : null}
 
       <section className="mt-6">
         <h2 className="text-sm font-semibold text-ink">Progress</h2>
@@ -103,6 +105,63 @@ function SignedIn({ onDeleted }: { onDeleted: (firebaseUserDeleted: boolean) => 
 
       {deleting ? <DeleteAccountDialog onClose={() => setDeleting(false)} onDeleted={onDeleted} /> : null}
     </>
+  );
+}
+
+/**
+ * A password Account with no confirmed email. Saving works anyway (#179), but
+ * until it is confirmed a Google sign-in for the same Gmail address replaces
+ * the password, so the page asks for it and can send the email again.
+ */
+function ConfirmEmail({ email }: { email: string | null }) {
+  const { sendConfirmEmail, refreshUser } = useAccount();
+  const [sent, setSent] = useState<'idle' | 'sending' | 'sent' | 'failed'>('idle');
+
+  // A link clicked in the email changes nothing here until the user is read again:
+  // on opening the page, and on coming back to the tab from the mail app.
+  useEffect(() => {
+    void refreshUser();
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') void refreshUser();
+    };
+    document.addEventListener('visibilitychange', onVisible);
+    return () => document.removeEventListener('visibilitychange', onVisible);
+  }, [refreshUser]);
+
+  return (
+    <section className="mt-6 rounded-2xl border border-warn/30 bg-warn/5 p-5">
+      <div className="flex items-start gap-3">
+        <MailCheck className="mt-0.5 h-4 w-4 shrink-0 text-warn" aria-hidden />
+        <div className="min-w-0">
+          <h2 className="text-sm font-semibold text-ink">Confirm your email</h2>
+          <p className="mt-1 text-xs text-muted">
+            We sent a link to {email ?? 'your email'}. Your progress saves either way, but until you confirm it,
+            signing in with Google for this email replaces your password.
+          </p>
+          <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-2">
+            <Button
+              variant="secondary"
+              aria-disabled={sent === 'sending'}
+              onClick={() => {
+                if (sent === 'sending') return;
+                setSent('sending');
+                void sendConfirmEmail().then((ok) => setSent(ok ? 'sent' : 'failed'));
+              }}
+            >
+              {sent === 'sending' ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+              {sent === 'sending' ? 'Sending...' : 'Send the email again'}
+            </Button>
+            <p className="text-xs text-muted" role="status">
+              {sent === 'sent'
+                ? 'Sent. Check your inbox and your spam folder.'
+                : sent === 'failed'
+                  ? 'Could not send it. Wait a few minutes and try again.'
+                  : null}
+            </p>
+          </div>
+        </div>
+      </div>
+    </section>
   );
 }
 

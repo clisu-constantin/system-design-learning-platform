@@ -64,6 +64,8 @@ export interface ProgressSyncOptions {
   now?: () => number;
   setTimer?: (run: () => void, ms: number) => unknown;
   clearTimer?: (timer: unknown) => void;
+  /** Where a sync that keeps failing for a reason a retry will not fix is reported (the console). */
+  warn?: (message: string) => void;
 }
 
 /** 5 s, 10 s, 20 s ... up to 5 minutes between attempts while the server cannot be reached. */
@@ -149,6 +151,7 @@ export function createProgressSync(options: ProgressSyncOptions) {
   const now = options.now ?? Date.now;
   const setTimer = options.setTimer ?? ((run: () => void, ms: number) => setTimeout(run, ms));
   const clearTimer = options.clearTimer ?? ((timer: unknown) => clearTimeout(timer as ReturnType<typeof setTimeout>));
+  const warn = options.warn ?? (() => undefined);
 
   const parse = (raw: string | null) => parseProgress({ current: raw, legacy: null }, merged);
 
@@ -208,6 +211,8 @@ export function createProgressSync(options: ProgressSyncOptions) {
   let failures = 0;
   let lastSync = -Infinity;
   let timer: unknown = null;
+  /** A 4xx that is not about the body is said once, not at every retry. */
+  let warned = false;
 
   function cancelTimer() {
     if (timer === null) return;
@@ -284,7 +289,14 @@ export function createProgressSync(options: ProgressSyncOptions) {
     } else if (result.reason === 'rejected') {
       // A 4xx for the body: sending the same records again cannot succeed.
       removeFromOutbox(sent);
+      if (again || outbox().length) schedule(PUSH_DELAY_MS);
     } else if (result.reason !== 'gone' && result.reason !== 'unavailable') {
+      // A 401, 403 or 404 here usually means a wrong API address or Firebase project. It is retried
+      // like an outage (a proxy can recover), but said once, so the mistake does not stay invisible.
+      if (!warned && result.status >= 400 && result.status < 500) {
+        warned = true;
+        warn(`Progress sync: the API answered ${result.status}. Progress stays saved in this browser; retrying later.`);
+      }
       failures += 1;
       schedule(retryDelay(failures));
     }
@@ -358,9 +370,12 @@ export function createProgressSync(options: ProgressSyncOptions) {
     /**
      * Signed in (or restored): sync now. From a Guest, all the progress of this
      * browser goes to the Account first, without the Guest's own Resets.
+     * `restored`: the Account was already in this browser - a tab that loaded
+     * as a Guest and followed a sign-in from another tab - so the stored
+     * progress is the Account one, Resets included.
      */
-    start(send: SyncRequest) {
-      const fromGuest = !accountHere;
+    start(send: SyncRequest, { restored = false }: { restored?: boolean } = {}) {
+      const fromGuest = !accountHere && !restored;
       accountHere = true;
       stop();
       request = send;

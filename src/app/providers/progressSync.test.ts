@@ -64,13 +64,15 @@ type Call = { path: string; method: string; body?: { concepts: Record<string, Co
 function fakeServer(initial: ProgressState = EMPTY_PROGRESS) {
   let stored = initial;
   const calls: Call[] = [];
-  let failWith: 'offline' | 'gone' | 'rejected' | null = null;
+  let failWith: 'offline' | 'gone' | 'rejected' | 'not-found' | null = null;
   let onGone: (() => void) | null = null;
   const request: SyncRequest = async <T>(path: string, init: { method?: string; body?: unknown } = {}) => {
     const method = init.method ?? 'GET';
     calls.push({ path, method, body: init.body as Call['body'] });
     if (failWith === 'offline') return { ok: false, status: 0, reason: 'offline' } as ApiResult<T>;
     if (failWith === 'rejected') return { ok: false, status: 422, reason: 'rejected' } as ApiResult<T>;
+    // A wrong API address or a proxy in the way: not about the body, so it is retried.
+    if (failWith === 'not-found') return { ok: false, status: 404, reason: 'server' } as ApiResult<T>;
     if (failWith === 'gone') {
       // useAccount().request signs out before it returns a 410.
       onGone?.();
@@ -99,7 +101,13 @@ function device({
   storage = fakeStorage(),
   clock = fakeClock(),
   accountHere = false,
-}: { storage?: ReturnType<typeof fakeStorage>; clock?: ReturnType<typeof fakeClock>; accountHere?: boolean } = {}) {
+  warn,
+}: {
+  storage?: ReturnType<typeof fakeStorage>;
+  clock?: ReturnType<typeof fakeClock>;
+  accountHere?: boolean;
+  warn?: (message: string) => void;
+} = {}) {
   const sync = createProgressSync({
     storage,
     merged: {},
@@ -108,6 +116,7 @@ function device({
     now: clock.now,
     setTimer: clock.setTimer,
     clearTimer: clock.clearTimer,
+    warn,
   });
   return { sync, storage, clock };
 }
@@ -617,4 +626,50 @@ test('the outbox survives broken storage values', () => {
   assert.deepEqual(parseOutbox('{not json'), []);
   assert.deepEqual(parseOutbox('{"a":1}'), []);
   assert.deepEqual(parseOutbox('["caching", 3, "caching", null, "sharding"]'), ['caching', 'sharding']);
+});
+
+test('a wake-up during a save that the server refused is not lost', async () => {
+  const server = fakeServer();
+  const { sync, clock } = device({ accountHere: true });
+  sync.start(server.request);
+  await settle();
+
+  server.fail('rejected');
+  markDone(sync, 'queues');
+  const refused = sync.syncNow();
+  sync.flush();
+  await refused;
+
+  assert.equal(clock.pending().length, 1);
+});
+
+test('an answer that is not about the body (a 404 from a wrong address) is retried, and said once in the console', async () => {
+  const server = fakeServer();
+  const warnings: string[] = [];
+  const { sync, storage, clock } = device({ accountHere: true, warn: (message) => warnings.push(message) });
+  server.fail('not-found');
+  markDone(sync, 'caching');
+  sync.start(server.request);
+  await settle();
+  clock.advance(retryDelay(1));
+  await settle();
+
+  assert.equal(server.calls.length, 2);
+  assert.deepEqual(outboxOf(storage), ['caching']);
+  assert.equal(warnings.length, 1);
+  assert.match(warnings[0], /404/);
+});
+
+test('a tab that loaded as a Guest and follows a sign-in from another tab treats the progress as the Account one', async () => {
+  // The other tab signed in, pulled the Account (with its Reset) and saved it to the shared storage.
+  const account = resetProgress(EMPTY_PROGRESS, ALL, 5_000);
+  const server = fakeServer(account);
+  const storage = fakeStorage({ [PROGRESS_KEY]: serializeProgress(account) });
+  const { sync } = device({ storage, accountHere: false });
+
+  sync.start(server.request, { restored: true });
+  await settle();
+
+  assert.equal(sync.getState().concepts.caching.clearedAt, 5_000);
+  assert.deepEqual(server.calls.map((call) => call.method), ['GET']);
 });

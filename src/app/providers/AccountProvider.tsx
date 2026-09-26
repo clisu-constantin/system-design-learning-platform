@@ -4,6 +4,7 @@ import { lazyWithRetry } from '@/utils/lazyWithRetry';
 import {
   ACCOUNT_MARK_KEY,
   afterAuthChange,
+  afterMarkChange,
   firebaseConfigFrom,
   startStatus,
   type AccountStatus,
@@ -39,6 +40,12 @@ export type DeleteAccountResult =
 interface AccountContextValue {
   status: AccountStatus;
   email: string | null;
+  /** A password Account whose email is not confirmed yet - see AccountUser.confirmPending. */
+  confirmPending: boolean;
+  /** Sends the confirm email again. Resolves false when it could not be sent. */
+  sendConfirmEmail: () => Promise<boolean>;
+  /** Reads the user again, so a confirm link clicked meanwhile shows. Quiet on failure. */
+  refreshUser: () => Promise<void>;
   /** False in a build without the VITE_FIREBASE_* settings: no Sign in anywhere, everyone is a Guest. */
   available: boolean;
   openSignIn: () => void;
@@ -94,6 +101,7 @@ function loadFirebase(): Promise<FirebaseModule> {
 interface Snapshot {
   status: AccountStatus;
   email: string | null;
+  confirmPending: boolean;
   /** The SDK is loaded and Auth is up: a click can open the popup at once. */
   sessionReady: boolean;
   signInOpen: boolean;
@@ -105,6 +113,7 @@ function createAccountStore(config: FirebaseWebConfig | null, apiUrl: string | n
   let snapshot: Snapshot = {
     status: startStatus({ configured: Boolean(config), marked: hasMark() }),
     email: null,
+    confirmPending: false,
     sessionReady: false,
     signInOpen: false,
   };
@@ -112,6 +121,12 @@ function createAccountStore(config: FirebaseWebConfig | null, apiUrl: string | n
   const signedOutListeners = new Set<() => void>();
   let session: AuthSession | null = null;
   let starting: Promise<AuthSession | null> | null = null;
+  /**
+   * While "Delete my Account" runs, a 410 (from a save in flight, or from
+   * DELETE /me itself) must not sign out yet: the Firebase user still has to
+   * be deleted, and the flow signs out itself at the end.
+   */
+  let deleting = false;
 
   const update = (patch: Partial<Snapshot>) => {
     snapshot = { ...snapshot, ...patch };
@@ -124,7 +139,12 @@ function createAccountStore(config: FirebaseWebConfig | null, apiUrl: string | n
     if (change.mark === 'set') safeLocalStorage.set(ACCOUNT_MARK_KEY, '1');
     if (change.mark === 'remove') safeLocalStorage.remove(ACCOUNT_MARK_KEY);
     if (change.clearProgress) for (const listener of signedOutListeners) listener();
-    update({ status: change.status, email: change.email, ...(user ? { signInOpen: false } : {}) });
+    update({
+      status: change.status,
+      email: change.email,
+      confirmPending: change.confirmPending,
+      ...(user ? { signInOpen: false } : {}),
+    });
     // Creates the Account row on first contact, and finds out about a deleted
     // Account (410). In the background: nothing waits for it, a failure is silent.
     if (user && previous !== 'signed-in') void request('/me');
@@ -177,7 +197,7 @@ function createAccountStore(config: FirebaseWebConfig | null, apiUrl: string | n
     const token = await getIdToken();
     if (!token) return { ok: false, status: 0, reason: snapshot.status === 'signed-in' ? 'offline' : 'unavailable' };
     const result = await apiFetch<T>(path, { baseUrl: apiUrl, token, ...init });
-    if (!result.ok && result.reason === 'gone') await signOut();
+    if (!result.ok && result.reason === 'gone' && !deleting) await signOut();
     return result;
   }
 
@@ -197,6 +217,31 @@ function createAccountStore(config: FirebaseWebConfig | null, apiUrl: string | n
     /** A browser that was signed in here loads Firebase at start. */
     restore() {
       if (snapshot.status === 'restoring') void ensureSession();
+    },
+    /** Another tab set or removed the mark: a Guest tab follows a sign-in made there. */
+    markChanged() {
+      const next = afterMarkChange({ status: snapshot.status, configured: Boolean(config), marked: hasMark() });
+      if (next !== 'restore') return;
+      update({ status: 'restoring' });
+      void ensureSession();
+    },
+    async sendConfirmEmail(): Promise<boolean> {
+      if (!session || snapshot.status !== 'signed-in') return false;
+      try {
+        await session.sendConfirmEmail();
+        return true;
+      } catch {
+        return false;
+      }
+    },
+    async refreshUser() {
+      if (!session || snapshot.status !== 'signed-in') return;
+      try {
+        const user = await session.refreshUser();
+        if (user) applyUser(user);
+      } catch {
+        // Offline: the old answer stays until the next try.
+      }
     },
     openSignIn() {
       if (!config) return;
@@ -239,19 +284,24 @@ function createAccountStore(config: FirebaseWebConfig | null, apiUrl: string | n
       const proof = password === undefined ? current.reauthenticateWithGoogle() : current.reauthenticateWithPassword(password);
       return proof.then(
         async (): Promise<DeleteAccountResult> => {
-          const result = await request<void>('/me', { method: 'DELETE' });
-          // A 410: deleted already, from another device, and request() has signed out.
-          if (!result.ok && result.reason !== 'gone') return { ok: false, step: 'server', reason: result.reason };
-          let firebaseUserDeleted = false;
+          deleting = true;
           try {
-            await current.deleteUser();
-            firebaseUserDeleted = true;
-          } catch {
-            // The server rows are gone either way. The server refuses this sign-in
-            // now (410); a later sign-in gets a fresh, empty Account.
+            const result = await request<void>('/me', { method: 'DELETE' });
+            // A 410: deleted already - by an earlier try whose answer was lost, or from another device.
+            if (!result.ok && result.reason !== 'gone') return { ok: false, step: 'server', reason: result.reason };
+            let firebaseUserDeleted = false;
+            try {
+              await current.deleteUser();
+              firebaseUserDeleted = true;
+            } catch {
+              // The server rows are gone either way. The server refuses this sign-in
+              // now (410); a later sign-in gets a fresh, empty Account.
+            }
+            await signOut();
+            return { ok: true, firebaseUserDeleted };
+          } finally {
+            deleting = false;
           }
-          await signOut();
-          return { ok: true, firebaseUserDeleted };
         },
         (error: unknown): DeleteAccountResult => ({ ok: false, step: 'confirm', error }),
       );
@@ -273,10 +323,21 @@ export function AccountProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => store.restore(), []);
 
+  useEffect(() => {
+    const onStorage = (event: StorageEvent) => {
+      if (event.key === ACCOUNT_MARK_KEY || event.key === null) store.markChanged();
+    };
+    window.addEventListener('storage', onStorage);
+    return () => window.removeEventListener('storage', onStorage);
+  }, []);
+
   const value = useMemo<AccountContextValue>(
     () => ({
       status: snapshot.status,
       email: snapshot.email,
+      confirmPending: snapshot.confirmPending,
+      sendConfirmEmail: store.sendConfirmEmail,
+      refreshUser: store.refreshUser,
       available: Boolean(FIREBASE_CONFIG),
       openSignIn: store.openSignIn,
       signOut: store.signOut,
@@ -286,7 +347,7 @@ export function AccountProvider({ children }: { children: ReactNode }) {
       reauthMethod: store.reauthMethod,
       deleteAccount: store.deleteAccount,
     }),
-    [snapshot.status, snapshot.email],
+    [snapshot.status, snapshot.email, snapshot.confirmPending],
   );
 
   return (

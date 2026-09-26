@@ -18,6 +18,7 @@ import {
   signOut as firebaseSignOut,
   type Auth,
   type OAuthCredential,
+  type User,
 } from 'firebase/auth';
 import type { AccountUser, FirebaseWebConfig } from '@/app/account/accountState';
 
@@ -64,6 +65,13 @@ export interface AuthSession {
    * reports no user, which signs this device out.
    */
   deleteUser(): Promise<void>;
+  /** Sends the confirm email again, for a password Account that has not confirmed it yet. */
+  sendConfirmEmail(): Promise<void>;
+  /**
+   * Reads the user again from Firebase: a confirm link clicked in the email
+   * changes nothing on this device until then. Null when signed out.
+   */
+  refreshUser(): Promise<AccountUser | null>;
 }
 
 let session: { key: string; app: FirebaseApp; auth: Auth } | null = null;
@@ -82,7 +90,14 @@ function authFor(config: FirebaseWebConfig): Auth {
   return auth;
 }
 
-const toUser = (user: { email: string | null } | null): AccountUser | null => (user ? { email: user.email } : null);
+/** A password Account with no confirmed email is flagged: a Google sign-in for that Gmail address would replace its password. */
+const toUser = (user: User | null): AccountUser | null =>
+  user
+    ? {
+        email: user.email,
+        confirmPending: !user.emailVerified && user.providerData.some((info) => info.providerId === 'password'),
+      }
+    : null;
 
 export function startAuth(config: FirebaseWebConfig): AuthSession {
   const auth = authFor(config);
@@ -92,6 +107,12 @@ export function startAuth(config: FirebaseWebConfig): AuthSession {
    * linked to the Account, so the next Google sign-in opens it directly.
    */
   let pendingGoogle: { email: string; credential: OAuthCredential } | null = null;
+  /**
+   * The user who just proved it is them, kept for deleteUser: a 410 seen by
+   * another tab can sign this browser out (Firebase shares the sign-in between
+   * tabs) before the delete runs, and then there is no current user left.
+   */
+  let proven: User | null = null;
 
   return {
     onUserChange: (listener) => onAuthStateChanged(auth, (user) => listener(toUser(user))),
@@ -147,18 +168,31 @@ export function startAuth(config: FirebaseWebConfig): AuthSession {
       const provider = new GoogleAuthProvider();
       provider.setCustomParameters({ prompt: 'select_account' });
       await reauthenticateWithPopup(user, provider);
+      proven = user;
     },
 
     async reauthenticateWithPassword(password) {
       const user = auth.currentUser;
       if (!user?.email) throw new Error('Not signed in');
       await reauthenticateWithCredential(user, EmailAuthProvider.credential(user.email, password));
+      proven = user;
     },
 
     async deleteUser() {
-      const user = auth.currentUser;
+      const user = proven ?? auth.currentUser;
+      proven = null;
       if (!user) throw new Error('Not signed in');
       await firebaseDeleteUser(user);
+    },
+
+    async sendConfirmEmail() {
+      if (!auth.currentUser) throw new Error('Not signed in');
+      await sendEmailVerification(auth.currentUser);
+    },
+
+    async refreshUser() {
+      await auth.currentUser?.reload();
+      return toUser(auth.currentUser);
     },
   };
 }

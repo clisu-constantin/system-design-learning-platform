@@ -1,4 +1,4 @@
-import { createContext, useCallback, useContext, useEffect, useMemo, useSyncExternalStore, type ReactNode } from 'react';
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useSyncExternalStore, type ReactNode } from 'react';
 import type { CategoryId } from '@/types';
 import { CONCEPTS, CONCEPTS_BY_CATEGORY } from '@/data/concepts';
 import { MERGED_CONCEPTS } from '@/data/concepts/merged';
@@ -26,24 +26,14 @@ const ALL_SLUGS = CONCEPTS.map((concept) => concept.slug);
 
 const hasAccountMark = () => safeLocalStorage.get(ACCOUNT_MARK_KEY) !== null;
 
-/**
- * Another tab signing in or out sets or removes the mark. A tab that loaded as a Guest never loads
- * Firebase, so this is how it learns that a Reset here must clear the Account too.
- */
-const subscribeAccountMark = (onChange: () => void) => {
-  const handler = (event: StorageEvent) => {
-    if (event.key === ACCOUNT_MARK_KEY || event.key === null) onChange();
-  };
-  window.addEventListener('storage', handler);
-  return () => window.removeEventListener('storage', handler);
-};
-
 /** One per page, like the Account store: the rules are in progressSync.ts and progressState.ts. */
 const sync = createProgressSync({
   storage: safeLocalStorage,
   merged: MERGED_CONCEPTS,
   allSlugs: ALL_SLUGS,
   accountHere: hasAccountMark(),
+  // A sync that keeps failing for a reason a retry will not fix (a wrong API address) is said once.
+  warn: (message) => console.warn(message),
 });
 
 const isLocalStorageEvent = (event: StorageEvent) => {
@@ -64,8 +54,8 @@ export function ProgressProvider({ children }: { children: ReactNode }) {
   const state = useSyncExternalStore(sync.subscribe, sync.getState);
   const { status, request, onSignedOut } = useAccount();
   // Restoring, or signed in here but the sign-in SDK could not load yet: still the Account's progress.
-  const accountMark = useSyncExternalStore(subscribeAccountMark, hasAccountMark);
-  const synced = status !== 'guest' || accountMark;
+  const synced = status !== 'guest' || hasAccountMark();
+  const previousStatus = useRef(status);
 
   // Signing out (or a 410) leaves an empty Guest, so the next person on a shared
   // computer sees nothing. Emptied, not Reset: a Reset keeps "cleared at"
@@ -73,8 +63,12 @@ export function ProgressProvider({ children }: { children: ReactNode }) {
   useEffect(() => onSignedOut(sync.signedOut), [onSignedOut]);
 
   useEffect(() => {
+    const previous = previousStatus.current;
+    previousStatus.current = status;
     if (status !== 'signed-in') return;
-    sync.start(request);
+    // Restoring means the Account was already in this browser (at start, or signed in by another
+    // tab): its stored progress is the Account one, not a Guest one to hand over.
+    sync.start(request, { restored: previous === 'restoring' });
     return sync.stop;
   }, [status, request]);
 

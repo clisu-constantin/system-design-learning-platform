@@ -15,6 +15,12 @@ export type AccountStatus = 'guest' | 'restoring' | 'signed-in';
 /** What the app needs to know about a Firebase user. */
 export interface AccountUser {
   email: string | null;
+  /**
+   * A password Account whose email is not confirmed yet. Saving works anyway,
+   * but until it is confirmed, a Google sign-in for the same Gmail address
+   * replaces the password (Firebase trusts Google over an unconfirmed email).
+   */
+  confirmPending?: boolean;
 }
 
 export interface FirebaseWebConfig {
@@ -37,6 +43,7 @@ export interface AuthChange {
   mark: 'set' | 'remove' | 'keep';
   /** True once per Account that left this device: empty its local progress. */
   clearProgress: boolean;
+  confirmPending: boolean;
 }
 
 /**
@@ -49,9 +56,29 @@ export function afterAuthChange(
   user: AccountUser | null,
   { previous, marked }: { previous: AccountStatus; marked: boolean },
 ): AuthChange {
-  if (user) return { status: 'signed-in', email: user.email, mark: 'set', clearProgress: false };
+  if (user)
+    return { status: 'signed-in', email: user.email, mark: 'set', clearProgress: false, confirmPending: Boolean(user.confirmPending) };
   const wasSignedIn = marked || previous !== 'guest';
-  return { status: 'guest', email: null, mark: wasSignedIn ? 'remove' : 'keep', clearProgress: wasSignedIn };
+  return { status: 'guest', email: null, mark: wasSignedIn ? 'remove' : 'keep', clearProgress: wasSignedIn, confirmPending: false };
+}
+
+/**
+ * Another tab set or removed the mark. A tab that loaded as a Guest never
+ * loaded Firebase, so it cannot hear of a sign-in in another tab by itself:
+ * the mark appearing is its cue to restore the Account, so its top bar, its
+ * Account page and its Reset all agree. A sign-out needs nothing here - a tab
+ * with Firebase hears of it from Firebase.
+ */
+export function afterMarkChange({
+  status,
+  configured,
+  marked,
+}: {
+  status: AccountStatus;
+  configured: boolean;
+  marked: boolean;
+}): 'restore' | 'none' {
+  return status === 'guest' && configured && marked ? 'restore' : 'none';
 }
 
 /** The Firebase web config from the VITE_FIREBASE_* variables, or null when any is missing: a Guest-only build. */

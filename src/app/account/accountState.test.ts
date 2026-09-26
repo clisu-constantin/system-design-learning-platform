@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { afterAuthChange, firebaseConfigFrom, startStatus } from './accountState.ts';
+import { afterAuthChange, afterMarkChange, firebaseConfigFrom, startStatus } from './accountState.ts';
 
 test('a browser that was never signed in starts as a Guest and does not load Firebase', () => {
   assert.equal(startStatus({ configured: true, marked: false }), 'guest');
@@ -20,6 +20,7 @@ test('a signed-in user sets the mark and keeps the progress on this device', () 
     email: 'ada@example.com',
     mark: 'set',
     clearProgress: false,
+    confirmPending: false,
   });
 });
 
@@ -37,6 +38,7 @@ test('signing out clears the progress on this device and the mark', () => {
     email: null,
     mark: 'remove',
     clearProgress: true,
+    confirmPending: false,
   });
 });
 
@@ -59,6 +61,7 @@ test('a Guest who opens sign-in and gets no user is left alone', () => {
     email: null,
     mark: 'keep',
     clearProgress: false,
+    confirmPending: false,
   });
 });
 
@@ -86,4 +89,21 @@ test('the Firebase config needs all four variables', () => {
   assert.equal(firebaseConfigFrom({ ...FULL_ENV, VITE_FIREBASE_APP_ID: undefined }), null);
   assert.equal(firebaseConfigFrom({ ...FULL_ENV, VITE_FIREBASE_API_KEY: '  ' }), null);
   assert.equal(firebaseConfigFrom({}), null);
+});
+
+test('a password Account whose email is not confirmed yet is reported, so the Account page can ask for it', () => {
+  assert.equal(afterAuthChange({ email: 'ada@example.com', confirmPending: true }, { previous: 'guest', marked: false }).confirmPending, true);
+  assert.equal(afterAuthChange({ email: 'ada@example.com' }, { previous: 'guest', marked: false }).confirmPending, false);
+});
+
+test('a Guest tab restores the Account when another tab of this browser signs in', () => {
+  assert.equal(afterMarkChange({ status: 'guest', configured: true, marked: true }), 'restore');
+});
+
+test('the mark changing in another tab means nothing to a tab that is signed in, or with no Firebase', () => {
+  assert.equal(afterMarkChange({ status: 'signed-in', configured: true, marked: true }), 'none');
+  assert.equal(afterMarkChange({ status: 'restoring', configured: true, marked: true }), 'none');
+  assert.equal(afterMarkChange({ status: 'guest', configured: false, marked: true }), 'none');
+  // Signing out in another tab: Firebase tells this tab itself, if it has Firebase at all.
+  assert.equal(afterMarkChange({ status: 'guest', configured: true, marked: false }), 'none');
 });

@@ -105,14 +105,20 @@ server/             the optional Account API (FastAPI)
   progress back. A Guest browser drops leftover cleared-at records on load and at sign-in.
 - Delete my Account runs in this order: re-authenticate (Google popup or password), `DELETE /me`,
   then Firebase `deleteUser`, then sign out to an empty Guest. If `DELETE /me` fails, nothing is
-  deleted.
+  deleted; if its answer is lost, trying again finishes the job. While it runs, a 410 does not sign
+  out (the Firebase user must still be deleted), and `deleteUser` uses the user kept at re-auth.
+- A tab that loaded as a Guest never loads Firebase, so it follows the `sdi:account` mark instead:
+  when another tab sets it, this tab restores the Account (`afterMarkChange` in `accountState.ts`).
+- A sync failure that a retry will not fix (a 401, 403 or 404: a wrong API address or Firebase
+  project) is still retried, and said once in the console.
 - `onSignedOut` is where local state is emptied: empty it, never Reset it - a Reset writes cleared-at
   records, and those would wipe the Account at the next sign-in.
 - Open a Firebase popup synchronously inside the click handler, with no `await` before it, or the
   browser blocks the popup. Email and password actions have no popup, so they may wait for the SDK.
 - Sign-in is Google (popup) or email and password (sign in, create account, "Forgot password?").
   The confirm email is sent after sign-up but never required - the server does not check
-  `email_verified`; keep it that way. Keep the Firebase setting "One account per email address" on:
+  `email_verified`; keep it that way. Until it is confirmed, `/account` asks for it and can send it
+  again: Firebase lets a Google sign-in for the same Gmail address replace an unconfirmed password. Keep the Firebase setting "One account per email address" on:
   it is what makes Google and a password for one email the same uid, and so the same Account.
 - Every Firebase error becomes a plain sentence in `src/features/account/signInErrors.ts`, never a
   code. Wrong password and unknown email read the same, so the dialog never tells whether an

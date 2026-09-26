@@ -21,9 +21,12 @@ services:
 
   api:
     build: ./server
-    # FIREBASE_PROJECT_ID and ALLOWED_ORIGIN come from the root .env (copy .env.example).
-    env_file: .env
     environment:
+      # Read from the root .env when it exists (copy .env.example). Not env_file: that fails the whole
+      # command, even `docker compose up db`, when there is no .env yet. Without FIREBASE_PROJECT_ID the
+      # api service stops at start with a clear message; the db service works either way.
+      FIREBASE_PROJECT_ID: ${FIREBASE_PROJECT_ID:-}
+      ALLOWED_ORIGIN: ${ALLOWED_ORIGIN:-http://localhost:5173}
       # Inside compose the database is the `db` service, not localhost.
       DATABASE_URL: postgresql://sdi:sdi@db:5432/sdi
       PORT: "8000"

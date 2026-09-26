@@ -11,7 +11,6 @@ test('every failure says that nothing was deleted, or needs no message', () => {
     confirm('auth/invalid-credential'),
     confirm('auth/network-request-failed'),
     confirm('auth/something-new'),
-    { step: 'server' as const, reason: 'offline' },
     { step: 'server' as const, reason: 'server' },
   ];
   for (const failure of failures) assert.match(deleteAccountMessage(failure) ?? '', /nothing was deleted/i);
@@ -33,4 +32,12 @@ test('no connection to the server reads differently from a server that failed', 
     deleteAccountMessage({ step: 'server', reason: 'server' }),
   );
   assert.equal(deleteAccountMessage({ step: 'server', reason: 'timeout' }), deleteAccountMessage({ step: 'server', reason: 'offline' }));
+});
+
+test('a lost answer from the server does not claim that nothing was deleted - the delete may have finished', () => {
+  for (const reason of ['offline', 'timeout']) {
+    const message = deleteAccountMessage({ step: 'server', reason }) ?? '';
+    assert.doesNotMatch(message, /nothing was deleted/i);
+    assert.match(message, /try again/i);
+  }
 });

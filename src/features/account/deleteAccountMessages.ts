@@ -1,8 +1,10 @@
 /**
  * One plain sentence for a failed "Delete my Account". The flow stops at the
  * first failure - proving it is the Learner, then the server - before anything
- * is deleted, so every message says so. Null means "say nothing" (the Learner
- * started another attempt).
+ * is deleted, so the messages say so. The one exception is a server answer that
+ * never arrived: the delete may have finished, so that message only asks to try
+ * again (a second try finishes the job either way). Null means "say nothing"
+ * (the Learner started another attempt).
  *
  * No imports, so Node runs this file and its tests as they are.
  */
@@ -30,7 +32,7 @@ const codeOf = (error: unknown) =>
 export function deleteAccountMessage(failure: DeleteFailure): string | null {
   if (failure.step === 'server') {
     return failure.reason === 'offline' || failure.reason === 'timeout'
-      ? 'Could not reach the server, so nothing was deleted. Check your connection and try again.'
+      ? 'The server did not answer, so your Account may not be deleted yet. Check your connection and try again to finish.'
       : 'The server could not delete your Account right now, so nothing was deleted. Try again in a moment.';
   }
   const code = codeOf(failure.error);
