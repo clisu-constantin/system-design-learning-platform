@@ -3,6 +3,7 @@ import type { CategoryId } from '@/types';
 import { CONCEPTS, CONCEPTS_BY_CATEGORY } from '@/data/concepts';
 import { MERGED_CONCEPTS } from '@/data/concepts/merged';
 import { safeLocalStorage } from '@/utils/safeStorage';
+import { useAccount } from './AccountProvider';
 import * as progress from './progressState';
 import type { ProgressState, ProgressView } from './progressState';
 
@@ -37,6 +38,20 @@ function load(): ProgressState {
  */
 export function ProgressProvider({ children }: { children: ReactNode }) {
   const [state, setState] = useState<ProgressState>(load);
+  const { onSignedOut } = useAccount();
+
+  // Signing out leaves an empty Guest, so the next person on a shared computer
+  // sees nothing. Emptied, not Reset: a Reset keeps "cleared at" records that a
+  // later sign-in would sync to the Account and wipe it.
+  useEffect(
+    () =>
+      onSignedOut(() => {
+        safeLocalStorage.remove(STORAGE_KEY);
+        safeLocalStorage.remove(LEGACY_STORAGE_KEY);
+        setState(progress.EMPTY_PROGRESS);
+      }),
+    [onSignedOut],
+  );
 
   useEffect(() => {
     // Storage can be unavailable (private mode) - progress is a nice-to-have.

@@ -1,0 +1,247 @@
+import { Suspense, createContext, useContext, useEffect, useMemo, useSyncExternalStore, type ReactNode } from 'react';
+import { safeLocalStorage } from '@/utils/safeStorage';
+import { lazyWithRetry } from '@/utils/lazyWithRetry';
+import {
+  ACCOUNT_MARK_KEY,
+  afterAuthChange,
+  firebaseConfigFrom,
+  startStatus,
+  type AccountStatus,
+  type AccountUser,
+  type FirebaseWebConfig,
+} from '@/app/account/accountState';
+import { apiFetch, apiUrlFrom, type ApiResult } from '@/app/account/api';
+import type { AuthSession } from '@/features/account/firebase';
+
+const SignInDialog = lazyWithRetry(() => import('@/features/account/SignInDialog'));
+
+const FIREBASE_CONFIG = firebaseConfigFrom({
+  VITE_FIREBASE_API_KEY: import.meta.env.VITE_FIREBASE_API_KEY,
+  VITE_FIREBASE_AUTH_DOMAIN: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
+  VITE_FIREBASE_PROJECT_ID: import.meta.env.VITE_FIREBASE_PROJECT_ID,
+  VITE_FIREBASE_APP_ID: import.meta.env.VITE_FIREBASE_APP_ID,
+});
+const API_URL = apiUrlFrom(import.meta.env.VITE_API_URL);
+
+export interface ApiRequest {
+  method?: 'GET' | 'POST' | 'DELETE';
+  /** Sent as JSON. */
+  body?: unknown;
+  timeoutMs?: number;
+}
+
+interface AccountContextValue {
+  status: AccountStatus;
+  email: string | null;
+  /** False in a build without the VITE_FIREBASE_* settings: no Sign in anywhere, everyone is a Guest. */
+  available: boolean;
+  openSignIn: () => void;
+  /** Signs out and empties the progress on this device - see onSignedOut. */
+  signOut: () => Promise<void>;
+  /** The Firebase ID token, or null for a Guest or when it cannot be refreshed (offline). */
+  getIdToken: () => Promise<string | null>;
+  /**
+   * A call to the API with the ID token. Never throws and never blocks a
+   * render; a 410 (Account deleted) signs out before it returns.
+   */
+  request: <T>(path: string, init?: ApiRequest) => Promise<ApiResult<T>>;
+  /**
+   * Runs when the Account leaves this device (sign-out, a 410, or a session
+   * that ended elsewhere). ProgressProvider empties local progress here.
+   * Returns the unsubscribe.
+   */
+  onSignedOut: (listener: () => void) => () => void;
+}
+
+// ---------------------------------------------------------------------------
+// The Firebase SDK, loaded on demand. One retry covers a momentary network
+// hiccup; a failure is forgotten, so the next Sign in click tries again.
+
+type FirebaseModule = typeof import('@/features/account/firebase');
+let firebaseModule: Promise<FirebaseModule> | null = null;
+
+function loadFirebase(): Promise<FirebaseModule> {
+  firebaseModule ??= import('@/features/account/firebase')
+    .catch(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 400));
+      return import('@/features/account/firebase');
+    })
+    .catch((error: unknown) => {
+      firebaseModule = null;
+      throw error;
+    });
+  return firebaseModule;
+}
+
+// ---------------------------------------------------------------------------
+// The Account on this device, as an external store: Firebase calls into it
+// from outside React, and React reads it with useSyncExternalStore.
+
+interface Snapshot {
+  status: AccountStatus;
+  email: string | null;
+  /** The SDK is loaded and Auth is up: a click can open the popup at once. */
+  sessionReady: boolean;
+  signInOpen: boolean;
+}
+
+const hasMark = () => safeLocalStorage.get(ACCOUNT_MARK_KEY) !== null;
+
+function createAccountStore(config: FirebaseWebConfig | null, apiUrl: string | null) {
+  let snapshot: Snapshot = {
+    status: startStatus({ configured: Boolean(config), marked: hasMark() }),
+    email: null,
+    sessionReady: false,
+    signInOpen: false,
+  };
+  const listeners = new Set<() => void>();
+  const signedOutListeners = new Set<() => void>();
+  let session: AuthSession | null = null;
+  let starting: Promise<AuthSession | null> | null = null;
+
+  const update = (patch: Partial<Snapshot>) => {
+    snapshot = { ...snapshot, ...patch };
+    for (const listener of listeners) listener();
+  };
+
+  function applyUser(user: AccountUser | null) {
+    const previous = snapshot.status;
+    const change = afterAuthChange(user, { previous, marked: hasMark() });
+    if (change.mark === 'set') safeLocalStorage.set(ACCOUNT_MARK_KEY, '1');
+    if (change.mark === 'remove') safeLocalStorage.remove(ACCOUNT_MARK_KEY);
+    if (change.clearProgress) for (const listener of signedOutListeners) listener();
+    update({ status: change.status, email: change.email, ...(user ? { signInOpen: false } : {}) });
+    // Creates the Account row on first contact, and finds out about a deleted
+    // Account (410). In the background: nothing waits for it, a failure is silent.
+    if (user && previous !== 'signed-in') void request('/me');
+  }
+
+  function ensureSession(): Promise<AuthSession | null> {
+    if (!config) return Promise.resolve(null);
+    starting ??= loadFirebase().then(
+      ({ startAuth }) => {
+        session = startAuth(config);
+        session.onUserChange(applyUser);
+        update({ sessionReady: true });
+        return session;
+      },
+      () => {
+        // Offline with the SDK not cached. Keep the mark, so the next start tries
+        // again, and show a Guest meanwhile - every page works either way.
+        starting = null;
+        if (snapshot.status === 'restoring') update({ status: 'guest' });
+        return null;
+      },
+    );
+    return starting;
+  }
+
+  async function getIdToken(): Promise<string | null> {
+    if (!session || snapshot.status !== 'signed-in') return null;
+    try {
+      return await session.getIdToken();
+    } catch {
+      return null;
+    }
+  }
+
+  async function signOut() {
+    // A Guest has nothing to sign out of, and must not download Firebase for it.
+    const current = snapshot.status === 'guest' ? session : await ensureSession();
+    try {
+      await current?.signOut();
+    } catch {
+      // Firebase clears its own storage even when the network call fails.
+    }
+    // Firebase reports the change too; applying it here as well means signOut
+    // resolves with progress already cleared. The second report is a no-op.
+    applyUser(null);
+  }
+
+  async function request<T>(path: string, init: ApiRequest = {}): Promise<ApiResult<T>> {
+    if (!apiUrl) return { ok: false, status: 0, reason: 'unavailable' };
+    const token = await getIdToken();
+    if (!token) return { ok: false, status: 0, reason: snapshot.status === 'signed-in' ? 'offline' : 'unavailable' };
+    const result = await apiFetch<T>(path, { baseUrl: apiUrl, token, ...init });
+    if (!result.ok && result.reason === 'gone') await signOut();
+    return result;
+  }
+
+  return {
+    subscribe(listener: () => void) {
+      listeners.add(listener);
+      return () => listeners.delete(listener);
+    },
+    getSnapshot: () => snapshot,
+    /** A browser that was signed in here loads Firebase at start. */
+    restore() {
+      if (snapshot.status === 'restoring') void ensureSession();
+    },
+    openSignIn() {
+      if (!config) return;
+      update({ signInOpen: true });
+      void ensureSession();
+    },
+    closeSignIn: () => update({ signInOpen: false }),
+    /** Synchronous up to the popup: it must open inside the click, or the browser blocks it. */
+    signInWithGoogle(): Promise<void> {
+      if (!session) return Promise.reject(new Error('Sign-in is still loading'));
+      return session.signInWithGoogle();
+    },
+    signOut,
+    getIdToken,
+    request,
+    onSignedOut(listener: () => void) {
+      signedOutListeners.add(listener);
+      return () => {
+        signedOutListeners.delete(listener);
+      };
+    },
+  };
+}
+
+const store = createAccountStore(FIREBASE_CONFIG, API_URL);
+
+const AccountContext = createContext<AccountContextValue | null>(null);
+
+/**
+ * The optional Account (see CONTEXT.md and docs/adr/0001). A Guest never
+ * downloads Firebase: the SDK loads when the Learner opens sign-in, or at start
+ * when this browser carries the "was signed in here" mark.
+ */
+export function AccountProvider({ children }: { children: ReactNode }) {
+  const snapshot = useSyncExternalStore(store.subscribe, store.getSnapshot);
+
+  useEffect(() => store.restore(), []);
+
+  const value = useMemo<AccountContextValue>(
+    () => ({
+      status: snapshot.status,
+      email: snapshot.email,
+      available: Boolean(FIREBASE_CONFIG),
+      openSignIn: store.openSignIn,
+      signOut: store.signOut,
+      getIdToken: store.getIdToken,
+      request: store.request,
+      onSignedOut: store.onSignedOut,
+    }),
+    [snapshot.status, snapshot.email],
+  );
+
+  return (
+    <AccountContext.Provider value={value}>
+      {children}
+      {snapshot.signInOpen ? (
+        <Suspense fallback={null}>
+          <SignInDialog ready={snapshot.sessionReady} onGoogle={store.signInWithGoogle} onClose={store.closeSignIn} />
+        </Suspense>
+      ) : null}
+    </AccountContext.Provider>
+  );
+}
+
+export function useAccount() {
+  const context = useContext(AccountContext);
+  if (!context) throw new Error('useAccount must be used inside AccountProvider');
+  return context;
+}

@@ -1,0 +1,37 @@
+# Local development of the Account backend (server/).
+#   docker compose up db    Postgres only; run the API with uv (see server/README.md)
+#   docker compose up       Postgres and the API in a container, on http://localhost:8000
+# The web app runs outside compose with `npm run dev`.
+services:
+  db:
+    image: postgres:17
+    environment:
+      POSTGRES_USER: sdi
+      POSTGRES_PASSWORD: sdi
+      POSTGRES_DB: sdi
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U sdi -d sdi"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  api:
+    build: ./server
+    # FIREBASE_PROJECT_ID and ALLOWED_ORIGIN come from the root .env (copy .env.example).
+    env_file: .env
+    environment:
+      # Inside compose the database is the `db` service, not localhost.
+      DATABASE_URL: postgresql://sdi:sdi@db:5432/sdi
+      PORT: "8000"
+    ports:
+      - "8000:8000"
+    depends_on:
+      db:
+        condition: service_healthy
+
+volumes:
+  pgdata:

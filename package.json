@@ -11,7 +11,7 @@
     "preview": "vite preview",
     "typecheck": "tsc -b",
     "lint": "eslint .",
-    "test": "node --test \"src/**/*.test.ts\"",
+    "test": "node --test \"src/**/*.test.ts\" \"scripts/**/*.test.ts\"",
     "check:visuals": "node scripts/check-visuals.mjs",
     "check:content": "node scripts/check-content.mjs",
     "check:bundle": "node scripts/check-bundle.mjs"
@@ -20,6 +20,7 @@
     "node": "^20.19.0 || >=22.12.0"
   },
   "dependencies": {
+    "firebase": "^12.19.0",
     "framer-motion": "^11.11.17",
     "lucide-react": "^0.462.0",
     "react": "^18.3.1",

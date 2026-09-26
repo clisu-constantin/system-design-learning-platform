@@ -62,6 +62,29 @@ The free-build canvas where the learner adds parts, wires them and runs traffic 
 Unlike a Lab, it has no set lesson and no fixed parts.
 _Avoid_: Sandbox, editor, builder
 
+### People
+
+**Learner**:
+The person who studies in the app. A Learner can use every page with or without an Account.
+_Avoid_: User, student, visitor
+
+**Account**:
+The sign-in identity of a Learner, by email and password or by Google. It exists so the progress of
+a Learner is saved on the server: it follows them to another device and survives a cleared browser.
+Only progress is saved to it - theme and folded panels stay with the device. When a Guest signs in,
+their progress on this device merges into the Account: nothing is lost, and for each Concept the
+latest change wins, so un-marking Done on one device also un-marks it on the others; a Quiz keeps
+its best score. Resetting progress while signed in clears it on the Account, on every device. The
+Learner can delete their Account, and with it everything saved to it; every other device signed in to
+it then becomes an empty Guest. A Learner has one Account per email address: signing in with Google
+or with a password for the same email opens the same Account.
+_Avoid_: Profile, login, user
+
+**Guest**:
+A Learner with no Account, or signed out. Their progress lives only in this browser, as it always did.
+Signing out leaves an empty Guest, so the next person on a shared computer sees nothing.
+_Avoid_: Anonymous user, visitor
+
 ### Progress
 
 **Done**:

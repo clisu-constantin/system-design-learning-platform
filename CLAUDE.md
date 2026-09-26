@@ -291,8 +291,10 @@ These are editorial rules, not style preferences. They are the reason the app is
   90 or 95 - measured in headless Chromium); minimum width is 54 + the per-letter title width table
   in `scripts/check-visuals.mjs` (about 7px a letter), or the subtitle table (about 6px) if wider.
 - Everything persists to `localStorage` only (`sdi:theme`, `sdi:progress:v2`, and `sdi:layout` for
-  which side panels the learner folded). No backend, no auth, no network calls at runtime — keep it
-  that way.
+  which side panels the learner folded). The app must work fully as a Guest, with no network calls.
+  The only backend is the optional Account (`server/`, FastAPI + Postgres, sign-in by Firebase
+  Auth), and it only saves progress - see `docs/adr/0001-backend-with-rented-auth.md`. Never make a
+  page wait for the server, and never load the Firebase SDK for a Guest.
 
 ## Agent skills
 
