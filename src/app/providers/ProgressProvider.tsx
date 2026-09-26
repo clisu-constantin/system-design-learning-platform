@@ -1,145 +1,115 @@
-import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useSyncExternalStore, type ReactNode } from 'react';
 import type { CategoryId } from '@/types';
 import { CONCEPTS, CONCEPTS_BY_CATEGORY } from '@/data/concepts';
 import { MERGED_CONCEPTS } from '@/data/concepts/merged';
+import { ACCOUNT_MARK_KEY } from '@/app/account/accountState';
 import { safeLocalStorage } from '@/utils/safeStorage';
+import { useAccount } from './AccountProvider';
+import * as progress from './progressState';
+import type { ProgressView } from './progressState';
+import { createProgressSync } from './progressSync';
 
-const STORAGE_KEY = 'sdi:progress:v1';
-
-export interface QuizResult {
-  correct: number;
-  total: number;
-  at: number;
-}
-
-export interface ProgressState {
-  visited: Record<string, number>;
-  completed: Record<string, true>;
-  quiz: Record<string, QuizResult>;
-}
-
-interface ProgressContextValue extends ProgressState {
+interface ProgressContextValue extends ProgressView {
   markVisited: (slug: string) => void;
   toggleCompleted: (slug: string) => void;
   recordQuiz: (slug: string, correct: number, total: number) => void;
   categoryProgress: (category: CategoryId) => { done: number; total: number; percent: number };
   overall: { done: number; total: number; percent: number };
+  /** The progress here belongs to an Account: it is synced, and a Reset clears it on every device. */
+  synced: boolean;
   reset: () => void;
 }
 
-const EMPTY: ProgressState = { visited: {}, completed: {}, quiz: {} };
-
 const ProgressContext = createContext<ProgressContextValue | null>(null);
 
-const isRecord = (value: unknown): value is Record<string, unknown> =>
-  typeof value === 'object' && value !== null && !Array.isArray(value);
+const ALL_SLUGS = CONCEPTS.map((concept) => concept.slug);
 
-/** Keeps only the entries whose value passes `keep` - anything else in storage is dropped. */
-function pick<T>(value: unknown, keep: (entry: unknown) => entry is T): Record<string, T> {
-  if (!isRecord(value)) return {};
-  const result: Record<string, T> = {};
-  for (const [key, entry] of Object.entries(value)) {
-    // `__proto__` is an own key after JSON.parse, but assigning it would swap the prototype.
-    if (key !== '__proto__' && keep(entry)) result[key] = entry;
-  }
-  return result;
-}
+const hasAccountMark = () => safeLocalStorage.get(ACCOUNT_MARK_KEY) !== null;
 
-const isFiniteNumber = (entry: unknown): entry is number => typeof entry === 'number' && Number.isFinite(entry);
-const isTrue = (entry: unknown): entry is true => entry === true;
-const isQuizResult = (entry: unknown): entry is QuizResult =>
-  isRecord(entry) &&
-  isFiniteNumber(entry.correct) &&
-  isFiniteNumber(entry.total) &&
-  entry.total > 0 &&
-  isFiniteNumber(entry.at);
+/** One per page, like the Account store: the rules are in progressSync.ts and progressState.ts. */
+const sync = createProgressSync({
+  storage: safeLocalStorage,
+  merged: MERGED_CONCEPTS,
+  allSlugs: ALL_SLUGS,
+  accountHere: hasAccountMark(),
+  // A sync that keeps failing for a reason a retry will not fix (a wrong API address) is said once.
+  warn: (message) => console.warn(message),
+});
 
-/**
- * Storage is outside our control - an older schema, a manual edit or a
- * truncated write must not crash the app later in `recordQuiz` or the
- * progress page, so the saved state is rebuilt field by field.
- */
-function load(): ProgressState {
-  const raw = safeLocalStorage.get(STORAGE_KEY);
-  if (!raw) return EMPTY;
+const isLocalStorageEvent = (event: StorageEvent) => {
   try {
-    const parsed: unknown = JSON.parse(raw);
-    if (!isRecord(parsed)) return EMPTY;
-    return carryMerged({
-      visited: pick(parsed.visited, isFiniteNumber),
-      completed: pick(parsed.completed, isTrue),
-      quiz: pick(parsed.quiz, isQuizResult),
-    });
+    return event.storageArea === window.localStorage;
   } catch {
-    return EMPTY;
+    return false;
   }
-}
-
-const quizRatio = (result: QuizResult) => result.correct / result.total;
+};
 
 /**
- * Progress saved under a merged Concept moves to the Concept it was merged
- * into: Done wins, the best quiz score and the first visit are kept. The
- * retired keys are dropped, so the next save no longer carries them.
- */
-function carryMerged(state: ProgressState): ProgressState {
-  const visited = { ...state.visited };
-  const completed = { ...state.completed };
-  const quiz = { ...state.quiz };
-  for (const [retired, kept] of Object.entries(MERGED_CONCEPTS)) {
-    const firstVisit = visited[retired];
-    if (firstVisit !== undefined) visited[kept] = Math.min(firstVisit, visited[kept] ?? firstVisit);
-    if (completed[retired]) completed[kept] = true;
-    const result = quiz[retired];
-    if (result && (!quiz[kept] || quizRatio(result) > quizRatio(quiz[kept]))) quiz[kept] = result;
-    delete visited[retired];
-    delete completed[retired];
-    delete quiz[retired];
-  }
-  return { visited, completed, quiz };
-}
-
-/**
- * Learning progress lives entirely in localStorage - no account, no backend.
- * A concept counts as done when the learner marks it complete or passes its quiz.
+ * Learning progress: saved in localStorage first, and while signed in also
+ * synced with the Account in the background (progressSync.ts). Nothing waits
+ * for the server. A concept counts as done when the learner marks it complete
+ * or passes its quiz.
  */
 export function ProgressProvider({ children }: { children: ReactNode }) {
-  const [state, setState] = useState<ProgressState>(load);
+  const state = useSyncExternalStore(sync.subscribe, sync.getState);
+  const { status, request, onSignedOut } = useAccount();
+  // Restoring, or signed in here but the sign-in SDK could not load yet: still the Account's progress.
+  const synced = status !== 'guest' || hasAccountMark();
+  const previousStatus = useRef(status);
+
+  // Signing out (or a 410) leaves an empty Guest, so the next person on a shared
+  // computer sees nothing. Emptied, not Reset: a Reset keeps "cleared at"
+  // records that a later sign-in would sync to the Account and wipe it.
+  useEffect(() => onSignedOut(sync.signedOut), [onSignedOut]);
 
   useEffect(() => {
-    // Storage can be unavailable (private mode) - progress is a nice-to-have.
-    safeLocalStorage.set(STORAGE_KEY, JSON.stringify(state));
-  }, [state]);
+    const previous = previousStatus.current;
+    previousStatus.current = status;
+    if (status !== 'signed-in') return;
+    // Restoring means the Account was already in this browser (at start, or signed in by another
+    // tab): its stored progress is the Account one, not a Guest one to hand over.
+    sync.start(request, { restored: previous === 'restoring' });
+    return sync.stop;
+  }, [status, request]);
 
-  const markVisited = useCallback((slug: string) => {
-    setState((current) =>
-      current.visited[slug] ? current : { ...current, visited: { ...current.visited, [slug]: Date.now() } },
-    );
+  useEffect(() => {
+    const onStorage = (event: StorageEvent) => {
+      if (isLocalStorageEvent(event)) sync.storageChanged(event.key, event.newValue);
+    };
+    const onOnline = () => sync.wake();
+    const onVisibility = () => (document.visibilityState === 'visible' ? sync.wake() : sync.flush());
+    window.addEventListener('storage', onStorage);
+    window.addEventListener('online', onOnline);
+    document.addEventListener('visibilitychange', onVisibility);
+    return () => {
+      window.removeEventListener('storage', onStorage);
+      window.removeEventListener('online', onOnline);
+      document.removeEventListener('visibilitychange', onVisibility);
+    };
   }, []);
 
-  const toggleCompleted = useCallback((slug: string) => {
-    setState((current) => {
-      const completed = { ...current.completed };
-      if (completed[slug]) delete completed[slug];
-      else completed[slug] = true;
-      return { ...current, completed };
-    });
-  }, []);
+  const markVisited = useCallback(
+    (slug: string) => sync.change((current, now) => progress.markVisited(current, slug, now)),
+    [],
+  );
 
-  const recordQuiz = useCallback((slug: string, correct: number, total: number) => {
-    setState((current) => {
-      const previous = current.quiz[slug];
-      const best = previous && previous.correct / previous.total > correct / total ? previous : { correct, total, at: Date.now() };
-      const completed = { ...current.completed };
-      if (total > 0 && correct / total >= 0.7) completed[slug] = true;
-      return { ...current, quiz: { ...current.quiz, [slug]: best }, completed };
-    });
-  }, []);
+  const toggleCompleted = useCallback(
+    (slug: string) => sync.change((current, now) => progress.toggleDone(current, slug, now)),
+    [],
+  );
 
-  const reset = useCallback(() => setState(EMPTY), []);
+  const recordQuiz = useCallback(
+    (slug: string, correct: number, total: number) =>
+      sync.change((current, now) => progress.recordQuiz(current, slug, correct, total, now)),
+    [],
+  );
+
+  const reset = useCallback(() => sync.reset(synced), [synced]);
+
+  const view = useMemo(() => progress.progressView(state), [state]);
 
   const value = useMemo<ProgressContextValue>(() => {
-    const isDone = (slug: string) => Boolean(state.completed[slug]);
+    const isDone = (slug: string) => Boolean(view.completed[slug]);
 
     const categoryProgress = (category: CategoryId) => {
       const concepts = CONCEPTS_BY_CATEGORY[category] ?? [];
@@ -151,7 +121,7 @@ export function ProgressProvider({ children }: { children: ReactNode }) {
     const done = CONCEPTS.filter((concept) => isDone(concept.slug)).length;
 
     return {
-      ...state,
+      ...view,
       markVisited,
       toggleCompleted,
       recordQuiz,
@@ -161,9 +131,10 @@ export function ProgressProvider({ children }: { children: ReactNode }) {
         total: CONCEPTS.length,
         percent: CONCEPTS.length ? Math.round((done / CONCEPTS.length) * 100) : 0,
       },
+      synced,
       reset,
     };
-  }, [state, markVisited, toggleCompleted, recordQuiz, reset]);
+  }, [view, markVisited, toggleCompleted, recordQuiz, synced, reset]);
 
   return <ProgressContext.Provider value={value}>{children}</ProgressContext.Provider>;
 }

@@ -13,5 +13,11 @@
     "strict": true,
     "tsBuildInfoFile": "./node_modules/.tmp/tsconfig.node.tsbuildinfo"
   },
-  "include": ["vite.config.ts", "scripts/vite-plugin-concept-index.ts"]
+  "include": [
+    "vite.config.ts",
+    "scripts/vite-plugin-concept-index.ts",
+    "scripts/vite-plugin-security-headers.ts",
+    "scripts/security-headers.ts",
+    "scripts/security-headers.test.ts"
+  ]
 }

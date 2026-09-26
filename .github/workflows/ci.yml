@@ -2,7 +2,7 @@ name: CI
 
 on:
   push:
-    branches: [master]
+    branches: [master, staging]
   pull_request:
 
 permissions:
@@ -29,6 +29,10 @@ jobs:
       - name: Lint
         run: npm run lint
 
+      # Pure logic only (progress rules), on Node's own runner - no test dependency.
+      - name: Test
+        run: npm test
+
       # check:visuals + check:content + typecheck + vite build + bundle budget
       - name: Build
         run: npm run build
@@ -37,3 +41,50 @@ jobs:
       # High and critical fail the run; moderate ones are reported in the log.
       - name: Audit production dependencies
         run: npm audit --omit=dev --audit-level=high
+
+  # The Account API in server/ (FastAPI + Postgres). Its tests run on a real Postgres here;
+  # locally they fall back to SQLite when TEST_DATABASE_URL is not set.
+  server:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: server
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: sdi
+          POSTGRES_PASSWORD: sdi
+          POSTGRES_DB: sdi_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U sdi -d sdi_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      TEST_DATABASE_URL: postgresql+psycopg://sdi:sdi@localhost:5432/sdi_test
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: astral-sh/setup-uv@v10.2.0
+        with:
+          enable-cache: true
+          cache-dependency-glob: server/uv.lock
+
+      # Python from server/.python-version, dependencies exactly as locked in server/uv.lock.
+      - run: uv sync --frozen
+
+      - name: Lint
+        run: uv run ruff check .
+
+      - name: Format
+        run: uv run ruff format --check .
+
+      - name: Type check
+        run: uv run mypy
+
+      - name: Test
+        run: uv run pytest -q

@@ -2,9 +2,10 @@ import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 import { fileURLToPath, URL } from 'node:url';
 import { conceptIndex } from './scripts/vite-plugin-concept-index.ts';
+import { securityHeaders } from './scripts/vite-plugin-security-headers.ts';
 
 export default defineConfig({
-  plugins: [react(), conceptIndex()],
+  plugins: [react(), conceptIndex(), securityHeaders()],
   resolve: {
     alias: {
       '@': fileURLToPath(new URL('./src', import.meta.url)),
@@ -26,6 +27,9 @@ export default defineConfig({
       'framer-motion',
       'lucide-react',
       'reactflow',
+      // The sign-in SDK, reached only through the dynamic import in AccountProvider.
+      'firebase/app',
+      'firebase/auth',
     ],
   },
 });

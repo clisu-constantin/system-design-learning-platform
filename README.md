@@ -2,11 +2,11 @@
 
 **Learn. Visualize. Experiment. Design.**
 
-An interactive System Design laboratory that runs entirely in your browser. Instead of reading that
+An interactive System Design laboratory that runs in your browser. Instead of reading that
 "a load balancer distributes requests across servers", you set the traffic to 3,000 req/sec, add a
 server, switch to least-connections, kill server 2, and watch health checks pull it out of the pool.
 
-![No backend required](https://img.shields.io/badge/backend-none-informational)
+![Works without an account](https://img.shields.io/badge/account-optional-informational)
 ![License](https://img.shields.io/badge/license-MIT-blue)
 
 ---
@@ -32,7 +32,13 @@ server, switch to least-connections, kill server 2, and watch health checks pull
 - **Node.js 20.19+ or 22.12+** (required by Vite 8; developed on Node 24)
 - npm 9+
 
-Nothing else. No database, no Docker, no API keys, no cloud account, no login.
+That is all the web app needs: every page works as a Guest, with no database, no API keys and no
+login. The optional Account (progress that follows you to every device) adds a small API in
+`server/`, which needs:
+
+- **Python 3.12** and [uv](https://docs.astral.sh/uv/)
+- **Postgres** (`docker compose up db` starts Postgres 17 locally)
+- A **Firebase** project with Google and Email/Password sign-in turned on
 
 ## Installation
 
@@ -56,6 +62,29 @@ Other scripts:
 | `npm run build`   | Content/diagram checks, strict typecheck, build to `dist/`, bundle budget |
 | `npm run lint`    | ESLint (TypeScript + React hooks rules)                 |
 | `npm run preview` | Serves the production build locally                     |
+
+### The Account API (optional)
+
+Copy `.env.example` to `.env` and fill it in. The web app reads the `VITE_*` variables at build time;
+with the `VITE_FIREBASE_*` ones empty it builds as Guest-only, with no Sign in button.
+
+```bash
+docker compose up db
+cd server && uv sync
+uv run --env-file ../.env uvicorn app.main:create_app --factory --reload --port 8000
+```
+
+| Variable              | Used by | What it is                                           |
+| --------------------- | ------- | ---------------------------------------------------- |
+| `VITE_API_URL`        | web     | The API origin, e.g. `http://localhost:8000`         |
+| `VITE_FIREBASE_*`     | web     | The Firebase web config (public by design)           |
+| `DATABASE_URL`        | API     | Postgres connection string                           |
+| `FIREBASE_PROJECT_ID` | API     | Tokens of any other Firebase project are refused     |
+| `ALLOWED_ORIGIN`      | API     | Web app origins allowed by CORS, comma-separated     |
+| `PORT`                | API     | Set by Railway; 8000 locally                         |
+
+Checks: `cd server && uv run ruff check . && uv run mypy . && uv run pytest -q`. More in
+[`server/README.md`](server/README.md).
 
 ## What's inside
 
@@ -100,12 +129,14 @@ Other scripts:
   the load balancer to the servers, replication streams, cache hits and misses) with a Walkthrough
   of the same diagram one hop at a time, trade-off chips and a quiz - the prose sits in a single collapsed tab.
 - A searchable glossary, global search (`Ctrl`/`Cmd` + `K`), difficulty
-  filtering, quizzes, and progress tracking in `localStorage`.
+  filtering, quizzes, and progress tracking in `localStorage` - with an optional Account (Google or
+  email and password) that keeps it on every device.
 
 ## Architecture
 
 **Stack:** React 18 · TypeScript (strict) · Vite · React Router · Tailwind CSS · Framer Motion ·
-Lucide React · React Flow.
+Lucide React · React Flow. The optional Account: Firebase Auth (loaded only on sign-in) and a
+FastAPI + Postgres API in `server/` that saves progress only.
 
 Three layers do most of the work:
 
@@ -129,7 +160,8 @@ src/
 ├── app/
 │   ├── App.tsx              Providers + router
 │   ├── router.tsx           Lazy-loaded routes
-│   └── providers/           ThemeProvider (dark/light + chart colors), ProgressProvider
+│   ├── account/             API client and the Account status rules
+│   └── providers/           ThemeProvider, AccountProvider, ProgressProvider
 ├── components/
 │   ├── architecture/        DiagramCanvas, ArchNode, HealthIndicator, geometry, nodeKinds
 │   ├── charts/              LiveChart (SVG), DistributionBar
@@ -154,6 +186,8 @@ src/
 ├── styles/                  Tailwind entry + design tokens
 ├── types/                   Shared domain types
 └── utils/                   cn, math, format, search
+
+server/                      Optional Account API: FastAPI, Postgres, Firebase token check
 ```
 
 ## How the simulations work

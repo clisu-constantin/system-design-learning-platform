@@ -1,8 +1,9 @@
 import { Link } from 'react-router-dom';
-import { Menu, Moon, PanelLeftClose, PanelLeftOpen, Search, Sun } from 'lucide-react';
+import { LogIn, Menu, Moon, PanelLeftClose, PanelLeftOpen, Search, Sun, UserRound } from 'lucide-react';
 import { Button, Select } from '@/components/ui';
 import { useTheme } from '@/app/providers/ThemeProvider';
 import { useProgress } from '@/app/providers/ProgressProvider';
+import { useAccount } from '@/app/providers/AccountProvider';
 import { LG_QUERY, useMediaQuery } from '@/hooks/useMediaQuery';
 import type { Difficulty } from '@/types';
 
@@ -87,7 +88,7 @@ export function TopBar({ onOpenSearch, onToggleSidebar, sidebarExpanded, difficu
         className="flex items-center gap-2 rounded-xl border border-line bg-elevated px-3 py-1.5 text-xs text-muted transition-colors hover:border-brand/50 hover:text-ink"
         title="Learning progress"
       >
-        <span className="relative h-1.5 w-16 overflow-hidden rounded-full bg-line">
+        <span className="relative hidden h-1.5 w-16 overflow-hidden rounded-full bg-line sm:block">
           <span className="absolute inset-y-0 left-0 rounded-full bg-ok" style={{ width: `${overall.percent}%` }} />
         </span>
         <span className="font-mono tabular-nums">{overall.percent}%</span>
@@ -96,6 +97,52 @@ export function TopBar({ onOpenSearch, onToggleSidebar, sidebarExpanded, difficu
       <Button size="icon" variant="ghost" onClick={toggle} aria-label={`Switch to ${theme === 'dark' ? 'light' : 'dark'} mode`}>
         {theme === 'dark' ? <Sun className="h-5 w-5" /> : <Moon className="h-5 w-5" />}
       </Button>
+
+      <AccountButton />
     </header>
+  );
+}
+
+/**
+ * "Sign in" for a Guest, the Account (its initial, and its email from md up)
+ * once signed in. Nothing at all in a build without Firebase. The initial is
+ * text, not the Google photo, so the CSP img-src stays 'self' data:.
+ */
+function AccountButton() {
+  const { available, status, email, openSignIn } = useAccount();
+  if (!available) return null;
+
+  if (status === 'guest') {
+    return (
+      <Button
+        variant="primary"
+        onClick={openSignIn}
+        aria-label="Sign in"
+        className="h-9 w-9 shrink-0 justify-center px-0 text-sm sm:w-auto sm:px-3"
+      >
+        <LogIn className="h-4 w-4" />
+        <span className="hidden sm:inline">Sign in</span>
+      </Button>
+    );
+  }
+
+  const initial = email?.trim().charAt(0).toUpperCase();
+  return (
+    <Link
+      to="/account"
+      aria-label={status === 'restoring' ? 'Account' : `Account: ${email ?? 'signed in'}`}
+      title={email ?? 'Account'}
+      className="flex h-9 min-w-9 coarse:min-w-11 shrink-0 items-center justify-center gap-2 rounded-xl text-sm text-muted transition-colors hover:bg-elevated hover:text-ink md:px-1.5"
+    >
+      <span
+        className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-xs font-semibold ${
+          status === 'restoring' ? 'bg-elevated text-faint' : 'bg-brand/15 text-brand'
+        }`}
+        aria-hidden
+      >
+        {status === 'signed-in' && initial ? initial : <UserRound className="h-4 w-4" />}
+      </span>
+      {status === 'signed-in' && email ? <span className="hidden max-w-40 truncate md:inline">{email}</span> : null}
+    </Link>
   );
 }

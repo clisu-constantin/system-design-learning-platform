@@ -15,6 +15,7 @@ const ScenariosPage = lazyWithRetry(() => import('@/features/scenarios/Scenarios
 const ScenarioPage = lazyWithRetry(() => import('@/features/scenarios/ScenarioPage'));
 const GlossaryPage = lazyWithRetry(() => import('@/features/glossary/GlossaryPage'));
 const ProgressPage = lazyWithRetry(() => import('@/features/progress/ProgressPage'));
+const AccountPage = lazyWithRetry(() => import('@/features/account/AccountPage'));
 const ComparePage = lazyWithRetry(() => import('@/features/compare/ComparePage'));
 const EvolutionPage = lazyWithRetry(() => import('@/features/evolution/EvolutionPage'));
 const NotFoundPage = lazyWithRetry(() => import('@/features/NotFoundPage'));
@@ -50,6 +51,7 @@ export const router = createBrowserRouter([
       { path: 'scenarios/:slug', element: page(<ScenarioPage />) },
       { path: 'glossary', element: page(<GlossaryPage />) },
       { path: 'progress', element: page(<ProgressPage />) },
+      { path: 'account', element: page(<AccountPage />) },
       { path: 'compare', element: page(<ComparePage />) },
       { path: 'evolution', element: page(<EvolutionPage />) },
       { path: '*', element: page(<NotFoundPage />) },
