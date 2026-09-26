@@ -1,15 +1,13 @@
-import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
+import { createContext, useCallback, useContext, useEffect, useMemo, useSyncExternalStore, type ReactNode } from 'react';
 import type { CategoryId } from '@/types';
 import { CONCEPTS, CONCEPTS_BY_CATEGORY } from '@/data/concepts';
 import { MERGED_CONCEPTS } from '@/data/concepts/merged';
+import { ACCOUNT_MARK_KEY } from '@/app/account/accountState';
 import { safeLocalStorage } from '@/utils/safeStorage';
 import { useAccount } from './AccountProvider';
 import * as progress from './progressState';
-import type { ProgressState, ProgressView } from './progressState';
-
-const STORAGE_KEY = 'sdi:progress:v2';
-/** The format before change times. Read once to migrate, removed once the new format is saved. */
-const LEGACY_STORAGE_KEY = 'sdi:progress:v1';
+import type { ProgressView } from './progressState';
+import { createProgressSync } from './progressSync';
 
 interface ProgressContextValue extends ProgressView {
   markVisited: (slug: string) => void;
@@ -17,70 +15,89 @@ interface ProgressContextValue extends ProgressView {
   recordQuiz: (slug: string, correct: number, total: number) => void;
   categoryProgress: (category: CategoryId) => { done: number; total: number; percent: number };
   overall: { done: number; total: number; percent: number };
+  /** The progress here belongs to an Account: it is synced, and a Reset clears it on every device. */
+  synced: boolean;
   reset: () => void;
 }
 
-const ALL_SLUGS = CONCEPTS.map((concept) => concept.slug);
-
 const ProgressContext = createContext<ProgressContextValue | null>(null);
 
-function load(): ProgressState {
-  return progress.parseProgress(
-    { current: safeLocalStorage.get(STORAGE_KEY), legacy: safeLocalStorage.get(LEGACY_STORAGE_KEY) },
-    MERGED_CONCEPTS,
-  );
-}
+const ALL_SLUGS = CONCEPTS.map((concept) => concept.slug);
+
+const hasAccountMark = () => safeLocalStorage.get(ACCOUNT_MARK_KEY) !== null;
+
+/** One per page, like the Account store: the rules are in progressSync.ts and progressState.ts. */
+const sync = createProgressSync({
+  storage: safeLocalStorage,
+  merged: MERGED_CONCEPTS,
+  allSlugs: ALL_SLUGS,
+  accountHere: hasAccountMark(),
+});
+
+const isLocalStorageEvent = (event: StorageEvent) => {
+  try {
+    return event.storageArea === window.localStorage;
+  } catch {
+    return false;
+  }
+};
 
 /**
- * Learning progress lives in localStorage; the rules for changing and merging
- * it are in progressState.ts. A concept counts as done when the learner marks
- * it complete or passes its quiz.
+ * Learning progress: saved in localStorage first, and while signed in also
+ * synced with the Account in the background (progressSync.ts). Nothing waits
+ * for the server. A concept counts as done when the learner marks it complete
+ * or passes its quiz.
  */
 export function ProgressProvider({ children }: { children: ReactNode }) {
-  const [state, setState] = useState<ProgressState>(load);
-  const { onSignedOut } = useAccount();
+  const state = useSyncExternalStore(sync.subscribe, sync.getState);
+  const { status, request, onSignedOut } = useAccount();
+  // Restoring, or signed in here but the sign-in SDK could not load yet: still the Account's progress.
+  const synced = status !== 'guest' || hasAccountMark();
 
-  // Signing out leaves an empty Guest, so the next person on a shared computer
-  // sees nothing. Emptied, not Reset: a Reset keeps "cleared at" records that a
-  // later sign-in would sync to the Account and wipe it.
-  useEffect(
-    () =>
-      onSignedOut(() => {
-        safeLocalStorage.remove(STORAGE_KEY);
-        safeLocalStorage.remove(LEGACY_STORAGE_KEY);
-        setState(progress.EMPTY_PROGRESS);
-      }),
-    [onSignedOut],
-  );
+  // Signing out (or a 410) leaves an empty Guest, so the next person on a shared
+  // computer sees nothing. Emptied, not Reset: a Reset keeps "cleared at"
+  // records that a later sign-in would sync to the Account and wipe it.
+  useEffect(() => onSignedOut(sync.signedOut), [onSignedOut]);
 
   useEffect(() => {
-    // Storage can be unavailable (private mode) - progress is a nice-to-have.
-    const saved = progress.serializeProgress(state);
-    safeLocalStorage.set(STORAGE_KEY, saved);
-    // Only once the new format is really stored, or a full storage would lose the old copy.
-    if (safeLocalStorage.get(STORAGE_KEY) === saved) safeLocalStorage.remove(LEGACY_STORAGE_KEY);
-  }, [state]);
+    if (status !== 'signed-in') return;
+    sync.start(request);
+    return sync.stop;
+  }, [status, request]);
+
+  useEffect(() => {
+    const onStorage = (event: StorageEvent) => {
+      if (isLocalStorageEvent(event)) sync.storageChanged(event.key, event.newValue);
+    };
+    const onOnline = () => sync.wake();
+    const onVisibility = () => (document.visibilityState === 'visible' ? sync.wake() : sync.flush());
+    window.addEventListener('storage', onStorage);
+    window.addEventListener('online', onOnline);
+    document.addEventListener('visibilitychange', onVisibility);
+    return () => {
+      window.removeEventListener('storage', onStorage);
+      window.removeEventListener('online', onOnline);
+      document.removeEventListener('visibilitychange', onVisibility);
+    };
+  }, []);
 
   const markVisited = useCallback(
-    (slug: string) => setState((current) => progress.markVisited(current, slug, Date.now())),
+    (slug: string) => sync.change((current, now) => progress.markVisited(current, slug, now)),
     [],
   );
 
   const toggleCompleted = useCallback(
-    (slug: string) => setState((current) => progress.toggleDone(current, slug, Date.now())),
+    (slug: string) => sync.change((current, now) => progress.toggleDone(current, slug, now)),
     [],
   );
 
   const recordQuiz = useCallback(
     (slug: string, correct: number, total: number) =>
-      setState((current) => progress.recordQuiz(current, slug, correct, total, Date.now())),
+      sync.change((current, now) => progress.recordQuiz(current, slug, correct, total, now)),
     [],
   );
 
-  const reset = useCallback(
-    () => setState((current) => progress.resetProgress(current, ALL_SLUGS, Date.now())),
-    [],
-  );
+  const reset = useCallback(() => sync.reset(synced), [synced]);
 
   const view = useMemo(() => progress.progressView(state), [state]);
 
@@ -107,9 +124,10 @@ export function ProgressProvider({ children }: { children: ReactNode }) {
         total: CONCEPTS.length,
         percent: CONCEPTS.length ? Math.round((done / CONCEPTS.length) * 100) : 0,
       },
+      synced,
       reset,
     };
-  }, [view, markVisited, toggleCompleted, recordQuiz, reset]);
+  }, [view, markVisited, toggleCompleted, recordQuiz, synced, reset]);
 
   return <ProgressContext.Provider value={value}>{children}</ProgressContext.Provider>;
 }

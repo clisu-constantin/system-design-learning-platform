@@ -30,6 +30,12 @@ export interface ApiRequest {
   timeoutMs?: number;
 }
 
+/** How deleting the Account ended. Nothing is deleted when the proof (`confirm`) or the server call fails. */
+export type DeleteAccountResult =
+  | { ok: true; firebaseUserDeleted: boolean }
+  | { ok: false; step: 'confirm'; error: unknown }
+  | { ok: false; step: 'server'; reason: Extract<ApiResult<unknown>, { ok: false }>['reason'] };
+
 interface AccountContextValue {
   status: AccountStatus;
   email: string | null;
@@ -51,6 +57,14 @@ interface AccountContextValue {
    * Returns the unsubscribe.
    */
   onSignedOut: (listener: () => void) => () => void;
+  /** What deleting the Account asks for to prove it is the Learner: the Google popup or the password. */
+  reauthMethod: () => 'google' | 'password' | null;
+  /**
+   * Deletes the Account and everything saved to it, then leaves an empty Guest.
+   * Pass the password for a password Account; without one it opens the Google
+   * popup, so call it straight from the click.
+   */
+  deleteAccount: (password?: string) => Promise<DeleteAccountResult>;
 }
 
 // ---------------------------------------------------------------------------
@@ -167,6 +181,13 @@ function createAccountStore(config: FirebaseWebConfig | null, apiUrl: string | n
     return result;
   }
 
+  /** The session for an email and password action; the SDK failing to load reads as "no connection". */
+  async function sessionForEmail(): Promise<AuthSession> {
+    const current = session ?? (await ensureSession());
+    if (!current) throw Object.assign(new Error('Sign-in could not load'), { code: 'auth/network-request-failed' });
+    return current;
+  }
+
   return {
     subscribe(listener: () => void) {
       listeners.add(listener);
@@ -188,6 +209,14 @@ function createAccountStore(config: FirebaseWebConfig | null, apiUrl: string | n
       if (!session) return Promise.reject(new Error('Sign-in is still loading'));
       return session.signInWithGoogle();
     },
+    /** Email and password open no popup, so unlike Google they may wait for the SDK to load. */
+    emailAuth: {
+      signInWithEmail: async (email: string, password: string) =>
+        (await sessionForEmail()).signInWithEmail(email, password),
+      signUpWithEmail: async (email: string, password: string) =>
+        (await sessionForEmail()).signUpWithEmail(email, password),
+      sendPasswordReset: async (email: string) => (await sessionForEmail()).sendPasswordReset(email),
+    },
     signOut,
     getIdToken,
     request,
@@ -196,6 +225,36 @@ function createAccountStore(config: FirebaseWebConfig | null, apiUrl: string | n
       return () => {
         signedOutListeners.delete(listener);
       };
+    },
+    reauthMethod: () => (snapshot.status === 'signed-in' ? (session?.reauthMethod() ?? null) : null),
+    /**
+     * Proves it is the Learner again (Firebase deletes a user only after a
+     * recent sign-in), then DELETE /me removes every row on the server, then
+     * the Firebase user goes and this device becomes an empty Guest.
+     * Synchronous up to the Google popup: no await before it.
+     */
+    deleteAccount(password?: string): Promise<DeleteAccountResult> {
+      const current = snapshot.status === 'signed-in' ? session : null;
+      if (!current) return Promise.resolve({ ok: false, step: 'server', reason: 'unavailable' });
+      const proof = password === undefined ? current.reauthenticateWithGoogle() : current.reauthenticateWithPassword(password);
+      return proof.then(
+        async (): Promise<DeleteAccountResult> => {
+          const result = await request<void>('/me', { method: 'DELETE' });
+          // A 410: deleted already, from another device, and request() has signed out.
+          if (!result.ok && result.reason !== 'gone') return { ok: false, step: 'server', reason: result.reason };
+          let firebaseUserDeleted = false;
+          try {
+            await current.deleteUser();
+            firebaseUserDeleted = true;
+          } catch {
+            // The server rows are gone either way. The server refuses this sign-in
+            // now (410); a later sign-in gets a fresh, empty Account.
+          }
+          await signOut();
+          return { ok: true, firebaseUserDeleted };
+        },
+        (error: unknown): DeleteAccountResult => ({ ok: false, step: 'confirm', error }),
+      );
     },
   };
 }
@@ -224,6 +283,8 @@ export function AccountProvider({ children }: { children: ReactNode }) {
       getIdToken: store.getIdToken,
       request: store.request,
       onSignedOut: store.onSignedOut,
+      reauthMethod: store.reauthMethod,
+      deleteAccount: store.deleteAccount,
     }),
     [snapshot.status, snapshot.email],
   );
@@ -233,7 +294,12 @@ export function AccountProvider({ children }: { children: ReactNode }) {
       {children}
       {snapshot.signInOpen ? (
         <Suspense fallback={null}>
-          <SignInDialog ready={snapshot.sessionReady} onGoogle={store.signInWithGoogle} onClose={store.closeSignIn} />
+          <SignInDialog
+            ready={snapshot.sessionReady}
+            onGoogle={store.signInWithGoogle}
+            emailAuth={store.emailAuth}
+            onClose={store.closeSignIn}
+          />
         </Suspense>
       ) : null}
     </AccountContext.Provider>

@@ -4,9 +4,15 @@ Guidance for Claude Code when working in this repository.
 
 ## What this project is
 
-**System Design Interactive** — a browser-only educational application for learning system design
+**System Design Interactive** — a browser-first educational application for learning system design
 through simulations the learner can manipulate. It is not a documentation site: every major concept
 is backed by a lab where changing a control changes the outcome.
+
+Every page works as a Guest, with no network calls. The one backend is the optional Account in
+`server/` (FastAPI + Postgres + SQLAlchemy Core, sign-in rented from Firebase Auth): it checks Firebase
+ID tokens against the Google public keys (only `FIREBASE_PROJECT_ID`, no service account) and saves
+only progress, one row per Concept per Account. See `docs/adr/0001-backend-with-rented-auth.md` and
+the Learner / Account / Guest terms in `CONTEXT.md`.
 
 Non-negotiable product rule: **if a page's only possible action is scrolling, it is not finished.**
 
@@ -17,7 +23,7 @@ npm install      # install dependencies
 npm run dev      # dev server on http://localhost:5173
 npm run build    # check:visuals + check:content + tsc -b + vite build + check:bundle  (must pass)
 npm run lint     # ESLint (typescript-eslint + react-hooks); CI fails on any finding
-npm test         # the src/**/*.test.ts files, on Node's own runner (node --test)
+npm test         # the src/**/*.test.ts and scripts/**/*.test.ts files, on Node's own runner (node --test)
 npm run check:visuals   # diagram geometry + wiring: overlap, overflow, truncated labels, replica consistency
 npm run check:content   # every concept has its long-form lesson, a Lab and a 10-question Quiz, and sits in its category file
 npm run check:bundle    # initial JS (entry + modulepreloads) stays under the gzip budget
@@ -25,12 +31,26 @@ npm run preview  # serve the production build
 npx tsc --noEmit -p tsconfig.app.json   # fast typecheck of src/ only
 ```
 
+The API (`server/`, Python 3.12, managed with uv):
+
+```bash
+docker compose up db                     # Postgres 17 on localhost:5432 (needs DATABASE_URL in .env)
+cd server && uv sync                     # install the API and its dev tools
+cd server && uv run --env-file ../.env uvicorn app.main:create_app --factory --reload --port 8000
+cd server && uv run ruff check . && uv run ruff format --check . && uv run mypy . && uv run pytest -q
+```
+
+Server tests run on SQLite by default and on Postgres when `TEST_DATABASE_URL` is set; they drop the
+tables of the database they point at, so never point it at a real one. Every variable name is in
+`.env.example`; the real values live in the gitignored root `.env`.
+
 `npm test` covers pure logic only, with no test dependency: Node (22.18 or later) runs the `.ts` files as they are,
 so tested code imports nothing but types and relative `.ts` files - no React, no `@/` alias
 (`src/app/providers/progressState.ts` is the example). `npm run build` is the gate: it typechecks
 in strict mode (including `noUnusedLocals`/`noUnusedParameters`), bundles, and enforces the bundle
 budget. `.github/workflows/ci.yml` runs `npm ci`, `lint`, `test`, `build` and
-`npm audit --omit=dev --audit-level=high` on every push to master and every PR.
+`npm audit --omit=dev --audit-level=high` on every push to master and every PR, and a second
+`server` job runs ruff, mypy and pytest against a Postgres service.
 
 ESLint turns off the React Compiler rules `refs`, `purity` and `immutability` on purpose - they
 forbid the ref-based simulation pattern below. `set-state-in-effect` stays on: derive state during
@@ -56,7 +76,61 @@ src/
 │   └── models/     computeLoad (queueing model), machine tiers
 ├── types/          Concept, LabId, SystemNode, SimulatedRequest, ...
 └── utils/          cn, math, format, search
+
+server/             the optional Account API (FastAPI)
+├── app/            main.py (create_app factory), auth.py (token check), store.py (Account, progress,
+│                   delete + tombstone), merge.py, schemas.py, db.py, settings.py, limits.py
+├── tests/          pytest, tokens signed with a test key - no network
+└── railway.json    the API deploy config (the root railway.json builds the web app)
 ```
+
+### The Account (sign-in and progress sync)
+
+- `src/features/account/firebase.ts` is the only module that imports `firebase/*`, and it is reached
+  only by `import()`. A Guest never downloads it: it loads when the Learner clicks Sign in, or at start
+  when localStorage has the `sdi:account` mark ("was signed in here").
+- `AccountProvider` wraps `ProgressProvider`. `useAccount()` gives the status, `openSignIn`,
+  `signOut` and `request(path)` for API calls: it adds the token, never throws, and turns a 410
+  (a deleted Account) into a sign-out. Nothing renders waiting for the server.
+- Progress sync is local-first and lives in `src/app/providers/progressSync.ts` (pure, runs on
+  Node); `ProgressProvider` only wires it to React and window events. Every change is saved to
+  localStorage, and its slug goes into the outbox `sdi:progress:outbox`, which is sent 2 s after the
+  last change with `POST /progress` (only the changed Concepts). The answer is all the Account
+  progress, so a push is also a pull; `GET /progress` is used only when the outbox is empty. A
+  failure retries after 5 s, doubling up to 5 min, and again on `online` and when the tab shows.
+- Every save merges into what is stored, so two tabs never overwrite each other; a stored progress
+  that was removed or emptied (a sign-out, a Guest Reset) empties the other tabs.
+- A Guest Reset empties the browser (a Guest has no other device to reach). A signed-in Reset writes
+  cleared-at records for every Concept and sends them, so an offline device cannot bring old
+  progress back. A Guest browser drops leftover cleared-at records on load and at sign-in.
+- Delete my Account runs in this order: re-authenticate (Google popup or password), `DELETE /me`,
+  then Firebase `deleteUser`, then sign out to an empty Guest. If `DELETE /me` fails, nothing is
+  deleted.
+- `onSignedOut` is where local state is emptied: empty it, never Reset it - a Reset writes cleared-at
+  records, and those would wipe the Account at the next sign-in.
+- Open a Firebase popup synchronously inside the click handler, with no `await` before it, or the
+  browser blocks the popup. Email and password actions have no popup, so they may wait for the SDK.
+- Sign-in is Google (popup) or email and password (sign in, create account, "Forgot password?").
+  The confirm email is sent after sign-up but never required - the server does not check
+  `email_verified`; keep it that way. Keep the Firebase setting "One account per email address" on:
+  it is what makes Google and a password for one email the same uid, and so the same Account.
+- Every Firebase error becomes a plain sentence in `src/features/account/signInErrors.ts`, never a
+  code. Wrong password and unknown email read the same, so the dialog never tells whether an
+  Account exists.
+- If Firebase reCAPTCHA Enterprise is ever turned on for email and password, the CSP needs
+  `https://www.google.com` (and `https://www.gstatic.com`) in `script-src` and `frame-src`.
+- `server/app/merge.py` is a line-for-line port of `mergeConcept` in
+  `src/app/providers/progressState.ts`. Change the two together.
+- Tables are created at start (`accounts`, `progress`, `deleted_accounts`); there are no migrations
+  yet. `deleted_accounts` keeps a sha256 of the uid, so an old token of a deleted Account gets 410.
+- Security headers: `dist/serve.json` is generated at build time by
+  `scripts/vite-plugin-security-headers.ts` from `public/serve.json` plus `VITE_API_URL` and
+  `VITE_FIREBASE_AUTH_DOMAIN`. Edit the template or `scripts/security-headers.ts`, never `dist/`. The
+  dev server does not apply serve.json. With the `VITE_FIREBASE_*` vars missing, the build is
+  Guest-only: no Sign in button, and the CSP is the plain 'self' one.
+- Deploy: the web app and the API are two Railway services. The API service has Root Directory
+  `server/` and its config file path set to `/server/railway.json` (Railway does not look for the
+  config file inside the Root Directory).
 
 ### The three layers that matter
 
@@ -290,8 +364,9 @@ These are editorial rules, not style preferences. They are the reason the app is
   of `npm run build`. Minimum height is 69, +4.5 with a subtitle and +21.5 with a stat row (so 73,
   90 or 95 - measured in headless Chromium); minimum width is 54 + the per-letter title width table
   in `scripts/check-visuals.mjs` (about 7px a letter), or the subtitle table (about 6px) if wider.
-- Everything persists to `localStorage` only (`sdi:theme`, `sdi:progress:v2`, and `sdi:layout` for
-  which side panels the learner folded). The app must work fully as a Guest, with no network calls.
+- Everything persists to `localStorage` (`sdi:theme`, `sdi:progress:v2`, `sdi:layout` for which
+  side panels the learner folded, `sdi:account`, the "was signed in here" mark, and
+  `sdi:progress:outbox`, the Concepts the server has not confirmed yet). The app must work fully as a Guest, with no network calls.
   The only backend is the optional Account (`server/`, FastAPI + Postgres, sign-in by Firebase
   Auth), and it only saves progress - see `docs/adr/0001-backend-with-rented-auth.md`. Never make a
   page wait for the server, and never load the Firebase SDK for a Guest.

@@ -1,12 +1,14 @@
 import { Link } from 'react-router-dom';
-import { Check, RotateCcw } from 'lucide-react';
+import { Check, LogIn, RotateCcw } from 'lucide-react';
 import { Button, Meter } from '@/components/ui';
+import { useAccount } from '@/app/providers/AccountProvider';
 import { CATEGORIES } from '@/data/categories';
 import { CONCEPTS_BY_CATEGORY, CONCEPT_BY_SLUG } from '@/data/concepts';
 import { useProgress } from '@/app/providers/ProgressProvider';
 
 export function ProgressPage() {
-  const { overall, categoryProgress, completed, quiz, visited, reset } = useProgress();
+  const { overall, categoryProgress, completed, quiz, visited, synced, reset } = useProgress();
+  const { available, openSignIn } = useAccount();
   const quizEntries = Object.entries(quiz);
   const visitedCount = Object.keys(visited).length;
 
@@ -17,18 +19,33 @@ export function ProgressPage() {
           <div>
             <h1 className="text-2xl font-semibold tracking-tight text-ink">System Design Progress</h1>
             <p className="mt-1.5 text-sm text-muted">
-              Stored in your browser only - no account, no sync, no server.
+              {synced
+                ? 'Saved in this browser and to your Account, so it follows you to every device you sign in on.'
+                : available
+                  ? 'Saved in this browser only. Sign in to keep it on every device.'
+                  : 'Saved in this browser only.'}
             </p>
           </div>
-          <Button
-            variant="secondary"
-            onClick={() => {
-              if (window.confirm('Reset all progress? This cannot be undone.')) reset();
-            }}
-          >
-            <RotateCcw className="h-4 w-4" />
-            Reset progress
-          </Button>
+          <div className="flex flex-wrap gap-2">
+            {!synced && available ? (
+              <Button variant="secondary" onClick={openSignIn}>
+                <LogIn className="h-4 w-4" />
+                Sign in
+              </Button>
+            ) : null}
+            <Button
+              variant="secondary"
+              onClick={() => {
+                const question = synced
+                  ? 'This clears your progress on every device. It cannot be undone.'
+                  : 'Reset all progress? This cannot be undone.';
+                if (window.confirm(question)) reset();
+              }}
+            >
+              <RotateCcw className="h-4 w-4" />
+              Reset progress
+            </Button>
+          </div>
         </header>
 
         <div className="mt-6 grid gap-3 sm:grid-cols-3">

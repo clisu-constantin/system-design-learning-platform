@@ -1,13 +1,15 @@
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
-import { ArrowRight, Loader2, LogIn, LogOut, MonitorSmartphone, UserRound } from 'lucide-react';
+import { ArrowRight, CircleCheck, Loader2, LogIn, LogOut, MonitorSmartphone, Trash2, UserRound } from 'lucide-react';
 import { Button, Meter } from '@/components/ui';
 import { useAccount } from '@/app/providers/AccountProvider';
 import { useProgress } from '@/app/providers/ProgressProvider';
+import { DeleteAccountDialog } from './DeleteAccountDialog';
 
 /** The Account of this device: who is signed in, and signing out. A Guest gets the way in. */
 export function AccountPage() {
   const { status } = useAccount();
+  const [deleted, setDeleted] = useState<{ firebaseUserDeleted: boolean } | null>(null);
 
   return (
     <div className="px-5 py-8 lg:px-8">
@@ -17,16 +19,24 @@ export function AccountPage() {
           <p className="mt-1.5 text-sm text-muted">Optional. Every page works the same for a Guest.</p>
         </header>
 
-        {status === 'signed-in' ? <SignedIn /> : status === 'restoring' ? <Restoring /> : <Guest />}
+        {deleted && status === 'guest' ? <Deleted firebaseUserDeleted={deleted.firebaseUserDeleted} /> : null}
+        {status === 'signed-in' ? (
+          <SignedIn onDeleted={(firebaseUserDeleted) => setDeleted({ firebaseUserDeleted })} />
+        ) : status === 'restoring' ? (
+          <Restoring />
+        ) : (
+          <Guest />
+        )}
       </div>
     </div>
   );
 }
 
-function SignedIn() {
+function SignedIn({ onDeleted }: { onDeleted: (firebaseUserDeleted: boolean) => void }) {
   const { email, signOut } = useAccount();
   const { overall, visited } = useProgress();
   const [pending, setPending] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   const initial = email?.trim().charAt(0).toUpperCase();
 
   return (
@@ -47,7 +57,8 @@ function SignedIn() {
       </section>
 
       <section className="mt-6">
-        <h2 className="text-sm font-semibold text-ink">On this device</h2>
+        <h2 className="text-sm font-semibold text-ink">Progress</h2>
+        <p className="mt-1 text-xs text-muted">Saved to your Account and synced to every device you sign in on.</p>
         <Link
           to="/progress"
           className="mt-3 flex items-center gap-4 rounded-xl border border-line bg-surface px-4 py-3 transition-colors hover:border-brand/50"
@@ -78,7 +89,37 @@ function SignedIn() {
           Signing out empties the progress on this device, so the next person here starts as an empty Guest.
         </p>
       </section>
+
+      <section className="mt-8 rounded-2xl border border-danger/30 p-5">
+        <h2 className="text-sm font-semibold text-ink">Delete my Account</h2>
+        <p className="mt-1 text-xs text-muted">
+          Deletes the Account and all the progress saved to it, on every device. It cannot be undone.
+        </p>
+        <Button variant="danger" className="mt-4" onClick={() => setDeleting(true)}>
+          <Trash2 className="h-4 w-4" />
+          Delete my Account
+        </Button>
+      </section>
+
+      {deleting ? <DeleteAccountDialog onClose={() => setDeleting(false)} onDeleted={onDeleted} /> : null}
     </>
+  );
+}
+
+function Deleted({ firebaseUserDeleted }: { firebaseUserDeleted: boolean }) {
+  return (
+    <div className="mt-6 flex items-start gap-3 rounded-2xl border border-ok/30 bg-ok/5 p-5" role="status">
+      <CircleCheck className="mt-0.5 h-4 w-4 shrink-0 text-ok" aria-hidden />
+      <div className="min-w-0 text-sm">
+        <p className="font-medium text-ink">Your Account was deleted, with all the progress saved to it.</p>
+        <p className="mt-1 text-muted">
+          This device is now an empty Guest.
+          {firebaseUserDeleted
+            ? null
+            : ' The sign-in itself could not be removed. Signing in with it again starts a fresh, empty Account.'}
+        </p>
+      </div>
+    </div>
   );
 }
 
