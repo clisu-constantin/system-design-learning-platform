@@ -4,6 +4,7 @@ import { ArchNode, DiagramCanvas, NodeStatRow, ParticleLegend, type Layout, type
 import { Insight, LabShell, MetricsPanel } from '@/components/learning';
 import { Badge, Button, SegmentedControl, Slider, Toggle } from '@/components/ui';
 import { advanceParticles, nextParticleId, useEventLog, useTicker, type Particle } from '@/simulations/engine';
+import { useLabSetup } from '@/hooks/useLabSetup';
 import { useRerender } from '@/hooks/useRerender';
 import { sampleArrivals } from '@/utils/math';
 import { cn } from '@/utils/cn';
@@ -82,7 +83,7 @@ export function RequirementsLab({ focus }: LabProps<'requirements'>) {
   // The page keys this lab by Concept, so the focus never changes under a mounted lab.
   const start = focus ? FOCUS_SETUPS[focus] : DEFAULT_SETUP;
   // Every control lives in one object, so Reset cannot miss one.
-  const [setup, setSetup] = useState<Setup>(start);
+  const { setup, setSetup, change } = useLabSetup<Setup>(start);
   const [running, setRunning] = useState(true);
   const state = useRef<State>({ particles: [] });
   const rerender = useRerender(30);
@@ -177,7 +178,7 @@ export function RequirementsLab({ focus }: LabProps<'requirements'>) {
     setSetup(start);
     state.current = { particles: [] };
     clear();
-  }, [start, clear]);
+  }, [start, setSetup, clear]);
 
   useTicker(running, (dt) => {
     const current = state.current;
@@ -392,7 +393,7 @@ export function RequirementsLab({ focus }: LabProps<'requirements'>) {
                 { value: 'features', label: 'What it must do' },
                 { value: 'targets', label: 'How well' },
               ]}
-              onChange={(value) => setSetup((current) => ({ ...current, panel: value }))}
+              onChange={change('panel')}
             />
 
             {panel === 'features' ? (
