@@ -901,16 +901,16 @@ Round trip California -> Netherlands ~150 ms
       {
         id: 'botec-5',
         prompt:
-          'In the Lab on the default setup with rounding on, 20 requests per user rounds to 10 and 2 KB rounds to 1 KB. Rough storage comes out about 4x below exact. Why?',
+          'In the Lab with rounding on, move Requests per user to 20 and Average object size to 2 KB. Rough against exact now puts stored data about 4x below exact, where it was about 1x. What happened?',
         options: [
-          'Rounding to powers of ten is always about 4x off, whatever the inputs are',
+          'Rounding to powers of ten is always about 4x off; the earlier 1x match was luck',
           'The replication factor of 3 is ignored in rough mode, which removes most of the total',
           'Rough mode uses 1,024 bytes per KB, and that difference compounds over a year of data',
-          'Both inputs rounded down, so their 2x errors multiplied instead of cancelling',
+          'Users, requests and size all rounded down, so the errors multiplied, not cancelled',
         ],
         answer: 3,
         explanation:
-          'Each power-of-ten rounding can be off by up to about 3x. When one input rounds up and another down, errors cancel; when both go the same way they compound. The fix is to notice it - round one of them the other way, or check the exact sum.',
+          '12M became 10^7, 20 requests became 10 and 2 KB became 1 KB: three roundings down, by 1.2x, 2x and 2x, multiply to almost 5x (365 days rounding up to 400 wins a little back). With 8 requests and 1.2 KB, 8 rounded up and the errors cancelled. Move Requests per user to 40, which rounds up to 100, and the gap falls to about 1.1x. When every input rounds the same way, check the exact sum.',
       },
       {
         id: 'botec-6',
