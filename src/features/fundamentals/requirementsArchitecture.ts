@@ -642,6 +642,15 @@ function isDrawn(needs: Needs, arch: Architecture) {
   }
 }
 
+/**
+ * Consistency only has something to choose once the database has a second copy (a standby,
+ * replicas or region 2); with one copy every read already sees the latest write, so the Lab
+ * turns the control off rather than let it change nothing.
+ */
+export function consistencyApplies(arch: Architecture): boolean {
+  return Boolean(arch.parts.db) && (arch.dbCopies > 1 || arch.region2);
+}
+
 /** The structural decisions the quality targets force, naming only parts that are drawn. */
 export function implicationsFor(setup: Setup, arch: Architecture): string[] {
   if (chosenOf(setup).length === 0) return [];

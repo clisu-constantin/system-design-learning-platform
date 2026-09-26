@@ -11,6 +11,7 @@ import {
   SLOTS,
   WRITE_FLOWS,
   architecture,
+  consistencyApplies,
   coreOf,
   edgesFor,
   implicationsFor,
@@ -477,4 +478,12 @@ test('a 20 ms target keeps the hot data in memory, so the cache answers more rea
 test('Uber pooling batches requests through the workers into the geo index', () => {
   const routes = allRoutes(setup('uber', ['location', 'match', 'pool']));
   assert.ok(routes.some(({ route }) => walks(route, ['api', 'async', 'index'])));
+});
+
+test('consistency can be set only while there is a second copy to be inconsistent with', () => {
+  const core = Object.keys(coreOf('whatsapp'));
+  assert.equal(consistencyApplies(architecture(setup('whatsapp', core))), false, 'one database copy');
+  assert.equal(consistencyApplies(architecture(setup('whatsapp', core, { availability: 2 }))), true, 'a standby');
+  assert.equal(consistencyApplies(architecture(setup('whatsapp', core, { availability: 3 }))), true, 'region 2');
+  assert.equal(consistencyApplies(architecture(setup('whatsapp', []))), false, 'no database');
 });
