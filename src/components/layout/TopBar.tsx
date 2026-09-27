@@ -130,9 +130,11 @@ function AccountButton() {
     return (
       <Button
         variant="primary"
+        // The icon size, not md: md adds px-4, which leaves the icon 4px of a 36px button.
+        size="icon"
         onClick={openSignIn}
         aria-label="Sign in"
-        className="h-9 w-9 shrink-0 justify-center px-0 text-sm sm:w-auto sm:px-3"
+        className="shrink-0 text-sm sm:w-auto sm:gap-2 sm:px-3"
       >
         <LogIn className="h-4 w-4" />
         <span className="hidden sm:inline">Sign in</span>
