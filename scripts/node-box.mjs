@@ -133,7 +133,7 @@ const LEADING = { 'leading-none': 1, 'leading-tight': 1.25, 'leading-snug': 1.37
 
 // Classes that do not change a height or a width. Anything else found in a card
 // makes the model give up on that card rather than guess.
-const INERT = /^(?:(?:bg|text|border|ring|shadow|from|to|fill|stroke|accent)-(?:brand|danger|info|ink|muted|faint|ok|violet|warn|white|line|elevated|surface|canvas|glow|node|sm)(?:\/\d+)?|ring-2|rounded(?:-.+)?|font-(?:medium|semibold|mono|bold)|tabular-nums|text-left|text-right|text-center|opacity-\d+|saturate-0|select-none|z-10|transition.*|duration-\d+|ease-.+|animate-.+|lucide.*|(?:hover|active|disabled|focus-visible|group-hover):.+|cursor-.+|overflow-hidden|relative|arch-node|justify-.+|shrink-0|min-w-0|flex-1|grow|uppercase|tracking-.+|italic|underline|whitespace-nowrap)$/;
+const INERT = /^(?:(?:bg|text|border|ring|shadow|from|to|fill|stroke|accent)-(?:brand|danger|info|ink|muted|faint|ok|violet|warn|white|on-fill|cat|line|elevated|surface|canvas|glow|node|sm)(?:\/\d+)?|ring-2|rounded(?:-.+)?|font-(?:medium|semibold|mono|bold)|tabular-nums|text-left|text-right|text-center|opacity-\d+|saturate-0|select-none|z-10|transition.*|duration-\d+|ease-.+|animate-.+|lucide.*|(?:hover|active|disabled|focus-visible|group-hover):.+|cursor-.+|overflow-hidden|relative|arch-node|justify-.+|shrink-0|min-w-0|flex-1|grow|uppercase|tracking-.+|italic|underline|whitespace-nowrap)$/;
 
 const WEIGHTS = { 'font-medium': 500, 'font-semibold': 600, 'font-bold': 700 };
 

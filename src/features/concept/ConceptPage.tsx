@@ -43,7 +43,11 @@ import type {
 /** Keeps sidebar chips to one readable line instead of a paragraph. */
 const short = (text: string, max = 78) => {
   const clean = text.split(' - ')[0].split('. ')[0].replace(/\.$/, '');
-  return clean.length > max ? `${clean.slice(0, max - 1).trimEnd()}...` : clean;
+  if (clean.length <= max) return clean;
+  // Cut at the last whole word, so a line never ends on half a word ("ser...").
+  const cut = clean.slice(0, max - 3);
+  const space = cut.lastIndexOf(' ');
+  return `${(space > max / 2 ? cut.slice(0, space) : cut).replace(/[\s,;:(]+$/, '')}...`;
 };
 
 export function ConceptPage() {
@@ -78,7 +82,7 @@ export function ConceptPage() {
       ) : failed ? (
         <div className="mx-auto max-w-2xl px-5 py-12 text-center">
           <AlertTriangle className="mx-auto h-5 w-5 text-danger" aria-hidden />
-          <p className="mt-2 text-sm text-ink">This lesson could not be loaded.</p>
+          <p className="mt-2 text-sm text-ink">This concept could not be loaded.</p>
           <p className="mt-1 text-xs text-muted">
             Check your connection and try again. If it still fails, a new version was deployed while the page
             was open, and reloading fetches it.
@@ -92,9 +96,9 @@ export function ConceptPage() {
           </div>
         </div>
       ) : (
-        <div className="flex h-64 items-center justify-center gap-2 text-sm text-muted">
-          <Loader2 className="h-4 w-4 animate-spin" />
-          Loading lesson...
+        <div role="status" className="flex h-64 items-center justify-center gap-2 text-sm text-muted">
+          <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
+          Loading the concept...
         </div>
       )}
     </article>
@@ -208,9 +212,9 @@ function ConceptBody({ concept }: { concept: Concept }) {
           <ErrorBoundary area={lab.title}>
             <Suspense
               fallback={
-                <div className="flex h-64 items-center justify-center gap-2 text-sm text-muted">
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                  Loading simulation...
+                <div role="status" className="flex h-64 items-center justify-center gap-2 text-sm text-muted">
+                  <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
+                  Loading the lab...
                 </div>
               }
             >
@@ -269,9 +273,18 @@ function ConceptBody({ concept }: { concept: Concept }) {
   const firstTradeoff = concept.tradeoffs?.[0];
   const option = (concept.tradeoffs?.length ?? 0) > 1 ? firstTradeoff?.approach : undefined;
   const costs = firstTradeoff?.costs ?? [];
-  const costsLabel = option ? `${option}: what it costs` : 'What it costs';
+  // The option name keeps its own case: the uppercase label would turn "60s" into "60S".
+  const named = (name: string | undefined, text: string) =>
+    name ? (
+      <>
+        <span className="normal-case tracking-normal">{name}</span>: {text}
+      </>
+    ) : (
+      text[0].toUpperCase() + text.slice(1)
+    );
+  const costsLabel = named(option, 'what it costs');
   const gains = concept.advantages ?? firstTradeoff?.gains ?? [];
-  const gainsLabel = !concept.advantages && option ? `${option}: what you gain` : 'What you gain';
+  const gainsLabel = named(concept.advantages ? undefined : option, 'what you gain');
   const oneLine = concept.what ? short(concept.what, 150) : '';
 
   return (
@@ -290,6 +303,7 @@ function ConceptBody({ concept }: { concept: Concept }) {
         {/* Short notes only. Anything longer lives in the Lesson under the Diagram. */}
         <aside
           id={ASIDE_ID}
+          aria-label="Notes"
           className={cn(
             'space-y-3 xl:sticky xl:top-[4.5rem] xl:self-start',
             reopened.current && 'xl:animate-fade-in',
@@ -313,71 +327,74 @@ function ConceptBody({ concept }: { concept: Concept }) {
           ) : null}
 
           {concept.what ? (
-            <div className="card p-4">
-              <p className="label mb-1.5">In one line</p>
+            <section className="card p-4">
+              <h2 className="label mb-1.5">In one line</h2>
               <p className="text-sm leading-relaxed text-ink">
                 {oneLine.endsWith('...') ? oneLine : `${oneLine}.`}
               </p>
-            </div>
+            </section>
           ) : null}
 
           {when.length ? (
-            <div className="card p-4">
-              <p className="label mb-2 text-ok">Use it when</p>
+            <section className="card p-4">
+              <h2 className="label mb-2 text-brand">Use it when</h2>
               <ul className="space-y-1.5">
                 {when.slice(0, 3).map((item) => (
                   <li key={item} className="flex gap-2 text-xs leading-relaxed text-muted">
-                    <Check className="mt-0.5 h-3.5 w-3.5 shrink-0 text-ok" />
+                    <Check className="mt-0.5 h-3.5 w-3.5 shrink-0 text-brand" aria-hidden />
                     {short(item, 90)}
                   </li>
                 ))}
               </ul>
-            </div>
+            </section>
           ) : null}
 
+          {/* Gains and costs in the same colors and marks as the Trade-offs tab beside them. */}
           {costs.length ? (
-            <div className="card p-4">
-              <p className="label mb-2 text-danger">{costsLabel}</p>
+            <section className="card p-4">
+              <h2 className="label mb-2 text-danger">{costsLabel}</h2>
               <ul className="space-y-1.5">
                 {costs.slice(0, 3).map((item) => (
                   <li key={item} className="flex gap-2 text-xs leading-relaxed text-muted">
-                    <Minus className="mt-0.5 h-3.5 w-3.5 shrink-0 text-danger" />
+                    <Minus className="mt-0.5 h-3.5 w-3.5 shrink-0 text-danger" aria-hidden />
                     {short(item, 90)}
                   </li>
                 ))}
               </ul>
-            </div>
+            </section>
           ) : null}
 
           {gains.length ? (
-            <div className="card p-4">
-              <p className="label mb-2 text-brand">{gainsLabel}</p>
+            <section className="card p-4">
+              <h2 className="label mb-2 text-ok">{gainsLabel}</h2>
               <ul className="space-y-1.5">
                 {gains.slice(0, 3).map((item) => (
                   <li key={item} className="flex gap-2 text-xs leading-relaxed text-muted">
-                    <Plus className="mt-0.5 h-3.5 w-3.5 shrink-0 text-brand" />
+                    <Plus className="mt-0.5 h-3.5 w-3.5 shrink-0 text-ok" aria-hidden />
                     {short(item, 90)}
                   </li>
                 ))}
               </ul>
-            </div>
+            </section>
           ) : null}
 
+          {/* Related, not "Next": Concepts have no set order. */}
           {related.length ? (
-            <div className="card p-4">
-              <p className="label mb-2">Next</p>
-              <div className="flex flex-wrap gap-1.5">
+            <section className="card p-4">
+              <h2 className="label mb-2">Related</h2>
+              <ul className="flex flex-wrap gap-1.5">
                 {related.map((item) => (
-                  <Link
-                    key={item.slug}
-                    to={`/concepts/${item.slug}`}
-                    className="rounded-full border border-line px-2.5 py-1 text-[11px] text-muted transition-colors hover:border-brand hover:text-brand"
-                  >
-                    {item.title}
-                  </Link>
+                  <li key={item.slug}>
+                    <Link
+                      to={`/concepts/${item.slug}`}
+                      className="inline-flex items-center rounded-full border border-line px-2.5 py-1 text-[11px] text-muted transition-colors hover:border-brand hover:text-brand"
+                    >
+                      {item.title}
+                    </Link>
+                  </li>
                 ))}
-              </div>
-            </div>
+              </ul>
+            </section>
           ) : null}
         </aside>
 
@@ -417,21 +434,24 @@ function TradeOffBoard({ concept }: { concept: Concept }) {
               ] as const
             ).map(([label, list, tone, Icon]) => (
               <div key={label} className="bg-surface p-3">
-                <p className={cn('label mb-2', tone === 'ok' ? 'text-ok' : 'text-danger')}>{label}</p>
-                <div className="flex flex-wrap gap-1.5">
+                <h4 className={cn('label mb-2', tone === 'ok' ? 'text-ok' : 'text-danger')}>{label}</h4>
+                <ul className="flex flex-wrap gap-1.5">
                   {list.map((item) => (
-                    <span
+                    <li
                       key={item}
                       className={cn(
                         'inline-flex items-start gap-1.5 rounded-lg border px-2.5 py-1.5 text-[11px] leading-snug',
                         tone === 'ok' ? 'border-ok/30 bg-ok/5 text-muted' : 'border-danger/30 bg-danger/5 text-muted',
                       )}
                     >
-                      <Icon className={cn('mt-0.5 h-3 w-3 shrink-0', tone === 'ok' ? 'text-ok' : 'text-danger')} />
+                      <Icon
+                        className={cn('mt-0.5 h-3 w-3 shrink-0', tone === 'ok' ? 'text-ok' : 'text-danger')}
+                        aria-hidden
+                      />
                       {item}
-                    </span>
+                    </li>
                   ))}
-                </div>
+                </ul>
               </div>
             ))}
           </div>
@@ -440,20 +460,20 @@ function TradeOffBoard({ concept }: { concept: Concept }) {
 
       {concept.mistakes?.length ? (
         <div className="rounded-2xl border border-warn/30 bg-warn/5 p-4">
-          <p className="label mb-2 flex items-center gap-1.5 text-warn">
-            <AlertTriangle className="h-3.5 w-3.5" />
+          <h3 className="label mb-2 flex items-center gap-1.5 text-warn">
+            <AlertTriangle className="h-3.5 w-3.5" aria-hidden />
             Common mistakes
-          </p>
-          <div className="flex flex-wrap gap-1.5">
+          </h3>
+          <ul className="flex flex-wrap gap-1.5">
             {concept.mistakes.map((item) => (
-              <span
+              <li
                 key={item}
                 className="rounded-lg border border-line bg-surface px-2.5 py-1.5 text-[11px] leading-snug text-muted"
               >
                 {item}
-              </span>
+              </li>
             ))}
-          </div>
+          </ul>
         </div>
       ) : null}
 
@@ -477,8 +497,8 @@ function Lesson({ concept, expanded, onToggle }: { concept: Concept; expanded: b
     <div className="space-y-3">
       {depth ? <AnalogyCard analogy={depth.analogy} /> : null}
       {!depth && !failed ? (
-        <div className="flex items-center gap-2 rounded-2xl border border-line bg-surface p-5 text-sm text-muted">
-          <Loader2 className="h-4 w-4 animate-spin" />
+        <div role="status" className="flex items-center gap-2 rounded-2xl border border-line bg-surface p-5 text-sm text-muted">
+          <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
           Loading the lesson...
         </div>
       ) : null}
@@ -486,7 +506,7 @@ function Lesson({ concept, expanded, onToggle }: { concept: Concept; expanded: b
         <div className="flex flex-wrap items-start gap-3 rounded-2xl border border-warn/30 bg-warn/5 p-5 text-sm text-muted">
           <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-warn" aria-hidden />
           <span className="min-w-0 flex-1">
-            The extended lesson could not be loaded. Check your connection, then try again.
+            The lesson could not be loaded. Check your connection, then try again.
           </span>
           <Button size="sm" onClick={retry}>
             <RotateCcw className="h-3.5 w-3.5" aria-hidden />
@@ -694,10 +714,10 @@ function ExampleCard({ example }: { example: WorkedExample }) {
 function JargonCard({ terms }: { terms: JargonTerm[] }) {
   return (
     <section className="rounded-2xl border border-line bg-surface p-5">
-      <p className="label flex items-center gap-1.5">
+      <h3 className="label flex items-center gap-1.5">
         <Languages className="h-3.5 w-3.5" aria-hidden />
         Jargon decoder
-      </p>
+      </h3>
       <dl className="mt-3 space-y-2.5">
         {terms.map((term) => (
           <div key={term.term} className="grid gap-1 sm:grid-cols-[minmax(0,180px)_minmax(0,1fr)] sm:gap-3">
@@ -713,15 +733,15 @@ function JargonCard({ terms }: { terms: JargonTerm[] }) {
 /** The few lines worth carrying out of the page. */
 function RememberCard({ lines }: { lines: string[] }) {
   return (
-    <section className="rounded-2xl border border-ok/30 bg-ok/5 p-5">
-      <p className="label flex items-center gap-1.5 text-ok">
+    <section className="rounded-2xl border border-brand/30 bg-brand/5 p-5">
+      <h3 className="label flex items-center gap-1.5 text-brand">
         <Sparkles className="h-3.5 w-3.5" aria-hidden />
         Remember this
-      </p>
+      </h3>
       <ul className="mt-3 space-y-2">
         {lines.map((line) => (
           <li key={line} className="flex gap-2.5 text-sm leading-relaxed text-ink">
-            <Check className="mt-0.5 h-4 w-4 shrink-0 text-ok" aria-hidden />
+            <Check className="mt-0.5 h-4 w-4 shrink-0 text-brand" aria-hidden />
             <span>{line}</span>
           </li>
         ))}

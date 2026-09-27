@@ -104,7 +104,7 @@ export const LiveChart = memo(function LiveChart({
           aria-label={`Live chart: ${summary}`}
           onPointerMove={onPointerMove}
           onPointerLeave={() => setHover(null)}
-          className="block touch-none"
+          className="block touch-none tabular-nums"
         >
           <defs>
             {series.map((item) => (

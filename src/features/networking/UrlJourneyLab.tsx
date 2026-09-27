@@ -1,4 +1,5 @@
-import { useMemo, useRef, useState, type ReactNode } from 'react';
+import { useMemo, useRef, type ReactNode } from 'react';
+import { Link } from 'react-router-dom';
 import { ChevronRight, Globe, Lock, LockOpen } from 'lucide-react';
 import {
   ArchNode,
@@ -10,6 +11,7 @@ import {
   type ParticleView,
 } from '@/components/architecture';
 import { Insight, LabShell, MetricsPanel } from '@/components/learning';
+import { CONCEPT_BY_SLUG } from '@/data/concepts';
 import { Badge, Button, SegmentedControl, Slider, Toggle } from '@/components/ui';
 import { useTicker } from '@/simulations/engine';
 import { useLabSetup } from '@/hooks/useLabSetup';
@@ -19,6 +21,7 @@ import { clamp } from '@/utils/math';
 import { formatLatency } from '@/utils/format';
 import type { LabProps } from '@/types';
 import {
+  APP_MS,
   CDN_HOST,
   EDGE_RTT_MS,
   MACHINE_CACHES,
@@ -41,6 +44,7 @@ import {
   type StagePlan,
 } from './urlJourneyModel';
 import { drawnOutcomes, playedStages, shownControls, startSetup, type Setup } from './urlJourneySetup';
+import { useLabRunning } from '@/hooks/useLabRunning';
 
 const SCOPES: { value: Scope; label: string; note: string }[] = [
   { value: 'all', label: 'All', note: 'The whole journey, from Enter to painted pixels.' },
@@ -57,13 +61,13 @@ const RESOLVER_OPTIONS: { value: ResolverCache; label: string }[] = [
 ];
 
 const LAYOUT: Record<NodeId, Layout[string]> = {
-  browser: { x: 30, y: 167, w: 172, h: 106 },
+  browser: { x: 30, y: 167, w: 176, h: 106 },
   resolver: { x: 290, y: 89, w: 180, h: 128 },
-  root: { x: 580, y: 10, w: 204, h: 83 },
-  tld: { x: 580, y: 111, w: 204, h: 83 },
-  auth: { x: 580, y: 212, w: 204, h: 83 },
+  root: { x: 580, y: 10, w: 210, h: 83 },
+  tld: { x: 580, y: 111, w: 210, h: 83 },
+  auth: { x: 580, y: 212, w: 210, h: 83 },
   edge: { x: 30, y: 356, w: 172, h: 122 },
-  lb: { x: 270, y: 356, w: 170, h: 122 },
+  lb: { x: 270, y: 356, w: 180, h: 122 },
   app: { x: 510, y: 356, w: 150, h: 122 },
   cache: { x: 740, y: 310, w: 150, h: 106 },
   db: { x: 740, y: 432, w: 150, h: 90 },
@@ -110,7 +114,7 @@ export function UrlJourneyLab({ focus }: LabProps<'url-journey'>) {
   // Every control lives in one object, so Reset cannot miss one.
   const { setup, setSetup, change } = useLabSetup(start);
 
-  const [running, setRunning] = useState(true);
+  const [running, setRunning] = useLabRunning();
   const sim = useRef<Sim>(createSim(start));
   const rerender = useRerender(30);
 
@@ -174,7 +178,6 @@ export function UrlJourneyLab({ focus }: LabProps<'url-journey'>) {
   const reset = () => {
     setSetup(start);
     sim.current = createSim(start);
-    setRunning(true);
   };
 
   // ---- What the diagram shows this frame --------------------------------
@@ -218,7 +221,7 @@ export function UrlJourneyLab({ focus }: LabProps<'url-journey'>) {
       title="What Happens When You Type a URL?"
       description="One request walks every part between pressing Enter and seeing a page. Pick which part of the journey plays, change what is cached, and watch the path and the time change."
       running={running}
-      onToggleRun={() => setRunning((value) => !value)}
+      onRunningChange={setRunning}
       onReset={reset}
       actions={
         <Button variant="primary" onClick={replay}>
@@ -247,7 +250,10 @@ export function UrlJourneyLab({ focus }: LabProps<'url-journey'>) {
             {detailFor(current, setup, dns)}
             {current.concept ? (
               <span className="mt-2 block text-xs text-faint">
-                Related concept: <span className="text-brand">{current.concept.replace(/-/g, ' ')}</span>
+                Related concept:{' '}
+                <Link to={`/concepts/${current.concept}`} className="text-brand hover:underline">
+                  {CONCEPT_BY_SLUG.get(current.concept)?.title ?? current.concept.replace(/-/g, ' ')}
+                </Link>
               </span>
             ) : null}
           </Insight>
@@ -359,16 +365,19 @@ export function UrlJourneyLab({ focus }: LabProps<'url-journey'>) {
             />
           ) : null}
           {shows.has('tls') ? (
-            <SegmentedControl
-              size="sm"
-              className="w-full"
-              value={setup.tls}
-              options={[
-                { value: '1.2', label: 'TLS 1.2 (2 round trips)' },
-                { value: '1.3', label: 'TLS 1.3 (1 round trip)' },
-              ]}
-              onChange={change('tls')}
-            />
+            <div className="space-y-2">
+              <p className="text-xs font-medium text-muted">TLS version</p>
+              <SegmentedControl
+                size="sm"
+                className="w-full"
+                value={setup.tls}
+                options={[
+                  { value: '1.2', label: 'TLS 1.2 (2 round trips)' },
+                  { value: '1.3', label: 'TLS 1.3 (1 round trip)' },
+                ]}
+                onChange={change('tls')}
+              />
+            </div>
           ) : null}
           {shows.has('cdn') ? (
             <Toggle
@@ -398,7 +407,7 @@ export function UrlJourneyLab({ focus }: LabProps<'url-journey'>) {
               description="Off: the request reaches the database"
             />
           ) : null}
-          <div className="rounded-xl border border-line bg-elevated p-3 text-[11px] text-muted">
+          <div className="border-t border-line pt-4 text-[11px] text-muted">
             <p className="label mb-2">Notice</p>
             <p>
               On a cold connection with an empty resolver cache, DNS + TCP + TLS cost {formatLatency(coldSetup)} in this
@@ -491,7 +500,7 @@ export function UrlJourneyLab({ focus }: LabProps<'url-journey'>) {
             />
           </ArchNode>
           <ArchNode kind="server" title="App server" subtitle="your code" placed={LAYOUT.app} selected={touched.has('app')}>
-            <NodeStatRow label="Work" value="20 ms" />
+            <NodeStatRow label="Work" value={`${APP_MS} ms`} />
           </ArchNode>
           <ArchNode kind="cache" title="Cache" subtitle="Redis" placed={LAYOUT.cache} selected={touched.has('cache')}>
             <NodeStatRow label="Page data" value={setup.cacheHit ? 'hit' : 'miss'} tone={setup.cacheHit ? 'text-ok' : 'text-warn'} />
@@ -502,6 +511,7 @@ export function UrlJourneyLab({ focus }: LabProps<'url-journey'>) {
             subtitle="indexed query"
             placed={LAYOUT.db}
             selected={touched.has('db')}
+            status={setup.cacheHit ? 'idle' : 'healthy'}
             statusLabel={setup.cacheHit ? 'Not asked' : 'Queried'}
             className={cn(setup.cacheHit && 'opacity-60')}
           />
@@ -524,7 +534,7 @@ export function UrlJourneyLab({ focus }: LabProps<'url-journey'>) {
                     <span className="block text-sm font-medium text-muted line-through decoration-faint">{stage.title}</span>
                     <span className="block text-xs text-faint">{stage.skipped}</span>
                   </span>
-                  <span className="w-16 shrink-0 text-right font-mono text-xs text-ok">skipped</span>
+                  <span className="w-16 shrink-0 text-right font-mono text-xs text-faint">skipped</span>
                 </li>
               );
             }
@@ -635,7 +645,7 @@ function detailFor(stage: StagePlan, setup: Setup, dns: DnsState): ReactNode {
         ? 'Redis has this data: it answers in a couple of milliseconds and the database is never touched.'
         : 'Redis does not have it, so the server pays for the database query next and then stores the result for the next request.';
     case 'db':
-      return 'With an index this is a handful of page reads. Without one it is a full table scan - that difference is the whole indexing lesson.';
+      return 'With an index this is a handful of page reads. Without one it is a full table scan - that difference is the whole point of an index.';
     case 'response':
       return (
         '200 OK, headers and a body travel back the way the request came. Headers such as Cache-Control and ETag decide whether the edge and the browser may reuse this response next time.' +

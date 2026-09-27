@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState, type ReactNode } from 'react';
+import { useCallback, useRef, type ReactNode } from 'react';
 import { ArrowUpFromLine, Dices, Target, Wrench, Zap } from 'lucide-react';
 import {
   ArchNode,
@@ -38,6 +38,7 @@ import {
   type Tier,
   type Zone,
 } from './redundancyModel';
+import { useLabRunning } from '@/hooks/useLabRunning';
 
 interface Setup {
   lbCopies: number;
@@ -243,7 +244,7 @@ export function RedundancyLab({ focus }: LabProps<'redundancy'>) {
   const challenge = focus === 'single-point-of-failure' ? 'find-spof' : focus === 'high-availability' ? 'target' : null;
   // Every control lives in one object, so Reset cannot miss one.
   const { setup, setSetup, change } = useLabSetup(start);
-  const [running, setRunning] = useState(true);
+  const [running, setRunning] = useLabRunning();
   const state = useRef<State>(createState());
   const rerender = useRerender(30);
   const { events, log, clear } = useEventLog();
@@ -593,15 +594,17 @@ export function RedundancyLab({ focus }: LabProps<'redundancy'>) {
       title="Redundancy Lab"
       description="A request needs a load balancer, an app server, the config service and the database. Add spare copies, then kill parts - click any box - and watch what keeps serving, how long a failover takes, and the availability the design reaches."
       running={running}
-      onToggleRun={() => setRunning((value) => !value)}
+      onRunningChange={setRunning}
       onReset={reset}
       legend={
-        <div className="flex flex-wrap items-center justify-between gap-2">
-          <ParticleLegend outcomes={['success', 'failure']} />
-          <span className="text-[11px] text-faint">
-            Diamond: an app server reading its config. Triangle: a write shipped to the standby.
-          </span>
-        </div>
+        <ParticleLegend
+          outcomes={[
+            { outcome: 'success', label: 'Request served' },
+            { outcome: 'cache-hit', label: 'App server reads its config' },
+            { outcome: 'warning', label: 'Write shipped to the standby' },
+            { outcome: 'failure', label: 'Failed request or read' },
+          ]}
+        />
       }
       events={events}
       actions={
@@ -737,7 +740,7 @@ export function RedundancyLab({ focus }: LabProps<'redundancy'>) {
                       className={cn(
                         'flex items-center justify-between gap-2 rounded-lg border px-3 py-1.5 font-mono text-xs',
                         here ? 'border-brand bg-brand/10 text-ink' : 'border-line text-muted',
-                        challenge === 'target' && level === HA_TARGET && 'ring-2 ring-warn/40',
+                        challenge === 'target' && level === HA_TARGET && 'ring-2 ring-violet/40',
                       )}
                     >
                       <span>
@@ -1057,12 +1060,13 @@ export function RedundancyLab({ focus }: LabProps<'redundancy'>) {
   }
 }
 
+/** The task a Lab focus sets. Violet, not warn: a challenge is not a warning, and warn means status. */
 function ChallengeCard({ children }: { children: ReactNode }) {
   return (
-    <div className="flex gap-3 rounded-xl border border-warn/40 bg-warn/5 p-4">
-      <Target className="mt-0.5 h-4 w-4 shrink-0 text-warn" aria-hidden />
+    <div className="flex gap-3 rounded-xl border border-violet/40 bg-violet/5 p-4">
+      <Target className="mt-0.5 h-4 w-4 shrink-0 text-violet" aria-hidden />
       <div className="min-w-0">
-        <p className="text-xs font-semibold uppercase tracking-wide text-warn">Challenge</p>
+        <p className="text-xs font-semibold uppercase tracking-wide text-violet">Challenge</p>
         <div className="mt-1 text-sm leading-relaxed text-muted">{children}</div>
       </div>
     </div>

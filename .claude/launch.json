@@ -41,6 +41,19 @@
       "port": 5190
     },
     {
+      "name": "dev-4",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": [
+        "run",
+        "dev",
+        "--",
+        "--port",
+        "5200",
+        "--strictPort"
+      ],
+      "port": 5200
+    },
+    {
       "name": "prod",
       "runtimeExecutable": "npm",
       "runtimeArgs": [

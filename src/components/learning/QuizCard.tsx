@@ -56,6 +56,7 @@ export function QuizCard({ questions, slug }: QuizCardProps) {
                     key={option}
                     type="button"
                     disabled={submitted}
+                    aria-pressed={isSelected}
                     onClick={() => setAnswers((current) => ({ ...current, [question.id]: optionIndex }))}
                     className={cn(
                       'flex w-full items-start gap-3 rounded-xl border px-3.5 py-2.5 text-left text-sm transition-colors',
@@ -71,8 +72,12 @@ export function QuizCard({ questions, slug }: QuizCardProps) {
                       {String.fromCharCode(65 + optionIndex)}
                     </span>
                     <span className="flex-1">{option}</span>
-                    {reveal && isCorrect ? <Check className="h-4 w-4 shrink-0 text-ok" /> : null}
-                    {reveal && isSelected && !isCorrect ? <X className="h-4 w-4 shrink-0 text-danger" /> : null}
+                    {reveal && isCorrect ? (
+                      <Check className="h-4 w-4 shrink-0 text-ok" role="img" aria-label="Right answer" />
+                    ) : null}
+                    {reveal && isSelected && !isCorrect ? (
+                      <X className="h-4 w-4 shrink-0 text-danger" role="img" aria-label="Wrong answer" />
+                    ) : null}
                   </button>
                 );
               })}

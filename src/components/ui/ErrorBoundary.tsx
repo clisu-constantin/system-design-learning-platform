@@ -6,6 +6,8 @@ interface Props {
   children: ReactNode;
   /** Shown in the fallback so the user knows which part failed. */
   area?: string;
+  /** The boundary around the whole app: nothing else is left running, so the fallback does not say so. */
+  root?: boolean;
   /** Replaces the default card, for a part that needs its own recovery (a dialog that must close). */
   fallback?: (error: Error, reset: () => void) => ReactNode;
 }
@@ -85,7 +87,9 @@ export class ErrorBoundary extends Component<Props, State> {
                 ? 'This part of the app was not downloaded before the connection dropped. Reconnect, then reload. The pages you already opened still work.'
                 : chunk
                   ? 'A new version was deployed, or the connection dropped while it was downloading. Reloading fetches the current one.'
-                  : 'The rest of the application is still running. Reset this view to try again.'}
+                  : this.props.root
+                    ? 'Reset the app to try again.'
+                    : 'The rest of the application is still running. Reset this view to try again.'}
             </p>
             {chunk ? null : <pre className="ascii mt-3 max-h-40 whitespace-pre-wrap break-words">{error.message}</pre>}
             <div className="mt-4 flex flex-wrap gap-2">
@@ -98,7 +102,7 @@ export class ErrorBoundary extends Component<Props, State> {
               ) : (
                 <Button onClick={this.reset}>
                   <RotateCcw className="h-4 w-4" aria-hidden />
-                  Reset view
+                  {this.props.root ? 'Reset the app' : 'Reset view'}
                 </Button>
               )}
             </div>

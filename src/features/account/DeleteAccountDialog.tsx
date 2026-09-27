@@ -54,7 +54,7 @@ export function DeleteAccountDialog({ onClose, onDeleted }: DeleteAccountDialogP
     <Modal
       onClose={pending ? () => undefined : onClose}
       labelledBy={titleId}
-      className="items-start justify-center bg-black/50 px-4 pt-[12vh] backdrop-blur-sm short:pt-4"
+      className="items-start justify-center overflow-y-auto bg-black/50 px-4 pb-4 pt-[12vh] backdrop-blur-sm short:pt-4"
       panelClassName="w-full max-w-md overflow-hidden rounded-2xl border border-line bg-surface shadow-card"
     >
       <form onSubmit={confirm}>

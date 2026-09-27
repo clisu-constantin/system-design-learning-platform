@@ -1,4 +1,4 @@
-import { useLayoutEffect, useRef, useState, type ReactNode } from 'react';
+import { useId, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 import { cn } from '@/utils/cn';
 
 export interface TabItem {
@@ -22,6 +22,7 @@ export function Tabs({ items, value, onChange, className }: TabsProps) {
   const requested = value ?? internal;
   const active = items.some((item) => item.id === requested) ? requested : (items[0]?.id ?? '');
   const listRef = useRef<HTMLDivElement>(null);
+  const baseId = useId();
 
   const select = (id: string) => {
     setInternal(id);
@@ -73,7 +74,8 @@ export function Tabs({ items, value, onChange, className }: TabsProps) {
         ref={listRef}
         role="tablist"
         onKeyDown={onKeyDown}
-        className="relative flex gap-1 overflow-x-auto border-b border-line"
+        // No scrollbar under the row on a phone: the cut-off last tab already says it scrolls.
+        className="scrollbar-none relative flex gap-1 overflow-x-auto border-b border-line"
       >
         <span
           ref={barRef}
@@ -87,6 +89,8 @@ export function Tabs({ items, value, onChange, className }: TabsProps) {
               key={item.id}
               type="button"
               role="tab"
+              id={`${baseId}-tab-${item.id}`}
+              aria-controls={selected ? `${baseId}-panel` : undefined}
               aria-selected={selected}
               tabIndex={selected ? 0 : -1}
               onClick={() => select(item.id)}
@@ -101,7 +105,13 @@ export function Tabs({ items, value, onChange, className }: TabsProps) {
           );
         })}
       </div>
-      <div role="tabpanel" className="pt-5 animate-fade-in" key={current?.id}>
+      <div
+        role="tabpanel"
+        id={`${baseId}-panel`}
+        aria-labelledby={current ? `${baseId}-tab-${current.id}` : undefined}
+        className="pt-5 animate-fade-in"
+        key={current?.id}
+      >
         {current?.content}
       </div>
     </div>

@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useRef } from 'react';
 import {
   ArchNode,
   DiagramCanvas,
@@ -25,6 +25,7 @@ import { useRerender } from '@/hooks/useRerender';
 import { sampleArrivals } from '@/utils/math';
 import { formatLatency, formatNumber, formatPercent } from '@/utils/format';
 import type { LabFocus, LabProps } from '@/types';
+import { useLabRunning } from '@/hooks/useLabRunning';
 
 /** Where the one proxy sits: nowhere, with the clients, or with the servers. */
 type Placement = 'none' | 'client' | 'server';
@@ -110,7 +111,7 @@ const LOG_EVERY_MS = 700;
 
 /** Two proxy slots, one per side; the one proxy node moves between them. */
 const PROXY_SLOT: Record<Exclude<Placement, 'none'>, { x: number; y: number; w: number; h: number }> = {
-  client: { x: 182, y: 120, w: 184, h: 120 },
+  client: { x: 186, y: 120, w: 184, h: 120 },
   server: { x: 554, y: 120, w: 184, h: 120 },
 };
 
@@ -230,7 +231,7 @@ export function ProxyLab({ focus }: LabProps<'proxy'>) {
   const start = focus ? FOCUS_SETUPS[focus] : DEFAULT_SETUP;
   // Every control lives in one object, so Reset cannot miss one.
   const { setup, setSetup, change } = useLabSetup(start);
-  const [running, setRunning] = useState(true);
+  const [running, setRunning] = useLabRunning();
   const state = useRef<State>(createState());
   const rerender = useRerender(30);
   const { events, log, clear } = useEventLog();
@@ -425,7 +426,7 @@ export function ProxyLab({ focus }: LabProps<'proxy'>) {
       title="Proxy Lab"
       description="One proxy, placed with the clients or with the servers. Watch who it hides, what it can cache, where TLS ends, and which caller address the app server sees."
       running={running}
-      onToggleRun={() => setRunning((value) => !value)}
+      onRunningChange={setRunning}
       onReset={reset}
       legend={
         <div className="flex flex-wrap items-center justify-between gap-2">
@@ -629,7 +630,7 @@ function Zones() {
       <text x={20} y={30} className="fill-faint font-mono" style={{ fontSize: 11 }}>
         CLIENT SIDE
       </text>
-      <rect x={540} y={10} width={414} height={HEIGHT - 20} rx={14} className="fill-ok/5 stroke-line" strokeDasharray="4 4" />
+      <rect x={540} y={10} width={414} height={HEIGHT - 20} rx={14} className="fill-violet/5 stroke-line" strokeDasharray="4 4" />
       <text x={554} y={30} className="fill-faint font-mono" style={{ fontSize: 11 }}>
         SERVER SIDE
       </text>

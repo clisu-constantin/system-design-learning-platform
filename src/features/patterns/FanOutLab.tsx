@@ -14,6 +14,7 @@ import { Button, Meter, SegmentedControl, Slider } from '@/components/ui';
 import { advanceParticles, nextParticleId, useEventLog, useTicker, type Particle } from '@/simulations/engine';
 import { useRerender } from '@/hooks/useRerender';
 import { formatCompact, formatLatency, formatNumber, formatSecondsMinSec } from '@/utils/format';
+import { useLabRunning } from '@/hooks/useLabRunning';
 
 type Strategy = 'write' | 'read' | 'hybrid';
 
@@ -112,7 +113,7 @@ export function FanOutLab() {
   const [setup, setSetup] = useState<Setup>(DEFAULT_SETUP);
   const { strategy, followerStep, following } = setup;
   const followers = FOLLOWER_STEPS[followerStep];
-  const [running, setRunning] = useState(true);
+  const [running, setRunning] = useLabRunning();
   const state = useRef<State>(createState());
   const rerender = useRerender(30);
   // Button actions must repaint even when the throttled rerender skips a frame.
@@ -340,9 +341,16 @@ export function FanOutLab() {
       title="Fan-out Lab"
       description="An author posts and followers read their feeds. Pick where the work happens - on write, on read, or a hybrid - and how many followers the author has."
       running={running}
-      onToggleRun={() => setRunning((value) => !value)}
+      onRunningChange={setRunning}
       onReset={reset}
-      legend={<ParticleLegend outcomes={['success', 'warning']} />}
+      legend={
+        <ParticleLegend
+          outcomes={[
+            { outcome: 'success', label: 'Post, write or read' },
+            { outcome: 'warning', label: 'Late write or heavy merge' },
+          ]}
+        />
+      }
       events={events}
       insight={<Insight>{insight}</Insight>}
       metrics={
@@ -465,6 +473,8 @@ export function FanOutLab() {
             <Meter
               label={`Post #${head.post}: ${formatCompact(head.done)} of ${formatCompact(head.total)} timelines`}
               value={head.done / head.total}
+              // Progress, not load: without a tone the Meter would turn red as the job nears done.
+              tone="brand"
               size="xs"
             />
           ) : null}
@@ -482,9 +492,12 @@ export function FanOutLab() {
           title="Author"
           subtitle={`${formatCompact(followers)} followers`}
           placed={LAYOUT.author}
-          statusLabel={celebrity ? 'At or over 10K followers' : 'Under 10K followers'}
+          status="idle"
+          statusLabel={`Posts every ${POST_EVERY_SIM_S / 60} min`}
           compact
-        />
+        >
+          <NodeStatRow label={`${formatCompact(HYBRID_THRESHOLD)} threshold`} value={celebrity ? 'at or over' : 'under'} />
+        </ArchNode>
         <ArchNode kind="server" title="Post service" subtitle="stores, then fans out" placed={LAYOUT.postsvc} compact />
         <ArchNode
           kind="queue"

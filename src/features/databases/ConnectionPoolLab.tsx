@@ -18,6 +18,7 @@ import { useRerender } from '@/hooks/useRerender';
 import { sampleArrivals } from '@/utils/math';
 import { formatLatency, formatNumber, formatPercent } from '@/utils/format';
 import { cn } from '@/utils/cn';
+import { useLabRunning } from '@/hooks/useLabRunning';
 
 /*
  * Simplified database model - chosen to teach, not measured:
@@ -137,7 +138,7 @@ export function ConnectionPoolLab() {
     (value: Setup[K]) =>
       setSetup((current) => ({ ...current, [key]: value }));
 
-  const [running, setRunning] = useState(true);
+  const [running, setRunning] = useLabRunning();
   const state = useRef<SimState>(createState());
   const rerender = useRerender(30);
   const { events, log, clear } = useEventLog();
@@ -321,7 +322,7 @@ export function ConnectionPoolLab() {
       title="Connection Pool Lab"
       description="App instances borrow database connections from a pool. Size the pool, push the load and slow the queries, and watch where requests wait - in the pool, or inside an overloaded database."
       running={running}
-      onToggleRun={() => setRunning((value) => !value)}
+      onRunningChange={setRunning}
       onReset={reset}
       events={events}
       legend={
@@ -418,6 +419,7 @@ export function ConnectionPoolLab() {
                 value: `${formatNumber(Math.min(openConnections, MAX_CONNECTIONS))} / ${MAX_CONNECTIONS}`,
                 tone: openConnections >= MAX_CONNECTIONS ? 'danger' : 'neutral',
                 hint: 'Connections open on the database, against max_connections.',
+                simulated: true,
               },
               {
                 key: 'inflight',
@@ -439,7 +441,7 @@ export function ConnectionPoolLab() {
               ]}
               height={140}
             />
-            <LiveChart data={points} series={[{ key: 'p95', label: 'p95 latency (ms)', color: 'warn' }]} variant="line" height={140} />
+            <LiveChart data={points} series={[{ key: 'p95', label: 'p95 latency (ms)', color: 'violet' }]} variant="line" height={140} />
             <p className="mt-2 text-xs text-faint">
               {SIMULATED_HINT} {DB_CORES} database cores that work best with about {BEST_IN_FLIGHT}{' '}
               queries in flight and lose work to contention past that, a new connection that costs about{' '}

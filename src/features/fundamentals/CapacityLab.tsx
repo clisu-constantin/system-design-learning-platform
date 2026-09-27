@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState, type ReactNode } from 'react';
+import { useMemo, useRef, type ReactNode } from 'react';
 import { Calculator, Scale } from 'lucide-react';
 import {
   ArchNode,
@@ -42,6 +42,7 @@ import {
 import { CapacitySpeedView } from './CapacitySpeedView';
 import { startOf, type CapacityView, type SizeSetup } from './capacitySetup';
 import type { SpeedInputs } from './latencyModel';
+import { useLabRunning } from '@/hooks/useLabRunning';
 
 const VIEWS: { value: CapacityView; label: string }[] = [
   { value: 'size', label: 'Size' },
@@ -119,7 +120,7 @@ function CapacitySizeView({ setup, change, onReset, viewSwitch }: SizeViewProps)
   const steps = useMemo(() => capacitySteps(setup, rounding), [setup, rounding]);
 
   // ---- moving traffic -------------------------------------------------------
-  const [running, setRunning] = useState(true);
+  const [running, setRunning] = useLabRunning();
   const particles = useRef<Particle[]>([]);
   const rerender = useRerender(30);
 
@@ -164,10 +165,10 @@ function CapacitySizeView({ setup, change, onReset, viewSwitch }: SizeViewProps)
 
   return (
     <LabShell
-      title="Capacity Estimation Playground"
+      title="Capacity Estimation Lab"
       description="Turn product numbers into infrastructure numbers, and see each one land on the part of the system it sizes."
       running={running}
-      onToggleRun={() => setRunning((value) => !value)}
+      onRunningChange={setRunning}
       onReset={() => {
         // Back to this Concept's starting setup, not the lab's global default.
         onReset();
@@ -183,7 +184,7 @@ function CapacitySizeView({ setup, change, onReset, viewSwitch }: SizeViewProps)
               {formatRate(exact.peakQps)} - off by {formatOffBy(offBy(rough.peakQps, exact.peakQps))}.{' '}
               {sameDecision(rough, exact) ? (
                 <>
-                  Both land in the same category, <strong className="text-ink">{SCALE_LABEL[scale].toLowerCase()}</strong>,
+                  Both land at the same scale, <strong className="text-ink">{SCALE_LABEL[scale].toLowerCase()}</strong>,
                   and both say <strong className="text-ink">{WRITE_DECISION_LABEL[writeDecision].toLowerCase()}</strong>{' '}
                   for the database, so the rough answer leads to the same design. That is the point of rounding: you
                   trade precision you did not need for an answer you can get in your head.
@@ -206,7 +207,7 @@ function CapacitySizeView({ setup, change, onReset, viewSwitch }: SizeViewProps)
             <>
               At {formatRate(exact.peakQps)} peak requests/sec you need about {exact.serversAtPeak} app server
               {exact.serversAtPeak > 1 ? 's' : ''} at {formatNumber(SERVER_CAPACITY)} req/sec each - plus 50% headroom,
-              so call it {exact.servers}. That puts the design in the category{' '}
+              so call it {exact.servers}. That puts the design at the scale{' '}
               <strong className="text-ink">{SCALE_LABEL[exactScale].toLowerCase()}</strong>. Storage grows to{' '}
               {formatSize(exact.storedBytes)} including replication.{' '}
               {exactWriteDecision === 'partition'
@@ -220,9 +221,10 @@ function CapacitySizeView({ setup, change, onReset, viewSwitch }: SizeViewProps)
       metrics={
         <>
           <MetricsPanel
+            title="Estimates"
             items={[
               { key: 'avgQps', label: 'Average QPS', value: `${tilde}${rate(est.avgQps)}`, tone: 'brand', hint: 'Requests per second averaged over 24 hours.', sub: orExact(`exact ${formatRate(exact.avgQps)}`) },
-              { key: 'peakQps', label: 'Peak QPS', value: `${tilde}${rate(est.peakQps)}`, tone: 'warn', hint: 'What you must actually provision for.', sub: orExact(`exact ${formatRate(exact.peakQps)}`) },
+              { key: 'peakQps', label: 'Peak QPS', value: `${tilde}${rate(est.peakQps)}`, tone: 'brand', hint: 'What you must actually provision for.', sub: orExact(`exact ${formatRate(exact.peakQps)}`) },
               { key: 'writeQps', label: 'Peak writes/sec', value: `${tilde}${rate(est.peakWriteQps)}`, hint: 'Writes are usually the hard constraint: they all go to the primary.', sub: orExact(`exact ${formatRate(exact.peakWriteQps)}`) },
               {
                 key: 'ratio',
@@ -278,20 +280,20 @@ function CapacitySizeView({ setup, change, onReset, viewSwitch }: SizeViewProps)
               ))}
             </ol>
 
-            <div className="mt-5 grid gap-3 sm:grid-cols-3">
-              <div className="rounded-xl border border-line bg-elevated p-4">
+            <div className="mt-5 grid gap-4 border-t border-line pt-4 sm:grid-cols-3">
+              <div>
                 <p className="label">App servers needed</p>
                 <p className="metric-value mt-1 text-ink">{formatNumber(est.servers)}</p>
                 <p className="mt-1 text-[11px] text-faint">
                   at {formatNumber(SERVER_CAPACITY)} req/sec each (a simplified planning number), with 50% headroom
                 </p>
               </div>
-              <div className="rounded-xl border border-line bg-elevated p-4">
+              <div>
                 <p className="label">Cache memory (20% hot)</p>
                 <p className="metric-value mt-1 text-ink">{formatSize(est.cacheBytes)}</p>
                 <p className="mt-1 text-[11px] text-faint">20% of one day of new objects - the 80/20 rule of thumb</p>
               </div>
-              <div className="rounded-xl border border-line bg-elevated p-4">
+              <div>
                 <p className="label">{retentionYears}-year storage</p>
                 <p className="metric-value mt-1 text-ink">{formatSize(est.storedBytes)}</p>
                 <p className="mt-1 text-[11px] text-faint">including replication ({formatCopies(u.replicationFactor)})</p>
@@ -302,14 +304,12 @@ function CapacitySizeView({ setup, change, onReset, viewSwitch }: SizeViewProps)
       }
       controls={
         <>
-          <div className="rounded-xl border border-line bg-elevated p-3">
-            <Toggle
-              label="Round to powers of ten"
-              checked={rounding}
-              onChange={change('rounding')}
-              description="Napkin math: users, requests, seconds and bytes become 10^n; small factors keep one figure."
-            />
-          </div>
+          <Toggle
+            label="Round to powers of ten"
+            checked={rounding}
+            onChange={change('rounding')}
+            description="Napkin math: users, requests, seconds and bytes become 10^n; small factors keep one figure."
+          />
           <Slider
             label="Daily active users"
             value={Math.log10(dau)}
@@ -357,7 +357,6 @@ function CapacitySizeView({ setup, change, onReset, viewSwitch }: SizeViewProps)
             max={20}
             onChange={change('peakFactor')}
             format={(value) => `${value}x average`}
-            tone="warn"
             hint="Traffic is never flat. 2-10x is typical depending on the product."
           />
           <Slider
@@ -386,7 +385,7 @@ function CapacitySizeView({ setup, change, onReset, viewSwitch }: SizeViewProps)
           <NodeStatRow label="Average" value={`${tilde}${rate(est.avgQps)}/s`} />
         </ArchNode>
         <ArchNode kind="load-balancer" title="Load balancer" subtitle="pair, sees all traffic" placed={LAYOUT.lb}>
-          <NodeStatRow label="Peak" value={`${tilde}${rate(est.peakQps)} req/s`} tone="text-warn" />
+          <NodeStatRow label="Peak" value={`${tilde}${rate(est.peakQps)} req/s`} />
           <NodeStatRow label="Bandwidth" value={`${tilde}${formatMegabytesPerSec(est.bandwidthBytesPerSec)}`} tone="text-violet" />
           <NodeStatRow label="In bits" value={`${tilde}${formatGigabitsPerSec(est.bandwidthBytesPerSec)}`} tone="text-violet" />
         </ArchNode>
@@ -431,7 +430,7 @@ function CapacitySizeView({ setup, change, onReset, viewSwitch }: SizeViewProps)
         </ArchNode>
       </DiagramCanvas>
       <p className="border-t border-line px-4 py-2 text-[11px] text-faint">
-        Category: <span className="font-medium text-ink">{SCALE_LABEL[scale]}</span>. Simplified: every request reads or
+        Scale: <span className="font-medium text-ink">{SCALE_LABEL[scale]}</span>. Simplified: every request reads or
         writes one row in the database and one object in object storage; 1,000 req/sec per server and 10k writes/sec per
         primary are planning numbers, not measurements.
       </p>
@@ -465,7 +464,7 @@ function RoughVersusExact({ rough, exact }: { rough: Estimate; exact: Estimate }
     { label: 'Peak bandwidth', rough: formatMegabytesPerSec(rough.bandwidthBytesPerSec), exact: formatMegabytesPerSec(exact.bandwidthBytesPerSec), factor: offBy(rough.bandwidthBytesPerSec, exact.bandwidthBytesPerSec) },
   ];
   const decisions = [
-    { label: 'Category', rough: SCALE_LABEL[scaleOf(rough.peakQps)], exact: SCALE_LABEL[scaleOf(exact.peakQps)] },
+    { label: 'Scale', rough: SCALE_LABEL[scaleOf(rough.peakQps)], exact: SCALE_LABEL[scaleOf(exact.peakQps)] },
     { label: 'Database', rough: WRITE_DECISION_LABEL[writeDecisionOf(rough.peakWriteQps)], exact: WRITE_DECISION_LABEL[writeDecisionOf(exact.peakWriteQps)] },
   ];
   const same = sameDecision(rough, exact);
@@ -518,7 +517,7 @@ function RoughVersusExact({ rough, exact }: { rough: Estimate; exact: Estimate }
         </table>
       </div>
       <p className="mt-3 text-[11px] text-faint">
-        Within about 3x (half an order of magnitude) counts as the same order. The category and the database decision are
+        Within about 3x (half an order of magnitude) counts as the same order. The scale and the database decision are
         what the estimate decides; the design is the same only when both match.
       </p>
     </div>

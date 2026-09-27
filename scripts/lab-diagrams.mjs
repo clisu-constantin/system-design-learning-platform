@@ -143,6 +143,7 @@ export async function bundleLabs(labs, dir) {
       `export const LAB_COMPONENTS = [${labs.map((_, index) => `Lab${index}`).join(', ')}];`,
       `export { ThemeProvider } from ${JSON.stringify(join(SRC, 'app/providers/ThemeProvider.tsx'))};`,
       `export { renderToStaticMarkup } from 'react-dom/server';`,
+      `export { MemoryRouter } from 'react-router-dom';`,
       `export { createElement } from 'react';`,
     ].join('\n'),
   );
@@ -253,7 +254,12 @@ function renderLab(mod, Lab, focus, overrides, carried) {
   };
   try {
     const html = mod.renderToStaticMarkup(
-      mod.createElement(mod.ThemeProvider, null, mod.createElement(Lab, focus ? { focus } : {})),
+      // A Lab may link to a Concept, and a link needs a router.
+      mod.createElement(
+        mod.MemoryRouter,
+        null,
+        mod.createElement(mod.ThemeProvider, null, mod.createElement(Lab, focus ? { focus } : {})),
+      ),
     );
     return { recorder, html };
   } catch (error) {

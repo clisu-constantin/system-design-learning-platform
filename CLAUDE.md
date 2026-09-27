@@ -211,7 +211,10 @@ caller") rather than escaping them.
 ### A new interactive lab
 
 1. Create the component in `src/features/<domain>/<Name>Lab.tsx`, default-exported.
-2. Build it on `LabShell` + `DiagramCanvas` + the engine primitives.
+2. Build it on `LabShell` + `DiagramCanvas` + the engine primitives. Keep `running` in
+   `useLabRunning()` and pass its setter as `onRunningChange`: after the Lab's `onReset` (every
+   control back to its start, simulation state cleared) LabShell pauses the Lab, so Reset always
+   shows the start setup and Run starts it from there.
 3. Add a `LabId` to `src/types/index.ts`.
 4. Add a row to `LABS` in `src/features/labs/registry.ts` (lazy import).
 5. Set `lab: '<id>'` on the concept that should host it.

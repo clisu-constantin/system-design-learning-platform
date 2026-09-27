@@ -368,6 +368,7 @@ export function FlowVisual({
         grid={grid}
         fit={FLOW_FIT}
         zoom={zoom}
+        focus={active ? [active.from, active.to] : undefined}
       >
         {nodes}
       </DiagramCanvas>
