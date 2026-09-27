@@ -31,6 +31,7 @@ import {
   implicationsFor,
   legendFor,
   routesFor,
+  singlePointsHint,
   subtitleFor,
   switchProduct,
   targetApplies,
@@ -271,11 +272,7 @@ export function RequirementsLab({ focus }: LabProps<'requirements'>) {
                 label: 'Single points',
                 value: chosen.length === 0 ? '-' : arch.singlePoints.length,
                 tone: chosen.length === 0 ? 'neutral' : arch.singlePoints.length > 0 ? 'warn' : 'ok',
-                hint: `${
-                  arch.singlePoints.length > 0
-                    ? `Parts drawn as one copy, so one failure stops the traffic through them: ${arch.singlePoints.join(', ')}.`
-                    : 'Parts drawn as one copy, so one failure stops the traffic through them. None here: every part drawn has a second copy.'
-                } Not counted: object storage and the CDN, managed services the provider already spreads over several zones.`,
+                hint: singlePointsHint(arch),
               },
               {
                 key: 'creep',

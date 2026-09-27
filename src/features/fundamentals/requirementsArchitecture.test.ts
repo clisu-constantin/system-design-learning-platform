@@ -20,9 +20,11 @@ import {
   instancesOf,
   legendFor,
   routesFor,
+  singlePointsHint,
   subtitleFor,
   switchProduct,
   wireKeyOf,
+  type InstancedPart,
   type Nfr,
   type PartId,
   type Setup,
@@ -343,17 +345,60 @@ test('from 99.99% the cache, queue + workers, index and media servers run one co
   }
 });
 
-test('Single points counts every drawn single-instance part that is not exempt, at every setting', () => {
+/**
+ * Copies of one slice of a part: a failure of one of them is survived only when this is above 1.
+ * The database counts its copies per partition - partitions split the data, they do not copy it.
+ */
+const copiesPerSlice = (id: InstancedPart, arch: ReturnType<typeof architecture>) =>
+  id === 'db' ? arch.dbCopies : instancesOf(id, arch);
+
+/** The drawn parts Single points must count: one copy of their slice, and not a managed service. */
+const singleCopyParts = (arch: ReturnType<typeof architecture>) =>
+  PART_ORDER.filter((id): id is InstancedPart => Boolean(arch.parts[id]) && id !== 'users' && id !== 'region2').filter(
+    (id) => !SINGLE_POINT_EXEMPT.has(id) && copiesPerSlice(id, arch) === 1,
+  );
+
+test('Single points counts every drawn part with one copy of its slice that is not exempt, at every setting', () => {
   let counted = 0;
   for (const s of everySetting()) {
     const arch = architecture({ ...s, showNotBuilt: true });
-    const single = PART_ORDER.filter(
-      (id) => arch.parts[id] && id !== 'users' && id !== 'region2' && !SINGLE_POINT_EXEMPT.has(id) && instancesOf(id, arch) === 1,
-    );
+    const single = singleCopyParts(arch);
     assert.equal(arch.singlePoints.length, single.length, `${single.join(', ')} vs ${arch.singlePoints.join(', ')} in ${JSON.stringify(s)}`);
     counted += single.length;
   }
   assert.ok(counted > 1000);
+});
+
+test('a partitioned database with one copy per partition is a single point, and the bill still counts every partition', () => {
+  // Uber at 100M daily users and 99%: two partitions, one copy each, no standby.
+  const uber = architecture({ ...FOCUS_SETUPS['non-functional-requirements'], nfr: { ...RELAXED, users: 3 } });
+  assert.equal(uber.parts.db?.title, 'DB: 2 partitions x1');
+  assert.ok(uber.singlePoints.includes('each database partition'), uber.singlePoints.join(', '));
+  assert.equal(instancesOf('db', uber), 2, 'billed: both partitions');
+
+  // The what-is-system-design loop, with the writes partitioned and no read replicas.
+  const loop = { ...FOCUS_SETUPS['what-is-system-design'], loop: { users: 3, fixes: ['scale-out' as const, 'cache' as const, 'partition' as const] } };
+  const partitioned = architecture(loop);
+  assert.ok(partitioned.sizing.database.partitions > 1);
+  assert.equal(partitioned.dbCopies, 1);
+  assert.ok(partitioned.singlePoints.includes('each database partition'), partitioned.singlePoints.join(', '));
+
+  // With a standby, each partition has a second copy.
+  const standby = architecture({ ...FOCUS_SETUPS['non-functional-requirements'], nfr: { ...RELAXED, users: 3, availability: 2 } });
+  assert.ok(!standby.singlePoints.some((name) => /database/.test(name)), standby.singlePoints.join(', '));
+});
+
+test('the Single points hint says every part has a second copy only when every counted part has one', () => {
+  let none = 0;
+  for (const s of everySetting()) {
+    const arch = architecture(s);
+    const hint = singlePointsHint(arch);
+    const everyPartCopied = singleCopyParts(arch).length === 0;
+    assert.equal(/every part drawn has a second copy/.test(hint), everyPartCopied, `${hint} in ${JSON.stringify(s)}`);
+    if (everyPartCopied) none += 1;
+    for (const name of arch.singlePoints) assert.ok(hint.includes(name), `${name} in ${hint}`);
+  }
+  assert.ok(none > 100);
 });
 
 test('below 99.99% a single cache, queue + workers or index is a single point, named as drawn', () => {

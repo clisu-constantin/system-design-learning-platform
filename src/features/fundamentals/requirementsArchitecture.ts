@@ -477,8 +477,10 @@ export interface Architecture {
   syncStandby: boolean;
   syncToRegion2: boolean;
   /**
-   * Every drawn part with one instance, in PART_ORDER, named as drawn ("geo index"): when it fails,
-   * the traffic through it stops until it is replaced. SINGLE_POINT_EXEMPT parts are not counted.
+   * Every drawn part with one copy of its slice (`copiesOf`), in PART_ORDER, named as drawn ("geo
+   * index"): when it fails, the traffic through it stops until it is replaced. A partitioned
+   * database with one copy per partition is one entry, "each database partition": losing one loses
+   * that slice of the data. SINGLE_POINT_EXEMPT parts are not counted.
    */
   singlePoints: string[];
 }
@@ -514,6 +516,24 @@ export function instancesOf(id: InstancedPart, arch: Architecture): number {
     case 'cdn':
       return 1;
   }
+}
+
+/**
+ * How many copies hold the same slice of a part, so a failure of one is survived only when this is
+ * above 1 - what Single points counts. The same as `instancesOf`, except for a partitioned database:
+ * partitions split the data rather than copy it, so each partition has only its own copies.
+ */
+export function copiesOf(id: InstancedPart, arch: Architecture): number {
+  return id === 'db' ? arch.dbCopies : instancesOf(id, arch);
+}
+
+/** The hint on the Single points metric: which parts are one copy, or that none is. */
+export function singlePointsHint(arch: Architecture): string {
+  const list =
+    arch.singlePoints.length > 0
+      ? `Parts drawn as one copy, so one failure stops the traffic through them: ${arch.singlePoints.join(', ')}.`
+      : 'Parts drawn as one copy, so one failure stops the traffic through them. None here: every part drawn has a second copy.';
+  return `${list} Not counted: object storage and the CDN, managed services the provider already spreads over several zones.`;
 }
 
 const PART_KIND: Record<PartId, NodeKind> = {
@@ -800,7 +820,9 @@ export function architecture(setup: Setup): Architecture {
   for (const id of PART_ORDER) {
     const part = parts[id];
     if (!part || id === 'users' || id === 'region2' || SINGLE_POINT_EXEMPT.has(id)) continue;
-    if (instancesOf(id, arch) === 1) arch.singlePoints.push(id === 'ws' ? part.title : part.title.toLowerCase());
+    if (copiesOf(id, arch) > 1) continue;
+    if (id === 'db' && database.partitioned) arch.singlePoints.push('each database partition');
+    else arch.singlePoints.push(id === 'ws' ? part.title : part.title.toLowerCase());
   }
   return arch;
 }
