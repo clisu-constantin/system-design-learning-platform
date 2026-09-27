@@ -71,13 +71,15 @@ const TECHNIQUES: { value: Technique; label: string; note: string }[] = [
 const SHOWN = 4;
 const CLIENT_IDS = Array.from({ length: SHOWN }, (_, index) => `c${index}`);
 
+/** A client card holds a subtitle and two stat rows, 100 to 116px tall (measured; polling adds a row); the canvas fits all four. */
+const CANVAS_H = 500;
 const LAYOUT: Layout = {
-  c0: { x: 30, y: 20, w: 220, h: 90 },
-  c1: { x: 30, y: 135, w: 220, h: 90 },
-  c2: { x: 30, y: 250, w: 220, h: 90 },
-  c3: { x: 30, y: 365, w: 220, h: 90 },
-  server: { x: 380, y: 110, w: 260, h: 250 },
-  source: { x: 740, y: 190, w: 190, h: 90 },
+  c0: { x: 30, y: 10, w: 220, h: 116 },
+  c1: { x: 30, y: 132, w: 220, h: 116 },
+  c2: { x: 30, y: 254, w: 220, h: 116 },
+  c3: { x: 30, y: 376, w: 220, h: 116 },
+  server: { x: 380, y: 126, w: 260, h: 250 },
+  source: { x: 740, y: 206, w: 190, h: 90 },
 };
 
 /**
@@ -394,13 +396,13 @@ export function RealtimeLab({ focus }: LabProps<'realtime'>) {
 
   // Recomputed per render: the wire of each client shows whether something is held open on it.
   const edges: DiagramEdge[] = [
-    { from: 'source', to: 'server', tone: 'warn' },
+    { from: 'source', to: 'server', tone: 'info' },
     ...state.clients.map((client, index): DiagramEdge => {
       const open = client.open && (technique === 'sse' || technique === 'websockets');
       return {
         from: CLIENT_IDS[index],
         to: 'server',
-        tone: open ? (technique === 'websockets' ? 'violet' : 'ok') : client.held ? 'brand' : 'default',
+        tone: open ? (technique === 'websockets' ? 'violet' : 'info') : client.held ? 'brand' : 'default',
         animated: open || client.held,
         width: open || client.held ? 2.25 : 1.75,
       };
@@ -510,6 +512,7 @@ export function RealtimeLab({ focus }: LabProps<'realtime'>) {
                         <button
                           type="button"
                           onClick={() => change('technique')(row.value)}
+                          aria-pressed={row.value === technique}
                           className={cn('text-left hover:text-brand', row.value === technique && 'font-semibold text-brand')}
                         >
                           {row.label}
@@ -617,7 +620,7 @@ export function RealtimeLab({ focus }: LabProps<'realtime'>) {
         </>
       }
     >
-      <DiagramCanvas layout={LAYOUT} edges={edges} particles={particleViews} height={470} className="bg-canvas">
+      <DiagramCanvas layout={LAYOUT} edges={edges} particles={particleViews} height={CANVAS_H} className="bg-canvas">
         {state.clients.map((client, index) => (
           <ArchNode
             key={CLIENT_IDS[index]}
@@ -628,7 +631,7 @@ export function RealtimeLab({ focus }: LabProps<'realtime'>) {
             compact
           >
             <NodeStatRow
-              label={technique === 'polling' ? `Requests / empty` : 'HTTP requests'}
+              label={technique === 'polling' ? 'Requests / empty' : 'HTTP requests'}
               value={technique === 'polling' ? `${client.requests} / ${client.empties}` : client.requests}
               tone={client.empties > 0 ? 'text-warn' : 'text-ink'}
             />
@@ -666,7 +669,7 @@ export function RealtimeLab({ focus }: LabProps<'realtime'>) {
         />
         <div
           className="absolute text-[11px] text-faint"
-          style={{ left: LAYOUT.server.x, top: 400, width: LAYOUT.server.w }}
+          style={{ left: LAYOUT.server.x, top: LAYOUT.server.y + LAYOUT.server.h + 40, width: LAYOUT.server.w }}
         >
           4 of {formatNumber(clients)} clients drawn - the numbers count all of them. Simplified model.
         </div>
@@ -714,7 +717,7 @@ function RealtimeLegend() {
   return (
     <ParticleLegend
       outcomes={[
-        { outcome: 'success', label: 'Request or message' },
+        { outcome: 'success', label: 'Request, message or reply' },
         { outcome: 'cache-hit', label: 'New event' },
         { outcome: 'warning', label: 'Nothing new (wasted)' },
         { outcome: 'failure', label: 'Rejected, server over capacity' },

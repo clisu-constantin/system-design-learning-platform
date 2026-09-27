@@ -480,7 +480,7 @@ export function WafLab() {
                     const attack = KIND_INFO[kind].attack;
                     return (
                       <tr key={kind}>
-                        <td className={cn('py-0.5', attack ? 'text-danger' : 'text-ink')}>{KIND_INFO[kind].label}</td>
+                        <td className="py-0.5 text-ink">{KIND_INFO[kind].label}</td>
                         <td className="py-0.5 text-right">{pct(typeChance(kind, setup))}</td>
                         <td className="py-0.5 text-right">{byKind[kind].sent}</td>
                         <td className={cn('py-0.5 text-right', attack && byKind[kind].reachedApp > 0 && 'text-warn')}>
@@ -594,7 +594,11 @@ export function WafLab() {
                   key={kind}
                   size="sm"
                   variant={KIND_INFO[kind].attack ? 'outline' : 'secondary'}
-                  onClick={() => send(kind, true)}
+                  onClick={() => {
+                    send(kind, true);
+                    // A paused Lab would hold the request at the start of its wire, so the click would look lost.
+                    setRunning(true);
+                  }}
                 >
                   {KIND_INFO[kind].label}
                 </Button>

@@ -596,12 +596,14 @@ export function RedundancyLab({ focus }: LabProps<'redundancy'>) {
       onToggleRun={() => setRunning((value) => !value)}
       onReset={reset}
       legend={
-        <div className="flex flex-wrap items-center justify-between gap-2">
-          <ParticleLegend outcomes={['success', 'failure']} />
-          <span className="text-[11px] text-faint">
-            Diamond: an app server reading its config. Triangle: a write shipped to the standby.
-          </span>
-        </div>
+        <ParticleLegend
+          outcomes={[
+            { outcome: 'success', label: 'Request served' },
+            { outcome: 'cache-hit', label: 'App server reads its config' },
+            { outcome: 'warning', label: 'Write shipped to the standby' },
+            { outcome: 'failure', label: 'Failed request or read' },
+          ]}
+        />
       }
       events={events}
       actions={
@@ -737,7 +739,7 @@ export function RedundancyLab({ focus }: LabProps<'redundancy'>) {
                       className={cn(
                         'flex items-center justify-between gap-2 rounded-lg border px-3 py-1.5 font-mono text-xs',
                         here ? 'border-brand bg-brand/10 text-ink' : 'border-line text-muted',
-                        challenge === 'target' && level === HA_TARGET && 'ring-2 ring-warn/40',
+                        challenge === 'target' && level === HA_TARGET && 'ring-2 ring-violet/40',
                       )}
                     >
                       <span>
@@ -1057,12 +1059,13 @@ export function RedundancyLab({ focus }: LabProps<'redundancy'>) {
   }
 }
 
+/** The task a Lab focus sets. Violet, not warn: a challenge is not a warning, and warn means status. */
 function ChallengeCard({ children }: { children: ReactNode }) {
   return (
-    <div className="flex gap-3 rounded-xl border border-warn/40 bg-warn/5 p-4">
-      <Target className="mt-0.5 h-4 w-4 shrink-0 text-warn" aria-hidden />
+    <div className="flex gap-3 rounded-xl border border-violet/40 bg-violet/5 p-4">
+      <Target className="mt-0.5 h-4 w-4 shrink-0 text-violet" aria-hidden />
       <div className="min-w-0">
-        <p className="text-xs font-semibold uppercase tracking-wide text-warn">Challenge</p>
+        <p className="text-xs font-semibold uppercase tracking-wide text-violet">Challenge</p>
         <div className="mt-1 text-sm leading-relaxed text-muted">{children}</div>
       </div>
     </div>

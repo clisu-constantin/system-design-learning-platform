@@ -75,10 +75,10 @@ const LAYOUT: Layout = {
   client: { x: 20, y: 60, w: 160, h: 112 },
   service: { x: 240, y: 50, w: 220, h: 132 },
   broker: { x: 540, y: 50, w: 190, h: 132 },
-  consumer: { x: 790, y: 50, w: 150, h: 132 },
+  consumer: { x: 770, y: 50, w: 170, h: 132 },
   orders: { x: 240, y: 290, w: 220, h: 112 },
   outbox: { x: 510, y: 290, w: 220, h: 112 },
-  relay: { x: 790, y: 290, w: 150, h: 112 },
+  relay: { x: 770, y: 290, w: 170, h: 112 },
 };
 
 /** Both tables live in one database, so one local transaction can cover them. */
@@ -563,7 +563,11 @@ export function OutboxLab() {
       running={running}
       onToggleRun={() => setRunning((value) => !value)}
       onReset={reset}
-      legend={<ParticleLegend outcomes={['success', 'warning', 'failure']} />}
+      legend={
+        <ParticleLegend
+          outcomes={['success', { outcome: 'warning', label: 'Duplicate event' }, { outcome: 'failure', label: 'Phantom event' }]}
+        />
+      }
       events={events}
       actions={
         <>
