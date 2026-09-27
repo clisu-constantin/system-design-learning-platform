@@ -15,6 +15,7 @@ import { advanceParticles, nextParticleId, useEventLog, useTicker, type Particle
 import { useRerender } from '@/hooks/useRerender';
 import { formatSeconds } from '@/utils/format';
 import type { NodeStatus, RequestOutcome } from '@/types';
+import { useLabRunning } from '@/hooks/useLabRunning';
 
 /**
  * Secrets management: three services use a database. The database password
@@ -224,7 +225,7 @@ const pruneCreds = (state: SimState) => {
 export function SecretsLab() {
   const [setup, setSetup] = useState(DEFAULT_SETUP);
   const { storage, overlap, dynamic, leaseTtl, vaultUp } = setup;
-  const [running, setRunning] = useState(true);
+  const [running, setRunning] = useLabRunning();
   const sim = useRef<SimState>(createState(DEFAULT_SETUP.storage));
   const rerender = useRerender(30);
   const { events, log, clear } = useEventLog();
@@ -711,7 +712,7 @@ export function SecretsLab() {
       title="Secrets Lab"
       description="Keep the database password in code, in a .env file or in a vault. Leak the Orders API key, then rotate it, and see which services break, for how long, and how long the attacker keeps access."
       running={running}
-      onToggleRun={() => setRunning((value) => !value)}
+      onRunningChange={setRunning}
       onReset={reset}
       legend={
         <div className="flex flex-wrap items-center gap-3">

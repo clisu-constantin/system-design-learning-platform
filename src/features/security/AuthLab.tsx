@@ -7,6 +7,7 @@ import { useRerender } from '@/hooks/useRerender';
 import { cn } from '@/utils/cn';
 import { formatNumber } from '@/utils/format';
 import type { LabFocus, LabProps, RequestOutcome } from '@/types';
+import { useLabRunning } from '@/hooks/useLabRunning';
 
 /*
  * The Auth Lab: one request path with two checkpoints. The API gateway asks
@@ -371,7 +372,7 @@ export function AuthLab({ focus }: LabProps<'auth'>) {
   const start = focus ? FOCUS_SETUPS[focus] : DEFAULT_SETUP;
   // Every control lives in one object, so Reset cannot miss one.
   const [setup, setSetup] = useState(start);
-  const [running, setRunning] = useState(true);
+  const [running, setRunning] = useLabRunning();
   const state = useRef<SimState>(createState());
   const rerender = useRerender(30);
   const { events, log, clear } = useEventLog();
@@ -486,7 +487,7 @@ export function AuthLab({ focus }: LabProps<'auth'>) {
       title="Auth Lab"
       description="One request, two checkpoints. The gateway asks who is calling - by session, API key or access token - and answers 401 when it cannot tell; the service asks whether that caller may do this to this invoice (403 when not)."
       running={running}
-      onToggleRun={() => setRunning((value) => !value)}
+      onRunningChange={setRunning}
       onReset={reset}
       legend={<ParticleLegend outcomes={['success', 'warning', 'failure']} />}
       events={events}

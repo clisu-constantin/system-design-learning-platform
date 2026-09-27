@@ -17,6 +17,7 @@ import { useRerender } from '@/hooks/useRerender';
 import { clamp, mulberry32, sampleArrivals } from '@/utils/math';
 import { formatLatency, formatNumber } from '@/utils/format';
 import { cn } from '@/utils/cn';
+import { useLabRunning } from '@/hooks/useLabRunning';
 
 interface Row {
   id: number;
@@ -118,7 +119,7 @@ const LAYOUT: Layout = {
 const STRIP_CELLS = 40;
 
 export function IndexingLab() {
-  const [running, setRunning] = useState(true);
+  const [running, setRunning] = useLabRunning();
   const [tableSize, setTableSize] = useState(8000);
   const [hasIndex, setHasIndex] = useState(false);
   const [target, setTarget] = useState('');
@@ -316,7 +317,7 @@ export function IndexingLab() {
       title="Database Indexing Lab"
       description={`A users table with ${formatNumber(tableSize)} rows in ${formatNumber(tablePages)} pages. Find one row with and without an index, and see what the index costs on writes.`}
       running={running}
-      onToggleRun={() => setRunning((value) => !value)}
+      onRunningChange={setRunning}
       onReset={reset}
       events={events}
       legend={

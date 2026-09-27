@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useRef } from 'react';
 import { Ban, Power, RotateCw, UserCheck } from 'lucide-react';
 import {
   ArchNode,
@@ -18,6 +18,7 @@ import { useRerender } from '@/hooks/useRerender';
 import { sampleArrivals } from '@/utils/math';
 import { formatLatency, formatNumber, formatPercent } from '@/utils/format';
 import type { LabFocus, LabProps, NodeStatus } from '@/types';
+import { useLabRunning } from '@/hooks/useLabRunning';
 
 type Mode = 'local' | 'sticky' | 'shared' | 'jwt';
 
@@ -154,7 +155,7 @@ export function StatelessLab({ focus }: LabProps<'stateless'>) {
   const start = focus ? FOCUS_SETUPS[focus] : DEFAULT_SETUP;
   const { setup, setSetup, change } = useLabSetup(start);
   const { mode, traffic, denylist, tokenMinutes } = setup;
-  const [running, setRunning] = useState(true);
+  const [running, setRunning] = useLabRunning();
   const state = useRef<State>(createState());
   const rerender = useRerender(30);
   const { events, log, clear } = useEventLog();
@@ -451,7 +452,7 @@ export function StatelessLab({ focus }: LabProps<'stateless'>) {
       title="Stateless vs Stateful Lab"
       description="Six users, three servers, one load balancer. Switch where the session lives and watch which requests survive a round-robin hop, a dead server or a revoked login."
       running={running}
-      onToggleRun={() => setRunning((value) => !value)}
+      onRunningChange={setRunning}
       onReset={reset}
       legend={<ParticleLegend outcomes={['success', 'cache-hit', 'warning', 'failure']} />}
       events={events}

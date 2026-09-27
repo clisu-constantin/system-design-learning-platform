@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useRef } from 'react';
 import { Send } from 'lucide-react';
 import {
   ArchNode,
@@ -17,6 +17,7 @@ import { useRerender } from '@/hooks/useRerender';
 import { cn } from '@/utils/cn';
 import { formatNumber } from '@/utils/format';
 import type { LabFocus, LabProps, RequestOutcome } from '@/types';
+import { useLabRunning } from '@/hooks/useLabRunning';
 
 // ---- The routing model ------------------------------------------------------
 
@@ -312,7 +313,7 @@ export function BrokerRoutingLab({ focus }: LabProps<'broker-routing'>) {
   const changeSub = (id: SubId, patch: Partial<Subscriber>) =>
     setSetup((current) => ({ ...current, subs: { ...current.subs, [id]: { ...current.subs[id], ...patch } } }));
 
-  const [running, setRunning] = useState(true);
+  const [running, setRunning] = useLabRunning();
   const state = useRef<State>(createState(start));
   const rerender = useRerender(30);
   const { events, log, clear } = useEventLog();
@@ -709,7 +710,7 @@ export function BrokerRoutingLab({ focus }: LabProps<'broker-routing'>) {
       title="Broker Routing Lab"
       description="A publisher, an exchange, a queue per subscriber and the services behind them. Pick how the exchange routes, change the bindings, and take subscribers down."
       running={running}
-      onToggleRun={() => setRunning((value) => !value)}
+      onRunningChange={setRunning}
       onReset={reset}
       events={events}
       actions={

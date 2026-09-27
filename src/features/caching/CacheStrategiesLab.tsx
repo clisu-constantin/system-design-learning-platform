@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useRef, useState } from 'react';
+import { useCallback, useMemo, useRef } from 'react';
 import {
   ArchNode,
   DiagramCanvas,
@@ -15,6 +15,8 @@ import { useRerender } from '@/hooks/useRerender';
 import type { RequestOutcome } from '@/types';
 // Imported directly: this lab is its own lazy chunk, and it needs the full trade-offs, not the index.
 import { performanceConcepts } from '@/data/concepts/performance';
+import { useLabRunning } from '@/hooks/useLabRunning';
+import { useLabSetup } from '@/hooks/useLabSetup';
 
 type Strategy = 'cache-aside' | 'read-through' | 'write-through' | 'write-behind' | 'write-around';
 type Operation = 'read' | 'write';
@@ -145,20 +147,29 @@ const FLOWS: Record<Strategy, Record<Operation, Step[]>> = {
   },
 };
 
+/** The start of the Lab: Reset puts every control back here. */
+const DEFAULT_SETUP = {
+  strategy: 'cache-aside' as Strategy,
+  operation: 'read' as Operation,
+  speed: 0.8,
+};
+
 export function CacheStrategiesLab() {
-  const [running, setRunning] = useState(true);
-  const [strategy, setStrategy] = useState<Strategy>('cache-aside');
-  const [operation, setOperation] = useState<Operation>('read');
-  const [speed, setSpeed] = useState(0.8);
+  const [running, setRunning] = useLabRunning();
+  const { setup, setSetup, change } = useLabSetup(DEFAULT_SETUP);
+  const { strategy, operation, speed } = setup;
+  const setStrategy = change('strategy');
+  const setOperation = change('operation');
+  const setSpeed = change('speed');
   const progress = useRef({ step: 0, t: 0 });
   const rerender = useRerender(30);
 
   const steps = FLOWS[strategy][operation];
 
   const reset = useCallback(() => {
+    setSetup(DEFAULT_SETUP);
     progress.current = { step: 0, t: 0 };
-    rerender();
-  }, [rerender]);
+  }, [setSetup]);
 
   useTicker(running, (dt) => {
     const current = progress.current;
@@ -208,7 +219,7 @@ export function CacheStrategiesLab() {
       title="Cache Strategies Lab"
       description="Step through the exact sequence of hops for each strategy, for both reads and writes."
       running={running}
-      onToggleRun={() => setRunning((value) => !value)}
+      onRunningChange={setRunning}
       onReset={reset}
       legend={<ParticleLegend outcomes={['success', 'cache-hit', 'warning']} />}
       insight={

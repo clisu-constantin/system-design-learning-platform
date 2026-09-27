@@ -14,6 +14,7 @@ import { Button, SegmentedControl, Slider, Toggle } from '@/components/ui';
 import { nextParticleId, useEventLog, useTicker } from '@/simulations/engine';
 import { useRerender } from '@/hooks/useRerender';
 import type { NodeStatus, RequestOutcome } from '@/types';
+import { useLabRunning } from '@/hooks/useLabRunning';
 
 /*
  * Simplified model, not a measurement. Time is simulated seconds: the clock runs
@@ -175,7 +176,7 @@ const buildLayout = (count: WorkerCount): Layout => {
 const LAYOUTS: Record<WorkerCount, Layout> = { 2: buildLayout(2), 3: buildLayout(3) };
 
 export function DistributedLockLab() {
-  const [running, setRunning] = useState(true);
+  const [running, setRunning] = useLabRunning();
   const [setup, setSetup] = useState(DEFAULT_SETUP);
   const { workerCount, fencing, ttlOn, ttlS, pauseS, checkRelease } = setup;
   const sim = useRef<Sim>(createSim(DEFAULT_SETUP.workerCount));
@@ -571,7 +572,7 @@ export function DistributedLockLab() {
       title="Distributed Lock Lab"
       description="Two or three workers share one resource through a lock service with a TTL. Freeze the holder past its lease, see two owners at once, then turn on fencing tokens."
       running={running}
-      onToggleRun={() => setRunning((value) => !value)}
+      onRunningChange={setRunning}
       onReset={reset}
       events={events}
       legend={

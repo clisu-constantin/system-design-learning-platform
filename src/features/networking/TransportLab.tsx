@@ -33,6 +33,7 @@ import {
   type StreamEvent,
   type Transport,
 } from './transportModel';
+import { useLabRunning } from '@/hooks/useLabRunning';
 
 /** The simulation runs this many times slower than real time, so single packets can be followed. */
 const SLOW_MOTION = 15;
@@ -140,7 +141,7 @@ const laneName = (payload: Payload, transport: Transport) => `${PAYLOAD_NAME[pay
 export function TransportLab() {
   const [setup, setSetup] = useState(DEFAULT_SETUP);
   const { lossRate, delayMs, jitterMs } = setup;
-  const [running, setRunning] = useState(true);
+  const [running, setRunning] = useLabRunning();
   const sim = useRef<Sim>(createSim());
   const rerender = useRerender(30);
   const { events, log, clear } = useEventLog();
@@ -194,7 +195,7 @@ export function TransportLab() {
       title="TCP vs UDP Lab"
       description="A client sends a live voice call and a file to a server, each over TCP and over UDP at the same time, across one network that drops and delays packets. The same drops hit TCP and UDP, so you can see late but complete next to on time but lossy."
       running={running}
-      onToggleRun={() => setRunning((value) => !value)}
+      onRunningChange={setRunning}
       onReset={reset}
       events={events}
       legend={<WireLegend />}

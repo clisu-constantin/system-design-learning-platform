@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useRef } from 'react';
 import { Split } from 'lucide-react';
 import {
   ArchNode,
@@ -26,6 +26,8 @@ import { computeLoad } from '@/simulations/models/load';
 import { useRerender } from '@/hooks/useRerender';
 import { clamp, sampleArrivals } from '@/utils/math';
 import { formatLatency, formatNumber, formatPercent } from '@/utils/format';
+import { useLabRunning } from '@/hooks/useLabRunning';
+import { useLabSetup } from '@/hooks/useLabSetup';
 
 type ShardKey = 'user-id' | 'country' | 'tenant' | 'created-at';
 
@@ -96,21 +98,32 @@ const createState = (): State => ({
   total: new RateCounter(3000),
 });
 
+/** The start of the Lab: Reset puts every control back here. */
+const DEFAULT_SETUP = {
+  sharded: true,
+  traffic: 2000,
+  shardKey: 'user-id' as ShardKey,
+  crossShardRatio: 0.05,
+};
+
 export function ShardingLab() {
-  const [running, setRunning] = useState(true);
-  const [sharded, setSharded] = useState(true);
-  const [traffic, setTraffic] = useState(2000);
-  const [shardKey, setShardKey] = useState<ShardKey>('user-id');
-  const [crossShardRatio, setCrossShardRatio] = useState(0.05);
+  const [running, setRunning] = useLabRunning();
+  const { setup, setSetup, change } = useLabSetup(DEFAULT_SETUP);
+  const { sharded, traffic, shardKey, crossShardRatio } = setup;
+  const setSharded = change('sharded');
+  const setTraffic = change('traffic');
+  const setShardKey = change('shardKey');
+  const setCrossShardRatio = change('crossShardRatio');
 
   const state = useRef<State>(createState());
   const rerender = useRerender(30);
   const { events, log, clear } = useEventLog();
 
   const reset = useCallback(() => {
+    setSetup(DEFAULT_SETUP);
     state.current = createState();
     clear();
-  }, [clear]);
+  }, [clear, setSetup]);
 
   const weights = WEIGHTS[shardKey];
   const shardCount = sharded ? 4 : 1;
@@ -239,7 +252,7 @@ export function ShardingLab() {
       title="Database Sharding Lab"
       description="Split 10 million users across shards. Change the shard key and watch a badly chosen one concentrate traffic on a single node."
       running={running}
-      onToggleRun={() => setRunning((value) => !value)}
+      onRunningChange={setRunning}
       onReset={reset}
       legend={<ParticleLegend outcomes={['success', 'warning']} />}
       events={events}

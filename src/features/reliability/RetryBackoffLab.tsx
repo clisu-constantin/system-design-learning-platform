@@ -28,6 +28,7 @@ import {
   type FleetLoad,
   type Strategy,
 } from './retryLoadModel';
+import { useLabRunning } from '@/hooks/useLabRunning';
 
 const STRATEGIES: { value: Strategy; label: string }[] = [
   { value: 'immediate', label: 'Immediate retry' },
@@ -123,7 +124,7 @@ export function RetryBackoffLab({ focus }: LabProps<'retry-backoff'>) {
   const { setup, setSetup, change } = useLabSetup(start);
   const { strategy, baseMs, maxAttempts, jitter, failureRate, clients, speed } = setup;
   const [seed, setSeed] = useState(SEED);
-  const [running, setRunning] = useState(true);
+  const [running, setRunning] = useLabRunning();
 
   const sim = useRef<SimState>(createSimState());
   const rerender = useRerender(30);
@@ -271,7 +272,7 @@ export function RetryBackoffLab({ focus }: LabProps<'retry-backoff'>) {
       title="Retry and Exponential Backoff Lab"
       description="A dependency fails and every client loses its first request at the same moment. Watch the retries each policy sends back down the wires."
       running={running}
-      onToggleRun={() => setRunning((value) => !value)}
+      onRunningChange={setRunning}
       onReset={() => {
         // Back to this Concept's starting setup, not the lab's global default.
         setSetup(start);

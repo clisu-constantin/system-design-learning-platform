@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState, type ReactNode } from 'react';
+import { useMemo, useRef, type ReactNode } from 'react';
 import { ChevronRight, Globe, Lock, LockOpen } from 'lucide-react';
 import {
   ArchNode,
@@ -41,6 +41,7 @@ import {
   type StagePlan,
 } from './urlJourneyModel';
 import { drawnOutcomes, playedStages, shownControls, startSetup, type Setup } from './urlJourneySetup';
+import { useLabRunning } from '@/hooks/useLabRunning';
 
 const SCOPES: { value: Scope; label: string; note: string }[] = [
   { value: 'all', label: 'All', note: 'The whole journey, from Enter to painted pixels.' },
@@ -110,7 +111,7 @@ export function UrlJourneyLab({ focus }: LabProps<'url-journey'>) {
   // Every control lives in one object, so Reset cannot miss one.
   const { setup, setSetup, change } = useLabSetup(start);
 
-  const [running, setRunning] = useState(true);
+  const [running, setRunning] = useLabRunning();
   const sim = useRef<Sim>(createSim(start));
   const rerender = useRerender(30);
 
@@ -174,7 +175,6 @@ export function UrlJourneyLab({ focus }: LabProps<'url-journey'>) {
   const reset = () => {
     setSetup(start);
     sim.current = createSim(start);
-    setRunning(true);
   };
 
   // ---- What the diagram shows this frame --------------------------------
@@ -218,7 +218,7 @@ export function UrlJourneyLab({ focus }: LabProps<'url-journey'>) {
       title="What Happens When You Type a URL?"
       description="One request walks every part between pressing Enter and seeing a page. Pick which part of the journey plays, change what is cached, and watch the path and the time change."
       running={running}
-      onToggleRun={() => setRunning((value) => !value)}
+      onRunningChange={setRunning}
       onReset={reset}
       actions={
         <Button variant="primary" onClick={replay}>

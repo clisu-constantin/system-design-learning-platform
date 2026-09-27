@@ -30,6 +30,7 @@ import { useRerender } from '@/hooks/useRerender';
 import { clamp, sampleArrivals } from '@/utils/math';
 import { formatLatency, formatNumber, formatPercent } from '@/utils/format';
 import type { LabFocus, LabProps, NodeStatus, SimulatedRequest } from '@/types';
+import { useLabRunning } from '@/hooks/useLabRunning';
 
 type Algorithm = 'round-robin' | 'weighted' | 'least-connections' | 'random';
 
@@ -196,7 +197,7 @@ export function LoadBalancerLab({ focus }: LabProps<'load-balancer'>) {
   const { traffic, serverCount, algorithm, capacity, duration, slowFirst, healthChecks, intervalSec, failThreshold } =
     setup;
 
-  const [running, setRunning] = useState(true);
+  const [running, setRunning] = useLabRunning();
   const [inspected, setInspected] = useState<SimulatedRequest | null>(null);
 
   const sim = useRef<SimState | null>(null);
@@ -640,7 +641,7 @@ export function LoadBalancerLab({ focus }: LabProps<'load-balancer'>) {
       title="Load Balancer Lab"
       description="Change traffic, pool size and algorithm - then kill a server and watch the health checks take it out of rotation."
       running={running}
-      onToggleRun={() => setRunning((value) => !value)}
+      onRunningChange={setRunning}
       onReset={reset}
       legend={
         <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5">

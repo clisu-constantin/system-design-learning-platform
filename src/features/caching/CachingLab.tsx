@@ -28,6 +28,7 @@ import { useRerender } from '@/hooks/useRerender';
 import { clamp, sampleArrivals } from '@/utils/math';
 import { formatLatency, formatNumber, formatPercent } from '@/utils/format';
 import type { LabFocus, LabProps, SimulatedRequest } from '@/types';
+import { useLabRunning } from '@/hooks/useLabRunning';
 
 /**
  * Simplified numbers, chosen to match the table in the Caching Lesson (hit 1 ms,
@@ -167,7 +168,7 @@ export function CachingLab({ focus }: LabProps<'caching'>) {
   const { setup, setSetup, change } = useLabSetup(start);
   const { enabled, traffic, ttl, size, keyspace, skew, policy } = setup;
 
-  const [running, setRunning] = useState(true);
+  const [running, setRunning] = useLabRunning();
   const [inspected, setInspected] = useState<SimulatedRequest | null>(null);
 
   const state = useRef<State>(createState());
@@ -366,7 +367,7 @@ export function CachingLab({ focus }: LabProps<'caching'>) {
       title="Caching Lab"
       description="Watch two request paths: a hit that returns from memory, and a miss that pays for the database round trip - then stores the result, if Redis has room for it."
       running={running}
-      onToggleRun={() => setRunning((value) => !value)}
+      onRunningChange={setRunning}
       onReset={reset}
       legend={<ParticleLegend outcomes={['cache-hit', 'success', 'warning']} />}
       events={events}

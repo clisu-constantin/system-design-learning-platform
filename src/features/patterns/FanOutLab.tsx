@@ -14,6 +14,7 @@ import { Button, Meter, SegmentedControl, Slider } from '@/components/ui';
 import { advanceParticles, nextParticleId, useEventLog, useTicker, type Particle } from '@/simulations/engine';
 import { useRerender } from '@/hooks/useRerender';
 import { formatCompact, formatLatency, formatNumber, formatSecondsMinSec } from '@/utils/format';
+import { useLabRunning } from '@/hooks/useLabRunning';
 
 type Strategy = 'write' | 'read' | 'hybrid';
 
@@ -112,7 +113,7 @@ export function FanOutLab() {
   const [setup, setSetup] = useState<Setup>(DEFAULT_SETUP);
   const { strategy, followerStep, following } = setup;
   const followers = FOLLOWER_STEPS[followerStep];
-  const [running, setRunning] = useState(true);
+  const [running, setRunning] = useLabRunning();
   const state = useRef<State>(createState());
   const rerender = useRerender(30);
   // Button actions must repaint even when the throttled rerender skips a frame.
@@ -340,7 +341,7 @@ export function FanOutLab() {
       title="Fan-out Lab"
       description="An author posts and followers read their feeds. Pick where the work happens - on write, on read, or a hybrid - and how many followers the author has."
       running={running}
-      onToggleRun={() => setRunning((value) => !value)}
+      onRunningChange={setRunning}
       onReset={reset}
       legend={<ParticleLegend outcomes={['success', 'warning']} />}
       events={events}

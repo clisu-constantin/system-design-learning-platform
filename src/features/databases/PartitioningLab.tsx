@@ -16,6 +16,7 @@ import { computeLoad } from '@/simulations/models/load';
 import { useRerender } from '@/hooks/useRerender';
 import { sampleArrivals } from '@/utils/math';
 import { formatLatency, formatPercent } from '@/utils/format';
+import { useLabRunning } from '@/hooks/useLabRunning';
 
 type Scheme = 'none' | 'range' | 'list' | 'hash';
 type QueryId = 'recent' | 'august' | 'region' | 'tenant' | 'status';
@@ -215,7 +216,7 @@ const PARTICLE_BUDGET = 90;
 export function PartitioningLab() {
   const [setup, setSetup] = useState<Setup>(DEFAULT_SETUP);
   const { scheme, query, qps } = setup;
-  const [running, setRunning] = useState(true);
+  const [running, setRunning] = useLabRunning();
   const state = useRef<State>(createState(DEFAULT_SETUP.scheme));
   const rerender = useRerender(30);
   // Button actions must repaint even when the throttled rerender skips a frame.
@@ -425,7 +426,7 @@ export function PartitioningLab() {
       title="Partitioning Lab"
       description="One database, one events table split into partitions. Run queries and watch the planner prune, then remove an old month with DROP or with DELETE."
       running={running}
-      onToggleRun={() => setRunning((value) => !value)}
+      onRunningChange={setRunning}
       onReset={reset}
       legend={<ParticleLegend outcomes={['success', 'warning', 'failure']} />}
       events={events}

@@ -31,6 +31,7 @@ import {
   type Setup,
   type Style,
 } from './apiStylesModel';
+import { useLabRunning } from '@/hooks/useLabRunning';
 
 const STYLES: { value: Style; label: string }[] = [
   { value: 'rest', label: 'REST' },
@@ -112,7 +113,7 @@ export function ApiStylesLab({ focus }: LabProps<'api-styles'>) {
   const start = focus ? FOCUS_SETUPS[focus] : DEFAULT_SETUP;
   // Every control lives in one object, so Reset cannot miss one.
   const [setup, setSetup] = useState(start);
-  const [running, setRunning] = useState(true);
+  const [running, setRunning] = useLabRunning();
   const sim = useRef<Sim>(createSim());
   const rerender = useRerender(30);
 
@@ -222,12 +223,11 @@ export function ApiStylesLab({ focus }: LabProps<'api-styles'>) {
       title="API Styles Lab"
       description="One Order history screen, fetched with REST, GraphQL or gRPC. Count the round trips, the bytes the screen never shows, and the queries behind them."
       running={running}
-      onToggleRun={() => setRunning((value) => !value)}
+      onRunningChange={setRunning}
       onReset={() => {
         // Back to this Concept's starting setup, not the lab's global default.
         setSetup(start);
         restart();
-        setRunning(true);
       }}
       actions={
         <Button onClick={restart}>

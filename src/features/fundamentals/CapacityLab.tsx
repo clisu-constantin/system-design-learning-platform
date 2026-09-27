@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState, type ReactNode } from 'react';
+import { useMemo, useRef, type ReactNode } from 'react';
 import { Calculator, Scale } from 'lucide-react';
 import {
   ArchNode,
@@ -42,6 +42,7 @@ import {
 import { CapacitySpeedView } from './CapacitySpeedView';
 import { startOf, type CapacityView, type SizeSetup } from './capacitySetup';
 import type { SpeedInputs } from './latencyModel';
+import { useLabRunning } from '@/hooks/useLabRunning';
 
 const VIEWS: { value: CapacityView; label: string }[] = [
   { value: 'size', label: 'Size' },
@@ -119,7 +120,7 @@ function CapacitySizeView({ setup, change, onReset, viewSwitch }: SizeViewProps)
   const steps = useMemo(() => capacitySteps(setup, rounding), [setup, rounding]);
 
   // ---- moving traffic -------------------------------------------------------
-  const [running, setRunning] = useState(true);
+  const [running, setRunning] = useLabRunning();
   const particles = useRef<Particle[]>([]);
   const rerender = useRerender(30);
 
@@ -167,7 +168,7 @@ function CapacitySizeView({ setup, change, onReset, viewSwitch }: SizeViewProps)
       title="Capacity Estimation Playground"
       description="Turn product numbers into infrastructure numbers, and see each one land on the part of the system it sizes."
       running={running}
-      onToggleRun={() => setRunning((value) => !value)}
+      onRunningChange={setRunning}
       onReset={() => {
         // Back to this Concept's starting setup, not the lab's global default.
         onReset();

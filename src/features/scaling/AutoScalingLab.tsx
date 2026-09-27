@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useRef } from 'react';
 import { TrendingUp, Zap } from 'lucide-react';
 import {
   ArchNode,
@@ -19,6 +19,8 @@ import { useRerender } from '@/hooks/useRerender';
 import { clamp, sampleArrivals, smooth } from '@/utils/math';
 import { formatLatency, formatNumber, formatPercent } from '@/utils/format';
 import type { NodeStatus } from '@/types';
+import { useLabRunning } from '@/hooks/useLabRunning';
+import { useLabSetup } from '@/hooks/useLabSetup';
 
 /**
  * Simplified and time-compressed. One instance serves about 500 req/sec, a new one needs 4 seconds to boot
@@ -78,14 +80,26 @@ function trafficAt(seconds: number, peak: number) {
   return peak * 0.15;
 }
 
+/** The start of the Lab: Reset puts every control back here. */
+const DEFAULT_SETUP = {
+  peak: 4000,
+  scaleOut: 70,
+  scaleIn: 30,
+  cooldown: 8,
+  autoScale: true,
+  maxInstances: 8,
+};
+
 export function AutoScalingLab() {
-  const [running, setRunning] = useState(true);
-  const [peak, setPeak] = useState(4000);
-  const [scaleOut, setScaleOut] = useState(70);
-  const [scaleIn, setScaleIn] = useState(30);
-  const [cooldown, setCooldown] = useState(8);
-  const [autoScale, setAutoScale] = useState(true);
-  const [maxInstances, setMaxInstances] = useState(8);
+  const [running, setRunning] = useLabRunning();
+  const { setup, setSetup, change } = useLabSetup(DEFAULT_SETUP);
+  const { peak, scaleOut, scaleIn, cooldown, autoScale, maxInstances } = setup;
+  const setPeak = change('peak');
+  const setScaleOut = change('scaleOut');
+  const setScaleIn = change('scaleIn');
+  const setCooldown = change('cooldown');
+  const setAutoScale = change('autoScale');
+  const setMaxInstances = change('maxInstances');
 
   const state = useRef<AutoScaleState>(initialState());
   const rerender = useRerender(20);
@@ -93,10 +107,11 @@ export function AutoScalingLab() {
   const { points, push, reset: resetSeries } = useSeries(80, 400);
 
   const reset = useCallback(() => {
+    setSetup(DEFAULT_SETUP);
     state.current = initialState();
     clear();
     resetSeries();
-  }, [clear, resetSeries]);
+  }, [clear, resetSeries, setSetup]);
 
   const addInstance = useCallback(
     (reason: string) => {
@@ -243,7 +258,7 @@ export function AutoScalingLab() {
       title="Auto Scaling Lab"
       description="Traffic follows a repeating spike. Set thresholds and cooldown, then watch the fleet chase the curve - always a little behind it."
       running={running}
-      onToggleRun={() => setRunning((value) => !value)}
+      onRunningChange={setRunning}
       onReset={reset}
       legend={<ParticleLegend outcomes={['success', 'warning', 'failure']} />}
       events={events}

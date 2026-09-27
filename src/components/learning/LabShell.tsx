@@ -15,7 +15,13 @@ interface LabShellProps {
   events?: SimEvent[];
   insight?: ReactNode;
   running?: boolean;
-  onToggleRun?: () => void;
+  /** Run or pause the simulation. Pass the setter of `useLabRunning`. */
+  onRunningChange?: (running: boolean) => void;
+  /**
+   * Put every control back to the start of the Lab (its Lab focus setup when it has one) and clear
+   * the simulation state. LabShell then pauses the Lab, so the Learner sees the start setup before
+   * anything moves, and Run starts it from there.
+   */
   onReset?: () => void;
   /** Extra buttons in the toolbar (kill server, upgrade, create index...). */
   actions?: ReactNode;
@@ -36,13 +42,17 @@ export function LabShell({
   events,
   insight,
   running,
-  onToggleRun,
+  onRunningChange,
   onReset,
   actions,
   legend,
   footer,
 }: LabShellProps) {
   const { ref, wide } = useWideLayout();
+  const reset = () => {
+    onReset?.();
+    onRunningChange?.(false);
+  };
   return (
     <section ref={ref} className="space-y-4">
       <div className="flex flex-wrap items-end justify-between gap-3">
@@ -52,14 +62,14 @@ export function LabShell({
         </div>
         <div className="flex flex-wrap items-center gap-2">
           {actions}
-          {onToggleRun ? (
-            <Button variant={running ? 'secondary' : 'primary'} onClick={onToggleRun}>
+          {onRunningChange ? (
+            <Button variant={running ? 'secondary' : 'primary'} onClick={() => onRunningChange(!running)}>
               {running ? <Pause className="h-4 w-4" /> : <Play className="h-4 w-4" />}
               {running ? 'Pause' : 'Run simulation'}
             </Button>
           ) : null}
           {onReset ? (
-            <Button size="icon" onClick={onReset} aria-label="Reset simulation">
+            <Button size="icon" onClick={reset} aria-label="Reset simulation">
               <RotateCcw className="h-4 w-4" />
             </Button>
           ) : null}

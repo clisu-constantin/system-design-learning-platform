@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react';
+import { useRef } from 'react';
 import { CloudOff, Cloud } from 'lucide-react';
 import {
   ArchNode,
@@ -16,6 +16,7 @@ import { useLabSetup } from '@/hooks/useLabSetup';
 import { useRerender } from '@/hooks/useRerender';
 import { cn } from '@/utils/cn';
 import type { LabFocus, LabProps, RequestOutcome } from '@/types';
+import { useLabRunning } from '@/hooks/useLabRunning';
 
 /**
  * CAP: two clients, each talking to its own side of a replicated store. Split
@@ -164,7 +165,7 @@ export function CapTheoremLab({ focus }: LabProps<'cap-theorem'>) {
   // Every control lives in one object, so Reset cannot miss one.
   const { setup, setSetup, change } = useLabSetup(start);
   const { choice, partitioned, replicas, traffic } = setup;
-  const [running, setRunning] = useState(true);
+  const [running, setRunning] = useLabRunning();
   const sim = useRef<SimState>(createState());
   const rerender = useRerender(30);
   const { events, log, clear } = useEventLog(30);
@@ -407,7 +408,7 @@ export function CapTheoremLab({ focus }: LabProps<'cap-theorem'>) {
       title="CAP Theorem Lab"
       description="Two clients read and write through the two sides of a replicated store. Split the network and the store must pick: refuse the request, or answer from what this side has and let the sides diverge."
       running={running}
-      onToggleRun={() => setRunning((current) => !current)}
+      onRunningChange={setRunning}
       onReset={reset}
       events={events}
       legend={

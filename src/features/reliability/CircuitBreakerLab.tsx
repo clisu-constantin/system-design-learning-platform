@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useRef } from 'react';
 import { ShieldAlert, ShieldCheck } from 'lucide-react';
 import { ArchNode, DiagramCanvas, NodeStatRow, ParticleLegend, type DiagramEdge, type Layout, type ParticleView } from '@/components/architecture';
 import { Insight, LabShell, MetricsPanel } from '@/components/learning';
@@ -15,6 +15,8 @@ import { useRerender } from '@/hooks/useRerender';
 import { sampleArrivals } from '@/utils/math';
 import { LATENCY_TEXT, formatLatency, formatNumber, formatPercent, latencyTone } from '@/utils/format';
 import { cn } from '@/utils/cn';
+import { useLabRunning } from '@/hooks/useLabRunning';
+import { useLabSetup } from '@/hooks/useLabSetup';
 
 type BreakerState = 'closed' | 'open' | 'half-open';
 
@@ -113,23 +115,36 @@ const LAYOUT: Layout = {
 const WINDOW_SIZE = 20;
 const TRIAL_CALLS = 3;
 
+/** The start of the Lab: Reset puts every control back here. */
+const DEFAULT_SETUP = {
+  failureRate: 0.1,
+  threshold: 50,
+  cooldown: 6,
+  timeout: 2000,
+  breakerEnabled: true,
+  requestRate: 10,
+};
+
 export function CircuitBreakerLab() {
-  const [running, setRunning] = useState(true);
-  const [failureRate, setFailureRate] = useState(0.1);
-  const [threshold, setThreshold] = useState(50);
-  const [cooldown, setCooldown] = useState(6);
-  const [timeout, setTimeoutMs] = useState(2000);
-  const [breakerEnabled, setBreakerEnabled] = useState(true);
-  const [requestRate, setRequestRate] = useState(10);
+  const [running, setRunning] = useLabRunning();
+  const { setup, setSetup, change } = useLabSetup(DEFAULT_SETUP);
+  const { failureRate, threshold, cooldown, timeout, breakerEnabled, requestRate } = setup;
+  const setFailureRate = change('failureRate');
+  const setThreshold = change('threshold');
+  const setCooldown = change('cooldown');
+  const setTimeoutMs = change('timeout');
+  const setBreakerEnabled = change('breakerEnabled');
+  const setRequestRate = change('requestRate');
 
   const state = useRef<State>(createState());
   const rerender = useRerender(30);
   const { events, log, clear } = useEventLog(50);
 
   const reset = useCallback(() => {
+    setSetup(DEFAULT_SETUP);
     state.current = createState();
     clear();
-  }, [clear]);
+  }, [clear, setSetup]);
 
   const transition = useCallback(
     (next: BreakerState, reason: string) => {
@@ -313,7 +328,7 @@ export function CircuitBreakerLab() {
       title="Circuit Breaker Lab"
       description="Raise the downstream failure rate and watch the breaker trip, cool down, probe with trial calls, and either close or reopen."
       running={running}
-      onToggleRun={() => setRunning((value) => !value)}
+      onRunningChange={setRunning}
       onReset={reset}
       legend={<ParticleLegend outcomes={['success', 'failure', 'warning']} />}
       events={events}

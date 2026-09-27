@@ -15,6 +15,7 @@ import { advanceParticles, nextParticleId, useEventLog, useTicker, type Particle
 import { useRerender } from '@/hooks/useRerender';
 import { cn } from '@/utils/cn';
 import type { RequestOutcome } from '@/types';
+import { useLabRunning } from '@/hooks/useLabRunning';
 
 /**
  * Outbox pattern: an Order service must save an order and publish OrderPlaced.
@@ -216,7 +217,7 @@ export function OutboxLab() {
     <K extends keyof Setup>(key: K) =>
     (value: Setup[K]) =>
       setSetup((current) => ({ ...current, [key]: value }));
-  const [running, setRunning] = useState(true);
+  const [running, setRunning] = useLabRunning();
   const sim = useRef<SimState>(createState());
   const rerender = useRerender(30);
   const { events, log, clear } = useEventLog();
@@ -561,7 +562,7 @@ export function OutboxLab() {
       title="Outbox Lab"
       description="Save an order and publish OrderPlaced. Crash the service between the two steps and watch an event go missing or appear for an order that does not exist. Then switch to the outbox and watch every committed order get its event from the outbox row."
       running={running}
-      onToggleRun={() => setRunning((value) => !value)}
+      onRunningChange={setRunning}
       onReset={reset}
       legend={<ParticleLegend outcomes={['success', 'warning', 'failure']} />}
       events={events}
