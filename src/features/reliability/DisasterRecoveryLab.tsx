@@ -12,6 +12,7 @@ import {
 import { Insight, LabShell, MetricsPanel, SIMULATED_HINT } from '@/components/learning';
 import { Button, SegmentedControl, Slider, Toggle } from '@/components/ui';
 import { advanceParticles, nextParticleId, useEventLog, useTicker, type Particle } from '@/simulations/engine';
+import { useLabSetup } from '@/hooks/useLabSetup';
 import { useRerender } from '@/hooks/useRerender';
 import { sampleArrivals } from '@/utils/math';
 import { cn } from '@/utils/cn';
@@ -195,18 +196,18 @@ const CANVAS_W = 960;
 const CANVAS_H = 560;
 
 const BASE_LAYOUT: Layout = {
-  users: { x: 400, y: 14, w: 160, h: 62 },
+  users: { x: 400, y: 14, w: 160, h: 74 },
   dns: { x: 400, y: 106, w: 160, h: 74 },
   appA: { x: 50, y: 226, w: 210, h: 90 },
-  dbA: { x: 50, y: 340, w: 210, h: 106 },
+  dbA: { x: 50, y: 335, w: 210, h: 116 },
   appB: { x: 700, y: 226, w: 210, h: 90 },
-  dbB: { x: 700, y: 340, w: 210, h: 106 },
+  dbB: { x: 700, y: 335, w: 210, h: 116 },
 };
 
 /** The backups sit under the database of whichever region holds them. */
 const BACKUP_BOX = {
-  same: { x: 70, y: 476, w: 170, h: 70 },
-  other: { x: 720, y: 476, w: 170, h: 70 },
+  same: { x: 70, y: 476, w: 170, h: 74 },
+  other: { x: 720, y: 476, w: 170, h: 74 },
 };
 
 function RegionZones({ lost }: { lost: boolean }) {
@@ -249,11 +250,8 @@ function RegionZones({ lost }: { lost: boolean }) {
  * migration) and reads the data lost and the time to recover.
  */
 export function DisasterRecoveryLab() {
-  const [setup, setSetup] = useState<Setup>(DEFAULT_SETUP);
-  const change =
-    <K extends keyof Setup>(key: K) =>
-    (value: Setup[K]) =>
-      setSetup((current) => ({ ...current, [key]: value }));
+  // Every control lives in one object, so Reset cannot miss one.
+  const { setup, setSetup, change } = useLabSetup(DEFAULT_SETUP);
   const backupEvery = BACKUP_OPTIONS[setup.backupIndex];
 
   const [running, setRunning] = useState(true);
@@ -377,7 +375,7 @@ export function DisasterRecoveryLab() {
     setResults([]);
     clear();
     rerender();
-  }, [clear, rerender]);
+  }, [clear, rerender, setSetup]);
 
   const sim = state.current;
   const disaster = sim.disaster;
@@ -479,7 +477,13 @@ export function DisasterRecoveryLab() {
       onReset={reset}
       legend={
         <div className="flex flex-wrap items-center justify-between gap-2">
-          <ParticleLegend outcomes={['success', 'warning', 'failure']} />
+          <ParticleLegend
+            outcomes={[
+              { outcome: 'success', label: 'Request, copy or backup' },
+              { outcome: 'warning', label: 'Bad data served or copied' },
+              { outcome: 'failure', label: 'Failed request' },
+            ]}
+          />
           <span className="font-mono text-[11px] text-faint">
             simulated clock {formatSimClock(sim.clock)} - 1 s = {SIM_MIN_PER_SEC} min
           </span>
@@ -586,7 +590,7 @@ export function DisasterRecoveryLab() {
                         </span>
                         <span className="font-mono text-[11px] text-muted">{formatMinutes(stage.minutes)}</span>
                       </div>
-                      <div className="h-1.5 overflow-hidden rounded-full bg-line">
+                      <div className="h-1.5 overflow-hidden rounded-full bg-line" aria-hidden>
                         <div className="h-full rounded-full bg-brand" style={{ width: `${progress * 100}%` }} />
                       </div>
                     </li>
@@ -644,7 +648,7 @@ export function DisasterRecoveryLab() {
       controls={
         <>
           {locked ? (
-            <p className="rounded-xl border border-warn/40 bg-warn/5 p-3 text-xs text-muted">
+            <p className="text-[11px] text-muted">
               The disaster uses the setup it struck with. Rebuild region A to change the setup.
             </p>
           ) : null}

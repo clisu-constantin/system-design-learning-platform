@@ -421,11 +421,11 @@ const CANVAS_H = 450;
 const LAYOUT: Layout = {
   client: { x: 20, y: 185, w: 130, h: 74 },
   order: { x: 190, y: 160, w: 220, h: 122 },
-  bus: { x: 460, y: 178, w: 170, h: 90 },
+  bus: { x: 455, y: 175, w: 180, h: 95 },
   inventory: { x: 690, y: 20, w: 250, h: 122 },
   payment: { x: 690, y: 170, w: 250, h: 122 },
-  shipping: { x: 690, y: 330, w: 250, h: 90 },
-  review: { x: 210, y: 340, w: 180, h: 90 },
+  shipping: { x: 690, y: 330, w: 250, h: 95 },
+  review: { x: 210, y: 340, w: 180, h: 95 },
 };
 
 const STEP_TONE: Record<StepState, string> = {
@@ -604,7 +604,13 @@ export function SagaLab() {
       events={events}
       legend={
         <div className="flex flex-wrap items-center justify-between gap-2">
-          <ParticleLegend outcomes={['success', 'warning', 'failure']} />
+          <ParticleLegend
+            outcomes={[
+              { outcome: 'success', label: 'Step or reply' },
+              { outcome: 'warning', label: 'Compensation' },
+              { outcome: 'failure', label: 'Failure or rejection' },
+            ]}
+          />
           <span className="text-[11px] text-faint">
             {orchestrated
               ? 'Commands out, replies back: the Order service runs the saga.'
@@ -765,7 +771,7 @@ export function SagaLab() {
             />
             <p className="text-[11px] text-faint">
               Orchestration: one component sends commands and drives compensation. Choreography: services react to
-              each other events through a bus.
+              the events of the others through a bus.
             </p>
           </div>
           <div className="space-y-2">
@@ -775,6 +781,7 @@ export function SagaLab() {
                 <button
                   key={value}
                   type="button"
+                  aria-pressed={setup.failAt === value}
                   onClick={() => change('failAt')(value)}
                   className={cn(
                     'rounded-lg border px-2 py-1.5 text-left text-xs font-medium transition-colors',

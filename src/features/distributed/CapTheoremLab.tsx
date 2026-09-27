@@ -82,8 +82,9 @@ const DROP_VISIBLE_S = 0.7;
 const LAYOUT: Layout = {
   clientA: { x: 110, y: 30, w: 170, h: 70 },
   clientB: { x: 680, y: 30, w: 170, h: 70 },
-  a: { x: 90, y: 200, w: 230, h: 150 },
-  b: { x: 640, y: 200, w: 230, h: 150 },
+  // Tall enough for a subtitle and three stat rows.
+  a: { x: 90, y: 198, w: 230, h: 154 },
+  b: { x: 640, y: 198, w: 230, h: 154 },
 };
 
 const CLIENT: Record<Side, string> = { a: 'clientA', b: 'clientB' };
@@ -191,6 +192,8 @@ export function CapTheoremLab({ focus }: LabProps<'cap-theorem'>) {
 
   const send = (side: Side, op: Op) => {
     spawn([CLIENT[side], side], 'success', { kind: op, side });
+    // A request sent while paused would sit still on its wire, so a click never does nothing.
+    if (!running) setRunning(true);
   };
 
   const record = (row: Omit<RequestRow, 'id'>) => {
@@ -411,12 +414,13 @@ export function CapTheoremLab({ focus }: LabProps<'cap-theorem'>) {
       onReset={reset}
       events={events}
       legend={
-        <div className="space-y-1">
-          <ParticleLegend outcomes={['success', 'warning', 'failure']} />
-          <p className="text-[11px] text-faint">
-            Triangle: a stale read. Cross: a refused request (503), or replication the partition drops.
-          </p>
-        </div>
+        <ParticleLegend
+          outcomes={[
+            { outcome: 'success', label: 'Request, answer or replication' },
+            { outcome: 'warning', label: 'Stale read' },
+            { outcome: 'failure', label: 'Refused (503) or replication dropped' },
+          ]}
+        />
       }
       actions={
         <Button variant={partitioned ? 'success' : 'danger'} onClick={partitioned ? heal : partition}>
@@ -640,7 +644,7 @@ distributed system - you are choosing CP or AP.`}</pre>
             </div>
           </div>
 
-          <div className="rounded-xl border border-line bg-elevated p-3 text-[11px] text-muted">
+          <div className="border-t border-line pt-4 text-[11px] text-muted">
             <p className="label mb-2">Where this shows up</p>
             <ul className="space-y-1">
               <li>CP: ZooKeeper, etcd, Spanner - they refuse rather than diverge</li>

@@ -356,14 +356,16 @@ const createState = (): SimState => ({
 });
 
 // The three identity sources sit under the gateway, so each wire leaves its bottom edge.
+// Heights fit the stat rows each card holds (a card grows past its box otherwise), and the
+// row centres stay on one line so the request wires run straight.
 const LAYOUT: Layout = {
   client: { x: 20, y: 130, w: 190, h: 110 },
-  gateway: { x: 270, y: 105, w: 220, h: 160 },
+  gateway: { x: 270, y: 98, w: 220, h: 175 },
   service: { x: 550, y: 105, w: 220, h: 160 },
-  db: { x: 810, y: 130, w: 140, h: 110 },
-  sessions: { x: 80, y: 360, w: 190, h: 110 },
-  keys: { x: 285, y: 360, w: 190, h: 110 },
-  issuer: { x: 490, y: 360, w: 190, h: 110 },
+  db: { x: 800, y: 120, w: 150, h: 130 },
+  sessions: { x: 80, y: 345, w: 190, h: 130 },
+  keys: { x: 285, y: 345, w: 190, h: 130 },
+  issuer: { x: 490, y: 345, w: 190, h: 130 },
 };
 
 export function AuthLab({ focus }: LabProps<'auth'>) {
@@ -488,7 +490,15 @@ export function AuthLab({ focus }: LabProps<'auth'>) {
       running={running}
       onToggleRun={() => setRunning((value) => !value)}
       onReset={reset}
-      legend={<ParticleLegend outcomes={['success', 'warning', 'failure']} />}
+      legend={
+        <ParticleLegend
+          outcomes={[
+            { outcome: 'success', label: 'Request or 200 answer' },
+            { outcome: 'warning', label: '200 to the wrong caller' },
+            { outcome: 'failure', label: '401, 403 or 404 answer' },
+          ]}
+        />
+      }
       events={events}
       insight={<Insight>{insightFor(setup, decision)}</Insight>}
       metrics={
