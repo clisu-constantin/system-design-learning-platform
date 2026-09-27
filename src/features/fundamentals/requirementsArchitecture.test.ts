@@ -11,6 +11,7 @@ import {
   SINGLE_POINT_EXEMPT,
   SLOTS,
   WRITE_FLOWS,
+  alreadyMet,
   architecture,
   targetApplies,
   targetOffHint,
@@ -495,35 +496,72 @@ const BASELINES: [string, Nfr][] = [
   ['region 2 at 99.999%', { ...RELAXED, availability: 3 }],
 ];
 
-/**
- * The one known level that draws nothing new: 99.9% asks for two of each server behind a load
- * balancer pair, and when the load has already built exactly that (Uber drivers publishing their
- * location alone, at 100k users: six app servers and no other server tier), there is nothing left
- * to add - the step only names 99.9% in the part subtitles. Kept narrow so any other case fails.
- */
-const loadAlreadyRedundant = (s: Setup) => {
-  const arch = architecture(s);
-  const tiers = (['api', 'ws'] as const).filter((id) => arch.parts[id]);
-  return Boolean(arch.parts.lb) && !arch.parts.db && tiers.every((id) => instancesOf(id, arch) > 1);
-};
+/** Every combination of the target levels. */
+function* everyNfr(specs = NFRS, nfr: Nfr = RELAXED): Generator<Nfr> {
+  if (specs.length === 0) {
+    yield nfr;
+    return;
+  }
+  const [head, ...tail] = specs;
+  for (let level = 0; level < head.values.length; level += 1) yield* everyNfr(tail, { ...nfr, [head.id]: level });
+}
 
-test('every target level changes the diagram, or the target does not apply and its slider is off', () => {
+/**
+ * Some levels draw what an earlier choice already built: 99.9% when the load already runs more than
+ * two of each server, 100 ms when the users already put a cache in front of the reads, 99.999% when
+ * 100M users already built region 2, Critical when 99.99% and Strong already make each write wait
+ * for a standby. The slider stays on, so the Lab says so under it (`alreadyMet`). Every other level
+ * changes a part, a wire, a stat or status line, or the zones - checked from every combination of
+ * the other targets.
+ */
+test('every target level changes the diagram, or the target is off, or the Lab says it is already met', () => {
+  const met = new Set<string>();
   for (const product of PRODUCTS) {
     for (const ids of featureSets(product)) {
-      for (const [name, nfr] of BASELINES) {
+      for (const nfr of everyNfr()) {
         for (const spec of NFRS) {
-          for (let level = 1; level < spec.values.length; level += 1) {
-            const before = setup(product, ids, { ...nfr, [spec.id]: level - 1 });
-            const after = setup(product, ids, { ...nfr, [spec.id]: level });
-            if (!targetApplies(spec.id, architecture(before))) continue;
-            if (spec.id === 'availability' && level === 1 && loadAlreadyRedundant(before)) continue;
-            const where = `${product} [${ids.join(', ')}]: ${spec.label} ${spec.values[level]} at ${name}`;
-            assert.notEqual(drawn(after), drawn(before), where);
+          const level = nfr[spec.id];
+          if (level === 0) continue;
+          const before = setup(product, ids, { ...nfr, [spec.id]: level - 1 });
+          const after = setup(product, ids, nfr);
+          const hint = alreadyMet(spec.id, after);
+          const where = `${product} [${ids.join(', ')}]: ${spec.label} ${spec.values[level]} at ${JSON.stringify(nfr)}`;
+          if (!targetApplies(spec.id, architecture(before))) {
+            assert.equal(hint, undefined, where);
+            continue;
+          }
+          if (drawn(after) === drawn(before)) {
+            assert.match(hint ?? '', /^Already met: /, where);
+            met.add(`${spec.id} ${level}`);
+          } else {
+            assert.equal(hint, undefined, where);
           }
         }
       }
     }
   }
+  // The four levels the review found, and no other.
+  assert.deepEqual([...met].sort(), ['availability 1', 'availability 3', 'durability 1', 'latency 1']);
+});
+
+test('the already-met line names what built the part earlier', () => {
+  const core = (product: Product, nfr: Partial<Nfr>) => setup(product, Object.keys(coreOf(product)), nfr);
+  const uber = architecture(core('uber', { users: 2 })).sizing;
+
+  assert.equal(
+    alreadyMet('availability', core('uber', { users: 2, availability: 1 })),
+    `Already met: the load already needs ${uber.app.forLoad} app servers and ${uber.ws.forLoad} WebSocket servers behind a load balancer, more than the 2 copies of each 99.9% asks for.`,
+  );
+  assert.equal(alreadyMet('latency', core('whatsapp', { users: 2, latency: 1 })), 'Already met: 10M daily users already put a cache in front of the database reads.');
+  assert.equal(alreadyMet('availability', core('instagram', { users: 3, availability: 3 })), 'Already met: 100M daily users already built region 2, a full copy of region 1.');
+  assert.equal(
+    alreadyMet('durability', core('uber', { availability: 2, consistency: 2, durability: 1 })),
+    'Already met: 99.99% already keeps a standby copy, and Strong consistency already makes each write wait for it.',
+  );
+  // A level that draws something new, a level at the bottom and a target that is off say nothing.
+  assert.equal(alreadyMet('availability', core('uber', { availability: 1 })), undefined);
+  assert.equal(alreadyMet('availability', core('uber', { users: 2 })), undefined);
+  assert.equal(alreadyMet('latency', setup('uber', ['location'], { users: 2, latency: 1 })), undefined);
 });
 
 test('a target that does not apply draws nothing and says nothing at any level', () => {
