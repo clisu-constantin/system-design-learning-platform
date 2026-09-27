@@ -445,7 +445,7 @@ export function DataModelsLab({ focus }: LabProps<'data-models'>) {
           </div>
           <div className="space-y-2">
             <p className="text-xs font-medium text-muted">Workload</p>
-            <div className="space-y-1.5">
+            <div role="group" aria-label="Workload" className="space-y-1.5">
               {WORKLOADS.map((item) => (
                 <button
                   key={item.value}
@@ -667,13 +667,13 @@ function GroupFrames({ view, partitions }: { view: View; partitions: number }) {
 function legendNote(workload: Workload) {
   switch (workload) {
     case 'key':
-      return 'Each dot is one get or put. Warning: the machine is past 85% load and requests queue.';
+      return 'Each dot is one get or put. Triangle: the machine is past 85% load and requests queue.';
     case 'checkout':
       return 'Triangle: a checkout that failed half-way and was undone, so the customer retries. Cross: it failed half-way and the stock write stayed, or the machine was over capacity.';
     case 'report':
-      return 'Document side: dots coming back are orders shipped to the app; warnings are the product lookups your code adds.';
+      return 'Document side: dots coming back are orders shipped to the app; triangles are the product lookups your code adds.';
     default:
-      return 'Warning on the relational side: an order write waiting on the table lock.';
+      return 'Triangle on the relational side: an order write waiting on the table lock.';
   }
 }
 
@@ -765,7 +765,10 @@ function metricRows(setup: Setup, results: Results, sim: SimState): Row[] {
           label: 'Report time',
           hint: 'Time to produce revenue per category for the last 30 days.',
           sql: { value: formatSeconds(report.sqlSeconds), tone: report.sqlSeconds > 5 ? 'warn' : 'ok' },
-          doc: { value: formatSeconds(report.docSeconds), tone: report.docSeconds > 5 ? 'danger' : 'warn' },
+          doc: {
+            value: formatSeconds(report.docSeconds),
+            tone: report.docSeconds > 5 ? 'danger' : report.docSeconds > 1 ? 'warn' : 'ok',
+          },
         },
         {
           label: 'Rows sent to the app',

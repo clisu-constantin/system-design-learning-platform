@@ -348,7 +348,7 @@ export function RequirementsLab({ focus }: LabProps<'requirements'>) {
                 <ul className="grid gap-2 sm:grid-cols-2">
                   {implications.map((item) => (
                     <li key={item} className="flex items-start gap-2 text-sm text-muted">
-                      <Check className="mt-0.5 h-4 w-4 shrink-0 text-ok" />
+                      <Check className="mt-0.5 h-4 w-4 shrink-0 text-brand" />
                       {item}
                     </li>
                   ))}
@@ -414,7 +414,7 @@ export function RequirementsLab({ focus }: LabProps<'requirements'>) {
                     label={
                       <>
                         <span className="text-ink">{option.label}</span>
-                        {option.core ? <Badge tone="ok">core</Badge> : <Badge>extra</Badge>}
+                        {option.core ? <Badge tone="brand">core</Badge> : <Badge>extra</Badge>}
                       </>
                     }
                     description={option.implication}
@@ -436,7 +436,6 @@ export function RequirementsLab({ focus }: LabProps<'requirements'>) {
                         onChange={setTarget(spec.id)}
                         format={(value) => spec.values[value]}
                         scale={[spec.values[0], spec.values[spec.values.length - 1]]}
-                        tone={nfr[spec.id] >= spec.values.length - 1 ? 'danger' : 'brand'}
                         disabled={!targetApplies(spec.id, arch)}
                         hint={targetOffHint(spec.id, arch)}
                       />
@@ -444,7 +443,7 @@ export function RequirementsLab({ focus }: LabProps<'requirements'>) {
                     </div>
                   );
                 })}
-                <div className="rounded-xl border border-line bg-elevated p-3 text-[11px] text-muted">
+                <div className="border-t border-line pt-4 text-[11px] text-muted">
                   <p className="label mb-2">Availability in practice</p>
                   <ul className="space-y-0.5 font-mono">
                     <li>99% {'->'} 3.65 days down/year</li>
@@ -575,7 +574,7 @@ function Zones({ zones, region2, empty }: { zones: number; region2: boolean; emp
 function insightFor(setup: Setup, arch: Architecture, forced: number, scopeCreep: number) {
   const chosen = chosenOf(setup);
   if (chosen.length === 0) {
-    return <>No requirement, no system: the diagram holds only the users. Tick a feature to see the first parts appear.</>;
+    return <>No requirement, no system: the diagram holds only the users. Tick a requirement to see the first parts appear.</>;
   }
   const parts = PART_ORDER.filter((id) => id !== 'users' && arch.parts[id]).length;
   return (
@@ -683,9 +682,11 @@ function LoopPanel({ round, arch, usersLabel, nextUsers, fixes, cost, onRaise, o
 
       {round.done ? null : (
         <>
-          <Button variant="primary" size="sm" className="w-full justify-center" disabled={!round.canRaise} onClick={onRaise}>
-            Raise to {nextUsers} daily users
-          </Button>
+          {nextUsers ? (
+            <Button variant="primary" size="sm" className="w-full justify-center" disabled={!round.canRaise} onClick={onRaise}>
+              Raise to {nextUsers} daily users
+            </Button>
+          ) : null}
           <p className="text-[11px] text-faint">
             {bottleneck
               ? 'Fix the red part first: the parts behind it only see what it lets through, so it is the one bottleneck that matters now.'

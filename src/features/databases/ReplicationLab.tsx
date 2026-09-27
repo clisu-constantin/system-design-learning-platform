@@ -294,10 +294,12 @@ export function ReplicationLab({ focus }: LabProps<'replication'>) {
           if (item.role === 'primary') {
             item.role = 'replica';
             item.outOfSet = item.status === 'down';
+            // A demoted node sits in a replica box: drop the old role from its title.
+            item.name = item.id === 'primary' ? 'Old primary' : item.name.replace(' (promoted)', '');
           }
         }
         winner.role = 'primary';
-        winner.name = `${winner.name} (promoted)`;
+        winner.name = winner.id === 'primary' ? 'Primary' : `${winner.name} (promoted)`;
         current.version = winner.applied;
         current.acked = Math.min(current.acked, winner.applied);
         // Whatever the new primary holds is now the truth for every row.
@@ -602,13 +604,14 @@ export function ReplicationLab({ focus }: LabProps<'replication'>) {
       onToggleRun={() => setRunning((value) => !value)}
       onReset={reset}
       legend={
-        <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5">
-          <ParticleLegend outcomes={['success', 'cache-hit', 'warning', 'failure']} />
-          <span className="text-[11px] text-faint">
-            Circle: write or acknowledgement. Diamond: up-to-date read. Triangle: async copy in flight, or a read that
-            misses an acknowledged write. Cross: a user not seeing their own save, or a refused write.
-          </span>
-        </div>
+        <ParticleLegend
+          outcomes={[
+            { outcome: 'success', label: 'Write or acknowledgement' },
+            { outcome: 'cache-hit', label: 'Up-to-date read' },
+            { outcome: 'warning', label: 'Async copy, or a read missing an acknowledged write' },
+            { outcome: 'failure', label: 'Own save not seen, or a refused write' },
+          ]}
+        />
       }
       events={events}
       actions={
@@ -662,7 +665,6 @@ export function ReplicationLab({ focus }: LabProps<'replication'>) {
                 key: 'latency',
                 label: 'Write latency',
                 value: formatLatency(writeLatency),
-                tone: mode === 'async' ? 'ok' : 'warn',
                 hint: `Time until the write is acknowledged: ${COMMIT_MS} ms to commit on the primary, plus the wait for replicas the mode asks for.`,
                 simulated: true,
               },
@@ -773,7 +775,7 @@ export function ReplicationLab({ focus }: LabProps<'replication'>) {
                 : 'Synchronous modes make the write wait this long for replicas, so a slower network means slower writes (simplified model).'
             }
           />
-          <div className="flex items-center justify-between gap-2 rounded-xl border border-line bg-elevated p-3">
+          <div className="flex items-center justify-between gap-2">
             <span className="text-xs text-muted">Route reads to</span>
             <SegmentedControl
               size="sm"
@@ -818,7 +820,7 @@ export function ReplicationLab({ focus }: LabProps<'replication'>) {
         </>
       }
     >
-      <DiagramCanvas layout={layout} edges={edges} particles={particleViews} height={490} className="bg-canvas">
+      <DiagramCanvas layout={layout} edges={edges} particles={particleViews} height={512} className="bg-canvas">
         <ArchNode
           kind="client"
           title="Application"
