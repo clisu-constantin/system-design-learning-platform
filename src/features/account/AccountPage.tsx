@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { ArrowRight, CircleCheck, Loader2, LogIn, LogOut, MailCheck, MonitorSmartphone, Trash2, UserRound } from 'lucide-react';
 import { Button, Meter } from '@/components/ui';
@@ -66,13 +66,16 @@ function SignedIn({ onDeleted }: { onDeleted: (firebaseUserDeleted: boolean) => 
           className="mt-3 flex items-center gap-3 rounded-xl border border-line bg-surface px-4 py-3 transition-colors hover:border-brand/50 sm:gap-4"
         >
           <span className="shrink-0 text-sm text-ink">Progress</span>
-          <Meter value={overall.percent / 100} showValue={false} className="min-w-0 flex-1" />
-          <span className="shrink-0 whitespace-nowrap font-mono text-xs text-muted">
-            {overall.done}/{overall.total} done
+          {/* The count beside it says it; the bar is only its picture. Always ok: done is never a warning. */}
+          <div aria-hidden className="min-w-0 flex-1">
+            <Meter value={overall.percent / 100} tone="ok" showValue={false} />
+          </div>
+          <span className="shrink-0 whitespace-nowrap font-mono text-xs tabular-nums text-muted">
+            {overall.done}/{overall.total} Done
             {/* The opened count is extra; a phone keeps the row on one line without it. */}
             <span className="hidden sm:inline">, {Object.keys(visited).length} opened</span>
           </span>
-          <ArrowRight className="h-4 w-4 shrink-0 text-faint" />
+          <ArrowRight className="h-4 w-4 shrink-0 text-faint" aria-hidden />
         </Link>
       </section>
 
@@ -86,7 +89,7 @@ function SignedIn({ onDeleted }: { onDeleted: (firebaseUserDeleted: boolean) => 
             void signOut();
           }}
         >
-          {pending ? <Loader2 className="h-4 w-4 animate-spin" /> : <LogOut className="h-4 w-4" />}
+          {pending ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden /> : <LogOut className="h-4 w-4" aria-hidden />}
           {pending ? 'Signing out...' : 'Sign out'}
         </Button>
         <p className="min-w-0 flex-1 basis-60 text-xs text-muted">
@@ -100,7 +103,7 @@ function SignedIn({ onDeleted }: { onDeleted: (firebaseUserDeleted: boolean) => 
           Deletes the Account and all the progress saved to it, on every device. It cannot be undone.
         </p>
         <Button variant="danger" className="mt-4" onClick={() => setDeleting(true)}>
-          <Trash2 className="h-4 w-4" />
+          <Trash2 className="h-4 w-4" aria-hidden />
           Delete my Account
         </Button>
       </section>
@@ -150,7 +153,7 @@ function ConfirmEmail({ email }: { email: string | null }) {
                 void sendConfirmEmail().then((ok) => setSent(ok ? 'sent' : 'failed'));
               }}
             >
-              {sent === 'sending' ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+              {sent === 'sending' ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden /> : null}
               {sent === 'sending' ? 'Sending...' : 'Send the email again'}
             </Button>
             <p className="text-xs text-muted" role="status">
@@ -168,8 +171,17 @@ function ConfirmEmail({ email }: { email: string | null }) {
 }
 
 function Deleted({ firebaseUserDeleted }: { firebaseUserDeleted: boolean }) {
+  // The dialog and the button that opened it are gone: focus lands here, not on the page body.
+  const notice = useRef<HTMLDivElement>(null);
+  useEffect(() => notice.current?.focus(), []);
+
   return (
-    <div className="mt-6 flex items-start gap-3 rounded-2xl border border-ok/30 bg-ok/5 p-5" role="status">
+    <div
+      ref={notice}
+      tabIndex={-1}
+      className="mt-6 flex items-start gap-3 rounded-2xl border border-ok/30 bg-ok/5 p-5 outline-none"
+      role="status"
+    >
       <CircleCheck className="mt-0.5 h-4 w-4 shrink-0 text-ok" aria-hidden />
       <div className="min-w-0 text-sm">
         <p className="font-medium text-ink">Your Account was deleted, with all the progress saved to it.</p>
@@ -187,7 +199,7 @@ function Deleted({ firebaseUserDeleted }: { firebaseUserDeleted: boolean }) {
 function Restoring() {
   return (
     <div className="mt-6 flex items-center gap-2 rounded-2xl border border-line bg-surface p-5 text-sm text-muted" role="status">
-      <Loader2 className="h-4 w-4 animate-spin" />
+      <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
       Checking your sign-in...
     </div>
   );
@@ -213,18 +225,18 @@ function Guest() {
       <div className="mt-5 flex flex-wrap items-center gap-3">
         {available ? (
           <Button variant="primary" onClick={openSignIn}>
-            <LogIn className="h-4 w-4" />
+            <LogIn className="h-4 w-4" aria-hidden />
             Sign in
           </Button>
         ) : (
-          <p className="text-xs text-faint">Sign-in is not available in this version of the app.</p>
+          <p className="text-xs text-muted">Sign-in is not available in this version of the app.</p>
         )}
         <Link
           to="/progress"
           className="inline-flex h-10 items-center gap-1.5 rounded-xl px-3 text-sm text-muted transition-colors hover:bg-elevated hover:text-ink"
         >
           See your progress
-          <ArrowRight className="h-4 w-4" />
+          <ArrowRight className="h-4 w-4" aria-hidden />
         </Link>
       </div>
     </section>

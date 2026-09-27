@@ -1,5 +1,5 @@
 import { forwardRef, useEffect, useId, useRef, useState, type FormEvent, type InputHTMLAttributes, type ReactNode } from 'react';
-import { Loader2, UserRound, X } from 'lucide-react';
+import { CircleCheck, Loader2, UserRound, X } from 'lucide-react';
 import { Button, Modal, SegmentedControl } from '@/components/ui';
 import { cn } from '@/utils/cn';
 import type { AuthSession } from './firebase';
@@ -189,7 +189,7 @@ export function SignInDialog({ ready, failed, onRetry, onGoogle, emailAuth, onCl
           ) : null}
         </section>
 
-        <div className="flex items-center gap-3 text-xs text-faint" aria-hidden>
+        <div className="flex items-center gap-3 text-xs text-muted" aria-hidden>
           <span className="h-px flex-1 bg-line" />
           or with email
           <span className="h-px flex-1 bg-line" />
@@ -260,9 +260,13 @@ export function SignInDialog({ ready, failed, onRetry, onGoogle, emailAuth, onCl
               </p>
             ) : null}
             {resetSentTo ? (
-              <p role="status" className="text-xs text-ok">
-                If an Account uses {resetSentTo}, a link to set a new password is on its way. Check the inbox, and
-                the spam folder.
+              <p role="status" className="flex items-start gap-2 text-xs text-ink">
+                {/* The icon carries the ok color; the sentence stays in ink, readable in both themes. */}
+                <CircleCheck className="mt-px h-3.5 w-3.5 shrink-0 text-ok" aria-hidden />
+                <span className="min-w-0">
+                  If an Account uses <span className="break-all">{resetSentTo}</span>, a link to set a new password is
+                  on its way. Check the inbox, and the spam folder.
+                </span>
               </p>
             ) : null}
 
