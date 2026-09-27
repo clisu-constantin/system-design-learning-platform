@@ -303,8 +303,10 @@ interchangeable, which contradicts the entire stateless/horizontal-scaling lesso
   `zoom` only to pin a scale.
 - `FlowVisual` has a Pause/Play control, starts paused under `prefers-reduced-motion`, and stops
   ticking while scrolled off screen (`useAutoplay`). Its nodes and edges are memoized on `spec` (and
-  the active Walkthrough step), so only the particle layer re-renders per frame - keep it that
-  way; every `ArchNode` is a framer-motion `layout` component that measures the DOM on re-render.
+  the active Walkthrough step), so only the particle layer re-renders per frame - keep it that way.
+- `ArchNode` glides to a new placement with a CSS transition (`.arch-node` in
+  `src/styles/index.css`), not an animation library: framer-motion cost every diagram page 42 KB
+  gzip for this one effect. Do not add it back for a node effect.
 
 ## Content conventions
 

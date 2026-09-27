@@ -203,9 +203,8 @@ export function FlowVisual({
 
   // Only the particles change from frame to frame. Keeping layout, edges and
   // node elements referentially stable lets DiagramCanvas reuse its curves and
-  // lets React skip the node cards entirely - each is a framer-motion `layout`
-  // component, which measures the DOM whenever it re-renders. In a Walkthrough
-  // they change once per step, not once per frame.
+  // lets React skip the node cards entirely, so a frame costs only the particle
+  // layer. In a Walkthrough they change once per step, not once per frame.
   const layout = useMemo(() => toLayout(spec), [spec]);
   const wire = useMemo(
     () => (activeFrom && activeTo ? wireFor(spec.edges, activeFrom, activeTo) : undefined),
