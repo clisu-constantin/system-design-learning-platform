@@ -3,6 +3,7 @@ import { Link, useParams } from 'react-router-dom';
 import { ArrowLeft, BookOpen, Loader2 } from 'lucide-react';
 import { Badge, Button, difficultyTone, ErrorBoundary } from '@/components/ui';
 import { CATEGORY_BY_ID } from '@/data/categories';
+import { CategoryTag } from '@/data/categoryIcons';
 import { CONCEPT_BY_SLUG } from '@/data/concepts';
 import { getLab } from './registry';
 
@@ -42,7 +43,7 @@ export function LabRoute() {
             <h1 className="mt-1 text-xl font-semibold text-ink">{lab.title}</h1>
             <div className="mt-2 flex flex-wrap items-center gap-2">
               <Badge tone={difficultyTone(lab.difficulty)}>{lab.difficulty}</Badge>
-              <Badge>{category.title}</Badge>
+              <CategoryTag category={category} variant="chip" />
             </div>
           </div>
           {concept ? (

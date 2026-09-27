@@ -20,7 +20,6 @@ export interface Category {
   title: string;
   blurb: string;
   icon: string;
-  accent: 'brand' | 'ok' | 'warn' | 'danger' | 'info' | 'violet';
 }
 
 /** A single trade-off row: what you gain vs what it costs. */

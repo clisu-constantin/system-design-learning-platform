@@ -1,24 +1,14 @@
 import { Link } from 'react-router-dom';
 import { ArrowRight, FlaskConical, Layers3, Play, Route, Waypoints } from 'lucide-react';
-import { CategoryIcon } from '@/data/categoryIcons';
+import { CategoryIcon, CategoryTag } from '@/data/categoryIcons';
 import { FlowVisual } from '@/components/architecture/FlowVisual';
 import { HERO_VISUAL } from '@/data/visuals/hero';
 import { Badge, difficultyTone } from '@/components/ui';
-import { CATEGORIES } from '@/data/categories';
+import { CATEGORIES, CATEGORY_BY_ID, categoryStyle } from '@/data/categories';
 import { CONCEPTS, CONCEPTS_BY_CATEGORY } from '@/data/concepts';
 import { SCENARIOS } from '@/data/scenarios';
 import { FEATURED_LABS, LABS } from '@/features/labs/registry';
 import { useProgress } from '@/app/providers/ProgressProvider';
-import { cn } from '@/utils/cn';
-
-const ACCENT_RING: Record<string, string> = {
-  brand: 'text-brand bg-brand/10',
-  ok: 'text-ok bg-ok/10',
-  warn: 'text-warn bg-warn/10',
-  danger: 'text-danger bg-danger/10',
-  info: 'text-info bg-info/10',
-  violet: 'text-violet bg-violet/10',
-};
 
 export function HomePage() {
   const { overall, categoryProgress } = useProgress();
@@ -27,7 +17,6 @@ export function HomePage() {
     <div className="pb-14">
       {/* Hero */}
       <section className="relative overflow-hidden border-b border-line">
-        <div className="grid-bg absolute inset-0 opacity-60" aria-hidden />
         <div
           className="absolute inset-0 bg-gradient-to-br from-brand/10 via-transparent to-violet/10"
           aria-hidden
@@ -38,9 +27,7 @@ export function HomePage() {
           </Badge>
           <h1 className="max-w-3xl text-4xl font-semibold leading-tight tracking-tight text-ink lg:text-5xl">
             System Design
-            <span className="block bg-gradient-to-r from-brand to-violet bg-clip-text text-transparent">
-              Interactive
-            </span>
+            <span className="block">Interactive</span>
           </h1>
           <p className="mt-4 max-w-2xl text-base text-muted lg:text-lg">
             Learn architecture by seeing systems work. Generate traffic, overload a server, kill a database, add a
@@ -114,16 +101,18 @@ export function HomePage() {
             <Link
               key={lab.id}
               to={`/labs/${lab.id}`}
+              style={categoryStyle(lab.category)}
               className="group flex flex-col rounded-2xl border border-line bg-surface p-5 transition-all hover:border-brand/60 hover:shadow-glow"
             >
               <div className="flex items-start justify-between">
-                <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-brand/10 text-brand">
+                <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-cat/10 text-cat">
                   <FlaskConical className="h-4 w-4" />
                 </span>
                 <Badge tone={difficultyTone(lab.difficulty)}>{lab.difficulty}</Badge>
               </div>
               <h3 className="mt-3 text-sm font-semibold text-ink group-hover:text-brand">{lab.title}</h3>
-              <p className="mt-1.5 text-xs leading-relaxed text-muted">{lab.blurb}</p>
+              <p className="mt-1.5 flex-1 text-xs leading-relaxed text-muted">{lab.blurb}</p>
+              <CategoryTag category={CATEGORY_BY_ID[lab.category]} className="mt-3" />
             </Link>
           ))}
         </div>
@@ -144,14 +133,12 @@ export function HomePage() {
               <Link
                 key={category.id}
                 to={`/categories/${category.id}`}
+                style={categoryStyle(category.id)}
                 className="group rounded-2xl border border-line bg-surface p-5 transition-all hover:border-brand/50 hover:shadow-card"
               >
                 <div className="flex items-start gap-3">
                   <span
-                    className={cn(
-                      'flex h-9 w-9 shrink-0 items-center justify-center rounded-lg',
-                      ACCENT_RING[category.accent],
-                    )}
+                    className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-cat/10 text-cat"
                   >
                     <CategoryIcon name={category.icon} className="h-4 w-4" />
                   </span>

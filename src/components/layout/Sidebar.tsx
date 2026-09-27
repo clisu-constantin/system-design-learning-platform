@@ -4,7 +4,7 @@ import { NavLink, matchPath, useLocation } from 'react-router-dom';
 import { Check, ChevronDown, FlaskConical, Shapes, BookMarked, Route, Columns2, Waypoints } from 'lucide-react';
 import { CategoryIcon } from '@/data/categoryIcons';
 import { cn } from '@/utils/cn';
-import { CATEGORIES } from '@/data/categories';
+import { CATEGORIES, categoryStyle } from '@/data/categories';
 import { CONCEPTS_BY_CATEGORY, getConcept } from '@/data/concepts';
 import { useProgress } from '@/app/providers/ProgressProvider';
 import type { Category, CategoryId, Difficulty } from '@/types';
@@ -103,14 +103,14 @@ export function Sidebar({ difficulty, folded = false, onUnfold, onNavigate }: Si
           const progress = categoryProgress(category.id);
 
           return (
-            <div key={category.id} data-category={category.id}>
+            <div key={category.id} data-category={category.id} style={categoryStyle(category.id)}>
               <button
                 type="button"
                 aria-expanded={isOpen}
                 onClick={() => setOpen((current) => ({ ...current, [category.id]: !isOpen }))}
                 className="flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-left text-sm font-medium text-ink transition-colors hover:bg-elevated"
               >
-                <CategoryIcon name={category.icon} className="h-4 w-4 shrink-0 text-faint" />
+                <CategoryIcon name={category.icon} className="h-4 w-4 shrink-0 text-cat" />
                 <span className="flex-1 truncate">{category.title}</span>
                 <span className="font-mono text-[11px] tabular-nums text-faint">
                   {progress.done}/{progress.total}
@@ -119,7 +119,7 @@ export function Sidebar({ difficulty, folded = false, onUnfold, onNavigate }: Si
               </button>
 
               {isOpen ? (
-                <ul className="ml-[22px] space-y-0.5 border-l border-line pl-2">
+                <ul className="ml-[22px] space-y-0.5 border-l border-cat/30 pl-2">
                   {concepts.map((concept) => (
                     <li key={concept.slug}>
                       <NavLink
@@ -233,7 +233,8 @@ function SidebarStrip({
             aria-current={isActive ? 'page' : undefined}
             {...tipProps(`${category.title} ${progress.done}/${progress.total}`)}
             onClick={() => onOpenCategory(category.id)}
-            className={cn(STRIP_ITEM, isActive ? STRIP_ACTIVE : 'text-faint hover:bg-elevated hover:text-ink')}
+            style={categoryStyle(category.id)}
+            className={cn(STRIP_ITEM, isActive ? STRIP_ACTIVE : 'text-cat hover:bg-cat/10')}
           >
             <CategoryIcon name={category.icon} className="h-4 w-4" />
           </button>

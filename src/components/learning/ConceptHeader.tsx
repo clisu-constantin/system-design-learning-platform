@@ -2,7 +2,8 @@ import { Link } from 'react-router-dom';
 import { Check } from 'lucide-react';
 import type { ConceptSummary } from '@/types';
 import { Badge, Button, difficultyTone } from '@/components/ui';
-import { CATEGORY_BY_ID } from '@/data/categories';
+import { CATEGORY_BY_ID, categoryStyle } from '@/data/categories';
+import { CategoryTag } from '@/data/categoryIcons';
 import { useProgress } from '@/app/providers/ProgressProvider';
 
 export function ConceptHeader({ concept }: { concept: ConceptSummary }) {
@@ -14,7 +15,11 @@ export function ConceptHeader({ concept }: { concept: ConceptSummary }) {
     <header className="border-b border-line bg-surface px-5 py-6 lg:px-8">
       <div className="mx-auto max-w-6xl">
         <div className="flex items-center gap-2 text-xs text-faint">
-          <Link to={`/categories/${category.id}`} className="transition-colors hover:text-brand">
+          <Link
+            to={`/categories/${category.id}`}
+            style={categoryStyle(category.id)}
+            className="transition-colors hover:text-cat"
+          >
             {category.title}
           </Link>
           <span aria-hidden>/</span>
@@ -27,7 +32,7 @@ export function ConceptHeader({ concept }: { concept: ConceptSummary }) {
             <p className="mt-1.5 max-w-3xl text-sm text-muted">{concept.tagline}</p>
             <div className="mt-3 flex flex-wrap items-center gap-2">
               <Badge tone={difficultyTone(concept.difficulty)}>{concept.difficulty}</Badge>
-              <Badge>{category.title}</Badge>
+              <CategoryTag category={category} variant="chip" />
             </div>
           </div>
 

@@ -2,7 +2,8 @@ import { useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { Check, FlaskConical } from 'lucide-react';
 import { Badge, difficultyTone, SegmentedControl } from '@/components/ui';
-import { CATEGORY_BY_ID } from '@/data/categories';
+import { CATEGORY_BY_ID, categoryStyle } from '@/data/categories';
+import { CategoryIcon } from '@/data/categoryIcons';
 import { CONCEPTS_BY_CATEGORY } from '@/data/concepts';
 import { useProgress } from '@/app/providers/ProgressProvider';
 import type { CategoryId, Difficulty } from '@/types';
@@ -34,7 +35,12 @@ export function CategoryPage() {
       <div className="mx-auto max-w-4xl">
         <header className="flex flex-wrap items-end justify-between gap-4">
           <div>
-            <h1 className="text-2xl font-semibold tracking-tight text-ink">{category.title}</h1>
+            <div className="flex items-center gap-3" style={categoryStyle(category.id)}>
+              <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-cat/10 text-cat">
+                <CategoryIcon name={category.icon} className="h-5 w-5" />
+              </span>
+              <h1 className="text-2xl font-semibold tracking-tight text-ink">{category.title}</h1>
+            </div>
             <p className="mt-1.5 max-w-2xl text-sm text-muted">{category.blurb}</p>
             <div className="mt-3 flex items-center gap-3 text-xs text-faint">
               <span>

@@ -18,6 +18,28 @@
     --c-info: 99 102 241;
     --c-violet: 168 85 247;
     --grid: 226 232 240;
+
+    /* Category colors: wayfinding only, so the Learner can tell at a glance which Category a
+       Concept or Lab belongs to. They are a separate family from ok/warn/danger, which keep their
+       status meaning, and a colored Category chip keeps neutral text (only its icon takes the
+       color), so a green or amber Category never reads as a Difficulty badge. Made in OKLCH - light L 0.50 C 0.13, dark L 0.80 C 0.11, 13 hues about 28
+       degrees apart (h below), ordered so neighbours in the sidebar never look alike. Every value
+       passes 4.5:1 as text on surface, canvas and elevated, also over its own 10% tint.
+       A component reads one through --cat (see categoryStyle) as text-cat, bg-cat/10, border-cat/30. */
+    --cat-getting-started: 40 99 171; /* h 255 */
+    --cat-scaling: 122 75 154; /* h 310 */
+    --cat-networking: 42 117 45; /* h 144 */
+    --cat-data: 0 120 127; /* h 199 */
+    --cat-performance: 150 77 0; /* h 61 */
+    --cat-distributed: 89 87 170; /* h 282 */
+    --cat-communication: 0 122 91; /* h 172 */
+    --cat-async: 145 65 125; /* h 338 */
+    --cat-reliability: 0 111 156; /* h 227 */
+    --cat-security: 129 93 0; /* h 89 */
+    --cat-architecture: 160 65 46; /* h 33 */
+    --cat-observability: 96 107 0; /* h 116 */
+    --cat-patterns: 157 61 88; /* h 6 */
+    --cat: var(--c-brand);
   }
 
   .dark {
@@ -35,6 +57,20 @@
     --c-info: 129 140 248;
     --c-violet: 192 132 252;
     --grid: 30 41 59;
+
+    --cat-getting-started: 141 193 255;
+    --cat-scaling: 211 170 243;
+    --cat-networking: 146 208 144;
+    --cat-data: 86 211 216;
+    --cat-performance: 241 173 114;
+    --cat-distributed: 178 181 255;
+    --cat-communication: 106 213 182;
+    --cat-async: 236 162 214;
+    --cat-reliability: 103 204 245;
+    --cat-security: 218 186 102;
+    --cat-architecture: 252 163 144;
+    --cat-observability: 186 199 114;
+    --cat-patterns: 250 159 179;
   }
 
   html,

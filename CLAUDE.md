@@ -327,6 +327,10 @@ These are editorial rules, not style preferences. They are the reason the app is
 - Colors come from CSS variables in `src/styles/index.css`, exposed to Tailwind as semantic names:
   `canvas surface elevated line ink muted faint brand ok warn danger info violet`. Never hard-code a
   hex value in a component.
+- Each Category has its own color (`--cat-<id>` in `src/styles/index.css`), for wayfinding only.
+  Set it with `style={categoryStyle(id)}` and use `text-cat`, `bg-cat/10`, `border-cat/30` inside;
+  `CategoryTag` shows a Category as a chip or a label. Never use `ok`/`warn`/`danger` for a
+  Category: those mean status (health, Difficulty, Done).
 - SVG presentation attributes (and anything computed in JS) cannot read `var()`; use
   `useThemeColors()` for real color strings. Do not add a chart library for a new chart - extend
   `LiveChart`; recharts was removed because it cost every chart lab ~96 KB gzip.

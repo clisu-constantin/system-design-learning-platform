@@ -25,6 +25,8 @@ export default {
         danger: withVar('--c-danger'),
         info: withVar('--c-info'),
         violet: withVar('--c-violet'),
+        // The Category color of the nearest element that sets --cat (categoryStyle in src/data/categories.ts).
+        cat: withVar('--cat'),
       },
       fontFamily: {
         sans: ['Inter', 'ui-sans-serif', 'system-ui', 'Segoe UI', 'Roboto', 'sans-serif'],

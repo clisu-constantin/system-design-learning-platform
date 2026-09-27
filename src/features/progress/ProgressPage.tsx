@@ -2,7 +2,8 @@ import { Link } from 'react-router-dom';
 import { Check, LogIn, RotateCcw } from 'lucide-react';
 import { Button, Meter } from '@/components/ui';
 import { useAccount } from '@/app/providers/AccountProvider';
-import { CATEGORIES } from '@/data/categories';
+import { CATEGORIES, categoryStyle } from '@/data/categories';
+import { CategoryIcon } from '@/data/categoryIcons';
 import { CONCEPTS_BY_CATEGORY, CONCEPT_BY_SLUG } from '@/data/concepts';
 import { useProgress } from '@/app/providers/ProgressProvider';
 
@@ -76,9 +77,13 @@ export function ProgressPage() {
                 <Link
                   key={category.id}
                   to={`/categories/${category.id}`}
+                  style={categoryStyle(category.id)}
                   className="flex items-center gap-4 rounded-xl border border-line bg-surface px-4 py-3 transition-colors hover:border-brand/50"
                 >
-                  <span className="w-44 shrink-0 text-sm text-ink">{category.title}</span>
+                  <span className="flex w-44 shrink-0 items-center gap-2.5 text-sm text-ink">
+                    <CategoryIcon name={category.icon} className="h-4 w-4 shrink-0 text-cat" />
+                    <span className="truncate">{category.title}</span>
+                  </span>
                   <Meter value={progress.percent / 100} showValue={false} className="flex-1" />
                   <span className="w-20 shrink-0 text-right font-mono text-xs text-muted">
                     {progress.done}/{progress.total}
