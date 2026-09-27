@@ -293,6 +293,9 @@ interchangeable, which contradicts the entire stateless/horizontal-scaling lesso
 - A part the story deliberately does not reach (a pruned partition, a cut feature) gets a step with
   `skipped: true`: its wire is shown dashed and no request travels it. Never send a `failure` dot
   there - that tells the learner traffic arrived and broke.
+- Work done inside one part (a browser parsing and painting a page) is a step whose `from` equals
+  its `to`: that part lights up, every wire fades and no request travels, so it needs no wire.
+  Use it only for real work in one part - a hop between two parts still travels a drawn wire.
 - A Walkthrough step shows its caption in a strip above the canvas - never as an edge label (on a
   short edge it lands on a node) and never floated over the canvas (it covers the top-left node).
 - `FlowVisual` auto-fits its spec to the container width (0.5x-1.3x, via `DiagramCanvas`'s `fit`
