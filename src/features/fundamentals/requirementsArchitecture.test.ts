@@ -570,14 +570,24 @@ test('once the database has a second copy, every consistency level changes the d
   assert.ok(consistency);
   for (const product of PRODUCTS) {
     const core = Object.keys(coreOf(product));
-    // A standby (99.99%), a sync standby (Critical durability) and a whole region 2 (99.999%).
-    for (const copies of [{ availability: 2 }, { durability: 1 }, { availability: 3 }]) {
-      for (let level = 1; level < consistency.values.length; level += 1) {
-        const before = setup(product, core, { ...copies, consistency: level - 1 });
-        const after = setup(product, core, { ...copies, consistency: level });
-        assert.notEqual(drawn(after), drawn(before), `${product}: ${consistency.values[level]} with ${JSON.stringify(copies)}`);
-      }
+    // A standby (99.99%), a sync standby (Critical durability), a whole region 2 (99.999%), and
+    // region 2 through the users (100M) - at 99% and 99.9%, where region 1 may hold one copy per partition.
+    for (const copies of [{ availability: 2 }, { durability: 1 }, { availability: 3 }, { users: 3 }, { users: 3, availability: 1 }]) {
+      assert.ok(targetApplies('consistency', architecture(setup(product, core, copies))), `${product} with ${JSON.stringify(copies)}`);
+      const shapes: string[] = consistency.values.map((_, level) => drawn(setup(product, core, { ...copies, consistency: level })));
+      assert.equal(new Set(shapes).size, consistency.values.length, `${product}: every level differs with ${JSON.stringify(copies)}`);
     }
+  }
+  // The case that drew nothing: Uber at 100M and 99%, two partitions with one copy each, and region 2.
+  const uber = (level: number) => architecture(setup('uber', Object.keys(coreOf('uber')), { users: 3, consistency: level }));
+  assert.equal(uber(0).parts.db?.title, 'DB: 2 partitions x1');
+  assert.equal(uber(0).region2, true);
+  assert.notEqual(uber(0).parts.db?.status, uber(1).parts.db?.status);
+  // Where the status line says the reads go, a forced-decision line says why.
+  const readsLine = [/any database copy/, /primary right after their own write/, /primary only/];
+  for (const level of [0, 1, 2]) {
+    const s = setup('uber', Object.keys(coreOf('uber')), { users: 3, consistency: level });
+    assert.ok(implicationsFor(s, architecture(s)).some((line) => readsLine[level].test(line)), `${uber(level).parts.db?.status}`);
   }
 });
 

@@ -190,7 +190,8 @@ export type Nfr = Record<NfrId, number>;
  * Something a forced-decision line talks about. A line is shown only while it is on the diagram,
  * so no line names a part that is not drawn.
  * - `reads`: a picked feature reads from the database;
- * - `copies`: the database has more than one copy in region 1 (a standby or read replicas);
+ * - `copies`: the database has a second copy - a standby or read replicas in region 1, or region 2 -
+ *   so the database status line names where reads go;
  * - `one-copy`: it has exactly one, and no region 2 - so every read already sees the latest write;
  * - `sync-standby`: a write waits for the standby (Critical durability, or Strong with copies);
  * - `db-region2`: a database, copied to region 2 (two regions can take conflicting writes);
@@ -753,9 +754,10 @@ export function architecture(setup: Setup): Architecture {
       value: `${about(database.peakWriteQps)}/s`,
       tone: partitioned ? 'text-warn' : 'text-ink',
     };
-    // With more than one copy, where reads go is the consistency choice; with one, the Capacity Lab decision.
+    // With a second copy - in region 1 or in region 2 - where reads go is the consistency choice, the
+    // same test that turns the consistency slider on; with one copy, the Capacity Lab decision.
     db.status =
-      dbCopies > 1
+      dbCopies > 1 || region2
         ? ['Reads: any copy', 'Reads: own writes on primary', 'Reads: primary only'][nfr.consistency]
         : partitioned
           ? 'Partition the writes'
@@ -879,7 +881,7 @@ function isDrawn(needs: Needs, arch: Architecture) {
     case 'replicas':
       return db && arch.sizing.database.readReplicas > 0;
     case 'copies':
-      return db && arch.dbCopies > 1;
+      return db && (arch.dbCopies > 1 || arch.region2);
     case 'one-copy':
       return db && arch.dbCopies === 1 && !arch.region2;
     case 'db-region2':
