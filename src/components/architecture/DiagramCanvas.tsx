@@ -1,4 +1,4 @@
-import { useEffect, useMemo, type ReactNode } from 'react';
+import { useEffect, useLayoutEffect, useMemo, type ReactNode } from 'react';
 import { cn } from '@/utils/cn';
 import { useFitScale, type FitRange } from '@/hooks/useFitScale';
 import type { RequestOutcome } from '@/types';
@@ -122,6 +122,15 @@ export function DiagramCanvas({
   const { ref, scale } = useFitScale(width, fit, zoom);
   // A string, so a new array with the same ids does not scroll again.
   const focusKey = focus?.join(' ') ?? '';
+
+  // Diagrams are drawn around their middle (the entry point on top, replicas either side), so
+  // when one scrolls sideways (a phone) it opens centred; a Walkthrough focus below then wins.
+  useLayoutEffect(() => {
+    const scroller = ref.current;
+    if (!scroller || focusKey) return;
+    const overflow = scroller.scrollWidth - scroller.clientWidth;
+    scroller.scrollLeft = overflow > 0 ? overflow / 2 : 0;
+  }, [ref, focusKey, scale]);
 
   useEffect(() => {
     const scroller = ref.current;

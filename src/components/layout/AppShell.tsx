@@ -80,7 +80,7 @@ export function AppShell() {
           event.preventDefault();
           mainRef.current?.focus();
         }}
-        className="sr-only z-50 rounded-xl bg-brand px-4 py-2 text-sm font-medium text-white focus:not-sr-only focus:fixed focus:left-3 focus:top-2"
+        className="sr-only z-50 rounded-xl bg-brand px-4 py-2 text-sm font-medium text-on-fill focus:not-sr-only focus:fixed focus:left-3 focus:top-2"
       >
         Skip to content
       </a>

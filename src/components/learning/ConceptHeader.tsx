@@ -18,12 +18,12 @@ export function ConceptHeader({ concept }: { concept: ConceptSummary }) {
           <Link
             to={`/categories/${category.id}`}
             style={categoryStyle(category.id)}
-            className="transition-colors hover:text-cat"
+            className="inline-flex items-center transition-colors hover:text-cat"
           >
             {category.title}
           </Link>
           <span aria-hidden>/</span>
-          <span>{concept.title}</span>
+          <span className="min-w-0 truncate">{concept.title}</span>
         </div>
 
         <div className="mt-2 flex flex-wrap items-start justify-between gap-4">
@@ -42,7 +42,7 @@ export function ConceptHeader({ concept }: { concept: ConceptSummary }) {
             aria-pressed={isDone}
           >
             <Check className="h-4 w-4" />
-            {isDone ? 'Done' : 'Mark as complete'}
+            {isDone ? 'Done' : 'Mark as Done'}
           </Button>
         </div>
       </div>

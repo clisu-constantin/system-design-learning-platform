@@ -34,7 +34,7 @@ export function HomePage() {
           <div className="mt-8 flex flex-col gap-3 sm:flex-row sm:flex-wrap">
             <Link
               to="/concepts/what-is-system-design"
-              className="inline-flex h-11 items-center justify-center gap-2 rounded-xl bg-brand px-5 text-sm font-medium text-white transition-colors hover:bg-brand/90"
+              className="inline-flex h-11 items-center justify-center gap-2 rounded-xl bg-brand px-5 text-sm font-medium text-on-fill transition-colors hover:bg-brand/90"
             >
               <Play className="h-4 w-4" />
               Start learning

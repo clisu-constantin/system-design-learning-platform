@@ -58,6 +58,7 @@ export function CategoryPage() {
           <SegmentedControl
             value={difficulty}
             size="sm"
+            aria-label="Difficulty"
             options={[
               { value: 'all', label: 'All' },
               { value: 'Beginner', label: 'Beginner' },

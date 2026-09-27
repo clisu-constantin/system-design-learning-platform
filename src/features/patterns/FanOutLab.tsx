@@ -491,6 +491,7 @@ export function FanOutLab() {
           title="Author"
           subtitle={`${formatCompact(followers)} followers`}
           placed={LAYOUT.author}
+          status="idle"
           statusLabel={`Posts every ${POST_EVERY_SIM_S / 60} min`}
           compact
         >

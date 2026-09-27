@@ -511,6 +511,7 @@ export function UrlJourneyLab({ focus }: LabProps<'url-journey'>) {
             subtitle="indexed query"
             placed={LAYOUT.db}
             selected={touched.has('db')}
+            status={setup.cacheHit ? 'idle' : 'healthy'}
             statusLabel={setup.cacheHit ? 'Not asked' : 'Queried'}
             className={cn(setup.cacheHit && 'opacity-60')}
           />

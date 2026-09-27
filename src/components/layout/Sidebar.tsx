@@ -151,8 +151,10 @@ export function Sidebar({ difficulty, folded = false, onUnfold, onNavigate }: Si
                         <span
                           className={cn('h-1.5 w-1.5 shrink-0 rounded-full', DIFFICULTY_DOT[concept.difficulty])}
                           title={concept.difficulty}
+                          aria-hidden
                         />
                         <span className="flex-1 truncate">{concept.title}</span>
+                        <span className="sr-only">, {concept.difficulty}</span>
                         {completed[concept.slug] ? (
                           <Check className="h-3 w-3 shrink-0 text-ok" aria-label="Done" />
                         ) : null}

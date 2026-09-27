@@ -135,7 +135,7 @@ export function CapacitySpeedView({ inputs, change, onReset, viewSwitch }: Speed
 
   return (
     <LabShell
-      title="Capacity Estimation Playground"
+      title="Capacity Estimation Lab"
       description="Follow one request hop by hop, from the user to the data and back, and see which hop decides how long it takes."
       running={running}
       onToggleRun={() => setRunning((value) => !value)}

@@ -99,6 +99,8 @@ const MINIMAP_TONE: Record<NodeStatus, 'ok' | 'warn' | 'danger' | 'info'> = {
   down: 'danger',
   starting: 'info',
   overloaded: 'danger',
+  // The Playground never sets it; the Record needs every status.
+  idle: 'info',
 };
 
 const newEdge = (connection: Connection) => ({

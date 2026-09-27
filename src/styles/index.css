@@ -162,6 +162,16 @@
   }
 }
 
+@layer utilities {
+  /* A row that scrolls sideways with no visible bar (the Tabs row on a phone). */
+  .scrollbar-none {
+    scrollbar-width: none;
+  }
+  .scrollbar-none::-webkit-scrollbar {
+    display: none;
+  }
+}
+
 @layer components {
   /* An ArchNode glides to a new placement and fades in when it is added, so adding a server
      reads as the architecture changing. Placement changes are rare and touch a few boxes, so

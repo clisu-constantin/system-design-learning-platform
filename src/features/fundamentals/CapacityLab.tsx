@@ -164,7 +164,7 @@ function CapacitySizeView({ setup, change, onReset, viewSwitch }: SizeViewProps)
 
   return (
     <LabShell
-      title="Capacity Estimation Playground"
+      title="Capacity Estimation Lab"
       description="Turn product numbers into infrastructure numbers, and see each one land on the part of the system it sizes."
       running={running}
       onToggleRun={() => setRunning((value) => !value)}
