@@ -59,9 +59,15 @@ export function Stat({ label, value, unit, tone = 'neutral', hint, sub, classNam
           aria-hidden
         />
       ) : null}
-      <div className="flex items-center gap-1.5">
-        <span className="label truncate">{label}</span>
-        {hint ? <InfoTip content={hint} /> : null}
+      {/* A label wraps instead of truncating: on a phone two tiles share a row, and a cut label
+          ("Failed requ...") hides what the number is. */}
+      <div className="flex items-start gap-1.5">
+        <span className="label min-w-0 break-words leading-4">{label}</span>
+        {hint ? (
+          <span className="mt-px flex shrink-0">
+            <InfoTip content={hint} />
+          </span>
+        ) : null}
       </div>
       <div className="mt-1 flex items-baseline gap-1">
         <span

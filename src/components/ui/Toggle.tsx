@@ -33,9 +33,9 @@ export function Toggle({ label, checked, onChange, hint, disabled, description }
         disabled={disabled}
         onClick={() => onChange(!checked)}
         className={cn(
-          'relative h-6 w-11 shrink-0 rounded-full border transition-colors disabled:opacity-50',
+          'relative h-6 w-11 shrink-0 rounded-full border transition-colors disabled:cursor-not-allowed disabled:opacity-50',
           'coarse:min-h-0 coarse:before:absolute coarse:before:-inset-y-[11px] coarse:before:-inset-x-px coarse:before:content-[""]',
-          checked ? 'border-brand bg-brand' : 'border-line bg-elevated',
+          checked ? 'border-brand bg-brand' : 'border-line bg-elevated hover:border-faint',
         )}
       >
         <span

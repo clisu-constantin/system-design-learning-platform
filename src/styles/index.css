@@ -10,13 +10,19 @@
     --c-line: 226 232 240;
     --c-ink: 15 23 42;
     --c-muted: 71 85 105;
-    --c-faint: 148 163 184;
-    --c-brand: 14 165 233;
-    --c-ok: 16 185 129;
-    --c-warn: 245 158 11;
-    --c-danger: 244 63 94;
-    --c-info: 99 102 241;
-    --c-violet: 168 85 247;
+    /* Every text color below passes 4.5:1 on surface, canvas and elevated, and the accents also
+       over their own 10% tint (a Badge), in both themes. faint is the quietest text, not a
+       decoration color. */
+    --c-faint: 96 112 135;
+    --c-brand: 3 105 161;
+    --c-ok: 4 120 87;
+    --c-warn: 172 78 10;
+    --c-danger: 200 24 64;
+    --c-info: 79 70 229;
+    --c-violet: 140 48 220;
+    /* Text and icons on a filled accent (a primary, danger or success Button). The light theme
+       fills are dark enough for white; the dark theme fills are bright, so they take dark text. */
+    --c-on-fill: 255 255 255;
     --grid: 226 232 240;
 
     /* Category colors: wayfinding only, so the Learner can tell at a glance which Category a
@@ -49,13 +55,14 @@
     --c-line: 31 43 66;
     --c-ink: 226 232 240;
     --c-muted: 148 163 184;
-    --c-faint: 100 116 139;
+    --c-faint: 122 137 160;
     --c-brand: 56 189 248;
     --c-ok: 52 211 153;
     --c-warn: 251 191 36;
     --c-danger: 251 113 133;
     --c-info: 129 140 248;
     --c-violet: 192 132 252;
+    --c-on-fill: 7 11 20;
     --grid: 30 41 59;
 
     --cat-getting-started: 141 193 255;
@@ -117,14 +124,40 @@
     }
   }
 
+  ::selection {
+    background-color: rgb(var(--c-brand) / 0.3);
+    color: rgb(var(--c-ink));
+  }
+  :where(input, textarea) {
+    caret-color: rgb(var(--c-brand));
+  }
+  :where(a) {
+    text-underline-offset: 3px;
+  }
+
+  /* Scrollbars take the theme: Firefox reads scrollbar-color, Chrome and Safari the
+     pseudo-elements. Chrome would drop the pseudo-elements for scrollbar-color, so that is set
+     only where they do not exist. The thumb is inset by a transparent border, so it reads as a
+     thin bar in a 10px gutter. */
+  @supports not selector(::-webkit-scrollbar) {
+    html {
+      scrollbar-color: rgb(var(--c-line)) transparent;
+    }
+  }
   ::-webkit-scrollbar {
     width: 10px;
     height: 10px;
   }
   ::-webkit-scrollbar-thumb {
     @apply rounded-full bg-line;
+    border: 2px solid transparent;
+    background-clip: padding-box;
   }
-  ::-webkit-scrollbar-track {
+  ::-webkit-scrollbar-thumb:hover {
+    background-color: rgb(var(--c-faint) / 0.6);
+  }
+  ::-webkit-scrollbar-track,
+  ::-webkit-scrollbar-corner {
     background: transparent;
   }
 }
