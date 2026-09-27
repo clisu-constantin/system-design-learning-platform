@@ -43,10 +43,25 @@ interface SidebarProps {
 export function Sidebar({ difficulty, folded = false, onUnfold, onNavigate }: SidebarProps) {
   const { completed, categoryProgress } = useProgress();
   const [open, setOpen] = useState<Record<string, boolean>>({ 'getting-started': true, scaling: true });
+  const { pathname } = useLocation();
+  const activeCategory = useActiveCategory();
   const toolsTitleId = useId();
   const navRef = useRef<HTMLElement>(null);
+  const listRef = useRef<HTMLDivElement>(null);
   /** Category picked from the strip, scrolled into view once the full sidebar is back. */
   const revealRef = useRef<CategoryId | null>(null);
+
+  // The current Concept stays in sight: its Category opens (below) and the list scrolls to it. Only the
+  // list moves - scrollIntoView could also scroll the page or the closed drawer's parents.
+  useEffect(() => {
+    const list = listRef.current;
+    const link = list?.querySelector<HTMLElement>('a[aria-current="page"]');
+    if (!list || !link) return;
+    const box = list.getBoundingClientRect();
+    const row = link.getBoundingClientRect();
+    // Out of sight, it moves to the middle, so the Concepts around it show too.
+    if (row.top < box.top || row.bottom > box.bottom) list.scrollTop += row.top + row.height / 2 - (box.top + box.height / 2);
+  }, [pathname, folded]);
 
   useEffect(() => {
     const id = revealRef.current;
@@ -96,10 +111,11 @@ export function Sidebar({ difficulty, folded = false, onUnfold, onNavigate }: Si
         ))}
       </div>
 
-      <div className="min-h-0 flex-1 space-y-1 overflow-y-auto px-3 pb-8 pt-3 short:flex-none short:overflow-visible">
+      <div ref={listRef} className="min-h-0 flex-1 space-y-1 overflow-y-auto px-3 pb-8 pt-3 short:flex-none short:overflow-visible">
         {visibleCategories.map((category) => {
           const concepts = conceptsIn(category.id);
-          const isOpen = open[category.id] ?? false;
+          // Until the Learner opens or closes it, a Category is open when the current page is in it.
+          const isOpen = open[category.id] ?? category.id === activeCategory;
           const progress = categoryProgress(category.id);
 
           return (
@@ -137,11 +153,8 @@ export function Sidebar({ difficulty, folded = false, onUnfold, onNavigate }: Si
                           title={concept.difficulty}
                         />
                         <span className="flex-1 truncate">{concept.title}</span>
-                        {concept.lab ? (
-                          <FlaskConical className="h-3 w-3 shrink-0 text-brand" aria-label="Has an interactive lab" />
-                        ) : null}
                         {completed[concept.slug] ? (
-                          <Check className="h-3 w-3 shrink-0 text-ok" aria-label="Completed" />
+                          <Check className="h-3 w-3 shrink-0 text-ok" aria-label="Done" />
                         ) : null}
                       </NavLink>
                     </li>
