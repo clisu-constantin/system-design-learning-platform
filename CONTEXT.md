@@ -47,7 +47,9 @@ _Avoid_: Preset, mode, scenario
 
 **Example product**:
 The real product a Concept uses as its worked example, such as WhatsApp, Instagram or Uber. A Concept's Diagram and
-its Lab focus use the same one, so the Lab reads as the Diagram made adjustable.
+its Lab focus use the same one, so the Lab reads as the Diagram made adjustable, and its Lesson's worked example
+uses it too. Its Quiz may use other products, to check the idea carries over. Only a Concept whose Lab offers a
+choice of products has one; the others keep a general example such as example.com.
 _Avoid_: Scenario (that is a Tool), preset, case study
 
 **Trade-offs**:
