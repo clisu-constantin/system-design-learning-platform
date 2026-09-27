@@ -8,6 +8,9 @@
     --c-surface: 255 255 255;
     --c-elevated: 248 250 252;
     --c-line: 226 232 240;
+    /* A form field border. line is for separating surfaces and is too faint to show where to type;
+       field passes 3:1 (WCAG 1.4.11) on surface, canvas and elevated, in both themes. */
+    --c-field: 128 141 161;
     --c-ink: 15 23 42;
     --c-muted: 71 85 105;
     /* Every text color below passes 4.5:1 on surface, canvas and elevated, and the accents also
@@ -53,6 +56,7 @@
     --c-surface: 13 20 34;
     --c-elevated: 18 26 43;
     --c-line: 31 43 66;
+    --c-field: 92 106 132;
     --c-ink: 226 232 240;
     --c-muted: 148 163 184;
     --c-faint: 122 137 160;

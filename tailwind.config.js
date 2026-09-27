@@ -16,6 +16,8 @@ export default {
         surface: withVar('--c-surface'),
         elevated: withVar('--c-elevated'),
         line: withVar('--c-line'),
+        // The border of a form field (text input, select): 3:1 on every surface, where line is not.
+        field: withVar('--c-field'),
         ink: withVar('--c-ink'),
         muted: withVar('--c-muted'),
         faint: withVar('--c-faint'),

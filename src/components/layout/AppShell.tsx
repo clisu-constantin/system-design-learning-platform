@@ -4,6 +4,7 @@ import { cn } from '@/utils/cn';
 import { ErrorBoundary } from '@/components/ui';
 import { useLayout } from '@/app/providers/LayoutProvider';
 import { LG_QUERY, useMediaQuery } from '@/hooks/useMediaQuery';
+import { useRouteAnnouncer } from '@/hooks/useRouteAnnouncer';
 import type { Difficulty } from '@/types';
 import { Sidebar } from './Sidebar';
 import { TopBar } from './TopBar';
@@ -32,6 +33,7 @@ export function AppShell() {
   const isWide = useMediaQuery(LG_QUERY);
   // A stored fold only applies to the static column; the small-screen drawer always shows everything.
   const folded = isWide && sidebarFolded;
+  const announcement = useRouteAnnouncer(location.pathname, mainRef);
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -135,6 +137,10 @@ export function AppShell() {
       </div>
 
       <CommandSearch open={searchOpen} onClose={() => setSearchOpen(false)} />
+      {/* Names the new page after an in-app navigation, as a full page load would. */}
+      <p aria-live="polite" aria-atomic="true" className="sr-only">
+        {announcement}
+      </p>
     </div>
   );
 }

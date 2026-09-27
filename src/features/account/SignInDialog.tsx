@@ -336,7 +336,7 @@ const Field = forwardRef<HTMLInputElement, FieldProps>(function Field(
           ref={ref}
           id={id}
           className={cn(
-            'h-10 w-full rounded-xl border border-line bg-canvas px-3 text-sm text-ink placeholder:text-faint coarse:text-base',
+            'h-10 w-full rounded-xl border border-field bg-canvas px-3 text-sm text-ink placeholder:text-faint coarse:text-base',
             'focus:border-brand/60 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand/40 focus-visible:ring-offset-0',
             trailing ? 'pr-16' : null,
             className,

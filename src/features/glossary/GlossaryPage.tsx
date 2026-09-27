@@ -49,7 +49,7 @@ export function GlossaryPage() {
             spellCheck={false}
             maxLength={80}
             // 16px on a touch screen, so iOS does not zoom in when it takes focus.
-            className="h-11 w-full rounded-xl border border-line bg-surface pl-10 pr-4 text-sm text-ink outline-none transition-colors placeholder:text-faint focus:border-brand coarse:text-base [&::-webkit-search-cancel-button]:hidden"
+            className="h-11 w-full rounded-xl border border-field bg-surface pl-10 pr-4 text-sm text-ink outline-none transition-colors placeholder:text-faint focus:border-brand coarse:text-base [&::-webkit-search-cancel-button]:hidden"
           />
         </div>
         <p aria-live="polite" className="sr-only">

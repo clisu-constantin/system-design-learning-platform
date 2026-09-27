@@ -339,7 +339,8 @@ These are editorial rules, not style preferences. They are the reason the app is
 ## Visual conventions
 
 - Colors come from CSS variables in `src/styles/index.css`, exposed to Tailwind as semantic names:
-  `canvas surface elevated line ink muted faint brand ok warn danger info violet`. Never hard-code a
+  `canvas surface elevated line field ink muted faint brand ok warn danger info violet` (`field` is the
+  3:1 border of a form field; `line` only separates surfaces). Never hard-code a
   hex value in a component.
 - Each Category has its own color (`--cat-<id>` in `src/styles/index.css`), for wayfinding only.
   Set it with `style={categoryStyle(id)}` and use `text-cat`, `bg-cat/10`, `border-cat/30` inside;

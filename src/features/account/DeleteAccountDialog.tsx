@@ -95,7 +95,7 @@ export function DeleteAccountDialog({ onClose, onDeleted }: DeleteAccountDialogP
                 readOnly={pending}
                 aria-disabled={pending}
                 aria-describedby={error ? errorId : undefined}
-                className="h-10 w-full rounded-xl border border-line bg-canvas px-3 text-sm text-ink focus:border-brand/60 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand/40 coarse:text-base"
+                className="h-10 w-full rounded-xl border border-field bg-canvas px-3 text-sm text-ink focus:border-brand/60 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand/40 coarse:text-base"
               />
             </div>
           ) : (
