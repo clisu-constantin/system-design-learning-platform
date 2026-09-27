@@ -101,7 +101,8 @@ export function AppShell() {
           id={NAV_ID}
           className={cn(
             'w-72 shrink-0 overflow-hidden border-r border-line bg-surface',
-            'fixed inset-y-14 left-0 z-40 transition-[transform,width,visibility] duration-150 lg:static lg:inset-auto lg:translate-x-0',
+            // The drawer runs from under the top bar to the bottom of the screen.
+            'fixed bottom-0 left-0 top-14 z-40 transition-[transform,width,visibility] duration-150 lg:static lg:inset-auto lg:translate-x-0',
             folded && 'lg:w-14',
             // A closed drawer is hidden as well as moved away, so Tab does not walk through links no one can see.
             mobileNavOpen ? 'translate-x-0 shadow-2xl' : '-translate-x-full max-lg:invisible',
