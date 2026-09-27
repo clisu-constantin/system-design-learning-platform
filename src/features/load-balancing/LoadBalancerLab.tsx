@@ -553,16 +553,18 @@ export function LoadBalancerLab({ focus }: LabProps<'load-balancer'>) {
     const count = servers.length;
     const width = clamp((940 - (count - 1) * 12) / count, 106, 168);
     const xs = spread(count, 480, width, 12);
+    // Tallest card: a subtitle, meter, stat rows and button (Weighted adds the Weight row).
+    const height = algorithm === 'weighted' ? 224 : 201;
     const result: Layout = {
-      users: { x: 390, y: 16, w: 180, h: 62 },
-      lb: { x: 360, y: 160, w: 240, h: 96 },
+      users: { x: 385, y: 16, w: 190, h: 73 },
+      lb: { x: 355, y: 130, w: 250, h: 128 },
     };
     servers.forEach((server, index) => {
-      result[server.id] = { x: xs[index], y: 352, w: width, h: 132 };
+      result[server.id] = { x: xs[index], y: 290, w: width, h: height };
     });
     return result;
     // eslint-disable-next-line react-hooks/exhaustive-deps -- poolKey tracks the in-place mutations of servers
-  }, [servers, poolKey]);
+  }, [servers, poolKey, algorithm]);
 
   const edges = useMemo<DiagramEdge[]>(
     () => [
@@ -889,13 +891,8 @@ export function LoadBalancerLab({ focus }: LabProps<'load-balancer'>) {
             key={server.id}
             kind="server"
             title={server.name}
-            subtitle={
-              poolState(server) ??
-              ([algorithm === 'weighted' ? `weight ${server.weight}` : '', isSlow(server) ? '2x slower' : '']
-                .filter(Boolean)
-                .join(', ') ||
-                undefined)
-            }
+            // The weight is a stat row: "weight 3, 2x slower" does not fit the ~107px box of 8 servers.
+            subtitle={poolState(server) ?? (isSlow(server) ? '2x slower' : undefined)}
             placed={layout[server.id]}
             status={server.status}
             alert={server.status === 'healthy' && server.cpu > 0.9}
@@ -904,6 +901,7 @@ export function LoadBalancerLab({ focus }: LabProps<'load-balancer'>) {
             compact={servers.length > 6}
           >
             <Meter label="CPU" value={server.cpu} size="xs" />
+            {algorithm === 'weighted' ? <NodeStatRow label="Weight" value={server.weight} /> : null}
             <NodeStatRow label="Conns" value={server.active} />
             <NodeStatRow
               label="Latency"

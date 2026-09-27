@@ -199,9 +199,9 @@ const CANVAS_H = 560;
 const BASE_LAYOUT: Layout = {
   users: { x: 400, y: 14, w: 160, h: 74 },
   dns: { x: 400, y: 106, w: 160, h: 74 },
-  appA: { x: 50, y: 226, w: 210, h: 90 },
+  appA: { x: 50, y: 226, w: 210, h: 94 },
   dbA: { x: 50, y: 335, w: 210, h: 116 },
-  appB: { x: 700, y: 226, w: 210, h: 90 },
+  appB: { x: 700, y: 226, w: 210, h: 94 },
   dbB: { x: 700, y: 335, w: 210, h: 116 },
 };
 

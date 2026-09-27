@@ -13,8 +13,8 @@ import { formatLatency, formatNumber, formatPercent } from '@/utils/format';
 import { useLabRunning } from '@/hooks/useLabRunning';
 
 const LAYOUT: Layout = {
-  users: { x: 380, y: 20, w: 200, h: 62 },
-  server: { x: 340, y: 170, w: 280, h: 180 },
+  users: { x: 380, y: 20, w: 200, h: 73 },
+  server: { x: 340, y: 150, w: 280, h: 216 },
   db: { x: 390, y: 410, w: 180, h: 78 },
 };
 

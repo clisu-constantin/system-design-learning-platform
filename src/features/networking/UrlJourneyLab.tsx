@@ -61,18 +61,18 @@ const RESOLVER_OPTIONS: { value: ResolverCache; label: string }[] = [
 ];
 
 const LAYOUT: Record<NodeId, Layout[string]> = {
-  browser: { x: 30, y: 170, w: 176, h: 100 },
-  resolver: { x: 290, y: 100, w: 180, h: 122 },
-  root: { x: 580, y: 10, w: 210, h: 76 },
-  tld: { x: 580, y: 104, w: 210, h: 76 },
-  auth: { x: 580, y: 198, w: 210, h: 76 },
-  edge: { x: 30, y: 360, w: 170, h: 100 },
-  lb: { x: 270, y: 360, w: 180, h: 100 },
-  app: { x: 510, y: 360, w: 150, h: 100 },
-  cache: { x: 740, y: 310, w: 150, h: 90 },
-  db: { x: 740, y: 420, w: 150, h: 90 },
+  browser: { x: 30, y: 167, w: 176, h: 106 },
+  resolver: { x: 290, y: 89, w: 180, h: 128 },
+  root: { x: 580, y: 10, w: 210, h: 83 },
+  tld: { x: 580, y: 111, w: 210, h: 83 },
+  auth: { x: 580, y: 212, w: 210, h: 83 },
+  edge: { x: 30, y: 356, w: 172, h: 122 },
+  lb: { x: 270, y: 356, w: 180, h: 122 },
+  app: { x: 510, y: 356, w: 150, h: 122 },
+  cache: { x: 740, y: 310, w: 150, h: 106 },
+  db: { x: 740, y: 432, w: 150, h: 90 },
 };
-const CANVAS_HEIGHT = 520;
+const CANVAS_HEIGHT = 536;
 
 /**
  * On screen a hop takes longer when its simplified latency is longer, so a

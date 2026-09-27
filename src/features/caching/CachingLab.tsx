@@ -47,10 +47,10 @@ const PARTICLE_BUDGET = 110;
 const INSPECTABLE_REQUESTS = 140;
 
 const LAYOUT: Layout = {
-  users: { x: 60, y: 210, w: 150, h: 70 },
-  api: { x: 280, y: 200, w: 170, h: 92 },
-  cache: { x: 520, y: 60, w: 210, h: 160 },
-  db: { x: 520, y: 320, w: 210, h: 128 },
+  users: { x: 60, y: 210, w: 150, h: 74 },
+  api: { x: 280, y: 200, w: 170, h: 94 },
+  cache: { x: 520, y: 30, w: 210, h: 204 },
+  db: { x: 520, y: 290, w: 210, h: 160 },
 };
 
 const EDGES: DiagramEdge[] = [

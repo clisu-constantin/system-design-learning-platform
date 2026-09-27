@@ -135,12 +135,12 @@ const createState = (): State => {
 };
 
 const LAYOUT: Layout = {
-  users: { x: 380, y: 14, w: 200, h: 58 },
+  users: { x: 380, y: 14, w: 200, h: 73 },
   lb: { x: 380, y: 130, w: 200, h: 80 },
-  s0: { x: 160, y: 260, w: 180, h: 118 },
-  s1: { x: 390, y: 260, w: 180, h: 118 },
-  s2: { x: 620, y: 260, w: 180, h: 118 },
-  redis: { x: 390, y: 410, w: 180, h: 92 },
+  s0: { x: 160, y: 256, w: 180, h: 124 },
+  s1: { x: 390, y: 256, w: 180, h: 124 },
+  s2: { x: 620, y: 256, w: 180, h: 124 },
+  redis: { x: 390, y: 408, w: 180, h: 94 },
 };
 
 const SESSION_WHERE: Record<Mode, string> = {
@@ -384,7 +384,7 @@ export function StatelessLab({ focus }: LabProps<'stateless'>) {
   const layout: Layout = { ...LAYOUT };
   const serverXs = spread(3, 480, 180, 50);
   current.servers.forEach((server, index) => {
-    layout[server.id] = { x: serverXs[index], y: 260, w: 180, h: 118 };
+    layout[server.id] = { x: serverXs[index], y: 256, w: 180, h: 124 };
   });
 
   const edges: DiagramEdge[] = [

@@ -112,13 +112,13 @@ const LOG_EVERY_MS = 700;
 /** Two proxy slots, one per side; the one proxy node moves between them. */
 const PROXY_SLOT: Record<Exclude<Placement, 'none'>, { x: number; y: number; w: number; h: number }> = {
   client: { x: 186, y: 120, w: 184, h: 120 },
-  server: { x: 566, y: 120, w: 184, h: 120 },
+  server: { x: 554, y: 120, w: 184, h: 120 },
 };
 
 const BASE_LAYOUT: Layout = {
   'laptop-1': { x: 16, y: 50, w: 140, h: 80 },
   'laptop-2': { x: 16, y: 230, w: 140, h: 80 },
-  internet: { x: 400, y: 140, w: 130, h: 80 },
+  internet: { x: 399, y: 140, w: 132, h: 80 },
   app: { x: 780, y: 120, w: 170, h: 120 },
 };
 
@@ -630,8 +630,8 @@ function Zones() {
       <text x={20} y={30} className="fill-faint font-mono" style={{ fontSize: 11 }}>
         CLIENT SIDE
       </text>
-      <rect x={552} y={10} width={402} height={HEIGHT - 20} rx={14} className="fill-violet/5 stroke-line" strokeDasharray="4 4" />
-      <text x={566} y={30} className="fill-faint font-mono" style={{ fontSize: 11 }}>
+      <rect x={540} y={10} width={414} height={HEIGHT - 20} rx={14} className="fill-violet/5 stroke-line" strokeDasharray="4 4" />
+      <text x={554} y={30} className="fill-faint font-mono" style={{ fontSize: 11 }}>
         SERVER SIDE
       </text>
     </g>

@@ -125,9 +125,9 @@ function contentionFactor(inFlight: number) {
 
 const LAYOUT: Layout = {
   users: { x: 16, y: 110, w: 120, h: 80 },
-  api: { x: 206, y: 85, w: 180, h: 130 },
-  pool: { x: 456, y: 50, w: 224, h: 200 },
-  db: { x: 750, y: 70, w: 194, h: 160 },
+  api: { x: 206, y: 80, w: 180, h: 140 },
+  pool: { x: 456, y: 36, w: 224, h: 228 },
+  db: { x: 750, y: 58, w: 194, h: 184 },
 };
 
 export function ConnectionPoolLab() {

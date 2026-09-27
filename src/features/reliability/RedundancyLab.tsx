@@ -226,13 +226,13 @@ function layoutFor(setup: Setup): Layout {
     const top = CANVAS_HEIGHT / 2 - (count * height + (count - 1) * gap) / 2;
     return Array.from({ length: count }, (_, index) => top + index * (height + gap));
   };
-  const layout: Layout = { users: { x: 10, y: CANVAS_HEIGHT / 2 - 46, w: 130, h: 92 } };
+  const layout: Layout = { users: { x: 10, y: CANVAS_HEIGHT / 2 - 47, w: 130, h: 94 } };
   column(setup.lbCopies, 92, 56).forEach((y, index) => (layout[`lb${index + 1}`] = { x: 165, y, w: 140, h: 92 }));
   column(setup.appCopies, 108, 42).forEach((y, index) => (layout[`app${index + 1}`] = { x: 380, y, w: 170, h: 108 }));
   layout.cfg1 = { x: 740, y: 4, w: 200, h: 88 };
   layout.cfg2 = { x: 740, y: 100, w: 200, h: 88 };
-  layout.db1 = { x: 740, y: 212, w: 200, h: 90 };
-  layout.db2 = { x: 740, y: 352, w: 200, h: 90 };
+  layout.db1 = { x: 740, y: 210, w: 200, h: 94 };
+  layout.db2 = { x: 740, y: 350, w: 200, h: 94 };
   return layout;
 }
 

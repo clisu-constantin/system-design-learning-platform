@@ -1212,7 +1212,7 @@ export function legendFor(arch: Architecture): Legend {
 // through an empty gap, so none passes under a card.
 // ---------------------------------------------------------------------------
 
-export const H = 90;
+export const H = 94;
 export const MID = 260;
 export const ROW = [104, 208, 312, 416];
 const COL = [

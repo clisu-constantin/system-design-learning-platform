@@ -71,12 +71,12 @@ const RECEIVER_NAME: Record<Payload, string> = { voice: 'Voice player', file: 'F
 /* Layout: four lanes, each a client, a wire into the one shared Network, a wire out of it and a
    server. The wires end at small ports on the Network card edges (not at its centre), so each lane
    keeps its own straight wire and a dropped packet stops on its own lane. */
-// A lane card renders 128px tall (title, subtitle, two stat rows, status): at 110 each TCP card overlapped the
-// UDP card below it.
-const NODE = { w: 220, h: 128 };
+// A lane card renders 128px tall (title, subtitle, two stat rows, status), and a TCP card 145px with the
+// controls at max: at 110 each TCP card overlapped the UDP card below it.
+const NODE = { w: 220, h: 145 };
 const NET = { x: 370, w: 220 };
-const LANE_Y: Record<LaneId, number> = { 'voice-tcp': 16, 'voice-udp': 156, 'file-tcp': 318, 'file-udp': 458 };
-const HEIGHT = 602;
+const LANE_Y: Record<LaneId, number> = { 'voice-tcp': 16, 'voice-udp': 173, 'file-tcp': 352, 'file-udp': 509 };
+const HEIGHT = 670;
 
 const LAYOUT: Layout = {
   network: { x: NET.x, y: 16, w: NET.w, h: LANE_Y['file-udp'] + NODE.h - 16 },

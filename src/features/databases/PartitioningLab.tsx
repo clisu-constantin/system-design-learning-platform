@@ -201,14 +201,14 @@ function partitionsRead(scheme: Scheme, query: QueryId, parts: Part[]): Part[] {
 /** Two columns of three partition slots, left and right of the planner. */
 const SLOTS = [0, 1, 2, 3, 4, 5].map((slot) => ({
   x: slot < 3 ? 30 : 690,
-  y: 118 + (slot % 3) * 118,
+  y: 118 + (slot % 3) * 124,
   w: 240,
-  h: 108,
+  h: 116,
 }));
 
 const BASE_LAYOUT: Layout = {
-  app: { x: 390, y: 10, w: 180, h: 64 },
-  planner: { x: 360, y: 210, w: 240, h: 120 },
+  app: { x: 390, y: 10, w: 180, h: 73 },
+  planner: { x: 360, y: 236, w: 240, h: 128 },
 };
 
 const PARTICLE_BUDGET = 90;
@@ -356,7 +356,7 @@ export function PartitioningLab() {
 
   // Layout: the partition nodes that still exist, in their fixed slots.
   const layout: Layout = { ...BASE_LAYOUT };
-  if (scheme === 'none') layout.events = { x: 660, y: 220, w: 270, h: 108 };
+  if (scheme === 'none') layout.events = { x: 660, y: 242, w: 270, h: 116 };
   else for (const part of current.parts) layout[part.id] = SLOTS[part.slot];
 
   const jobTargets = current.job ? new Set(Object.keys(current.job.remaining)) : new Set<string>();
@@ -561,7 +561,7 @@ export function PartitioningLab() {
         layout={layout}
         edges={edges}
         particles={particles}
-        height={486}
+        height={502}
         className="bg-canvas"
         underlay={
           <g>
@@ -569,7 +569,7 @@ export function PartitioningLab() {
               x={14}
               y={88}
               width={932}
-              height={388}
+              height={404}
               rx={16}
               fill="none"
               strokeDasharray="6 5"

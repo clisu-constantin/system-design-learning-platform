@@ -73,13 +73,13 @@ const RELAY_BATCH = 3;
 const LAG_ALERT_S = 5;
 
 const LAYOUT: Layout = {
-  client: { x: 20, y: 60, w: 160, h: 112 },
-  service: { x: 240, y: 50, w: 220, h: 132 },
-  broker: { x: 540, y: 50, w: 190, h: 132 },
-  consumer: { x: 770, y: 50, w: 170, h: 132 },
-  orders: { x: 240, y: 290, w: 220, h: 112 },
-  outbox: { x: 510, y: 290, w: 220, h: 112 },
-  relay: { x: 770, y: 290, w: 170, h: 112 },
+  client: { x: 20, y: 61, w: 160, h: 116 },
+  service: { x: 240, y: 50, w: 220, h: 139 },
+  broker: { x: 540, y: 50, w: 190, h: 139 },
+  consumer: { x: 770, y: 50, w: 170, h: 139 },
+  orders: { x: 240, y: 290, w: 220, h: 116 },
+  outbox: { x: 510, y: 290, w: 220, h: 116 },
+  relay: { x: 770, y: 290, w: 170, h: 116 },
 };
 
 /** Both tables live in one database, so one local transaction can cover them. */

@@ -377,10 +377,11 @@ export function QueueLab({ focus }: LabProps<'queue'>) {
   const oldest = oldestAge(current);
   const workerBusy = current.busy;
 
-  // At 8 workers a 106px box clipped "Worker 8" to "Worke...": the title needs
-  // about 110px. A tighter 8px gap keeps a row of 8 x 110px inside the 960px canvas.
-  const workerGap = 8;
-  const workerWidth = Math.max(110, Math.min(150, (920 - (workers - 1) * workerGap) / workers));
+  // At 8 workers a 106px box clipped "Worker 8" to "Worke...", and the subtitle
+  // "10 ms a job" needs about 114px. At 8 workers a tighter 4px gap keeps the
+  // row of 8 x 114px inside the 960px canvas.
+  const workerGap = workers >= 8 ? 4 : 8;
+  const workerWidth = Math.max(114, Math.min(150, (920 - (workers - 1) * workerGap) / workers));
   const xs = spread(workers, 480, workerWidth, workerGap);
   // Every box is placed at the height its content renders at (measured), so none grows
   // past its box and the wires meet each card in the middle.

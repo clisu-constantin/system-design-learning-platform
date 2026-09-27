@@ -364,9 +364,9 @@ const LAYOUT: Layout = {
   gateway: { x: 270, y: 98, w: 220, h: 175 },
   service: { x: 550, y: 105, w: 220, h: 160 },
   db: { x: 800, y: 120, w: 150, h: 130 },
-  sessions: { x: 80, y: 345, w: 190, h: 130 },
-  keys: { x: 285, y: 345, w: 190, h: 130 },
-  issuer: { x: 490, y: 345, w: 190, h: 130 },
+  sessions: { x: 70, y: 345, w: 195, h: 130 },
+  keys: { x: 280, y: 345, w: 195, h: 130 },
+  issuer: { x: 490, y: 345, w: 195, h: 130 },
 };
 
 export function AuthLab({ focus }: LabProps<'auth'>) {

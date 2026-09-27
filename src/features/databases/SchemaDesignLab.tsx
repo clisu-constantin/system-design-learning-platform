@@ -85,9 +85,9 @@ const LAYOUT: Layout = {
   reads: { x: 20, y: 50, w: 210, h: 94 },
   writes: { x: 20, y: 326, w: 210, h: 94 },
   db: { x: 350, y: 150, w: 240, h: 168 },
-  customers: { x: 690, y: 20, w: 250, h: 110 },
-  orders: { x: 690, y: 180, w: 250, h: 110 },
-  items: { x: 690, y: 340, w: 250, h: 110 },
+  customers: { x: 690, y: 20, w: 250, h: 116 },
+  orders: { x: 690, y: 180, w: 250, h: 116 },
+  items: { x: 690, y: 340, w: 250, h: 116 },
 };
 
 interface SimState {

@@ -43,12 +43,12 @@ interface SpeedViewProps {
 
 /** The parts and order of the Back-of-the-envelope Diagram, plus a spinning disk as a slower miss. */
 const LAYOUT: Layout = {
-  user: { x: 16, y: 145, w: 196, h: 150 },
+  user: { x: 16, y: 144, w: 196, h: 152 },
   app: { x: 262, y: 165, w: 176, h: 110 },
   db: { x: 488, y: 155, w: 196, h: 130 },
-  ram: { x: 750, y: 16, w: 194, h: 125 },
-  ssd: { x: 750, y: 158, w: 194, h: 125 },
-  hdd: { x: 750, y: 300, w: 194, h: 125 },
+  ram: { x: 750, y: 14, w: 194, h: 128 },
+  ssd: { x: 750, y: 156, w: 194, h: 128 },
+  hdd: { x: 750, y: 298, w: 194, h: 128 },
 };
 const HEIGHT = 440;
 

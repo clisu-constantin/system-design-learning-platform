@@ -216,11 +216,11 @@ export function ShardingLab() {
 
   const xs = spread(shardCount, 480, sharded ? 190 : 260, 30);
   const layout: Layout = {
-    client: { x: 390, y: 14, w: 180, h: 58 },
-    router: { x: 370, y: 140, w: 220, h: 92 },
+    client: { x: 390, y: 14, w: 180, h: 73 },
+    router: { x: 370, y: 140, w: 220, h: 128 },
   };
   for (let index = 0; index < shardCount; index += 1) {
-    layout[`shard${index}`] = { x: xs[index], y: 330, w: sharded ? 190 : 260, h: 136 };
+    layout[`shard${index}`] = { x: xs[index], y: 330, w: sharded ? 190 : 260, h: 181 };
   }
 
   const edges: DiagramEdge[] = [

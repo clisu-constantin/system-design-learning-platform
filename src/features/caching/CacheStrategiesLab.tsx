@@ -32,10 +32,10 @@ interface Step {
 }
 
 const LAYOUT: Layout = {
-  app: { x: 90, y: 200, w: 180, h: 96 },
+  app: { x: 90, y: 200, w: 180, h: 106 },
   cache: { x: 390, y: 90, w: 190, h: 110 },
   db: { x: 390, y: 320, w: 190, h: 110 },
-  client: { x: 690, y: 200, w: 186, h: 96 },
+  client: { x: 690, y: 200, w: 186, h: 106 },
 };
 
 const STRATEGIES: { value: Strategy; label: string }[] = [

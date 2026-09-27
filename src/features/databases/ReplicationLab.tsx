@@ -497,11 +497,11 @@ export function ReplicationLab({ focus }: LabProps<'replication'>) {
 
   const xs = spread(replicas.length, 480, 170, 30);
   const layout: Layout = {
-    client: { x: 390, y: 16, w: 180, h: 58 },
+    client: { x: 380, y: 16, w: 200, h: 73 },
   };
-  if (primary) layout[primary.id] = { x: 370, y: 124, w: 220, h: 140 };
+  if (primary) layout[primary.id] = { x: 370, y: 124, w: 220, h: 173 };
   replicas.forEach((replica, index) => {
-    layout[replica.id] = { x: xs[index], y: 326, w: 170, h: 140 };
+    layout[replica.id] = { x: xs[index], y: 336, w: 170, h: 173 };
   });
 
   const replicaEdgeLabel = mode === 'async' ? `lag ${lagMs} ms` : mode === 'sync' ? 'sync' : `sync 1 of ${replicas.length}`;
@@ -821,7 +821,7 @@ export function ReplicationLab({ focus }: LabProps<'replication'>) {
         </>
       }
     >
-      <DiagramCanvas layout={layout} edges={edges} particles={particleViews} height={512} className="bg-canvas">
+      <DiagramCanvas layout={layout} edges={edges} particles={particleViews} height={525} className="bg-canvas">
         <ArchNode
           kind="client"
           title="Application"

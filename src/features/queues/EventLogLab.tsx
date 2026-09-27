@@ -127,14 +127,14 @@ const PARTICLES_PER_FLOW = 8;
 
 const WIDTH = 900;
 const HEIGHT = 630;
-const PARTITION_H = 128;
+const PARTITION_H = 132;
 const MEMBER_H = 96;
 
 function buildLayout(partitions: number, members: number, snapshots: boolean): Layout {
   // The left column is 210 wide: "write model: appends events" needs about 207.
   const layout: Layout = {
-    producer: { x: 24, y: 20, w: 210, h: 112 },
-    projector: { x: 24, y: 300, w: 210, h: 112 },
+    producer: { x: 24, y: 20, w: 210, h: 116 },
+    projector: { x: 24, y: 300, w: 210, h: 116 },
     readModel: { x: 300, y: 470, w: 290, h: 140 },
     query: { x: 680, y: 490, w: 190, h: 96 },
   };

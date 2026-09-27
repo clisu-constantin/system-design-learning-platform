@@ -212,11 +212,11 @@ export function AutoScalingLab() {
   const width = clamp((940 - (count - 1) * 10) / count, 94, 150);
   const xs = spread(count, 480, width, 10);
   const layout: Layout = {
-    users: { x: 380, y: 16, w: 200, h: 62 },
-    lb: { x: 370, y: 158, w: 220, h: 92 },
+    users: { x: 380, y: 16, w: 200, h: 73 },
+    lb: { x: 368, y: 140, w: 224, h: 128 },
   };
   current.instances.forEach((instance, index) => {
-    layout[instance.id] = { x: xs[index], y: 340, w: width, h: 112 };
+    layout[instance.id] = { x: xs[index], y: 320, w: width, h: 132 };
   });
 
   const edges: DiagramEdge[] = [

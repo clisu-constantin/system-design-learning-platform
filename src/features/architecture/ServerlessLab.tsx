@@ -433,7 +433,7 @@ export function ServerlessLab() {
     layout.platform = { x: 172, y: 124, w: 190, h: 128 };
     for (const instance of sim.instances) layout[fnKey(instance)] = slotPlace(instance.slot);
   } else {
-    layout.server = { x: 400, y: 112, w: 280, h: 152 };
+    layout.server = { x: 400, y: 108, w: 280, h: 160 };
   }
 
   const edges: DiagramEdge[] =
