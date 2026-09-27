@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useRef } from 'react';
 import { ArchNode, DiagramCanvas, NodeStatRow, ParticleLegend, type DiagramEdge, type Layout, type ParticleView } from '@/components/architecture';
 import { LiveChart } from '@/components/charts';
 import { Insight, LabShell, MetricsPanel, SIMULATED_HINT } from '@/components/learning';
@@ -14,6 +14,7 @@ import {
   visualShare,
   type Particle,
 } from '@/simulations/engine';
+import { useLabSetup } from '@/hooks/useLabSetup';
 import { useRerender } from '@/hooks/useRerender';
 import { sampleArrivals } from '@/utils/math';
 import { formatLatency, formatNumber, formatPercent } from '@/utils/format';
@@ -99,7 +100,7 @@ const jitter = (ms: number) => ms * (1 - JITTER + Math.random() * 2 * JITTER);
 
 const LAYOUT: Layout = {
   users: { x: 16, y: 140, w: 120, h: 80 },
-  api: { x: 186, y: 120, w: 170, h: 120 },
+  api: { x: 180, y: 120, w: 188, h: 120 },
   pool: { x: 420, y: 70, w: 256, h: 220 },
   poolPay: { x: 420, y: 12, w: 256, h: 160 },
   poolRecs: { x: 420, y: 192, w: 256, h: 160 },
@@ -116,7 +117,7 @@ function ThreadGrid({ size, pay, recs, label }: { size: number; pay: number; rec
           key={index}
           className={cn(
             'h-2.5 w-2.5 rounded-[2px]',
-            index < pay ? 'bg-brand' : index < pay + recs ? 'bg-warn' : 'border border-line bg-elevated',
+            index < pay ? 'bg-brand' : index < pay + recs ? 'bg-violet' : 'border border-line bg-elevated',
           )}
         />
       ))}
@@ -125,12 +126,9 @@ function ThreadGrid({ size, pay, recs, label }: { size: number; pay: number; rec
 }
 
 export function BulkheadLab() {
-  const [setup, setSetup] = useState(DEFAULT_SETUP);
+  // Every control lives in one object, so Reset cannot miss one.
+  const { setup, setSetup, change } = useLabSetup(DEFAULT_SETUP);
   const { bulkheads, recsLatency, timeoutMs, recsPool, checkoutRate, recsRate } = setup;
-  const change =
-    <K extends keyof Setup>(key: K) =>
-    (value: Setup[K]) =>
-      setSetup((current) => ({ ...current, [key]: value }));
 
   const [running, setRunning] = useLabRunning();
   const state = useRef<SimState>(createState());
@@ -146,7 +144,7 @@ export function BulkheadLab() {
     setSetup(DEFAULT_SETUP);
     clear();
     resetSeries();
-  }, [clear, resetSeries]);
+  }, [clear, resetSeries, setSetup]);
 
   useTicker(running, (dt) => {
     const sim = state.current;
@@ -331,11 +329,14 @@ export function BulkheadLab() {
       events={events}
       legend={
         <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5">
-          <ParticleLegend outcomes={['success', 'warning', 'failure']} />
-          <span className="text-[11px] text-faint">
-            Triangle: recs call failed, page shown without recommendations. Cross: checkout failed. Squares: blue held by
-            checkout, amber held by recs, empty free.
-          </span>
+          <ParticleLegend
+            outcomes={[
+              { outcome: 'success', label: 'Call answered' },
+              { outcome: 'warning', label: 'Recs failed, page without them' },
+              { outcome: 'failure', label: 'Checkout failed' },
+            ]}
+          />
+          <span className="text-[11px] text-faint">Squares: blue held by checkout, violet held by recs, empty free.</span>
         </div>
       }
       insight={
@@ -426,6 +427,7 @@ export function BulkheadLab() {
                 value: `${heldPay + heldRecs} / ${TOTAL_THREADS}`,
                 tone: heldPay + heldRecs >= TOTAL_THREADS ? 'danger' : 'neutral',
                 hint: `Checkout holds ${heldPay}, recs holds ${heldRecs}.`,
+                simulated: true,
               },
             ]}
           />
@@ -443,7 +445,7 @@ export function BulkheadLab() {
               data={points}
               series={[
                 { key: 'heldPay', label: 'Threads: checkout', color: 'brand' },
-                { key: 'heldRecs', label: 'Threads: recs', color: 'warn' },
+                { key: 'heldRecs', label: 'Threads: recs', color: 'violet' },
               ]}
               variant="line"
               height={140}

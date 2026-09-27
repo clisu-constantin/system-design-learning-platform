@@ -70,26 +70,28 @@ const PARTITIONS: { value: PartitionMode; label: string; hint: string }[] = [
   { value: 'followers-cut', label: 'Cut off followers', hint: 'The leader keeps the majority side.' },
 ];
 
-const NODE_W = 170;
-const NODE_H = 138;
+/** Wide enough for the longest subtitle, "candidate, 2 of 3 votes"; tall enough for a follower with its timer bar. */
+const NODE_W = 180;
+const NODE_H = 146;
 const CANVAS_H = 580;
 
 /**
  * Node positions, checked so that no wire of the full mesh, and no wire from the
- * client to any node, runs behind a node card it does not connect to.
+ * client to any node, runs behind a node card it does not connect to - also when
+ * a "cut off" badge makes a card about 10px taller.
  */
 const POSITIONS: Record<Setup['size'], [number, number][]> = {
   3: [
-    [120, 170],
-    [395, 420],
-    [670, 170],
+    [115, 166],
+    [390, 416],
+    [665, 166],
   ],
   5: [
-    [90, 150],
-    [20, 320],
-    [395, 420],
-    [770, 320],
-    [700, 150],
+    [85, 146],
+    [15, 316],
+    [390, 416],
+    [765, 316],
+    [695, 146],
   ],
 };
 
@@ -488,6 +490,7 @@ export function ConsensusLab({ focus }: LabProps<'consensus'>) {
                   key={item.value}
                   type="button"
                   onClick={() => act((c) => setPartition(c, item.value, log))}
+                  aria-pressed={cluster.partitionMode === item.value}
                   className={cn(
                     'w-full rounded-lg border px-3 py-2 text-left text-xs font-medium transition-colors',
                     cluster.partitionMode === item.value
@@ -522,7 +525,7 @@ export function ConsensusLab({ focus }: LabProps<'consensus'>) {
             </div>
           </div>
 
-          <p className="rounded-xl border border-line bg-elevated p-3 text-[11px] text-muted">
+          <p className="text-[11px] text-muted">
             Simplified Raft: times are slowed down so each message is visible, an append carries the whole leader log,
             and the client learns the new leader as soon as a write fails. No pre-vote, which real systems such as etcd
             add so a rejoining node does not force a needless election.
@@ -574,7 +577,7 @@ export function ConsensusLab({ focus }: LabProps<'consensus'>) {
               ) : (
                 <div className="space-y-0.5">
                   <NodeStatRow label="Election timer" value={`${left.toFixed(1)} s`} tone={share < 0.3 ? 'text-warn' : 'text-ink'} />
-                  <div className="h-1 overflow-hidden rounded-full bg-line">
+                  <div className="h-1 overflow-hidden rounded-full bg-line" aria-hidden>
                     <div className={cn('h-full rounded-full', share < 0.3 ? 'bg-warn' : 'bg-brand')} style={{ width: `${share * 100}%` }} />
                   </div>
                 </div>

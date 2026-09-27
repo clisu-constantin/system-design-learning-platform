@@ -23,11 +23,11 @@ import {
   type Particle,
 } from '@/simulations/engine';
 import { computeLoad } from '@/simulations/models/load';
+import { useLabSetup } from '@/hooks/useLabSetup';
 import { useRerender } from '@/hooks/useRerender';
 import { clamp, sampleArrivals } from '@/utils/math';
 import { formatLatency, formatNumber, formatPercent } from '@/utils/format';
 import { useLabRunning } from '@/hooks/useLabRunning';
-import { useLabSetup } from '@/hooks/useLabSetup';
 
 type ShardKey = 'user-id' | 'country' | 'tenant' | 'created-at';
 
@@ -98,11 +98,11 @@ const createState = (): State => ({
   total: new RateCounter(3000),
 });
 
-/** The start of the Lab: Reset puts every control back here. */
-const DEFAULT_SETUP = {
+/** Every control of the Lab. Reset returns to this one object, so it cannot miss a control. */
+const DEFAULT_SETUP: { sharded: boolean; traffic: number; shardKey: ShardKey; crossShardRatio: number } = {
   sharded: true,
   traffic: 2000,
-  shardKey: 'user-id' as ShardKey,
+  shardKey: 'user-id',
   crossShardRatio: 0.05,
 };
 
@@ -110,18 +110,14 @@ export function ShardingLab() {
   const [running, setRunning] = useLabRunning();
   const { setup, setSetup, change } = useLabSetup(DEFAULT_SETUP);
   const { sharded, traffic, shardKey, crossShardRatio } = setup;
-  const setSharded = change('sharded');
-  const setTraffic = change('traffic');
-  const setShardKey = change('shardKey');
-  const setCrossShardRatio = change('crossShardRatio');
 
   const state = useRef<State>(createState());
   const rerender = useRerender(30);
   const { events, log, clear } = useEventLog();
 
   const reset = useCallback(() => {
-    setSetup(DEFAULT_SETUP);
     state.current = createState();
+    setSetup(DEFAULT_SETUP);
     clear();
   }, [clear, setSetup]);
 
@@ -254,7 +250,14 @@ export function ShardingLab() {
       running={running}
       onRunningChange={setRunning}
       onReset={reset}
-      legend={<ParticleLegend outcomes={['success', 'warning']} />}
+      legend={
+        <ParticleLegend
+          outcomes={[
+            { outcome: 'success', label: 'Query to one shard' },
+            { outcome: 'warning', label: 'Scatter-gather query' },
+          ]}
+        />
+      }
       events={events}
       insight={
         <Insight title={sharded ? SHARD_KEYS.find((item) => item.value === shardKey)?.label : 'Single database'}>
@@ -322,8 +325,8 @@ export function ShardingLab() {
               formatValue={(value) => formatNumber(value)}
             />
             <p className="mt-3 text-xs text-faint">
-              Each shard absorbs about {SHARD_CAPACITY} req/sec. Adding shards only helps if the key spreads traffic -
-              a hot shard means the extra nodes sit idle.
+              Each shard absorbs about {SHARD_CAPACITY} req/sec in this simplified model. Adding shards only helps if the
+              key spreads traffic - a hot shard means the extra nodes sit idle.
             </p>
           </div>
         </>
@@ -334,7 +337,7 @@ export function ShardingLab() {
             label="Sharding enabled"
             checked={sharded}
             onChange={(value) => {
-              setSharded(value);
+              change('sharded')(value);
               state.current = createState();
               log(value ? 'Sharding enabled - router active' : 'Sharding disabled - single database', 'info');
             }}
@@ -346,7 +349,7 @@ export function ShardingLab() {
             min={200}
             max={8000}
             step={100}
-            onChange={setTraffic}
+            onChange={change('traffic')}
             format={(value) => `${formatNumber(value)} req/sec`}
           />
           <Select
@@ -354,7 +357,7 @@ export function ShardingLab() {
             value={shardKey}
             options={SHARD_KEYS}
             onChange={(value) => {
-              setShardKey(value);
+              change('shardKey')(value);
               state.current = createState();
               log(`Shard key: ${SHARD_KEYS.find((item) => item.value === value)?.label}`, 'info');
             }}
@@ -366,12 +369,12 @@ export function ShardingLab() {
             min={0}
             max={0.4}
             step={0.01}
-            onChange={setCrossShardRatio}
+            onChange={change('crossShardRatio')}
             format={(value) => formatPercent(value, 0)}
             tone={crossShardRatio > 0.15 ? 'danger' : 'warn'}
             hint="Queries without the shard key must ask every shard and merge the answers."
           />
-          <div className="rounded-xl border border-line bg-elevated p-3">
+          <div className="border-t border-line pt-4">
             <p className="label mb-2">Cluster balance</p>
             {Array.from({ length: shardCount }, (_, index) => (
               <Meter
@@ -383,7 +386,7 @@ export function ShardingLab() {
               />
             ))}
           </div>
-          <div className="flex items-start gap-2 rounded-xl border border-line bg-elevated p-3 text-[11px] text-muted">
+          <div className="flex items-start gap-2 text-[11px] text-muted">
             <Split className="mt-0.5 h-3.5 w-3.5 shrink-0 text-faint" />
             <span>
               Sharding is a one-way door. Try vertical scaling, read replicas, caching and query tuning first - they
@@ -393,7 +396,7 @@ export function ShardingLab() {
         </>
       }
     >
-      <DiagramCanvas layout={layout} edges={edges} particles={particleViews} height={495} className="bg-canvas">
+      <DiagramCanvas layout={layout} edges={edges} particles={particleViews} height={526} className="bg-canvas">
         <ArchNode
           kind="client"
           title="Application"
@@ -403,7 +406,7 @@ export function ShardingLab() {
         />
         <ArchNode
           kind="api-gateway"
-          title={sharded ? 'Shard Router' : 'Connection Pool'}
+          title={sharded ? 'Shard router' : 'Connection pool'}
           subtitle={sharded ? SHARD_KEYS.find((item) => item.value === shardKey)?.label : 'no routing'}
           placed={layout.router}
         >

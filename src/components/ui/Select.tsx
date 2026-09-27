@@ -39,7 +39,7 @@ export function Select<T extends string>({
           value={value}
           onChange={(event) => onChange(event.target.value as T)}
           // 16px on a touch screen, so iOS does not zoom in when it takes focus.
-          className="h-9 w-full appearance-none truncate rounded-xl border border-line bg-elevated px-3 pr-9 text-sm text-ink transition-colors hover:border-brand/40 coarse:text-base"
+          className="h-9 w-full appearance-none truncate rounded-xl border border-line bg-elevated px-3 pr-9 text-sm text-ink transition-colors hover:border-brand/40 disabled:cursor-not-allowed disabled:opacity-50 coarse:text-base"
         >
           {options.map((option) => (
             <option key={option.value} value={option.value}>

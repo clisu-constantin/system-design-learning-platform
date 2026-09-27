@@ -11,12 +11,12 @@ import {
 import { Insight, LabShell, TradeOffTable } from '@/components/learning';
 import { SegmentedControl, Slider } from '@/components/ui';
 import { useTicker } from '@/simulations/engine';
+import { useLabSetup } from '@/hooks/useLabSetup';
 import { useRerender } from '@/hooks/useRerender';
 import type { RequestOutcome } from '@/types';
 // Imported directly: this lab is its own lazy chunk, and it needs the full trade-offs, not the index.
 import { performanceConcepts } from '@/data/concepts/performance';
 import { useLabRunning } from '@/hooks/useLabRunning';
-import { useLabSetup } from '@/hooks/useLabSetup';
 
 type Strategy = 'cache-aside' | 'read-through' | 'write-through' | 'write-behind' | 'write-around';
 type Operation = 'read' | 'write';
@@ -35,7 +35,7 @@ const LAYOUT: Layout = {
   app: { x: 90, y: 200, w: 180, h: 96 },
   cache: { x: 390, y: 90, w: 190, h: 110 },
   db: { x: 390, y: 320, w: 190, h: 110 },
-  client: { x: 700, y: 200, w: 170, h: 96 },
+  client: { x: 690, y: 200, w: 186, h: 96 },
 };
 
 const STRATEGIES: { value: Strategy; label: string }[] = [
@@ -147,10 +147,10 @@ const FLOWS: Record<Strategy, Record<Operation, Step[]>> = {
   },
 };
 
-/** The start of the Lab: Reset puts every control back here. */
-const DEFAULT_SETUP = {
-  strategy: 'cache-aside' as Strategy,
-  operation: 'read' as Operation,
+/** Every control of the Lab. Reset returns to this one object, so it cannot miss a control. */
+const DEFAULT_SETUP: { strategy: Strategy; operation: Operation; speed: number } = {
+  strategy: 'cache-aside',
+  operation: 'read',
   speed: 0.8,
 };
 
@@ -158,18 +158,16 @@ export function CacheStrategiesLab() {
   const [running, setRunning] = useLabRunning();
   const { setup, setSetup, change } = useLabSetup(DEFAULT_SETUP);
   const { strategy, operation, speed } = setup;
-  const setStrategy = change('strategy');
-  const setOperation = change('operation');
-  const setSpeed = change('speed');
   const progress = useRef({ step: 0, t: 0 });
   const rerender = useRerender(30);
 
   const steps = FLOWS[strategy][operation];
 
   const reset = useCallback(() => {
-    setSetup(DEFAULT_SETUP);
     progress.current = { step: 0, t: 0 };
-  }, [setSetup]);
+    setSetup(DEFAULT_SETUP);
+    rerender();
+  }, [rerender, setSetup]);
 
   useTicker(running, (dt) => {
     const current = progress.current;
@@ -221,7 +219,15 @@ export function CacheStrategiesLab() {
       running={running}
       onRunningChange={setRunning}
       onReset={reset}
-      legend={<ParticleLegend outcomes={['success', 'cache-hit', 'warning']} />}
+      legend={
+        <ParticleLegend
+          outcomes={[
+            { outcome: 'success', label: 'Request or reply' },
+            { outcome: 'cache-hit', label: 'Value from or into the cache' },
+            { outcome: 'warning', label: 'Miss, delete or async flush' },
+          ]}
+        />
+      }
       insight={
         <Insight title={`Step ${progress.current.step + 1} of ${steps.length}`}>
           <strong className="text-ink">{active.label}:</strong> {active.note}
@@ -244,7 +250,7 @@ export function CacheStrategiesLab() {
                     {step.from} {'->'} {step.to}
                   </span>
                   <span className="flex-1">{step.label}</span>
-                  {step.async ? <span className="text-[11px] uppercase text-warn">async</span> : null}
+                  {step.async ? <span className="text-[11px] uppercase text-faint">async</span> : null}
                 </li>
               ))}
             </ol>
@@ -277,13 +283,14 @@ export function CacheStrategiesLab() {
         <>
           <div className="space-y-2">
             <p className="text-xs font-medium text-muted">Strategy</p>
-            <div className="space-y-1.5">
+            <div role="group" aria-label="Strategy" className="space-y-1.5">
               {STRATEGIES.map((item) => (
                 <button
                   key={item.value}
                   type="button"
+                  aria-pressed={strategy === item.value}
                   onClick={() => {
-                    setStrategy(item.value);
+                    change('strategy')(item.value);
                     progress.current = { step: 0, t: 0 };
                   }}
                   className={`w-full rounded-lg border px-3 py-2 text-left text-xs font-medium transition-colors ${
@@ -307,7 +314,7 @@ export function CacheStrategiesLab() {
                 { value: 'write', label: 'Write' },
               ]}
               onChange={(value) => {
-                setOperation(value);
+                change('operation')(value);
                 progress.current = { step: 0, t: 0 };
               }}
               className="w-full"
@@ -319,7 +326,7 @@ export function CacheStrategiesLab() {
             min={0.2}
             max={2}
             step={0.1}
-            onChange={setSpeed}
+            onChange={change('speed')}
             format={(value) => `${value.toFixed(1)}x`}
           />
           <button

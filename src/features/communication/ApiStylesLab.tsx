@@ -70,11 +70,16 @@ const FOCUS_SETUPS: Record<LabFocus<'api-styles'>, Setup> = {
   grpc: { ...DEFAULT_SETUP, style: 'grpc', caller: 'service', rttMs: CALLERS.service.rttMs },
 };
 
+/**
+ * Every card is wide enough for its longest subtitle ("users, orders, items, products"
+ * needs 224px) and tall enough for its stat rows, and each gap between two cards
+ * holds the label of its wire.
+ */
 const LAYOUT: Layout = {
-  caller: { x: 16, y: 80, w: 176, h: 150 },
-  proxy: { x: 262, y: 115, w: 150, h: 80 },
-  server: { x: 480, y: 80, w: 220, h: 150 },
-  db: { x: 766, y: 100, w: 178, h: 110 },
+  caller: { x: 16, y: 78, w: 176, h: 154 },
+  proxy: { x: 262, y: 115, w: 154, h: 80 },
+  server: { x: 470, y: 78, w: 200, h: 154 },
+  db: { x: 720, y: 100, w: 224, h: 110 },
 };
 
 /** Dots drawn per hop. Calls past this still count in every number. */
@@ -198,7 +203,7 @@ export function ApiStylesLab({ focus }: LabProps<'api-styles'>) {
   const edges: DiagramEdge[] = [
     ...(plan.proxy
       ? [
-          { from: 'caller', to: 'proxy', tone: 'warn', label: 'grpc-web', width: 2 } satisfies DiagramEdge,
+          { from: 'caller', to: 'proxy', tone: 'violet', label: 'grpc-web', width: 2 } satisfies DiagramEdge,
           { from: 'proxy', to: 'server', tone: 'brand', label: 'gRPC', width: 2 } satisfies DiagramEdge,
         ]
       : [{ from: 'caller', to: 'server', tone: 'brand', label: STYLE_WIRE[style], width: 2 } satisfies DiagramEdge]),
@@ -314,6 +319,7 @@ export function ApiStylesLab({ focus }: LabProps<'api-styles'>) {
                         <button
                           type="button"
                           onClick={() => change('style')(row.style)}
+                          aria-pressed={row.style === style}
                           className={cn('text-left hover:text-brand', row.style === style && 'font-semibold text-brand')}
                         >
                           {row.plan.variant}

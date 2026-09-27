@@ -1,16 +1,18 @@
 import { useEffect, useId, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { BookMarked, FlaskConical, FolderTree, Route, Search as SearchIcon, X } from 'lucide-react';
+import { BookMarked, BookOpen, FlaskConical, FolderTree, Route, Search as SearchIcon, X } from 'lucide-react';
 import { cn } from '@/utils/cn';
 import { search, type SearchKind, type SearchResult } from '@/utils/search';
 import { Badge, Modal } from '@/components/ui';
 
-const KIND_META: Record<SearchKind, { label: string; Icon: typeof SearchIcon; tone: 'brand' | 'ok' | 'warn' | 'info' | 'neutral' }> = {
+// The icon and the word tell the kinds apart. The status colors (ok, warn, danger) mean health,
+// Difficulty and Done everywhere else, so a kind of result never wears one.
+const KIND_META: Record<SearchKind, { label: string; Icon: typeof SearchIcon; tone: 'brand' | 'neutral' }> = {
   lab: { label: 'Lab', Icon: FlaskConical, tone: 'brand' },
-  concept: { label: 'Concept', Icon: BookMarked, tone: 'neutral' },
-  scenario: { label: 'Scenario', Icon: Route, tone: 'warn' },
-  glossary: { label: 'Glossary', Icon: BookMarked, tone: 'info' },
-  category: { label: 'Section', Icon: FolderTree, tone: 'ok' },
+  concept: { label: 'Concept', Icon: BookOpen, tone: 'neutral' },
+  scenario: { label: 'Scenario', Icon: Route, tone: 'neutral' },
+  glossary: { label: 'Glossary', Icon: BookMarked, tone: 'neutral' },
+  category: { label: 'Category', Icon: FolderTree, tone: 'neutral' },
 };
 
 /**
@@ -79,7 +81,7 @@ export default function SearchDialog({ onClose }: { onClose: () => void }) {
       onKeyDown={onKeyDown}
     >
       <div className="flex items-center gap-3 border-b border-line px-4">
-        <SearchIcon className="h-4 w-4 shrink-0 text-faint" />
+        <SearchIcon className="h-4 w-4 shrink-0 text-faint" aria-hidden />
         <input
           ref={inputRef}
           value={query}
@@ -98,11 +100,17 @@ export default function SearchDialog({ onClose }: { onClose: () => void }) {
           spellCheck={false}
           enterKeyHint="go"
           maxLength={120}
-          // 16px on a touch screen, so iOS does not zoom in when it takes focus.
-          className="h-14 min-w-0 flex-1 bg-transparent text-sm text-ink outline-none placeholder:text-faint coarse:text-base [&::-webkit-search-cancel-button]:hidden"
+          // 16px on a touch screen, so iOS does not zoom in when it takes focus. No ring: the caret already
+          // shows where focus is, and a box inside the panel edge reads as a second border.
+          className="h-14 min-w-0 flex-1 bg-transparent text-sm text-ink outline-none placeholder:text-faint focus-visible:ring-0 focus-visible:ring-offset-0 coarse:text-base [&::-webkit-search-cancel-button]:hidden"
         />
-        <button type="button" onClick={onClose} aria-label="Close search" className="text-faint hover:text-ink">
-          <X className="h-4 w-4" />
+        <button
+          type="button"
+          onClick={onClose}
+          aria-label="Close search"
+          className="-mr-2 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-faint transition-colors hover:bg-elevated hover:text-ink"
+        >
+          <X className="h-4 w-4" aria-hidden />
         </button>
       </div>
 
@@ -138,36 +146,37 @@ export default function SearchDialog({ onClose }: { onClose: () => void }) {
         ) : null}
 
         <div id={listId} role="listbox" aria-label="Search results" hidden={results.length === 0}>
-        {results.map((result, index) => {
-          const meta = KIND_META[result.kind];
-          return (
-            <button
-              key={result.id}
-              id={optionId(index)}
-              type="button"
-              role="option"
-              aria-selected={index === active}
-              data-active={index === active}
-              onMouseEnter={() => setActive(index)}
-              onClick={() => go(result)}
-              className={cn(
-                'flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left transition-colors',
-                index === active ? 'bg-elevated' : 'hover:bg-elevated',
-              )}
-            >
-              <meta.Icon className="h-4 w-4 shrink-0 text-faint" />
-              <span className="min-w-0 flex-1">
-                <span className="block truncate text-sm font-medium text-ink">{result.title}</span>
-                <span className="block truncate text-xs text-faint">{result.subtitle}</span>
-              </span>
-              <Badge tone={meta.tone}>{meta.label}</Badge>
-            </button>
-          );
-        })}
+          {results.map((result, index) => {
+            const meta = KIND_META[result.kind];
+            return (
+              <button
+                key={result.id}
+                id={optionId(index)}
+                type="button"
+                role="option"
+                aria-selected={index === active}
+                data-active={index === active}
+                onMouseEnter={() => setActive(index)}
+                onClick={() => go(result)}
+                className={cn(
+                  'flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left transition-colors',
+                  index === active ? 'bg-elevated' : 'hover:bg-elevated',
+                )}
+              >
+                <meta.Icon className="h-4 w-4 shrink-0 text-faint" aria-hidden />
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate text-sm font-medium text-ink">{result.title}</span>
+                  <span className="block truncate text-xs text-faint">{result.subtitle}</span>
+                </span>
+                <Badge tone={meta.tone}>{meta.label}</Badge>
+              </button>
+            );
+          })}
         </div>
       </div>
 
-      <div className="flex items-center gap-4 border-t border-line px-4 py-2 text-[11px] text-faint">
+      {/* Keyboard hints only where there is a keyboard: a touch screen has no arrow keys or Esc. */}
+      <div className="flex items-center gap-4 border-t border-line px-4 py-2 text-[11px] text-faint coarse:hidden">
         <span>
           <kbd className="rounded border border-line px-1">up</kbd>{' '}
           <kbd className="rounded border border-line px-1">down</kbd> navigate

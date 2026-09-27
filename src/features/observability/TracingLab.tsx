@@ -59,16 +59,16 @@ interface Span extends SpanSpec {
 }
 
 /**
- * Colour is only the span kind - it never means "error". Red is kept out so a
- * cache span does not read as a failed one; the kind is also named in the
- * span detail badge.
+ * Colour is only the span kind - it never means status. Green, amber and red are
+ * kept out, so a service span does not read as healthy or a queue span as a
+ * warning; the kind is also named in the span detail badge.
  */
 const KIND_TONE = {
   gateway: 'bg-brand',
-  service: 'bg-ok',
+  service: 'bg-muted',
   db: 'bg-info',
   cache: 'bg-violet',
-  queue: 'bg-warn',
+  queue: 'bg-faint',
 } as const;
 
 /** W3C Trace Context: a 32-hex trace-id shared by every span of the request. */
@@ -304,7 +304,8 @@ function carrierOf(span: Span, byId: Map<string, Span>, propagate: boolean): str
 // ---- Diagram ---------------------------------------------------------------
 
 const LAYOUT: Layout = {
-  users: { x: 20, y: 150, w: 120, h: 74 },
+  // As tall as its subtitle and stat row make it, like the rest of the row.
+  users: { x: 20, y: 140, w: 120, h: 94 },
   gateway: { x: 175, y: 140, w: 160, h: 94 },
   order: { x: 380, y: 140, w: 170, h: 94 },
   redis: { x: 380, y: 10, w: 170, h: 94 },
@@ -537,7 +538,11 @@ export function TracingLab() {
       events={events}
       legend={
         <div className="space-y-1.5">
-          <ParticleLegend outcomes={['success']} />
+          <ParticleLegend
+            outcomes={
+              contextLost ? ['success', { outcome: 'warning', label: 'Message without trace context' }] : ['success']
+            }
+          />
           <p className="text-[11px] text-faint">
             A dot is one request walking its trace: out along each call, back along each reply. A triangle from Kafka is a
             message that carries no trace context. Dashed, faded wires are parts this request does not touch. Simplified: a
@@ -628,7 +633,7 @@ export function TracingLab() {
 
           <div className="card p-4">
             <p className="label mb-3">Logs, metrics and traces</p>
-            <div className="grid gap-3 sm:grid-cols-3">
+            <ul className="grid gap-4 sm:grid-cols-3">
               {[
                 {
                   title: 'Logs',
@@ -643,12 +648,12 @@ export function TracingLab() {
                   body: 'One request across services. Answer "where did the time go?" - this waterfall.',
                 },
               ].map((item) => (
-                <div key={item.title} className="rounded-xl border border-line p-3">
+                <li key={item.title}>
                   <p className="text-xs font-semibold text-ink">{item.title}</p>
                   <p className="mt-1 text-[11px] leading-relaxed text-muted">{item.body}</p>
-                </div>
+                </li>
               ))}
-            </div>
+            </ul>
           </div>
         </>
       }
@@ -703,13 +708,13 @@ export function TracingLab() {
             onChange={(value) => toggle('propagate', value)}
             description="Off: the producer does not copy traceparent into the Kafka headers"
           />
-          <div className="rounded-xl border border-line bg-elevated p-3 font-mono text-[11px] leading-relaxed text-muted">
+          <p className="font-mono text-[11px] leading-relaxed text-muted">
             <span className="break-all">traceparent: 00-{TRACE_ID}-{(active ?? root).spanId}-01</span>
             <span className="mt-1 block text-faint">
               version - trace_id - parent span id - flags (01 = sampled). Each service sends its own span id onward, so
               only the middle part changes from hop to hop.
             </span>
-          </div>
+          </p>
         </>
       }
     >
@@ -834,7 +839,7 @@ function SpanRow({
       >
         {span.name}
       </span>
-      <span className="relative h-4 min-w-0 flex-1 overflow-hidden rounded bg-line/40">
+      <span className="relative h-4 min-w-0 flex-1 overflow-hidden rounded bg-line/40" aria-hidden>
         <span className={cn('absolute inset-y-0 rounded', KIND_TONE[span.kind])} style={{ left: `${offset}%`, width: `${width}%` }} />
       </span>
       <span className="w-16 shrink-0 text-right font-mono text-[11px] text-ink">{formatLatency(span.totalMs)}</span>

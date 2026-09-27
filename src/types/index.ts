@@ -231,7 +231,8 @@ export interface LabProps<Id extends LabId = LabId> {
 }
 
 /** `overloaded`: the part runs but takes more load than its limit, so it turns requests away. */
-export type NodeStatus = 'healthy' | 'degraded' | 'down' | 'starting' | 'overloaded';
+/** `idle`: a part with no health to report (not asked this time, or a person). */
+export type NodeStatus = 'healthy' | 'degraded' | 'down' | 'starting' | 'overloaded' | 'idle';
 
 /** Conceptual model of an infrastructure component inside a simulation. */
 export interface SystemNode {

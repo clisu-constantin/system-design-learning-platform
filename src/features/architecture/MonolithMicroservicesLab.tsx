@@ -215,19 +215,19 @@ const pickFeature = (): Feature => {
 // ---- Layouts (960px design space) -------------------------------------------
 
 const MONO_LAYOUT: Layout = {
-  client: { x: 390, y: 20, w: 180, h: 60 },
+  client: { x: 390, y: 20, w: 180, h: 74 },
   lb: { x: 390, y: 130, w: 180, h: 74 },
-  app: { x: 300, y: 240, w: 360, h: 150 },
-  db: { x: 390, y: 420, w: 180, h: 72 },
+  app: { x: 300, y: 231, w: 360, h: 169 },
+  db: { x: 390, y: 420, w: 180, h: 74 },
 };
 
 const MICRO_LAYOUT: Layout = {
-  client: { x: 390, y: 14, w: 180, h: 56 },
-  gateway: { x: 370, y: 110, w: 220, h: 72 },
-  'svc-Users': { x: 40, y: 220, w: 190, h: 120 },
-  'svc-Orders': { x: 260, y: 220, w: 190, h: 120 },
-  'svc-Payments': { x: 480, y: 220, w: 190, h: 120 },
-  'svc-Notifications': { x: 700, y: 220, w: 190, h: 120 },
+  client: { x: 390, y: 14, w: 180, h: 74 },
+  gateway: { x: 370, y: 110, w: 220, h: 74 },
+  'svc-Users': { x: 40, y: 212, w: 190, h: 136 },
+  'svc-Orders': { x: 260, y: 212, w: 190, h: 136 },
+  'svc-Payments': { x: 480, y: 212, w: 190, h: 136 },
+  'svc-Notifications': { x: 700, y: 212, w: 190, h: 136 },
   'db-Users': { x: 60, y: 390, w: 150, h: 76 },
   'db-Orders': { x: 280, y: 390, w: 150, h: 76 },
   'db-Payments': { x: 500, y: 390, w: 150, h: 76 },
@@ -250,8 +250,8 @@ const EXTRACTED_W = 198;
 
 const modularLayout = (extracted: boolean): Layout => {
   const layout: Layout = {
-    client: { x: 390, y: 10, w: 180, h: 56 },
-    lb: { x: 390, y: 92, w: 180, h: 62 },
+    client: { x: 390, y: 10, w: 180, h: 74 },
+    lb: { x: 390, y: 92, w: 180, h: 70 },
   };
   MODULE_ORDER.forEach((feature, index) => {
     const out = extracted && feature === 'Payments';
@@ -264,10 +264,10 @@ const modularLayout = (extracted: boolean): Layout => {
 };
 
 const SOA_LAYOUT: Layout = {
-  client: { x: 390, y: 14, w: 180, h: 56 },
-  bus: { x: 250, y: 108, w: 460, h: 120 },
-  'svc-customer': { x: 80, y: 282, w: 280, h: 104 },
-  'svc-order': { x: 600, y: 282, w: 280, h: 104 },
+  client: { x: 390, y: 14, w: 180, h: 74 },
+  bus: { x: 250, y: 100, w: 460, h: 136 },
+  'svc-customer': { x: 80, y: 277, w: 280, h: 114 },
+  'svc-order': { x: 600, y: 277, w: 280, h: 114 },
   db: { x: 380, y: 420, w: 200, h: 76 },
 };
 
@@ -844,7 +844,11 @@ export function MonolithMicroservicesLab({ focus }: LabProps<'monolith-microserv
       running={running}
       onRunningChange={setRunning}
       onReset={reset}
-      legend={<ParticleLegend outcomes={['success', 'warning', 'failure']} />}
+      legend={
+        <ParticleLegend
+          outcomes={['success', { outcome: 'warning', label: 'Served, near capacity' }, 'failure']}
+        />
+      }
       events={events}
       actions={
         <SegmentedControl
@@ -930,7 +934,7 @@ export function MonolithMicroservicesLab({ focus }: LabProps<'monolith-microserv
             max={MAX_TRAFFIC}
             step={100}
             onChange={change('traffic')}
-            format={(value) => `${formatNumber(value)} req/sec`}
+            format={(value) => `${formatNumber(value)} req/s`}
             hint="Capped so every overload has a control that fixes it."
           />
           <Slider
@@ -944,7 +948,7 @@ export function MonolithMicroservicesLab({ focus }: LabProps<'monolith-microserv
           />
 
           {mode === 'modular' ? (
-            <div className="space-y-3 rounded-xl border border-line bg-elevated p-3">
+            <div className="space-y-3 border-y border-line py-4">
               <Toggle
                 label="Enforce module boundaries"
                 checked={enforced}
@@ -984,7 +988,7 @@ export function MonolithMicroservicesLab({ focus }: LabProps<'monolith-microserv
           ) : null}
 
           {mode === 'soa' ? (
-            <div className="space-y-3 rounded-xl border border-line bg-elevated p-3">
+            <div className="space-y-3 border-y border-line py-4">
               <div className="space-y-2">
                 <p className="text-xs font-medium text-muted">Logic in the bus</p>
                 <SegmentedControl
@@ -1032,7 +1036,7 @@ export function MonolithMicroservicesLab({ focus }: LabProps<'monolith-microserv
               </Button>
             ))}
           </div>
-          <div className="rounded-xl border border-line bg-elevated p-3">
+          <div className="border-t border-line pt-4">
             <p className="label mb-2">Utilization</p>
             {mode === 'monolith' ? (
               <Meter label="Application" value={broken ? 0 : monolithLoad.cpu} />
@@ -1072,7 +1076,7 @@ export function MonolithMicroservicesLab({ focus }: LabProps<'monolith-microserv
       <DiagramCanvas layout={layout} edges={edges} particles={particleViews} underlay={underlay} height={505} className="bg-canvas">
         {mode === 'monolith' ? (
           <>
-            <ArchNode kind="client" title="Clients" subtitle={`${formatNumber(traffic)} req/sec`} placed={layout.client} compact />
+            <ArchNode kind="client" title="Clients" subtitle={`${formatNumber(traffic)} req/s`} placed={layout.client} compact />
             <ArchNode kind="load-balancer" title="Load Balancer" placed={layout.lb} compact />
             <ArchNode
               kind="server"
@@ -1088,7 +1092,7 @@ export function MonolithMicroservicesLab({ focus }: LabProps<'monolith-microserv
                     key={feature}
                     className={
                       broken === feature
-                        ? 'rounded-md border border-danger bg-danger/10 px-2 py-0.5 text-[11px] text-danger'
+                        ? 'rounded-md border border-danger bg-danger/10 px-2 py-0.5 text-[11px] text-danger line-through'
                         : 'rounded-md border border-line px-2 py-0.5 text-[11px] text-muted'
                     }
                   >
@@ -1103,7 +1107,7 @@ export function MonolithMicroservicesLab({ focus }: LabProps<'monolith-microserv
           </>
         ) : mode === 'modular' ? (
           <>
-            <ArchNode kind="client" title="Clients" subtitle={`${formatNumber(traffic)} req/sec`} placed={layout.client} compact />
+            <ArchNode kind="client" title="Clients" subtitle={`${formatNumber(traffic)} req/s`} placed={layout.client} compact />
             <ArchNode kind="load-balancer" title="Load Balancer" placed={layout.lb} compact />
             {MODULE_ORDER.map((feature) => {
               const out = extracted && feature === 'Payments';
@@ -1150,7 +1154,7 @@ export function MonolithMicroservicesLab({ focus }: LabProps<'monolith-microserv
           </>
         ) : mode === 'soa' ? (
           <>
-            <ArchNode kind="client" title="Clients" subtitle={`${formatNumber(traffic)} req/sec`} placed={layout.client} compact />
+            <ArchNode kind="client" title="Clients" subtitle={`${formatNumber(traffic)} req/s`} placed={layout.client} compact />
             <ArchNode
               kind="api-gateway"
               title="Enterprise Service Bus"
@@ -1179,7 +1183,7 @@ export function MonolithMicroservicesLab({ focus }: LabProps<'monolith-microserv
           </>
         ) : (
           <>
-            <ArchNode kind="client" title="Clients" subtitle={`${formatNumber(traffic)} req/sec`} placed={layout.client} compact />
+            <ArchNode kind="client" title="Clients" subtitle={`${formatNumber(traffic)} req/s`} placed={layout.client} compact />
             <ArchNode kind="api-gateway" title="API Gateway" subtitle="routing + auth" placed={layout.gateway} compact />
             {FEATURES.map((feature) => (
               <ArchNode

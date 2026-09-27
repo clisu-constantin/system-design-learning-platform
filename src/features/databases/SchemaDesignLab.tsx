@@ -462,7 +462,7 @@ export function SchemaDesignLab({ focus }: LabProps<'schema-design'>) {
             disabled={!denormalized}
             description={`Every ${RECONCILE_EVERY_S} s, recompute the copies from customers and fix drift. It costs row reads.`}
           />
-          <div className="rounded-xl border border-line bg-elevated p-3">
+          <div className="border-t border-line pt-4">
             <p className="label mb-2">Where the load comes from</p>
             <Meter value={readShare} tone="brand" label="Reads" />
             <p className="mt-2 font-mono text-[11px] text-muted">

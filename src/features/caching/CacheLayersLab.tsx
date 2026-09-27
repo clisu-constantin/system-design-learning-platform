@@ -83,8 +83,8 @@ const FOCUS_SETUPS: Record<LabFocus<'cache-layers'>, Setup> = {
 const APPS = Array.from({ length: INSTANCES }, (_, index) => `app${index + 1}`);
 
 const LAYOUT: Layout = {
-  users: { x: 12, y: 222, w: 100, h: 74 },
-  lb: { x: 138, y: 216, w: 164, h: 86 },
+  users: { x: 4, y: 222, w: 130, h: 74 },
+  lb: { x: 148, y: 216, w: 164, h: 86 },
   app1: { x: 330, y: 24, w: 190, h: 128 },
   app2: { x: 330, y: 196, w: 190, h: 128 },
   app3: { x: 330, y: 368, w: 190, h: 128 },
@@ -495,7 +495,7 @@ export function CacheLayersLab({ focus }: LabProps<'cache-layers'>) {
             max={3000}
             step={100}
             onChange={change('reads')}
-            format={(value) => `${formatNumber(value)} /s`}
+            format={(value) => `${formatNumber(value)}/s`}
             hint="Product page reads per second, sent round robin to the instances."
           />
           <Slider
@@ -504,7 +504,7 @@ export function CacheLayersLab({ focus }: LabProps<'cache-layers'>) {
             min={0}
             max={50}
             onChange={change('writes')}
-            format={(value) => `${value} /s`}
+            format={(value) => `${value}/s`}
             hint="Each order changes the units-sold total of one product. The instance that takes it drops its own copy; the others are not told."
           />
         </>
@@ -517,6 +517,7 @@ export function CacheLayersLab({ focus }: LabProps<'cache-layers'>) {
           const reads = current.instanceReads[index].rate(now);
           const hits = current.instanceHits[index].rate(now);
           const stale = setup.localCache ? staleEntries(model, index, now) : 0;
+          const localHitRate = setup.localCache && reads ? hits / reads : null;
           return (
             <ArchNode
               key={app}
@@ -527,7 +528,19 @@ export function CacheLayersLab({ focus }: LabProps<'cache-layers'>) {
               alert={stale > 0}
               compact
             >
-              <NodeStatRow label="Local hits" value={setup.localCache && reads ? formatPercent(hits / reads) : '-'} tone="text-ok" />
+              <NodeStatRow
+                label="Local hits"
+                value={localHitRate === null ? '-' : formatPercent(localHitRate)}
+                tone={
+                  localHitRate === null
+                    ? 'text-ink'
+                    : localHitRate > 0.8
+                      ? 'text-ok'
+                      : localHitRate > 0.5
+                        ? 'text-warn'
+                        : 'text-danger'
+                }
+              />
               <NodeStatRow label="Entries" value={setup.localCache ? `${model.locals[index].size} / ${LOCAL_CAPACITY}` : '-'} />
               <NodeStatRow label="Stale copies" value={setup.localCache ? stale : '-'} tone={stale > 0 ? 'text-warn' : 'text-ink'} />
             </ArchNode>

@@ -136,7 +136,7 @@ export function CapacitySpeedView({ inputs, change, onReset, viewSwitch }: Speed
 
   return (
     <LabShell
-      title="Capacity Estimation Playground"
+      title="Capacity Estimation Lab"
       description="Follow one request hop by hop, from the user to the data and back, and see which hop decides how long it takes."
       running={running}
       onRunningChange={setRunning}
@@ -150,7 +150,8 @@ export function CapacitySpeedView({ inputs, change, onReset, viewSwitch }: Speed
           <ParticleLegend outcomes={['success', 'cache-hit']} />
           <span className="text-[11px] text-faint">
             A dot is one sampled request. A diamond finds its page in RAM; a circle misses and reads from{' '}
-            {missStorage === 'ssd' ? 'the SSD' : 'the spinning disk'}. Dashed: storage this setup does not use.
+            {missStorage === 'ssd' ? 'the SSD' : 'the spinning disk'}. Dashed: storage this setup does not use. Wire
+            color follows the cost of a hop: green for RAM, amber for storage, red for another continent.
           </span>
         </div>
       }
@@ -164,8 +165,9 @@ export function CapacitySpeedView({ inputs, change, onReset, viewSwitch }: Speed
       metrics={
         <>
           <MetricsPanel
+            title="Estimates"
             items={[
-              { key: 'total', label: 'One request', value: formatDuration(time.totalMs), tone: 'warn', hint: 'Every hop the request pays, one after another.', simulated: true },
+              { key: 'total', label: 'One request', value: formatDuration(time.totalMs), tone: 'brand', hint: 'Every hop the request pays, one after another.', simulated: true },
               { key: 'dominant', label: 'Dominant hop', value: dominant.label, tone: 'brand', hint: 'The hop that costs the most in total - the one worth removing.', sub: `${formatPercent(share(dominant.totalMs))} of the time` },
               { key: 'userTrips', label: 'Round trips to the user', value: formatDuration(hop('user').totalMs), hint: 'Distance sets this: light in fibre covers about 200 km per millisecond.', sub: `${userCalls} x ${formatDuration(USER_ROUND_TRIP_MS[region])}`, simulated: true },
               { key: 'avgRead', label: 'Average read', value: formatDuration(averageReadMs(ramHitRate, missStorage)), hint: 'Hits from RAM, misses from storage, weighted by the hit rate.', sub: `${formatPercent(ramHitRate)} from RAM`, simulated: true },
@@ -240,7 +242,6 @@ export function CapacitySpeedView({ inputs, change, onReset, viewSwitch }: Speed
             max={50}
             onChange={change('userCalls')}
             format={(value) => `${value} call${value > 1 ? 's' : ''}`}
-            tone="warn"
             hint="A page that asks once per cart item pays one round trip per item. Batched, it is one call."
           />
           <Slider
@@ -260,7 +261,6 @@ export function CapacitySpeedView({ inputs, change, onReset, viewSwitch }: Speed
             step={0.01}
             onChange={change('ramHitRate')}
             format={formatPercent}
-            tone="ok"
             hint="The rest miss and read from storage. 100% means all the data is in memory."
           />
           <div>

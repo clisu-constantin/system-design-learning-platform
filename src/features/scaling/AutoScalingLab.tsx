@@ -15,12 +15,12 @@ import { Insight, LabShell, MetricsPanel } from '@/components/learning';
 import { Button, Meter, Slider, Toggle } from '@/components/ui';
 import { advanceParticles, nextParticleId, useEventLog, useSeries, useTicker, type Particle } from '@/simulations/engine';
 import { computeLoad } from '@/simulations/models/load';
+import { useLabSetup } from '@/hooks/useLabSetup';
 import { useRerender } from '@/hooks/useRerender';
 import { clamp, sampleArrivals, smooth } from '@/utils/math';
 import { formatLatency, formatNumber, formatPercent } from '@/utils/format';
 import type { NodeStatus } from '@/types';
 import { useLabRunning } from '@/hooks/useLabRunning';
-import { useLabSetup } from '@/hooks/useLabSetup';
 
 /**
  * Simplified and time-compressed. One instance serves about 500 req/sec, a new one needs 4 seconds to boot
@@ -80,26 +80,13 @@ function trafficAt(seconds: number, peak: number) {
   return peak * 0.15;
 }
 
-/** The start of the Lab: Reset puts every control back here. */
-const DEFAULT_SETUP = {
-  peak: 4000,
-  scaleOut: 70,
-  scaleIn: 30,
-  cooldown: 8,
-  autoScale: true,
-  maxInstances: 8,
-};
+/** Every control of the Lab. Reset returns to this one object, so it cannot miss a control. */
+const DEFAULT_SETUP = { peak: 4000, scaleOut: 70, scaleIn: 30, cooldown: 8, autoScale: true, maxInstances: 8 };
 
 export function AutoScalingLab() {
   const [running, setRunning] = useLabRunning();
   const { setup, setSetup, change } = useLabSetup(DEFAULT_SETUP);
   const { peak, scaleOut, scaleIn, cooldown, autoScale, maxInstances } = setup;
-  const setPeak = change('peak');
-  const setScaleOut = change('scaleOut');
-  const setScaleIn = change('scaleIn');
-  const setCooldown = change('cooldown');
-  const setAutoScale = change('autoScale');
-  const setMaxInstances = change('maxInstances');
 
   const state = useRef<AutoScaleState>(initialState());
   const rerender = useRerender(20);
@@ -107,8 +94,8 @@ export function AutoScalingLab() {
   const { points, push, reset: resetSeries } = useSeries(80, 400);
 
   const reset = useCallback(() => {
-    setSetup(DEFAULT_SETUP);
     state.current = initialState();
+    setSetup(DEFAULT_SETUP);
     clear();
     resetSeries();
   }, [clear, resetSeries, setSetup]);
@@ -260,7 +247,15 @@ export function AutoScalingLab() {
       running={running}
       onRunningChange={setRunning}
       onReset={reset}
-      legend={<ParticleLegend outcomes={['success', 'warning', 'failure']} />}
+      legend={
+        <ParticleLegend
+          outcomes={[
+            'success',
+            { outcome: 'warning', label: 'Slow: CPU above 85%' },
+            { outcome: 'failure', label: 'Request failed' },
+          ]}
+        />
+      }
       events={events}
       actions={
         <Button onClick={() => addInstance('Manual scale-out')} disabled={count >= maxInstances}>
@@ -296,6 +291,7 @@ export function AutoScalingLab() {
                 value: formatNumber(capacity),
                 unit: 'req/s',
                 hint: 'Instances in the pool x the requests per second each one can serve.',
+                simulated: true,
               },
               {
                 key: 'cpu',
@@ -336,8 +332,8 @@ export function AutoScalingLab() {
             <LiveChart
               data={points}
               series={[
-                { key: 'cpu', label: 'CPU %', color: 'warn' },
-                { key: 'scaleOut', label: 'Scale out', color: 'danger', dashed: true },
+                { key: 'cpu', label: 'CPU %', color: 'brand' },
+                { key: 'scaleOut', label: 'Scale out', color: 'warn', dashed: true },
                 { key: 'scaleIn', label: 'Scale in', color: 'ok', dashed: true },
               ]}
               variant="line"
@@ -368,14 +364,14 @@ export function AutoScalingLab() {
             min={1000}
             max={10000}
             step={250}
-            onChange={setPeak}
+            onChange={change('peak')}
             format={(value) => `${formatNumber(value)} req/sec`}
             hint="The plateau the repeating traffic curve reaches."
           />
           <Toggle
             label="Auto scaling"
             checked={autoScale}
-            onChange={setAutoScale}
+            onChange={change('autoScale')}
             description="Turn off to see what a fixed fleet does with the same spike"
           />
           <Slider
@@ -383,7 +379,7 @@ export function AutoScalingLab() {
             value={scaleOut}
             min={40}
             max={95}
-            onChange={(value) => setScaleOut(Math.max(value, scaleIn + 10))}
+            onChange={(value) => change('scaleOut')(Math.max(value, scaleIn + 10))}
             format={(value) => `${value}% CPU`}
             tone="warn"
             hint="Sustained CPU above this for 1.5s triggers a new instance."
@@ -393,7 +389,7 @@ export function AutoScalingLab() {
             value={scaleIn}
             min={5}
             max={60}
-            onChange={(value) => setScaleIn(Math.min(value, scaleOut - 10))}
+            onChange={(value) => change('scaleIn')(Math.min(value, scaleOut - 10))}
             format={(value) => `${value}% CPU`}
             tone="ok"
             hint="Sustained CPU below this for 4s removes an instance."
@@ -403,7 +399,7 @@ export function AutoScalingLab() {
             value={cooldown}
             min={2}
             max={30}
-            onChange={setCooldown}
+            onChange={change('cooldown')}
             format={(value) => `${value} s`}
             hint="Minimum time between two scaling actions. Prevents flapping."
           />
@@ -412,11 +408,11 @@ export function AutoScalingLab() {
             value={maxInstances}
             min={2}
             max={8}
-            onChange={setMaxInstances}
+            onChange={change('maxInstances')}
             format={(value) => `${value}`}
             hint="Upper bound so a traffic bug cannot scale you to bankruptcy."
           />
-          <div className="rounded-xl border border-line bg-elevated p-3">
+          <div className="border-t border-line pt-4">
             <p className="label mb-2">Signal</p>
             <Meter value={current.cpu} threshold={scaleOut / 100} label="Fleet CPU vs scale-out threshold" />
             <p className="mt-2 text-[11px] text-faint">
@@ -436,7 +432,7 @@ export function AutoScalingLab() {
         />
         <ArchNode kind="load-balancer" title="Load Balancer" subtitle="health-checked pool, 2 nodes" placed={layout.lb}>
           <NodeStatRow label="In pool" value={ready.length} />
-          <NodeStatRow label="Warming up" value={count - ready.length} tone="text-warn" />
+          <NodeStatRow label="Warming up" value={count - ready.length} tone={count > ready.length ? 'text-warn' : 'text-ink'} />
         </ArchNode>
         {current.instances.map((instance) => (
           <ArchNode

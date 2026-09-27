@@ -4,11 +4,11 @@ import { LiveChart } from '@/components/charts';
 import { Insight, LabShell, MetricsPanel } from '@/components/learning';
 import { Button, Slider } from '@/components/ui';
 import { advanceParticles, nextParticleId, RateCounter, useEventLog, useSeries, useTicker, type Particle } from '@/simulations/engine';
+import { useLabSetup } from '@/hooks/useLabSetup';
 import { useRerender } from '@/hooks/useRerender';
 import { clamp, sampleArrivals } from '@/utils/math';
 import { formatNumber, formatPercent } from '@/utils/format';
 import { useLabRunning } from '@/hooks/useLabRunning';
-import { useLabSetup } from '@/hooks/useLabSetup';
 
 type Algorithm = 'fixed-window' | 'sliding-window' | 'token-bucket' | 'leaky-bucket';
 
@@ -18,6 +18,18 @@ const ALGORITHMS: { value: Algorithm; label: string }[] = [
   { value: 'token-bucket', label: 'Token Bucket' },
   { value: 'leaky-bucket', label: 'Leaky Bucket' },
 ];
+
+interface Setup {
+  algorithm: Algorithm;
+  /** Allowance per window, or the bucket capacity. */
+  limit: number;
+  windowSeconds: number;
+  /** Requests per second the client sends. */
+  requestRate: number;
+}
+
+/** What the lab opens on, and what Reset returns to: a token bucket with the client sending above the limit. */
+const DEFAULT_SETUP: Setup = { algorithm: 'token-bucket', limit: 10, windowSeconds: 1, requestRate: 14 };
 
 const NOTES: Record<Algorithm, string> = {
   'fixed-window':
@@ -70,8 +82,8 @@ const createState = (limit: number): State => ({
 const LAYOUT: Layout = {
   client: { x: 60, y: 200, w: 170, h: 88 },
   limiter: { x: 350, y: 170, w: 230, h: 150 },
-  api: { x: 720, y: 110, w: 180, h: 92 },
-  rejected: { x: 720, y: 320, w: 180, h: 92 },
+  api: { x: 720, y: 108, w: 180, h: 95 },
+  rejected: { x: 720, y: 318, w: 180, h: 95 },
 };
 
 const EDGES: DiagramEdge[] = [
@@ -80,22 +92,11 @@ const EDGES: DiagramEdge[] = [
   { from: 'limiter', to: 'rejected', tone: 'danger', label: '429' },
 ];
 
-/** The start of the Lab: Reset puts every control back here. */
-const DEFAULT_SETUP = {
-  algorithm: 'token-bucket' as Algorithm,
-  limit: 10,
-  windowSeconds: 1,
-  requestRate: 14,
-};
-
 export function RateLimitingLab() {
   const [running, setRunning] = useLabRunning();
+  // Every control lives in one object, so Reset cannot miss one.
   const { setup, setSetup, change } = useLabSetup(DEFAULT_SETUP);
   const { algorithm, limit, windowSeconds, requestRate } = setup;
-  const setAlgorithm = change('algorithm');
-  const setLimit = change('limit');
-  const setWindowSeconds = change('windowSeconds');
-  const setRequestRate = change('requestRate');
 
   const state = useRef<State>(createState(DEFAULT_SETUP.limit));
   const rerender = useRerender(30);
@@ -107,7 +108,7 @@ export function RateLimitingLab() {
     state.current = createState(DEFAULT_SETUP.limit);
     clear();
     resetSeries();
-  }, [clear, resetSeries, setSetup]);
+  }, [setSetup, clear, resetSeries]);
 
   const burst = useCallback(() => {
     const size = limit * 2;
@@ -228,7 +229,14 @@ export function RateLimitingLab() {
       running={running}
       onRunningChange={setRunning}
       onReset={reset}
-      legend={<ParticleLegend outcomes={['success', 'failure']} />}
+      legend={
+        <ParticleLegend
+          outcomes={[
+            { outcome: 'success', label: 'Allowed or queued request' },
+            { outcome: 'failure', label: 'Rejected with 429' },
+          ]}
+        />
+      }
       events={events}
       actions={
         <>
@@ -252,7 +260,7 @@ export function RateLimitingLab() {
             items={[
               { key: 'allowed', label: 'Allowed', value: formatNumber(current.allowed), tone: 'ok' },
               { key: 'rejected', label: 'Rejected (429)', value: formatNumber(current.rejected), tone: current.rejected > 0 ? 'danger' : 'neutral' },
-              { key: 'rejectShare', label: 'Reject rate', value: formatPercent(rejectShare, 1), tone: rejectShare > 0.3 ? 'danger' : 'warn', hint: 'Share of requests refused by the limiter.' },
+              { key: 'rejectShare', label: 'Reject rate', value: formatPercent(rejectShare, 1), tone: rejectShare > 0.3 ? 'danger' : rejectShare > 0 ? 'warn' : 'neutral', hint: 'Share of requests refused by the limiter.' },
               { key: 'limit', label: 'Configured limit', value: `${limit} / ${windowSeconds}s`, hint: 'Allowance per client per window.' },
               {
                 key: 'state',
@@ -293,8 +301,9 @@ export function RateLimitingLab() {
                 <button
                   key={item.value}
                   type="button"
+                  aria-pressed={algorithm === item.value}
                   onClick={() => {
-                    setAlgorithm(item.value);
+                    change('algorithm')(item.value);
                     state.current = createState(limit);
                     log(`Algorithm: ${item.label}`, 'info');
                   }}
@@ -315,7 +324,7 @@ export function RateLimitingLab() {
             min={1}
             max={50}
             onChange={(value) => {
-              setLimit(value);
+              change('limit')(value);
               state.current = createState(value);
             }}
             format={(value) => `${value} requests`}
@@ -326,7 +335,7 @@ export function RateLimitingLab() {
             value={windowSeconds}
             min={1}
             max={10}
-            onChange={setWindowSeconds}
+            onChange={change('windowSeconds')}
             format={(value) => `${value} s`}
             hint="Window length, or the time in which the bucket fully refills."
           />
@@ -335,11 +344,11 @@ export function RateLimitingLab() {
             value={requestRate}
             min={1}
             max={80}
-            onChange={setRequestRate}
-            format={(value) => `${value} req/sec`}
+            onChange={change('requestRate')}
+            format={(value) => `${value} req/s`}
             tone={requestRate > limit / windowSeconds ? 'danger' : 'brand'}
           />
-          <div className="rounded-xl border border-line bg-elevated p-3">
+          <div className="border-t border-line pt-4">
             <p className="label mb-2">Limiter state</p>
             {algorithm === 'token-bucket' ? (
               <TokenBucket tokens={current.tokens} capacity={limit} />
@@ -359,7 +368,7 @@ export function RateLimitingLab() {
       }
     >
       <DiagramCanvas layout={LAYOUT} edges={EDGES} particles={particleViews} height={490} className="bg-canvas">
-        <ArchNode kind="client" title="Client" subtitle={`${requestRate} req/sec`} placed={LAYOUT.client} compact />
+        <ArchNode kind="client" title="Client" subtitle={`${requestRate} req/s`} placed={LAYOUT.client} compact />
         <ArchNode
           kind="api-gateway"
           title="Rate Limiter"
@@ -368,7 +377,7 @@ export function RateLimitingLab() {
         >
           <NodeStatRow label="Limit" value={`${limit} / ${windowSeconds}s`} />
           {algorithm === 'token-bucket' ? (
-            <div className="flex flex-wrap gap-1 pt-1" aria-label={`${Math.floor(current.tokens)} tokens available`}>
+            <div className="flex flex-wrap gap-1 pt-1" role="img" aria-label={`${Math.floor(current.tokens)} tokens available`}>
               {Array.from({ length: Math.min(limit, 20) }, (_, index) => (
                 <span
                   key={index}
@@ -483,7 +492,7 @@ function admitOne(
 function TokenBucket({ tokens, capacity }: { tokens: number; capacity: number }) {
   return (
     <div>
-      <div className="flex flex-wrap gap-1">
+      <div className="flex flex-wrap gap-1" aria-hidden>
         {Array.from({ length: Math.min(capacity, 30) }, (_, index) => (
           <span
             key={index}
@@ -504,7 +513,7 @@ function TokenBucket({ tokens, capacity }: { tokens: number; capacity: number })
 function LeakyBucket({ queued, capacity }: { queued: number; capacity: number }) {
   return (
     <div>
-      <div className="h-24 w-full overflow-hidden rounded-lg border border-line bg-canvas">
+      <div className="h-24 w-full overflow-hidden rounded-lg border border-line bg-canvas" aria-hidden>
         <div
           className="mt-auto h-full w-full origin-bottom bg-brand/40 transition-transform"
           style={{ transform: `scaleY(${clamp(queued / capacity, 0, 1)})`, transformOrigin: 'bottom' }}
@@ -539,7 +548,7 @@ function WindowView({
       <div className="flex gap-1">
         <div className="flex-1">
           <p className="text-[11px] text-faint">previous</p>
-          <div className="mt-1 h-10 rounded bg-line/60">
+          <div className="mt-1 h-10 rounded bg-line/60" aria-hidden>
             <div
               className="h-full rounded bg-faint/50"
               style={{ width: `${clamp(previous / limit, 0, 1) * 100}%` }}
@@ -548,7 +557,7 @@ function WindowView({
         </div>
         <div className="flex-1">
           <p className="text-[11px] text-faint">current ({Math.round(elapsed * 100)}%)</p>
-          <div className="mt-1 h-10 rounded bg-line/60">
+          <div className="mt-1 h-10 rounded bg-line/60" aria-hidden>
             <div
               className={`h-full rounded ${count >= limit ? 'bg-danger' : 'bg-brand'}`}
               style={{ width: `${clamp(count / limit, 0, 1) * 100}%` }}

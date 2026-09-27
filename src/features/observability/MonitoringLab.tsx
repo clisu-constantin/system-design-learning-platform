@@ -10,7 +10,7 @@ import {
   type Layout,
   type ParticleView,
 } from '@/components/architecture';
-import { Insight, LabShell, MetricsPanel } from '@/components/learning';
+import { Insight, LabShell, MetricsPanel, SIMULATED_HINT } from '@/components/learning';
 import { Button, SegmentedControl, Slider, Toggle } from '@/components/ui';
 import { useLabSetup } from '@/hooks/useLabSetup';
 import { useRerender } from '@/hooks/useRerender';
@@ -101,18 +101,20 @@ const PANELS: { value: Panel; label: string }[] = [
   { value: 'alerts', label: 'Alerts' },
 ];
 
+// Heights fit each card: two stat rows in the top row, one below. Probe is wide enough for
+// its subtitle, and Users matches it so the column stays one width.
 const LAYOUT: Layout = {
-  users: { x: 20, y: 30, w: 150, h: 74 },
-  probe: { x: 20, y: 150, w: 150, h: 74 },
-  gateway: { x: 240, y: 50, w: 170, h: 106 },
-  orders: { x: 470, y: 50, w: 170, h: 106 },
-  payments: { x: 750, y: 10, w: 190, h: 106 },
-  db: { x: 750, y: 140, w: 190, h: 106 },
-  collector: { x: 400, y: 270, w: 180, h: 90 },
-  logs: { x: 170, y: 400, w: 170, h: 90 },
-  metrics: { x: 400, y: 400, w: 170, h: 90 },
-  alerting: { x: 630, y: 400, w: 150, h: 90 },
-  oncall: { x: 830, y: 400, w: 120, h: 90 },
+  users: { x: 20, y: 30, w: 170, h: 74 },
+  probe: { x: 20, y: 150, w: 170, h: 74 },
+  gateway: { x: 240, y: 45, w: 170, h: 117 },
+  orders: { x: 470, y: 45, w: 170, h: 117 },
+  payments: { x: 750, y: 10, w: 190, h: 117 },
+  db: { x: 750, y: 140, w: 190, h: 117 },
+  collector: { x: 400, y: 268, w: 180, h: 95 },
+  logs: { x: 170, y: 400, w: 170, h: 95 },
+  metrics: { x: 400, y: 400, w: 170, h: 95 },
+  alerting: { x: 630, y: 400, w: 150, h: 95 },
+  oncall: { x: 830, y: 400, w: 120, h: 95 },
 };
 const CANVAS_HEIGHT = 505;
 
@@ -368,11 +370,17 @@ export function MonitoringLab({ focus }: LabProps<'monitoring'>) {
       }
       legend={
         <div className="space-y-1.5">
-          <ParticleLegend outcomes={['success', 'warning', 'failure']} />
+          <ParticleLegend
+            outcomes={[
+              { outcome: 'success', label: 'Request or log line' },
+              { outcome: 'warning', label: 'Slow database query' },
+              { outcome: 'failure', label: 'Failed request, ERROR or page' },
+            ]}
+          />
           <p className="text-[11px] text-faint">
             Top row: user requests. Violet wires: every part sends its log lines and metrics to the collector
             (a cross on them is an ERROR line). Red wire to On-call: a page. The simulated clock runs 10x faster than real
-            time.
+            time. {SIMULATED_HINT}
           </p>
         </div>
       }

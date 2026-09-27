@@ -419,6 +419,7 @@ export function ConnectionPoolLab() {
                 value: `${formatNumber(Math.min(openConnections, MAX_CONNECTIONS))} / ${MAX_CONNECTIONS}`,
                 tone: openConnections >= MAX_CONNECTIONS ? 'danger' : 'neutral',
                 hint: 'Connections open on the database, against max_connections.',
+                simulated: true,
               },
               {
                 key: 'inflight',
@@ -440,7 +441,7 @@ export function ConnectionPoolLab() {
               ]}
               height={140}
             />
-            <LiveChart data={points} series={[{ key: 'p95', label: 'p95 latency (ms)', color: 'warn' }]} variant="line" height={140} />
+            <LiveChart data={points} series={[{ key: 'p95', label: 'p95 latency (ms)', color: 'violet' }]} variant="line" height={140} />
             <p className="mt-2 text-xs text-faint">
               {SIMULATED_HINT} {DB_CORES} database cores that work best with about {BEST_IN_FLIGHT}{' '}
               queries in flight and lose work to contention past that, a new connection that costs about{' '}

@@ -280,7 +280,15 @@ export function RetryBackoffLab({ focus }: LabProps<'retry-backoff'>) {
         sim.current = createSimState();
         clear();
       }}
-      legend={<ParticleLegend outcomes={['failure', 'warning', 'success']} />}
+      legend={
+        <ParticleLegend
+          outcomes={[
+            { outcome: 'failure', label: 'First request, failed' },
+            'warning',
+            { outcome: 'success', label: 'A retry that got an answer' },
+          ]}
+        />
+      }
       events={events}
       actions={
         <Button variant="primary" onClick={replay}>
@@ -381,7 +389,7 @@ export function RetryBackoffLab({ focus }: LabProps<'retry-backoff'>) {
               height={180}
             />
             <p className="mt-2 text-xs text-faint">
-              Same number of clients and the same failure rate in every scenario - only the retry policy changes.
+              Same number of clients and the same failure rate in every run - only the retry policy changes.
               {SIMULATED_HINT} The dependency goes down and the first request of every client fails
               within the same {FAILURE_WINDOW_MS} ms, each retry fails at the chosen rate, retries are counted in{' '}
               {BUCKET_MS} ms buckets and shown per second, and capacity is assumed to be 60% of the client count. The
@@ -435,6 +443,7 @@ export function RetryBackoffLab({ focus }: LabProps<'retry-backoff'>) {
                 <button
                   key={item.value}
                   type="button"
+                  aria-pressed={strategy === item.value}
                   onClick={() => change('strategy')(item.value)}
                   className={cn(
                     'w-full rounded-lg border px-3 py-2 text-left text-xs font-medium transition-colors',

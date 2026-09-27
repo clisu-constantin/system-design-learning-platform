@@ -11,7 +11,7 @@ import {
   type ParticleView,
 } from '@/components/architecture';
 import { Insight, LabShell, MetricsPanel } from '@/components/learning';
-import { Button, SegmentedControl, Slider, Toggle } from '@/components/ui';
+import { Button, Slider, Toggle } from '@/components/ui';
 import { advanceParticles, nextParticleId, useEventLog, useTicker, type Particle } from '@/simulations/engine';
 import { useLabSetup } from '@/hooks/useLabSetup';
 import { useRerender } from '@/hooks/useRerender';
@@ -33,7 +33,7 @@ const MODE_NOTE: Record<Mode, string> = {
   local:
     'Sessions live in the memory of whichever server handled the login. Round robin sends the next request somewhere else, and that server has never heard of this user - so about two requests in three find no session.',
   sticky:
-    'The load balancer pins each user to one server, so sessions are found - until that server dies and takes its users sessions with it. Kill a server and watch its users log in again. Load also becomes uneven.',
+    'The load balancer pins each user to one server, so sessions are found - until that server dies and takes the sessions of its users with it. Kill a server and watch its users log in again. Load also becomes uneven.',
   shared:
     'Sessions live in Redis. Any server can serve any user and any server can die without logging anyone out, at the cost of one network hop per request and a new critical dependency - try Kill Redis.',
   jwt: 'The client carries a signed token. Every server checks the signature locally with the same key - no lookup, no shared store, and killing a server logs nobody out. The trade: revoking a token before it expires needs extra state. Try Revoke user A.',
@@ -223,7 +223,7 @@ export function StatelessLab({ focus }: LabProps<'stateless'>) {
       if (server.status === 'healthy') {
         server.status = 'down';
         if (server.sessions.size && (mode === 'local' || mode === 'sticky')) {
-          log(`${server.name} down - ${server.sessions.size} in-memory session(s) lost`, 'danger');
+          log(`${server.name} down - ${server.sessions.size} in-memory session${server.sessions.size > 1 ? 's' : ''} lost`, 'danger');
         } else {
           log(`${server.name} down - no sessions lived there, nobody is logged out`, 'warn');
         }
@@ -454,7 +454,16 @@ export function StatelessLab({ focus }: LabProps<'stateless'>) {
       running={running}
       onRunningChange={setRunning}
       onReset={reset}
-      legend={<ParticleLegend outcomes={['success', 'cache-hit', 'warning', 'failure']} />}
+      legend={
+        <ParticleLegend
+          outcomes={[
+            { outcome: 'success', label: 'Served' },
+            { outcome: 'cache-hit', label: 'Served, session read from Redis' },
+            { outcome: 'warning', label: 'Revoked token let in' },
+            { outcome: 'failure', label: 'Session lost, or revoked user turned away' },
+          ]}
+        />
+      }
       events={events}
       actions={
         <>
@@ -550,11 +559,12 @@ export function StatelessLab({ focus }: LabProps<'stateless'>) {
         <>
           <div className="space-y-2">
             <p className="text-xs font-medium text-muted">Where the session lives</p>
-            <div className="grid grid-cols-2 gap-1.5">
+            <div role="group" aria-label="Where the session lives" className="grid grid-cols-2 gap-1.5">
               {MODES.map((item) => (
                 <button
                   key={item.value}
                   type="button"
+                  aria-pressed={mode === item.value}
                   onClick={() => {
                     change('mode')(item.value);
                     // Each strategy is its own experiment. Without this the
@@ -639,15 +649,6 @@ export function StatelessLab({ focus }: LabProps<'stateless'>) {
               </Button>
             ) : null}
           </div>
-          <SegmentedControl
-            size="sm"
-            value={running ? 'run' : 'pause'}
-            options={[
-              { value: 'run', label: 'Running' },
-              { value: 'pause', label: 'Paused' },
-            ]}
-            onChange={(value) => setRunning(value === 'run')}
-          />
         </>
       }
     >
@@ -677,7 +678,6 @@ export function StatelessLab({ focus }: LabProps<'stateless'>) {
             <NodeStatRow
               label="Sessions"
               value={localState ? [...server.sessions].join(' ') || 'none' : SESSION_WHERE[mode]}
-              tone={localState ? 'text-warn' : 'text-ok'}
             />
             <NodeStatRow label="Handled" value={formatNumber(server.handled)} />
           </ArchNode>

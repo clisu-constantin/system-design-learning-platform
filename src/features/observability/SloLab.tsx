@@ -302,7 +302,13 @@ export function SloLab({ focus }: LabProps<'slo'>) {
       events={events}
       legend={
         <div className="space-y-1.5">
-          <ParticleLegend outcomes={['success', 'warning', 'failure']} />
+          <ParticleLegend
+            outcomes={[
+              { outcome: 'success', label: 'Good request' },
+              { outcome: 'warning', label: 'Slow request or ticket' },
+              { outcome: 'failure', label: 'Failed request, page or credit' },
+            ]}
+          />
           <p className="text-[11px] text-faint">
             Dots are a sample of the traffic, with faulty requests drawn {DOT_FAULT_BOOST}x more often so you can see
             them. Dots into the SLI are what it counts: a request it cannot see sends none.
