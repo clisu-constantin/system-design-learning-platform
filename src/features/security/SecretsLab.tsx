@@ -72,11 +72,11 @@ const FETCH_RETRY_S = 1;
 const LEG_SPEED = 1.4;
 
 const LAYOUT: Layout = {
-  orders: { x: 30, y: 20, w: 200, h: 112 },
-  billing: { x: 30, y: 176, w: 200, h: 112 },
-  reports: { x: 30, y: 332, w: 200, h: 112 },
+  orders: { x: 30, y: 20, w: 200, h: 116 },
+  billing: { x: 30, y: 176, w: 200, h: 116 },
+  reports: { x: 30, y: 332, w: 200, h: 116 },
   source: { x: 400, y: 16, w: 240, h: 116 },
-  db: { x: 730, y: 176, w: 200, h: 130 },
+  db: { x: 730, y: 170, w: 200, h: 139 },
   attacker: { x: 730, y: 340, w: 200, h: 104 },
 };
 

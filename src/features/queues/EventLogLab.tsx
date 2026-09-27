@@ -126,17 +126,17 @@ const PARTICLES_PER_FLOW = 8;
 
 const WIDTH = 900;
 const HEIGHT = 630;
-const PARTITION_H = 128;
+const PARTITION_H = 132;
 const MEMBER_H = 96;
 
 function buildLayout(partitions: number, members: number, snapshots: boolean): Layout {
   const layout: Layout = {
-    producer: { x: 24, y: 20, w: 200, h: 112 },
-    projector: { x: 24, y: 300, w: 200, h: 112 },
+    producer: { x: 24, y: 20, w: 208, h: 116 },
+    projector: { x: 24, y: 300, w: 208, h: 116 },
     readModel: { x: 300, y: 470, w: 290, h: 140 },
     query: { x: 680, y: 490, w: 190, h: 96 },
   };
-  if (snapshots) layout.snapshot = { x: 24, y: 470, w: 200, h: 96 };
+  if (snapshots) layout.snapshot = { x: 24, y: 470, w: 208, h: 96 };
   // Partitions and members are stacked in their own columns, centred on the same band.
   const partitionGap = 20;
   const partitionTop = 20 + (3 - partitions) * ((PARTITION_H + partitionGap) / 2);

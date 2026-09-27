@@ -49,7 +49,7 @@ const VIEWS: { value: CapacityView; label: string }[] = [
 ];
 
 const LAYOUT: Layout = {
-  clients: { x: 16, y: 170, w: 176, h: 122 },
+  clients: { x: 16, y: 167, w: 176, h: 128 },
   lb: { x: 226, y: 150, w: 200, h: 160 },
   app: { x: 460, y: 130, w: 244, h: 200 },
   db: { x: 740, y: 20, w: 204, h: 160 },

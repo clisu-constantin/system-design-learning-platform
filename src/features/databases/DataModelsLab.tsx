@@ -80,7 +80,7 @@ const TABLES = [
   { id: 'orders', title: 'orders' },
 ] as const;
 
-const CANVAS_HEIGHT = 440;
+const CANVAS_HEIGHT = 450;
 /** A migration plays in this many real seconds, whatever its simulated length. */
 const DEMO_SECONDS = 8;
 const partitionId = (index: number) => `p${index}`;
@@ -94,7 +94,7 @@ function buildLayout(view: View, partitions: number): Layout {
   const sqlShift = view === 'relational' ? 245 : 0;
   const docShift = view === 'document' ? -245 : 0;
   if (view !== 'document') {
-    layout.pg = { x: 135 + sqlShift, y: 150, w: 200, h: 106 };
+    layout.pg = { x: 135 + sqlShift, y: 150, w: 200, h: 116 };
     TABLES.forEach((table, index) => {
       layout[table.id] = { x: 25 + index * 150 + sqlShift, y: 320, w: 120, h: 74 };
     });
@@ -102,10 +102,10 @@ function buildLayout(view: View, partitions: number): Layout {
   if (view !== 'relational') {
     for (let index = 0; index < partitions; index += 1) {
       layout[partitionId(index)] = {
-        x: 500 + (index % 3) * 155 + docShift,
+        x: 496 + (index % 3) * 154 + docShift,
         y: 150 + Math.floor(index / 3) * 140,
-        w: 140,
-        h: 106,
+        w: 146,
+        h: 116,
       };
     }
   }
@@ -648,14 +648,14 @@ function GroupFrames({ view, partitions }: { view: View; partitions: number }) {
             x={frame.x}
             y={124}
             width={frame.x === 12 || frame.x === 257 ? 446 : 470}
-            height={300}
+            height={310}
             rx={14}
             fill="none"
             strokeDasharray="6 6"
             className="stroke-line"
             strokeWidth={1.5}
           />
-          <text x={frame.x + 12} y={417} className="fill-faint" style={{ fontSize: 11 }}>
+          <text x={frame.x + 12} y={427} className="fill-faint" style={{ fontSize: 11 }}>
             {frame.label}
           </text>
         </g>

@@ -105,9 +105,9 @@ const createState = (): State => ({
 const LAYOUT: Layout = {
   client: { x: 40, y: 200, w: 160, h: 84 },
   api: { x: 265, y: 190, w: 180, h: 104 },
-  breaker: { x: 470, y: 180, w: 250, h: 124 },
-  payment: { x: 745, y: 100, w: 175, h: 108 },
-  fallback: { x: 745, y: 300, w: 175, h: 96 },
+  breaker: { x: 470, y: 173, w: 250, h: 138 },
+  payment: { x: 745, y: 80, w: 192, h: 128 },
+  fallback: { x: 745, y: 350, w: 192, h: 96 },
 };
 
 const WINDOW_SIZE = 20;
@@ -297,6 +297,7 @@ export function CircuitBreakerLab() {
       tone: current.breaker === 'closed' || !breakerEnabled ? 'muted' : 'warn',
       dashed: current.breaker === 'closed' || !breakerEnabled,
       label: 'fallback',
+      labelT: 0.6,
     },
   ];
 

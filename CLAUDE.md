@@ -24,7 +24,7 @@ npm run dev      # dev server on http://localhost:5173
 npm run build    # check:visuals + check:content + tsc -b + vite build + check:bundle  (must pass)
 npm run lint     # ESLint (typescript-eslint + react-hooks); CI fails on any finding
 npm test         # the src/**/*.test.ts and scripts/**/*.test.ts files, on Node's own runner (node --test)
-npm run check:visuals   # diagram geometry + wiring: overlap, overflow, truncated labels, replica consistency
+npm run check:visuals   # diagram geometry + wiring (concept, evolution and every Lab): overlap, overflow, truncated labels, replica consistency
 npm run check:content   # every concept has its long-form lesson, a Lab and a 10-question Quiz, and sits in its category file
 npm run check:bundle    # initial JS (entry + modulepreloads) stays under the gzip budget
 npm run preview  # serve the production build
@@ -269,9 +269,18 @@ The product complaint that shaped this app was "too much text". Concept pages th
   does not draw (either direction counts - a response goes back), and
   **edge labels that land behind a node card** (the SVG wiring layer is painted under the HTML
   nodes, so such a label is simply invisible). Move one with `labelT`, shorten it, or drop it.
-- A node carrying a badge (`isNew` in the evolution stages) needs about 47px more width - the badge
+- The same check covers every Lab Diagram. The Labs build theirs in JSX, so it renders each Lab in
+  Node (`scripts/lab-diagrams.mjs`): as it opens, with every Lab focus, with its sliders and
+  steppers at both ends and toggles off and on, and with each SegmentedControl or Select option.
+  It reads each card's real height from its markup (`scripts/node-box.mjs`) and fails on a card
+  that renders taller than its placed `h`, a cut title or subtitle, overlap, a box past the canvas
+  and a hidden edge label. It cannot reach what only the running simulation changes, choices made
+  with plain buttons, or HTML on a Diagram that is not an `ArchNode`; it prints those limits on
+  every run. `LABS=cdn,proxy npm run check:visuals` checks only those Labs.
+- A node carrying a badge (`isNew` in the evolution stages) needs about 52px more width - the badge
   sits on the title row and the title is `truncate`, so "Replica 1" silently becomes "Replic...".
-  The check knows this; trust it over eyeballing the box.
+  With a subtitle it also makes the card 10px taller. The check knows both; trust it over
+  eyeballing the box.
 ### Diagrams must be true, not balanced
 
 A diagram is read as an architecture claim, so wiring it for visual balance teaches the wrong thing.
@@ -372,15 +381,18 @@ These are editorial rules, not style preferences. They are the reason the app is
   module". Heavy deps reached only from lazy chunks are listed in `optimizeDeps.include` so Vite
   never re-optimizes and force-reloads mid-session.
 - Labs that size node boxes at runtime (load balancer, horizontal scaling, auto scaling, queue) must
-  keep the widest label readable: minimum width is 54 + the title width (the per-letter table in `scripts/check-visuals.mjs`, about 7px a letter), and the whole row must
-  stay inside the 960px canvas.
+  keep the widest label readable: minimum width is 54 + the title width (the per-letter table in `scripts/node-box.mjs`, about 7px a letter), and the whole row must
+  stay inside the 960px canvas. The check renders them at their smallest and largest settings.
 - The Bash tool on this machine has had trouble with large heredocs containing `.tsx`; prefer the
   Write tool for source files.
 - `ArchNode` grows to fit its content and truncates its title, so an undersized box silently
   clips its label or overlaps the node below. `npm run check:visuals` catches both; it runs as part
-  of `npm run build`. Minimum height is 69, +4.5 with a subtitle and +21.5 with a stat row (so 73,
-  90 or 95 - measured in headless Chromium); minimum width is 54 + the per-letter title width table
-  in `scripts/check-visuals.mjs` (about 7px a letter), or the subtitle table (about 6px) if wider.
+  of `npm run build`. A compact card is 68.5px with a title (78.5 not compact), 73 with a subtitle
+  and 83 with a subtitle and a badge; each `NodeStatRow` adds 16.5 plus a 6px gap (the first one
+  adds the card gap, 4 or 6), so a compact card with a subtitle and 2 stat rows is 116 (`CARD` in
+  `scripts/node-box.mjs`, measured in Chromium - not chrome-headless-shell, whose stat rows are 1px
+  taller). Minimum width is 54 + the per-letter title width table in `scripts/node-box.mjs` (about
+  7px a letter), or the subtitle table (about 6px) if wider; 62 + for a card that is not compact.
 - Everything persists to `localStorage` (`sdi:theme`, `sdi:progress:v2`, `sdi:layout` for which
   side panels the learner folded, `sdi:account`, the "was signed in here" mark, and
   `sdi:progress:outbox`, the Concepts the server has not confirmed yet). The app must work fully as a Guest, with no network calls.

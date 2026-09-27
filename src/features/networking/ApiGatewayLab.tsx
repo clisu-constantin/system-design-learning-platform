@@ -33,7 +33,7 @@ interface Stage {
 
 const LAYOUT: Layout = {
   client: { x: 40, y: 200, w: 160, h: 82 },
-  gateway: { x: 300, y: 160, w: 230, h: 170 },
+  gateway: { x: 300, y: 147, w: 230, h: 196 },
   users: { x: 660, y: 60, w: 200, h: 96 },
   orders: { x: 660, y: 195, w: 200, h: 96 },
   payments: { x: 660, y: 330, w: 200, h: 96 },

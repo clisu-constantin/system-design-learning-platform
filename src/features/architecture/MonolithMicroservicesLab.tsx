@@ -214,23 +214,23 @@ const pickFeature = (): Feature => {
 // ---- Layouts (960px design space) -------------------------------------------
 
 const MONO_LAYOUT: Layout = {
-  client: { x: 390, y: 20, w: 180, h: 60 },
-  lb: { x: 390, y: 130, w: 180, h: 74 },
-  app: { x: 300, y: 240, w: 360, h: 150 },
-  db: { x: 390, y: 420, w: 180, h: 72 },
+  client: { x: 390, y: 16, w: 180, h: 73 },
+  lb: { x: 390, y: 120, w: 180, h: 74 },
+  app: { x: 300, y: 226, w: 360, h: 169 },
+  db: { x: 390, y: 424, w: 180, h: 73 },
 };
 
 const MICRO_LAYOUT: Layout = {
-  client: { x: 390, y: 14, w: 180, h: 56 },
-  gateway: { x: 370, y: 110, w: 220, h: 72 },
-  'svc-Users': { x: 40, y: 220, w: 190, h: 120 },
-  'svc-Orders': { x: 260, y: 220, w: 190, h: 120 },
-  'svc-Payments': { x: 480, y: 220, w: 190, h: 120 },
-  'svc-Notifications': { x: 700, y: 220, w: 190, h: 120 },
-  'db-Users': { x: 60, y: 390, w: 150, h: 76 },
-  'db-Orders': { x: 280, y: 390, w: 150, h: 76 },
-  'db-Payments': { x: 500, y: 390, w: 150, h: 76 },
-  'db-Notifications': { x: 720, y: 390, w: 150, h: 76 },
+  client: { x: 390, y: 14, w: 180, h: 73 },
+  gateway: { x: 370, y: 110, w: 220, h: 73 },
+  'svc-Users': { x: 40, y: 220, w: 190, h: 136 },
+  'svc-Orders': { x: 260, y: 220, w: 190, h: 136 },
+  'svc-Payments': { x: 480, y: 220, w: 190, h: 136 },
+  'svc-Notifications': { x: 700, y: 220, w: 190, h: 136 },
+  'db-Users': { x: 58, y: 390, w: 154, h: 76 },
+  'db-Orders': { x: 278, y: 390, w: 154, h: 76 },
+  'db-Payments': { x: 498, y: 390, w: 154, h: 76 },
+  'db-Notifications': { x: 718, y: 390, w: 154, h: 76 },
 };
 
 /**
@@ -249,24 +249,24 @@ const EXTRACTED_W = 198;
 
 const modularLayout = (extracted: boolean): Layout => {
   const layout: Layout = {
-    client: { x: 390, y: 10, w: 180, h: 56 },
-    lb: { x: 390, y: 92, w: 180, h: 62 },
+    client: { x: 390, y: 10, w: 180, h: 73 },
+    lb: { x: 390, y: 96, w: 180, h: 69 },
   };
   MODULE_ORDER.forEach((feature, index) => {
     const out = extracted && feature === 'Payments';
     const x = out ? EXTRACTED_X : MODULE_X[index];
     const w = out ? EXTRACTED_W : MODULE_W;
-    layout[`mod-${feature}`] = { x, y: APP_ZONE.y + 36, w, h: 100 };
+    layout[`mod-${feature}`] = { x, y: APP_ZONE.y + 36, w, h: 106 };
     layout[`data-${feature}`] = { x, y: DATA_ZONE.y + 38, w, h: 80 };
   });
   return layout;
 };
 
 const SOA_LAYOUT: Layout = {
-  client: { x: 390, y: 14, w: 180, h: 56 },
-  bus: { x: 250, y: 108, w: 460, h: 120 },
-  'svc-customer': { x: 80, y: 282, w: 280, h: 104 },
-  'svc-order': { x: 600, y: 282, w: 280, h: 104 },
+  client: { x: 390, y: 14, w: 180, h: 73 },
+  bus: { x: 250, y: 108, w: 460, h: 136 },
+  'svc-customer': { x: 80, y: 282, w: 280, h: 114 },
+  'svc-order': { x: 600, y: 282, w: 280, h: 114 },
   db: { x: 380, y: 420, w: 200, h: 76 },
 };
 

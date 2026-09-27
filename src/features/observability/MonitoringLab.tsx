@@ -101,17 +101,17 @@ const PANELS: { value: Panel; label: string }[] = [
 ];
 
 const LAYOUT: Layout = {
-  users: { x: 20, y: 30, w: 150, h: 74 },
-  probe: { x: 20, y: 150, w: 150, h: 74 },
-  gateway: { x: 240, y: 50, w: 170, h: 106 },
-  orders: { x: 470, y: 50, w: 170, h: 106 },
-  payments: { x: 750, y: 10, w: 190, h: 106 },
-  db: { x: 750, y: 140, w: 190, h: 106 },
-  collector: { x: 400, y: 270, w: 180, h: 90 },
-  logs: { x: 170, y: 400, w: 170, h: 90 },
-  metrics: { x: 400, y: 400, w: 170, h: 90 },
-  alerting: { x: 630, y: 400, w: 150, h: 90 },
-  oncall: { x: 830, y: 400, w: 120, h: 90 },
+  users: { x: 20, y: 30, w: 166, h: 74 },
+  probe: { x: 20, y: 150, w: 166, h: 74 },
+  gateway: { x: 240, y: 50, w: 170, h: 116 },
+  orders: { x: 470, y: 50, w: 170, h: 116 },
+  payments: { x: 750, y: 4, w: 190, h: 116 },
+  db: { x: 750, y: 138, w: 190, h: 116 },
+  collector: { x: 400, y: 280, w: 180, h: 94 },
+  logs: { x: 170, y: 404, w: 170, h: 94 },
+  metrics: { x: 400, y: 404, w: 170, h: 94 },
+  alerting: { x: 630, y: 404, w: 150, h: 94 },
+  oncall: { x: 830, y: 404, w: 120, h: 94 },
 };
 const CANVAS_HEIGHT = 505;
 

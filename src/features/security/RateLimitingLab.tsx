@@ -68,8 +68,8 @@ const createState = (limit: number): State => ({
 const LAYOUT: Layout = {
   client: { x: 60, y: 200, w: 170, h: 88 },
   limiter: { x: 350, y: 170, w: 230, h: 150 },
-  api: { x: 720, y: 110, w: 180, h: 92 },
-  rejected: { x: 720, y: 320, w: 180, h: 92 },
+  api: { x: 720, y: 110, w: 180, h: 94 },
+  rejected: { x: 720, y: 320, w: 180, h: 94 },
 };
 
 const EDGES: DiagramEdge[] = [

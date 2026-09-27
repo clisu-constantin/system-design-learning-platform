@@ -82,8 +82,8 @@ const DROP_VISIBLE_S = 0.7;
 const LAYOUT: Layout = {
   clientA: { x: 110, y: 30, w: 170, h: 70 },
   clientB: { x: 680, y: 30, w: 170, h: 70 },
-  a: { x: 90, y: 200, w: 230, h: 150 },
-  b: { x: 640, y: 200, w: 230, h: 150 },
+  a: { x: 90, y: 200, w: 230, h: 152 },
+  b: { x: 640, y: 200, w: 230, h: 152 },
 };
 
 const CLIENT: Record<Side, string> = { a: 'clientA', b: 'clientB' };

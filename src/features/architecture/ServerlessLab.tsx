@@ -426,13 +426,13 @@ export function ServerlessLab() {
   const view = setup.view;
   const layout: Layout = {
     events: { x: 16, y: 146, w: 136, h: 84 },
-    db: { x: 806, y: 126, w: 140, h: 124 },
+    db: { x: 784, y: 126, w: 162, h: 124 },
   };
   if (view === 'functions') {
-    layout.platform = { x: 182, y: 130, w: 180, h: 116 };
+    layout.platform = { x: 180, y: 124, w: 186, h: 128 };
     for (const instance of sim.instances) layout[fnKey(instance)] = slotPlace(instance.slot);
   } else {
-    layout.server = { x: 400, y: 112, w: 280, h: 152 };
+    layout.server = { x: 400, y: 108, w: 280, h: 160 };
   }
 
   const edges: DiagramEdge[] =

@@ -70,10 +70,10 @@ const FOCUS_SETUPS: Record<LabFocus<'api-styles'>, Setup> = {
 };
 
 const LAYOUT: Layout = {
-  caller: { x: 16, y: 80, w: 176, h: 150 },
-  proxy: { x: 262, y: 115, w: 150, h: 80 },
-  server: { x: 480, y: 80, w: 220, h: 150 },
-  db: { x: 766, y: 100, w: 178, h: 110 },
+  caller: { x: 12, y: 80, w: 176, h: 152 },
+  proxy: { x: 256, y: 116, w: 154, h: 80 },
+  server: { x: 460, y: 80, w: 220, h: 152 },
+  db: { x: 726, y: 101, w: 222, h: 110 },
 };
 
 /** Dots drawn per hop. Calls past this still count in every number. */

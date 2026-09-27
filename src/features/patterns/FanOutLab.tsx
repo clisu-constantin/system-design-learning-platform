@@ -98,12 +98,12 @@ const LAYOUT: Layout = {
   author: { x: 20, y: 20, w: 170, h: 96 },
   postsvc: { x: 240, y: 20, w: 190, h: 96 },
   queue: { x: 480, y: 20, w: 190, h: 96 },
-  worker: { x: 720, y: 20, w: 220, h: 112 },
-  posts: { x: 240, y: 200, w: 190, h: 112 },
+  worker: { x: 720, y: 20, w: 220, h: 116 },
+  posts: { x: 240, y: 200, w: 190, h: 116 },
   graph: { x: 480, y: 200, w: 190, h: 96 },
-  timelines: { x: 720, y: 200, w: 220, h: 112 },
-  followers: { x: 20, y: 390, w: 170, h: 96 },
-  feed: { x: 480, y: 390, w: 190, h: 112 },
+  timelines: { x: 720, y: 200, w: 220, h: 116 },
+  followers: { x: 20, y: 386, w: 170, h: 96 },
+  feed: { x: 480, y: 386, w: 190, h: 116 },
 };
 
 const PARTICLE_BUDGET = 110;

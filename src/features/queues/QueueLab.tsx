@@ -376,22 +376,23 @@ export function QueueLab({ focus }: LabProps<'queue'>) {
   const oldest = oldestAge(current);
   const workerBusy = current.busy;
 
-  // At 8 workers a 106px box clipped "Worker 8" to "Worke...": the title needs
-  // about 110px. A tighter 8px gap keeps a row of 8 x 110px inside the 960px canvas.
-  const workerGap = 8;
-  const workerWidth = Math.max(110, Math.min(150, (920 - (workers - 1) * workerGap) / workers));
+  // At 8 workers a 106px box clipped "Worker 8" to "Worke...", and the subtitle
+  // "10 ms a job" needs about 114px. At 8 workers a tighter 4px gap keeps the
+  // row of 8 x 114px inside the 960px canvas.
+  const workerGap = workers >= 8 ? 4 : 8;
+  const workerWidth = Math.max(114, Math.min(150, (920 - (workers - 1) * workerGap) / workers));
   const xs = spread(workers, 480, workerWidth, workerGap);
   const layout: Layout = {
-    users: { x: 60, y: 20, w: 170, h: 96 },
-    api: { x: 370, y: 14, w: 220, h: 108 },
+    users: { x: 60, y: 20, w: 170, h: 116 },
+    api: { x: 370, y: 14, w: 220, h: 116 },
   };
-  if (queueOn) layout.queue = { x: 300, y: 172, w: 360, h: 128 };
+  if (queueOn) layout.queue = { x: 300, y: 170, w: 360, h: 155 };
   if (retriesOn) {
-    layout.delayed = { x: 20, y: 180, w: 230, h: 104 };
-    layout.dlq = { x: 710, y: 180, w: 230, h: 104 };
+    layout.delayed = { x: 20, y: 180, w: 230, h: 116 };
+    layout.dlq = { x: 710, y: 180, w: 230, h: 116 };
   }
   for (let index = 0; index < workers; index += 1) {
-    layout[`w${index}`] = { x: xs[index], y: 364, w: workerWidth, h: 108 };
+    layout[`w${index}`] = { x: xs[index], y: 364, w: workerWidth, h: 124 };
   }
 
   const workerIds = Array.from({ length: workers }, (_, index) => `w${index}`);
@@ -760,7 +761,7 @@ export function QueueLab({ focus }: LabProps<'queue'>) {
         </>
       }
     >
-      <DiagramCanvas layout={layout} edges={edges} particles={particleViews} height={490} className="bg-canvas">
+      <DiagramCanvas layout={layout} edges={edges} particles={particleViews} height={500} className="bg-canvas">
         <ArchNode kind="client" title="Users" subtitle={`${producerRate} req/sec`} placed={layout.users} compact>
           <NodeStatRow
             label="Wait"

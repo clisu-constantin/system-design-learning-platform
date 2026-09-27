@@ -195,18 +195,18 @@ const CANVAS_W = 960;
 const CANVAS_H = 560;
 
 const BASE_LAYOUT: Layout = {
-  users: { x: 400, y: 14, w: 160, h: 62 },
+  users: { x: 400, y: 10, w: 160, h: 73 },
   dns: { x: 400, y: 106, w: 160, h: 74 },
-  appA: { x: 50, y: 226, w: 210, h: 90 },
-  dbA: { x: 50, y: 340, w: 210, h: 106 },
-  appB: { x: 700, y: 226, w: 210, h: 90 },
-  dbB: { x: 700, y: 340, w: 210, h: 106 },
+  appA: { x: 50, y: 226, w: 210, h: 94 },
+  dbA: { x: 50, y: 336, w: 210, h: 116 },
+  appB: { x: 700, y: 226, w: 210, h: 94 },
+  dbB: { x: 700, y: 336, w: 210, h: 116 },
 };
 
 /** The backups sit under the database of whichever region holds them. */
 const BACKUP_BOX = {
-  same: { x: 70, y: 476, w: 170, h: 70 },
-  other: { x: 720, y: 476, w: 170, h: 70 },
+  same: { x: 70, y: 470, w: 170, h: 73 },
+  other: { x: 720, y: 470, w: 170, h: 73 },
 };
 
 function RegionZones({ lost }: { lost: boolean }) {

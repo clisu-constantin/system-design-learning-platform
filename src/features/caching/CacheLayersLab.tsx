@@ -82,15 +82,15 @@ const FOCUS_SETUPS: Record<LabFocus<'cache-layers'>, Setup> = {
 const APPS = Array.from({ length: INSTANCES }, (_, index) => `app${index + 1}`);
 
 const LAYOUT: Layout = {
-  users: { x: 12, y: 222, w: 100, h: 74 },
-  lb: { x: 138, y: 216, w: 164, h: 86 },
-  app1: { x: 330, y: 24, w: 190, h: 128 },
-  app2: { x: 330, y: 196, w: 190, h: 128 },
-  app3: { x: 330, y: 368, w: 190, h: 128 },
-  engine: { x: 560, y: 190, w: 172, h: 140 },
-  orders: { x: 770, y: 20, w: 180, h: 110 },
-  buffer: { x: 770, y: 190, w: 180, h: 140 },
-  view: { x: 770, y: 390, w: 180, h: 110 },
+  users: { x: 8, y: 222, w: 130, h: 74 },
+  lb: { x: 160, y: 216, w: 164, h: 86 },
+  app1: { x: 346, y: 20, w: 190, h: 140 },
+  app2: { x: 346, y: 190, w: 190, h: 140 },
+  app3: { x: 346, y: 360, w: 190, h: 140 },
+  engine: { x: 566, y: 186, w: 176, h: 148 },
+  orders: { x: 772, y: 20, w: 180, h: 116 },
+  buffer: { x: 772, y: 186, w: 180, h: 148 },
+  view: { x: 772, y: 384, w: 180, h: 116 },
 };
 
 const ANIMATED_PER_SECOND = 40;

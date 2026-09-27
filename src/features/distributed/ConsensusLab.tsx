@@ -70,7 +70,7 @@ const PARTITIONS: { value: PartitionMode; label: string; hint: string }[] = [
 ];
 
 const NODE_W = 170;
-const NODE_H = 138;
+const NODE_H = 144;
 const CANVAS_H = 580;
 
 /**

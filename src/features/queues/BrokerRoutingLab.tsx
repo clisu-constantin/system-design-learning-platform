@@ -264,12 +264,12 @@ function spawn(state: State, route: string[], meta: Meta, outcome: RequestOutcom
 // ---- Layout -----------------------------------------------------------------
 
 const HEIGHT = 530;
-const ROW_H = 90;
+const ROW_H = 94;
 const ROW_GAP = 12;
 const COL = {
   pub: { x: 12, w: 150 },
   ex: { x: 222, w: 172 },
-  q: { x: 514, w: 172 },
+  q: { x: 509, w: 182 },
   svc: { x: 736, w: 212 },
 };
 

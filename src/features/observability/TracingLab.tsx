@@ -303,7 +303,7 @@ function carrierOf(span: Span, byId: Map<string, Span>, propagate: boolean): str
 // ---- Diagram ---------------------------------------------------------------
 
 const LAYOUT: Layout = {
-  users: { x: 20, y: 150, w: 120, h: 74 },
+  users: { x: 20, y: 140, w: 120, h: 94 },
   gateway: { x: 175, y: 140, w: 160, h: 94 },
   order: { x: 380, y: 140, w: 170, h: 94 },
   redis: { x: 380, y: 10, w: 170, h: 94 },

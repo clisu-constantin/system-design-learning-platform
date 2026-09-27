@@ -108,9 +108,9 @@ interface State {
 const createState = (): State => ({ particles: [], scan: null });
 
 const LAYOUT: Layout = {
-  app: { x: 20, y: 160, w: 180, h: 120 },
-  db: { x: 280, y: 150, w: 210, h: 140 },
-  index: { x: 570, y: 30, w: 360, h: 170 },
+  app: { x: 20, y: 156, w: 196, h: 128 },
+  db: { x: 280, y: 145, w: 210, h: 151 },
+  index: { x: 570, y: 30, w: 360, h: 173 },
   table: { x: 570, y: 250, w: 360, h: 160 },
 };
 

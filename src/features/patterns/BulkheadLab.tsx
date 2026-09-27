@@ -97,13 +97,13 @@ const createState = (): SimState => ({
 const jitter = (ms: number) => ms * (1 - JITTER + Math.random() * 2 * JITTER);
 
 const LAYOUT: Layout = {
-  users: { x: 16, y: 140, w: 120, h: 80 },
-  api: { x: 186, y: 120, w: 170, h: 120 },
-  pool: { x: 420, y: 70, w: 256, h: 220 },
-  poolPay: { x: 420, y: 12, w: 256, h: 160 },
-  poolRecs: { x: 420, y: 192, w: 256, h: 160 },
-  pay: { x: 740, y: 30, w: 204, h: 120 },
-  recs: { x: 740, y: 212, w: 204, h: 120 },
+  users: { x: 16, y: 147, w: 120, h: 80 },
+  api: { x: 186, y: 127, w: 184, h: 120 },
+  pool: { x: 420, y: 77, w: 256, h: 220 },
+  poolPay: { x: 420, y: 10, w: 256, h: 170 },
+  poolRecs: { x: 420, y: 194, w: 256, h: 170 },
+  pay: { x: 740, y: 35, w: 204, h: 120 },
+  recs: { x: 740, y: 219, w: 204, h: 120 },
 };
 
 /** One square per thread: who holds it, or free. Shape-free, so a stat row always states the numbers too. */
@@ -526,7 +526,7 @@ export function BulkheadLab() {
         </>
       }
     >
-      <DiagramCanvas layout={layout} edges={edges} particles={particleViews} height={364} className="bg-canvas">
+      <DiagramCanvas layout={layout} edges={edges} particles={particleViews} height={376} className="bg-canvas">
         <ArchNode kind="client" title="Users" subtitle={`${checkoutRate + recsRate} req/s`} placed={LAYOUT.users} compact />
         <ArchNode kind="server" title="API" subtitle={`one process, ${TOTAL_THREADS} threads`} placed={LAYOUT.api} compact>
           <NodeStatRow label="Checkout" value={`${checkoutRate}/s`} />

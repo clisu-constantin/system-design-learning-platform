@@ -72,12 +72,12 @@ const SHOWN = 4;
 const CLIENT_IDS = Array.from({ length: SHOWN }, (_, index) => `c${index}`);
 
 const LAYOUT: Layout = {
-  c0: { x: 30, y: 20, w: 220, h: 90 },
-  c1: { x: 30, y: 135, w: 220, h: 90 },
-  c2: { x: 30, y: 250, w: 220, h: 90 },
-  c3: { x: 30, y: 365, w: 220, h: 90 },
-  server: { x: 380, y: 110, w: 260, h: 250 },
-  source: { x: 740, y: 190, w: 190, h: 90 },
+  c0: { x: 30, y: 16, w: 220, h: 116 },
+  c1: { x: 30, y: 144, w: 220, h: 116 },
+  c2: { x: 30, y: 272, w: 220, h: 116 },
+  c3: { x: 30, y: 400, w: 220, h: 116 },
+  server: { x: 380, y: 130, w: 260, h: 250 },
+  source: { x: 740, y: 210, w: 190, h: 90 },
 };
 
 /**
@@ -617,7 +617,7 @@ export function RealtimeLab({ focus }: LabProps<'realtime'>) {
         </>
       }
     >
-      <DiagramCanvas layout={LAYOUT} edges={edges} particles={particleViews} height={470} className="bg-canvas">
+      <DiagramCanvas layout={LAYOUT} edges={edges} particles={particleViews} height={530} className="bg-canvas">
         {state.clients.map((client, index) => (
           <ArchNode
             key={CLIENT_IDS[index]}

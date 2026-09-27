@@ -74,13 +74,13 @@ const EDGES: { id: EdgeId; name: string; originKm: number; purgeDelayMs: number 
 ];
 
 const LAYOUT: Layout = {
-  origin: { x: 380, y: 12, w: 200, h: 126 },
-  'eu-edge': { x: 60, y: 186, w: 190, h: 140 },
-  'us-edge': { x: 385, y: 186, w: 190, h: 140 },
-  'ap-edge': { x: 710, y: 186, w: 190, h: 140 },
-  'eu-users': { x: 75, y: 396, w: 160, h: 86 },
-  'us-users': { x: 400, y: 396, w: 160, h: 86 },
-  'ap-users': { x: 725, y: 396, w: 160, h: 86 },
+  origin: { x: 380, y: 12, w: 200, h: 151 },
+  'eu-edge': { x: 60, y: 211, w: 190, h: 173 },
+  'us-edge': { x: 385, y: 211, w: 190, h: 173 },
+  'ap-edge': { x: 710, y: 211, w: 190, h: 173 },
+  'eu-users': { x: 75, y: 440, w: 160, h: 94 },
+  'us-users': { x: 400, y: 440, w: 160, h: 94 },
+  'ap-users': { x: 725, y: 440, w: 160, h: 94 },
 };
 
 /** Requests animated per second, independent of how much traffic is counted. */
@@ -603,7 +603,7 @@ export function CdnLab({ focus }: LabProps<'cdn'>) {
         </>
       }
     >
-      <DiagramCanvas layout={LAYOUT} edges={edges} particles={particleViews} height={500} className="bg-canvas">
+      <DiagramCanvas layout={LAYOUT} edges={edges} particles={particleViews} height={548} className="bg-canvas">
         <ArchNode kind="server" title="Origin Server" subtitle="us-east" placed={LAYOUT.origin}>
           <NodeStatRow label="Incoming" value={`${formatNumber(originQps)}/s`} />
           <NodeStatRow label="Offloaded" value={formatPercent(offload)} tone={offload > 0.8 ? 'text-ok' : 'text-warn'} />

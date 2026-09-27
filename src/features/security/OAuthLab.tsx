@@ -583,11 +583,11 @@ function buildRun(setup: Setup): Run {
 
 // Design space 960 x 470. Every wire runs through a gap between cards.
 const LAYOUT: Layout = {
-  user: { x: 30, y: 170, w: 190, h: 118 },
-  auth: { x: 370, y: 20, w: 230, h: 118 },
-  app: { x: 720, y: 170, w: 210, h: 118 },
-  attacker: { x: 370, y: 330, w: 210, h: 118 },
-  res: { x: 720, y: 330, w: 210, h: 118 },
+  user: { x: 30, y: 165, w: 190, h: 128 },
+  auth: { x: 370, y: 15, w: 230, h: 128 },
+  app: { x: 720, y: 165, w: 210, h: 128 },
+  attacker: { x: 370, y: 325, w: 210, h: 128 },
+  res: { x: 720, y: 325, w: 210, h: 128 },
 };
 
 const pairKey = (a: Party, b: Party) => [a, b].sort().join('|');

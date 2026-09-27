@@ -358,12 +358,12 @@ const createState = (): SimState => ({
 // The three identity sources sit under the gateway, so each wire leaves its bottom edge.
 const LAYOUT: Layout = {
   client: { x: 20, y: 130, w: 190, h: 110 },
-  gateway: { x: 270, y: 105, w: 220, h: 160 },
+  gateway: { x: 270, y: 99, w: 220, h: 173 },
   service: { x: 550, y: 105, w: 220, h: 160 },
-  db: { x: 810, y: 130, w: 140, h: 110 },
-  sessions: { x: 80, y: 360, w: 190, h: 110 },
-  keys: { x: 285, y: 360, w: 190, h: 110 },
-  issuer: { x: 490, y: 360, w: 190, h: 110 },
+  db: { x: 805, y: 121, w: 145, h: 128 },
+  sessions: { x: 70, y: 345, w: 195, h: 128 },
+  keys: { x: 280, y: 345, w: 195, h: 128 },
+  issuer: { x: 490, y: 345, w: 195, h: 128 },
 };
 
 export function AuthLab({ focus }: LabProps<'auth'>) {

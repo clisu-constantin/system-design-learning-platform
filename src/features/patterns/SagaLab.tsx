@@ -421,11 +421,11 @@ const CANVAS_H = 450;
 const LAYOUT: Layout = {
   client: { x: 20, y: 185, w: 130, h: 74 },
   order: { x: 190, y: 160, w: 220, h: 122 },
-  bus: { x: 460, y: 178, w: 170, h: 90 },
+  bus: { x: 460, y: 176, w: 172, h: 94 },
   inventory: { x: 690, y: 20, w: 250, h: 122 },
   payment: { x: 690, y: 170, w: 250, h: 122 },
-  shipping: { x: 690, y: 330, w: 250, h: 90 },
-  review: { x: 210, y: 340, w: 180, h: 90 },
+  shipping: { x: 690, y: 330, w: 250, h: 94 },
+  review: { x: 210, y: 340, w: 180, h: 94 },
 };
 
 const STEP_TONE: Record<StepState, string> = {

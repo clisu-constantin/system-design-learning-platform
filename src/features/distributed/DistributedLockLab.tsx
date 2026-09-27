@@ -158,13 +158,13 @@ const OUTCOME: Record<MessageKind, RequestOutcome> = {
  */
 const CANVAS_H = 540;
 const WORKER_W = 230;
-const WORKER_H = 150;
+const WORKER_H = 152;
 const WORKER_Y: Record<WorkerCount, number[]> = { 2: [80, 310], 3: [20, 195, 370] };
 
 const buildLayout = (count: WorkerCount): Layout => {
   const layout: Layout = {
-    lock: { x: 20, y: 205, w: 220, h: 130 },
-    store: { x: 720, y: 205, w: 220, h: 130 },
+    lock: { x: 20, y: 195, w: 220, h: 152 },
+    store: { x: 715, y: 195, w: 230, h: 152 },
   };
   WORKER_Y[count].forEach((y, index) => {
     layout[ALL_WORKERS[index]] = { x: 365, y, w: WORKER_W, h: WORKER_H };

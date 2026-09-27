@@ -57,7 +57,7 @@ const PRICE = 20;
 
 const LAYOUT: Layout = {
   client: { x: 30, y: 165, w: 210, h: 124 },
-  api: { x: 345, y: 160, w: 230, h: 134 },
+  api: { x: 345, y: 157, w: 230, h: 140 },
   keys: { x: 690, y: 55, w: 240, h: 124 },
   charges: { x: 690, y: 270, w: 240, h: 124 },
 };

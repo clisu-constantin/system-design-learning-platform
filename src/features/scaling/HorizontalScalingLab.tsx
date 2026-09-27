@@ -158,12 +158,12 @@ export function HorizontalScalingLab() {
   const width = clamp((940 - (servers - 1) * 12) / servers, 106, 180);
   const xs = spread(servers, 480, width, 12);
   const layout: Layout = {
-    users: { x: 390, y: 16, w: 180, h: 60 },
-    lb: { x: 380, y: 130, w: 200, h: 88 },
-    db: { x: 370, y: 500, w: 220, h: 112 },
+    users: { x: 390, y: 16, w: 180, h: 73 },
+    lb: { x: 380, y: 120, w: 200, h: 128 },
+    db: { x: 370, y: 470, w: 220, h: 136 },
   };
   for (let index = 0; index < servers; index += 1) {
-    layout[`s${index}`] = { x: xs[index], y: 290, w: width, h: 152 };
+    layout[`s${index}`] = { x: xs[index], y: 280, w: width, h: 154 };
   }
 
   // Every server is wired to the load balancer and to the database - replicas are interchangeable.

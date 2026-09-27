@@ -70,10 +70,10 @@ const RECEIVER_NAME: Record<Payload, string> = { voice: 'Voice player', file: 'F
 /* Layout: four lanes, each a client, a wire into the one shared Network, a wire out of it and a
    server. The wires end at small ports on the Network card edges (not at its centre), so each lane
    keeps its own straight wire and a dropped packet stops on its own lane. */
-const NODE = { w: 220, h: 110 };
+const NODE = { w: 220, h: 145 };
 const NET = { x: 370, w: 220 };
-const LANE_Y: Record<LaneId, number> = { 'voice-tcp': 16, 'voice-udp': 138, 'file-tcp': 282, 'file-udp': 404 };
-const HEIGHT = 530;
+const LANE_Y: Record<LaneId, number> = { 'voice-tcp': 16, 'voice-udp': 173, 'file-tcp': 352, 'file-udp': 509 };
+const HEIGHT = 670;
 
 const LAYOUT: Layout = {
   network: { x: NET.x, y: 16, w: NET.w, h: LANE_Y['file-udp'] + NODE.h - 16 },
