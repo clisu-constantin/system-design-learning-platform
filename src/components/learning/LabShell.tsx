@@ -82,8 +82,9 @@ export function LabShell({
             <ErrorBoundary area={title}>{children}</ErrorBoundary>
             {legend ? <div className="border-t border-line px-4 py-2.5">{legend}</div> : null}
           </div>
-          {metrics}
+          {/* What to notice reads the stage, so it sits right under it, before the numbers. */}
           {insight}
+          {metrics}
           {footer}
         </div>
 
@@ -92,7 +93,7 @@ export function LabShell({
             <p className="label mb-3">Controls</p>
             <div className="space-y-4">{controls}</div>
           </div>
-          {events ? <EventLog events={events} /> : null}
+          {events ? <EventLog events={events} running={running} /> : null}
         </div>
       </div>
     </section>
@@ -121,13 +122,26 @@ const TONE_CLASS = {
 };
 
 /** Timestamped feed of what the simulation just did. */
-export function EventLog({ events, title = 'Event log' }: { events: SimEvent[]; title?: string }) {
+export function EventLog({
+  events,
+  title = 'Event log',
+  running,
+}: {
+  events: SimEvent[];
+  title?: string;
+  /** Whether the simulation is running, so the empty log never asks to start one that already runs. */
+  running?: boolean;
+}) {
   return (
     <div className="card flex max-h-72 flex-col p-4">
       <p className="label mb-2">{title}</p>
       <div className="min-h-0 flex-1 space-y-1 overflow-y-auto font-mono text-[11px] leading-relaxed">
         {events.length === 0 ? (
-          <p className="text-faint">No events yet. Start the simulation.</p>
+          <p className="text-faint">
+            {running
+              ? 'Nothing has happened yet. Events show up here as the simulation runs.'
+              : 'No events yet. Press Run simulation to start.'}
+          </p>
         ) : (
           events.map((event) => (
             <p key={event.id} className={cn('flex gap-2', TONE_CLASS[event.tone])}>

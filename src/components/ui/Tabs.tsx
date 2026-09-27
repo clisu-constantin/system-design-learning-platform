@@ -4,6 +4,8 @@ import { cn } from '@/utils/cn';
 export interface TabItem {
   id: string;
   label: string;
+  /** Shown instead of `label` on a phone, so every tab of the row fits without scrolling. */
+  shortLabel?: string;
   icon?: ReactNode;
   content: ReactNode;
 }
@@ -99,8 +101,16 @@ export function Tabs({ items, value, onChange, className }: TabsProps) {
                 selected ? 'text-brand' : 'text-muted hover:text-ink',
               )}
             >
-              {item.icon}
-              {item.label}
+              {/* The icons go on a phone: the words alone keep the whole row in view. */}
+              {item.icon ? <span className="hidden sm:contents">{item.icon}</span> : null}
+              {item.shortLabel ? (
+                <>
+                  <span className="sm:hidden">{item.shortLabel}</span>
+                  <span className="hidden sm:inline">{item.label}</span>
+                </>
+              ) : (
+                item.label
+              )}
             </button>
           );
         })}

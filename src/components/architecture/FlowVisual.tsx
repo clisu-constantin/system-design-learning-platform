@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState, type ReactNode } from 'react';
+import { useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from 'react';
 import { Pause, Play } from 'lucide-react';
 import { cn } from '@/utils/cn';
 import type { NodeKind, NodeStatus, RequestOutcome } from '@/types';
@@ -325,6 +325,18 @@ export function FlowVisual({
     autoplay.setPlaying(!autoplay.reducedMotion);
   };
 
+  // Left and right walk the chips like one control: Live, then each step in order.
+  const onChipKey = (event: KeyboardEvent<HTMLDivElement>) => {
+    if (event.key !== 'ArrowRight' && event.key !== 'ArrowLeft') return;
+    event.preventDefault();
+    const current = stepIndex ?? -1;
+    const next = Math.max(-1, Math.min(steps.length - 1, current + (event.key === 'ArrowRight' ? 1 : -1)));
+    if (next === current) return;
+    if (next === -1) showLive();
+    else showStep(next);
+    event.currentTarget.querySelectorAll('button')[next + 1]?.focus();
+  };
+
   const width = spec.width ?? 760;
   const height = spec.height ?? 320;
 
@@ -335,7 +347,8 @@ export function FlowVisual({
         // (on a short edge it lands on a node), and not floated over the canvas
         // (it covered whichever node sat top-left). The strip is always there, so
         // switching between Live and a step never shifts the Diagram.
-        <div className="flex items-center gap-2 border-b border-line px-4 py-2 text-[11px] font-medium">
+        // A live region, so a screen reader hears the step caption, not only "pressed".
+        <div aria-live="polite" className="flex items-center gap-2 border-b border-line px-4 py-2 text-xs font-medium">
           {active && stepIndex !== null ? (
             <>
               <span className="font-mono text-faint">
@@ -355,7 +368,7 @@ export function FlowVisual({
               />
             </>
           ) : (
-            <span className="text-muted">Live traffic - pick a step to follow one request</span>
+            <span className="text-muted">Live traffic. Pick a numbered step below to follow one request.</span>
           )}
         </div>
       ) : null}
@@ -375,7 +388,12 @@ export function FlowVisual({
       {/* The controls sit under the canvas, not over it, so they can never cover a node. */}
       <div className="space-y-2 border-t border-line px-4 py-2">
         {steps.length > 0 ? (
-          <div role="group" aria-label="Walkthrough" className="flex flex-wrap items-center gap-1.5">
+          <div
+            role="group"
+            aria-label="Walkthrough steps (left and right arrows move between them)"
+            onKeyDown={onChipKey}
+            className="flex flex-wrap items-center gap-1.5"
+          >
             <WalkthroughChip selected={stepIndex === null} onClick={showLive}>
               Live
             </WalkthroughChip>
@@ -392,7 +410,10 @@ export function FlowVisual({
           </div>
         ) : null}
         <div className="flex items-center gap-3">
-          {spec.caption ? <figcaption className="min-w-0 flex-1 text-xs text-muted">{spec.caption}</figcaption> : null}
+          {/* 12px text wraps before 80 characters instead of running across a wide card. */}
+          {spec.caption ? (
+            <figcaption className="min-w-0 max-w-[31rem] flex-1 text-xs text-muted">{spec.caption}</figcaption>
+          ) : null}
           <PlayPauseButton
             playing={autoplay.playing}
             onToggle={() => autoplay.setPlaying((value) => !value)}
