@@ -34,7 +34,9 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button
       ref={ref}
       type={type}
       className={cn(
-        'inline-flex select-none items-center rounded-xl font-medium transition-colors duration-150',
+        'inline-flex select-none items-center rounded-xl font-medium transition-[color,background-color,border-color,transform] duration-150',
+        // A press sinks the button a little: the click was felt before anything else changes.
+        'active:scale-[0.97] disabled:active:scale-100',
         'disabled:cursor-not-allowed disabled:opacity-45',
         variants[variant],
         sizes[size],

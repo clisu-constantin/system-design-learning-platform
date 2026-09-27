@@ -1,4 +1,4 @@
-import { useRef, useState, type ReactNode } from 'react';
+import { useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 import { cn } from '@/utils/cn';
 
 export interface TabItem {
@@ -40,14 +40,46 @@ export function Tabs({ items, value, onChange, className }: TabsProps) {
 
   const current = items.find((item) => item.id === active) ?? items[0];
 
+  // The underline is one bar that slides to the selected tab, so the eye follows the
+  // move from the old tab to the new one. It is placed from the DOM (tab widths
+  // depend on the font), and animates only after its first placement.
+  const barRef = useRef<HTMLSpanElement>(null);
+  useLayoutEffect(() => {
+    const list = listRef.current;
+    const bar = barRef.current;
+    if (!list || !bar) return;
+    const place = () => {
+      const tab = list.querySelector<HTMLElement>('[role="tab"][aria-selected="true"]');
+      if (!tab) {
+        bar.style.opacity = '0';
+        return;
+      }
+      bar.style.opacity = '1';
+      bar.style.transform = `translateX(${tab.offsetLeft + 8}px) scaleX(${Math.max(0, tab.offsetWidth - 16)})`;
+    };
+    place();
+    const frame = requestAnimationFrame(() => bar.setAttribute('data-ready', ''));
+    const observer = new ResizeObserver(place);
+    observer.observe(list);
+    return () => {
+      cancelAnimationFrame(frame);
+      observer.disconnect();
+    };
+  }, [active, items.length]);
+
   return (
     <div className={className}>
       <div
         ref={listRef}
         role="tablist"
         onKeyDown={onKeyDown}
-        className="flex gap-1 overflow-x-auto border-b border-line"
+        className="relative flex gap-1 overflow-x-auto border-b border-line"
       >
+        <span
+          ref={barRef}
+          className="tab-bar pointer-events-none absolute bottom-0 left-0 h-0.5 rounded-full bg-brand opacity-0"
+          aria-hidden
+        />
         {items.map((item) => {
           const selected = item.id === active;
           return (
@@ -59,15 +91,12 @@ export function Tabs({ items, value, onChange, className }: TabsProps) {
               tabIndex={selected ? 0 : -1}
               onClick={() => select(item.id)}
               className={cn(
-                'relative flex shrink-0 items-center gap-1.5 whitespace-nowrap px-3.5 py-2.5 text-sm font-medium transition-colors',
+                'flex shrink-0 items-center gap-1.5 whitespace-nowrap px-3.5 py-2.5 text-sm font-medium transition-colors',
                 selected ? 'text-brand' : 'text-muted hover:text-ink',
               )}
             >
               {item.icon}
               {item.label}
-              {selected ? (
-                <span className="absolute inset-x-2 -bottom-px h-0.5 rounded-full bg-brand" aria-hidden />
-              ) : null}
             </button>
           );
         })}

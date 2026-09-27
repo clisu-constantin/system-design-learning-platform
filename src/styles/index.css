@@ -149,6 +149,78 @@
     }
   }
 
+  /* Motion explains a change; nothing here loops. One ease for arrivals, so every part
+     of the app settles the same way. */
+  :root {
+    --ease-arrive: cubic-bezier(0.16, 1, 0.3, 1); /* ease-out-expo: fast start, soft stop */
+  }
+
+  /* A metric crossed into another status (ok, warn, danger): its card rings once in the
+     new status color, so the Learner sees which number the control just moved. The
+     color comes from the text-<tone> class on the same element. */
+  .stat-flash {
+    opacity: 0;
+    box-shadow: inset 0 0 0 1.5px currentColor;
+    background-color: color-mix(in srgb, currentColor 12%, transparent);
+    animation: stat-flash 900ms var(--ease-arrive);
+  }
+  @keyframes stat-flash {
+    from {
+      opacity: 1;
+    }
+  }
+
+  /* A Walkthrough caption comes in from the side the story moves to. */
+  .step-in-next {
+    animation: step-in 260ms var(--ease-arrive) backwards;
+    --step-from: 10px;
+  }
+  .step-in-prev {
+    animation: step-in 260ms var(--ease-arrive) backwards;
+    --step-from: -10px;
+  }
+  @keyframes step-in {
+    from {
+      opacity: 0;
+      transform: translateX(var(--step-from));
+    }
+  }
+
+  /* The Quiz score counts up one right answer at a time towards the pass mark. */
+  .tally-in {
+    transform-origin: bottom;
+    animation: tally-in 320ms var(--ease-arrive) backwards;
+    animation-delay: calc(var(--i, 0) * 45ms);
+  }
+  @keyframes tally-in {
+    from {
+      opacity: 0;
+      transform: scaleY(0.2);
+    }
+  }
+  .tally-after {
+    animation: fade-up 280ms var(--ease-arrive) backwards;
+    animation-delay: calc(var(--i, 0) * 45ms + 120ms);
+  }
+  @keyframes fade-up {
+    from {
+      opacity: 0;
+      transform: translateY(4px);
+    }
+  }
+
+  /* The selected-tab underline slides from the old tab to the new one. It is a 1px bar
+     scaled to the tab width, so the slide is a transform and never a layout. */
+  .tab-bar {
+    width: 1px;
+    transform-origin: left;
+  }
+  .tab-bar[data-ready] {
+    transition:
+      transform 280ms var(--ease-arrive),
+      opacity 150ms ease-out;
+  }
+
   .card {
     @apply rounded-2xl border border-line bg-surface shadow-card;
   }
@@ -255,9 +327,10 @@
 }
 /* --------------------------- end Playground ------------------------------- */
 
-/* The OS "reduce motion" setting: CSS animations and transitions (dash, pulse,
-   fade-in, hover transitions) finish immediately. Self-running diagrams start
-   paused on their own, see useAutoplay in FlowVisual. */
+/* The OS "reduce motion" setting: nothing moves. Animations and transitions (dash,
+   pulse, slides, the node glide) finish immediately, and self-running diagrams start
+   paused on their own (useAutoplay in FlowVisual). A change that means something still
+   shows, as a short fade or color change with no movement: a class selector out-ranks `*`. */
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,
@@ -266,5 +339,25 @@
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
     scroll-behavior: auto !important;
+  }
+  .animate-fade-in,
+  .arch-node,
+  .step-in-next,
+  .step-in-prev,
+  .tally-in,
+  .tally-after {
+    animation-name: fade-only !important;
+    animation-duration: 180ms !important;
+  }
+  .stat-flash {
+    animation-duration: 900ms !important;
+  }
+  .transition-colors {
+    transition-duration: 150ms !important;
+  }
+}
+@keyframes fade-only {
+  from {
+    opacity: 0;
   }
 }

@@ -247,7 +247,7 @@ export function FlowVisual({
   useTicker(autoplay.running, (dt) => {
     if (stepIndex !== null) {
       progress.current += dt * 0.85;
-      if (progress.current >= 1.25) {
+      if (progress.current >= STEP_HOLD) {
         progress.current = 0;
         setStepIndex((value) => ((value ?? 0) + 1) % steps.length);
       }
@@ -276,6 +276,20 @@ export function FlowVisual({
     particles.current = alive.slice(-60);
     rerender();
   });
+
+  // Which way the story moved, so the caption comes in from that side. Kept in a
+  // ref next to the step it belongs to, so a second render of the same step
+  // does not turn it round. Looping from the last step to the first is forward.
+  const turn = useRef<{ index: number | null; dir: 'next' | 'prev' }>({ index: null, dir: 'next' });
+  if (turn.current.index !== stepIndex) {
+    const previous = turn.current.index;
+    const forward =
+      previous === null ||
+      stepIndex === null ||
+      stepIndex > previous ||
+      (previous === steps.length - 1 && stepIndex === 0);
+    turn.current = { index: stepIndex, dir: forward ? 'next' : 'prev' };
+  }
 
   const stepT = Math.min(1, progress.current);
   const particleViews: ParticleView[] = active
@@ -327,7 +341,18 @@ export function FlowVisual({
               <span className="font-mono text-faint">
                 {stepIndex + 1}/{steps.length}
               </span>
-              <span className="text-brand">{active.label}</span>
+              <span
+                key={stepIndex}
+                className={cn('min-w-0 text-brand', turn.current.dir === 'next' ? 'step-in-next' : 'step-in-prev')}
+              >
+                {active.label}
+              </span>
+              <StepProgress
+                count={steps.length}
+                index={stepIndex}
+                // Playing, the current step fills up until the next one starts. Parked, it is full.
+                fill={autoplay.playing ? Math.min(1, progress.current / STEP_HOLD) : 1}
+              />
             </>
           ) : (
             <span className="text-muted">Live traffic - pick a step to follow one request</span>
@@ -375,6 +400,29 @@ export function FlowVisual({
         </div>
       </div>
     </figure>
+  );
+}
+
+/** How long one Walkthrough step lasts in play, in units of one hop (the request travels 0 to 1, then waits). */
+const STEP_HOLD = 1.25;
+
+/**
+ * One short bar per Walkthrough step: the steps already walked are full, the
+ * current one fills while it plays, so the Learner sees how long the story is,
+ * where they are in it and when the next step comes.
+ */
+function StepProgress({ count, index, fill }: { count: number; index: number; fill: number }) {
+  return (
+    <span className="ml-auto flex shrink-0 items-center gap-1" aria-hidden>
+      {Array.from({ length: count }, (_, position) => (
+        <span key={position} className="h-1 w-2.5 overflow-hidden rounded-full bg-line sm:w-4">
+          <span
+            className="block h-full w-full origin-left rounded-full bg-brand"
+            style={{ transform: `scaleX(${position < index ? 1 : position === index ? fill : 0})` }}
+          />
+        </span>
+      ))}
+    </span>
   );
 }
 

@@ -1,9 +1,10 @@
-import { useState } from 'react';
+import { useState, type CSSProperties } from 'react';
 import { Check, RotateCcw, X } from 'lucide-react';
 import { cn } from '@/utils/cn';
 import type { QuizQuestion } from '@/types';
 import { Button } from '@/components/ui';
 import { useProgress } from '@/app/providers/ProgressProvider';
+import { passMark } from '@/app/providers/progressState';
 
 interface QuizCardProps {
   questions: QuizQuestion[];
@@ -99,9 +100,7 @@ export function QuizCard({ questions, slug }: QuizCardProps) {
       <div className="flex flex-wrap items-center gap-3">
         {submitted ? (
           <>
-            <span className="text-sm font-medium text-ink">
-              {correctCount} / {questions.length} correct
-            </span>
+            <QuizScore correct={correctCount} total={questions.length} />
             <Button onClick={reset}>
               <RotateCcw className="h-4 w-4" />
               Try again
@@ -123,6 +122,44 @@ export function QuizCard({ questions, slug }: QuizCardProps) {
           </span>
         ) : null}
       </div>
+    </div>
+  );
+}
+
+/**
+ * The score as a row of bars, one per question, filled one right answer at a
+ * time up to the pass mark. Passing is what makes the Concept Done, so the row
+ * shows where that line is, and the sentence under it says which side the
+ * Learner landed on (never color alone).
+ */
+function QuizScore({ correct, total }: { correct: number; total: number }) {
+  const need = passMark(total);
+  const passed = correct >= need;
+  return (
+    <div className="min-w-0 space-y-1.5" role="status">
+      <div className="flex items-end gap-1" aria-hidden>
+        {Array.from({ length: total }, (_, index) => (
+          <span key={index} className="flex items-end gap-1">
+            <span
+              className={cn(
+                'block h-3 w-2.5 rounded-sm sm:w-3',
+                index < correct ? (passed ? 'bg-ok' : 'bg-warn') : 'bg-line',
+                index < correct && 'tally-in',
+              )}
+              style={index < correct ? { '--i': index } as CSSProperties : undefined}
+            />
+            {index === need - 1 && need < total ? <span className="block h-5 w-px bg-ink/40" /> : null}
+          </span>
+        ))}
+      </div>
+      <p className="tally-after text-sm text-ink" style={{ '--i': correct } as CSSProperties}>
+        <span className="font-medium">
+          {correct} / {total} correct.
+        </span>{' '}
+        <span className="text-muted">
+          {passed ? 'Passed - this Concept is Done.' : `${need} right answers pass and make it Done.`}
+        </span>
+      </p>
     </div>
   );
 }
