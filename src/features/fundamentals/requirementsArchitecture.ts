@@ -201,7 +201,6 @@ type Needs =
   | 'db'
   | 'reads'
   | 'cache'
-  | 'cdn'
   | 'replicas'
   | 'copies'
   | 'one-copy'
@@ -246,12 +245,11 @@ export const NFRS: NfrSpec[] = [
     // No 200 ms step: at these loads it is met by the same App server and Database as 500 ms,
     // so it drew nothing.
     values: ['500 ms', '100 ms', '20 ms'],
+    // No CDN line: the CDN is drawn by the features that send files, at every latency level, so
+    // naming it here would credit this target with a part it does not add.
     implications: [
       [{ text: 'Each read is one query to the database', needs: 'reads' }],
-      [
-        { text: 'Caching layer for hot reads', needs: 'cache' },
-        { text: 'CDN for images and static files', needs: 'cdn' },
-      ],
+      [{ text: 'Caching layer for hot reads', needs: 'cache' }],
       [{ text: 'Hot data held in memory: the cache answers 99% of reads (model)', needs: 'cache' }],
     ],
   },
@@ -705,9 +703,8 @@ export function architecture(setup: Setup): Architecture {
   if (nfr.availability >= 3) add('region2', availability);
   if (nfr.users >= 3) add('region2', users);
 
-  // A tight latency target serves files from the edge too - but only when a feature sends files,
-  // and only while some feature reads: with no read the latency target is off (`targetApplies`).
-  if (nfr.latency >= 1 && parts.cdn && flows.includes('read')) add('cdn', latency);
+  // The latency target does not name the CDN as a reason: the features that send files draw it at
+  // every latency level, so the target neither adds nor changes it.
   if (nfr.users >= 2) {
     // Anything slow (emails, notifications, exports) leaves the request path.
     flows.push('job');
@@ -876,8 +873,6 @@ function isDrawn(needs: Needs, arch: Architecture) {
       return db && arch.flows.includes('read');
     case 'cache':
       return Boolean(arch.parts.cache);
-    case 'cdn':
-      return Boolean(arch.parts.cdn);
     case 'replicas':
       return db && arch.sizing.database.readReplicas > 0;
     case 'copies':

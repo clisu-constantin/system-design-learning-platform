@@ -613,6 +613,42 @@ test('the target levels that drew nothing are gone', () => {
   assert.deepEqual(values('durability'), ['Normal', 'Critical']);
 });
 
+test('a line a latency level adds names only a part that level adds or changes', () => {
+  // The parts a latency line can name, and the words it names them by.
+  const named: [RegExp, PartId][] = [
+    [/\bCDN\b/, 'cdn'],
+    [/cach/i, 'cache'],
+  ];
+  const partOf = (s: Setup, id: PartId) => {
+    const part = architecture(s).parts[id];
+    return JSON.stringify(part ? [part.title, part.stat, part.status] : null);
+  };
+  let checked = 0;
+  for (const product of PRODUCTS) {
+    for (const ids of featureSets(product)) {
+      for (const [name, nfr] of BASELINES) {
+        for (let level = 1; level < 3; level += 1) {
+          const before = setup(product, ids, { ...nfr, latency: level - 1 });
+          const after = setup(product, ids, { ...nfr, latency: level });
+          const had = new Set(implicationsFor(before, architecture(before)));
+          for (const line of implicationsFor(after, architecture(after)).filter((entry) => !had.has(entry))) {
+            for (const [pattern, id] of named) {
+              if (!pattern.test(line)) continue;
+              checked += 1;
+              assert.notEqual(partOf(after, id), partOf(before, id), `"${line}" at ${product} [${ids.join(', ')}] ${name}, latency ${level}`);
+            }
+          }
+        }
+      }
+    }
+  }
+  assert.ok(checked > 10);
+  // The CDN is drawn by the features that send files; 100 ms does not add it, so no line credits it.
+  const images = setup('whatsapp', ['send', 'images'], { latency: 1 });
+  assert.ok(architecture(images).parts.cdn);
+  assert.ok(!implicationsFor(images, architecture(images)).some((line) => /\bCDN\b/.test(line)));
+});
+
 test('receipts push each message back to the sender over the WebSocket tier', () => {
   const without = architecture(setup('whatsapp', ['send', 'receive', 'groups']));
   const withReceipts = architecture(setup('whatsapp', ['send', 'receive', 'groups', 'receipts']));
