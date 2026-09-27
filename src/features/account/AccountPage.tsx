@@ -63,12 +63,14 @@ function SignedIn({ onDeleted }: { onDeleted: (firebaseUserDeleted: boolean) => 
         <p className="mt-1 text-xs text-muted">Saved to your Account and synced to every device you sign in on.</p>
         <Link
           to="/progress"
-          className="mt-3 flex items-center gap-4 rounded-xl border border-line bg-surface px-4 py-3 transition-colors hover:border-brand/50"
+          className="mt-3 flex items-center gap-3 rounded-xl border border-line bg-surface px-4 py-3 transition-colors hover:border-brand/50 sm:gap-4"
         >
           <span className="shrink-0 text-sm text-ink">Progress</span>
-          <Meter value={overall.percent / 100} showValue={false} className="flex-1" />
-          <span className="shrink-0 font-mono text-xs text-muted">
-            {overall.done}/{overall.total} done, {Object.keys(visited).length} opened
+          <Meter value={overall.percent / 100} showValue={false} className="min-w-0 flex-1" />
+          <span className="shrink-0 whitespace-nowrap font-mono text-xs text-muted">
+            {overall.done}/{overall.total} done
+            {/* The opened count is extra; a phone keeps the row on one line without it. */}
+            <span className="hidden sm:inline">, {Object.keys(visited).length} opened</span>
           </span>
           <ArrowRight className="h-4 w-4 shrink-0 text-faint" />
         </Link>
@@ -135,7 +137,7 @@ function ConfirmEmail({ email }: { email: string | null }) {
         <div className="min-w-0">
           <h2 className="text-sm font-semibold text-ink">Confirm your email</h2>
           <p className="mt-1 text-xs text-muted">
-            We sent a link to {email ?? 'your email'} - look in your spam folder too. Your progress saves either way, but until you confirm it,
+            We sent a link to <span className="break-all">{email ?? 'your email'}</span> - look in your spam folder too. Your progress saves either way, but until you confirm it,
             signing in with Google for this email replaces your password.
           </p>
           <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-2">

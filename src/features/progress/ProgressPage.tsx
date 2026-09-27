@@ -78,17 +78,20 @@ export function ProgressPage() {
                   key={category.id}
                   to={`/categories/${category.id}`}
                   style={categoryStyle(category.id)}
-                  className="flex items-center gap-4 rounded-xl border border-line bg-surface px-4 py-3 transition-colors hover:border-brand/50"
+                  className="flex items-center gap-3 rounded-xl border border-line bg-surface px-3 py-3 transition-colors hover:border-brand/50 sm:gap-4 sm:px-4"
                 >
-                  <span className="flex w-44 shrink-0 items-center gap-2.5 text-sm text-ink">
+                  <span className="flex w-28 min-w-0 shrink-0 items-center gap-2.5 text-sm text-ink sm:w-44">
                     <CategoryIcon name={category.icon} className="h-4 w-4 shrink-0 text-cat" />
                     <span className="truncate">{category.title}</span>
                   </span>
-                  <Meter value={progress.percent / 100} showValue={false} className="flex-1" />
-                  <span className="w-20 shrink-0 text-right font-mono text-xs text-muted">
+                  <Meter value={progress.percent / 100} showValue={false} className="min-w-0 flex-1" />
+                  <span className="w-12 shrink-0 text-right font-mono text-xs tabular-nums text-muted sm:w-20">
                     {progress.done}/{progress.total}
                   </span>
-                  <span className="w-12 shrink-0 text-right font-mono text-xs text-ok">{progress.percent}%</span>
+                  {/* The done count says the same; a phone has no room for both. */}
+                  <span className="hidden w-12 shrink-0 text-right font-mono text-xs tabular-nums text-ok sm:inline">
+                    {progress.percent}%
+                  </span>
                 </Link>
               );
             })}

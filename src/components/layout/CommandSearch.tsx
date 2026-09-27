@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useId, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { BookMarked, FlaskConical, FolderTree, Route, Search as SearchIcon, X } from 'lucide-react';
 import { cn } from '@/utils/cn';
@@ -33,8 +33,12 @@ function SearchDialog({ onClose }: { onClose: () => void }) {
   const inputRef = useRef<HTMLInputElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
   const navigate = useNavigate();
+  const listId = useId();
+  const optionId = (index: number) => `${listId}-${index}`;
 
-  const results = useMemo(() => search(query), [query]);
+  // Spaces alone are not a query: keep the suggestions rather than "No matches".
+  const trimmed = query.trim();
+  const results = useMemo(() => search(trimmed), [trimmed]);
 
   // The list scrolls, so arrowing past its bottom edge must bring the highlight along.
   useEffect(() => {
@@ -66,6 +70,8 @@ function SearchDialog({ onClose }: { onClose: () => void }) {
       event.preventDefault();
       setActive((index) => Math.max(index - 1, 0));
     } else if (event.key === 'Enter' && event.target === inputRef.current) {
+      // The Enter that confirms a Chinese or Japanese composition is not "open the result".
+      if (event.nativeEvent.isComposing) return;
       // On a focused button, Enter keeps its native meaning (click that button).
       event.preventDefault();
       go(results[active]);
@@ -90,21 +96,38 @@ function SearchDialog({ onClose }: { onClose: () => void }) {
           onChange={(event) => changeQuery(event.target.value)}
           placeholder="Search concepts, labs, scenarios, glossary..."
           aria-label="Search query"
-          className="h-14 flex-1 bg-transparent text-sm text-ink outline-none placeholder:text-faint"
+          type="search"
+          role="combobox"
+          aria-expanded={results.length > 0}
+          aria-controls={listId}
+          aria-autocomplete="list"
+          aria-activedescendant={results[active] ? optionId(active) : undefined}
+          autoComplete="off"
+          autoCorrect="off"
+          autoCapitalize="none"
+          spellCheck={false}
+          enterKeyHint="go"
+          maxLength={120}
+          // 16px on a touch screen, so iOS does not zoom in when it takes focus.
+          className="h-14 min-w-0 flex-1 bg-transparent text-sm text-ink outline-none placeholder:text-faint coarse:text-base [&::-webkit-search-cancel-button]:hidden"
         />
         <button type="button" onClick={onClose} aria-label="Close search" className="text-faint hover:text-ink">
           <X className="h-4 w-4" />
         </button>
       </div>
 
+      <p aria-live="polite" className="sr-only">
+        {trimmed ? `${results.length} ${results.length === 1 ? 'result' : 'results'}` : ''}
+      </p>
+
       <div ref={listRef} className="max-h-[50vh] overflow-y-auto p-2">
-        {query && results.length === 0 ? (
-          <p className="px-3 py-8 text-center text-sm text-muted">
-            No matches for &ldquo;{query}&rdquo;. Try &ldquo;cache&rdquo;, &ldquo;shard&rdquo; or &ldquo;queue&rdquo;.
+        {trimmed && results.length === 0 ? (
+          <p className="break-words px-3 py-8 text-center text-sm text-muted">
+            No matches for &ldquo;{trimmed}&rdquo;. Try &ldquo;cache&rdquo;, &ldquo;shard&rdquo; or &ldquo;queue&rdquo;.
           </p>
         ) : null}
 
-        {!query ? (
+        {!trimmed ? (
           <div className="px-3 py-6 text-center text-sm text-muted">
             Try{' '}
             {['load balancer', 'caching', 'sharding', 'circuit breaker'].map((suggestion) => (
@@ -124,12 +147,16 @@ function SearchDialog({ onClose }: { onClose: () => void }) {
           </div>
         ) : null}
 
+        <div id={listId} role="listbox" aria-label="Search results" hidden={results.length === 0}>
         {results.map((result, index) => {
           const meta = KIND_META[result.kind];
           return (
             <button
               key={result.id}
+              id={optionId(index)}
               type="button"
+              role="option"
+              aria-selected={index === active}
               data-active={index === active}
               onMouseEnter={() => setActive(index)}
               onClick={() => go(result)}
@@ -147,6 +174,7 @@ function SearchDialog({ onClose }: { onClose: () => void }) {
             </button>
           );
         })}
+        </div>
       </div>
 
       <div className="flex items-center gap-4 border-t border-line px-4 py-2 text-[11px] text-faint">

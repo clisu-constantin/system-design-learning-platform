@@ -31,11 +31,14 @@ export function AppShell() {
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
+      // An open dialog (sign-in, delete, search itself) owns the keyboard: Search would open
+      // under it and take focus, so the Learner would type into a field they cannot see.
+      const dialogOpen = document.querySelector('[aria-modal="true"]') !== null;
       if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'k') {
         event.preventDefault();
-        setSearchOpen(true);
+        if (!dialogOpen) setSearchOpen(true);
       }
-      if (event.key === '/' && !isTyping(document.activeElement)) {
+      if (event.key === '/' && !dialogOpen && !isTyping(document.activeElement)) {
         event.preventDefault();
         setSearchOpen(true);
       }

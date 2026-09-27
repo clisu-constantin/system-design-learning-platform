@@ -15,6 +15,7 @@ import {
   PanelRightOpen,
   Play,
   Plus,
+  RotateCcw,
   Scale,
   Sparkles,
 } from 'lucide-react';
@@ -50,7 +51,7 @@ export function ConceptPage() {
   // The index answers "does it exist" and draws the header at once; the lesson
   // itself arrives with its category chunk.
   const summary = getConcept(slug);
-  const { concept, failed } = useFullConcept(summary);
+  const { concept, failed, retry } = useFullConcept(summary);
   const { markVisited } = useProgress();
 
   useEffect(() => {
@@ -79,11 +80,16 @@ export function ConceptPage() {
           <AlertTriangle className="mx-auto h-5 w-5 text-danger" aria-hidden />
           <p className="mt-2 text-sm text-ink">This lesson could not be loaded.</p>
           <p className="mt-1 text-xs text-muted">
-            Usually a new version was deployed while the page was open. Reloading fetches it.
+            Check your connection and try again. If it still fails, a new version was deployed while the page
+            was open, and reloading fetches it.
           </p>
-          <Button variant="primary" className="mt-4" onClick={() => window.location.reload()}>
-            Reload the page
-          </Button>
+          <div className="mt-4 flex flex-wrap justify-center gap-2">
+            <Button variant="primary" onClick={retry}>
+              <RotateCcw className="h-4 w-4" aria-hidden />
+              Try again
+            </Button>
+            <Button onClick={() => window.location.reload()}>Reload the page</Button>
+          </div>
         </div>
       ) : (
         <div className="flex h-64 items-center justify-center gap-2 text-sm text-muted">
@@ -100,10 +106,21 @@ export function ConceptPage() {
  * the first concept opened in it fetches it and the rest render immediately
  * from memory. Retries once for the same stale-deploy reason as useConceptDepth.
  */
-function useFullConcept(summary: ConceptSummary | undefined): { concept?: Concept; failed: boolean } {
+function useFullConcept(summary: ConceptSummary | undefined): {
+  concept?: Concept;
+  failed: boolean;
+  retry: () => void;
+} {
   const category = summary?.category;
   const slug = summary?.slug;
   const [state, setState] = useState<{ slug?: string; concept?: Concept; failed: boolean }>({ failed: false });
+  // Bumped by "Try again": the same slug loads again, with no page reload (which offline would
+  // replace the app with the browser's own error page).
+  const [attempt, setAttempt] = useState(0);
+  const retry = () => {
+    setState({ failed: false });
+    setAttempt((value) => value + 1);
+  };
   const cached = category && slug ? peekConcept(category, slug) : undefined;
 
   useEffect(() => {
@@ -123,11 +140,11 @@ function useFullConcept(summary: ConceptSummary | undefined): { concept?: Concep
     return () => {
       current = false;
     };
-  }, [category, slug]);
+  }, [category, slug, attempt]);
 
-  if (cached) return { concept: cached, failed: false };
+  if (cached) return { concept: cached, failed: false, retry };
   // Ignore a result that belongs to the previous slug.
-  return state.slug === slug ? state : { failed: false };
+  return state.slug === slug ? { ...state, retry } : { failed: false, retry };
 }
 
 /** Links the fold button and the reopen tab to the column they control. */
@@ -454,7 +471,7 @@ function TradeOffBoard({ concept }: { concept: Concept }) {
  * worked example with real numbers, then the words to use for it.
  */
 function Lesson({ concept, expanded, onToggle }: { concept: Concept; expanded: boolean; onToggle: () => void }) {
-  const { depth, failed } = useConceptDepth(concept);
+  const { depth, failed, retry } = useConceptDepth(concept);
 
   return (
     <div className="space-y-3">
@@ -466,9 +483,15 @@ function Lesson({ concept, expanded, onToggle }: { concept: Concept; expanded: b
         </div>
       ) : null}
       {failed ? (
-        <div className="flex gap-3 rounded-2xl border border-warn/30 bg-warn/5 p-5 text-sm text-muted">
+        <div className="flex flex-wrap items-start gap-3 rounded-2xl border border-warn/30 bg-warn/5 p-5 text-sm text-muted">
           <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-warn" aria-hidden />
-          <span>The extended lesson could not be loaded. Reload the page to try again.</span>
+          <span className="min-w-0 flex-1">
+            The extended lesson could not be loaded. Check your connection, then try again.
+          </span>
+          <Button size="sm" onClick={retry}>
+            <RotateCcw className="h-3.5 w-3.5" aria-hidden />
+            Try again
+          </Button>
         </div>
       ) : null}
 
@@ -565,8 +588,13 @@ function Lesson({ concept, expanded, onToggle }: { concept: Concept; expanded: b
  * take the page down, so a second failure degrades to the short explanation
  * plus a note, rather than an endless spinner.
  */
-function useConceptDepth(concept: Concept): { depth?: ConceptDepth; failed: boolean } {
+function useConceptDepth(concept: Concept): { depth?: ConceptDepth; failed: boolean; retry: () => void } {
   const [state, setState] = useState<{ slug?: string; depth?: ConceptDepth; failed: boolean }>({ failed: false });
+  const [attempt, setAttempt] = useState(0);
+  const retry = () => {
+    setState({ failed: false });
+    setAttempt((value) => value + 1);
+  };
 
   useEffect(() => {
     let current = true;
@@ -585,10 +613,10 @@ function useConceptDepth(concept: Concept): { depth?: ConceptDepth; failed: bool
     return () => {
       current = false;
     };
-  }, [concept.category, concept.slug]);
+  }, [concept.category, concept.slug, attempt]);
 
   // A result for the previous concept reads as "still loading" for this one.
-  return state.slug === concept.slug ? state : { failed: false };
+  return state.slug === concept.slug ? { ...state, retry } : { failed: false, retry };
 }
 
 /** The picture the learner already has in their head, borrowed for the concept. */

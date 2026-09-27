@@ -11,6 +11,10 @@ type Mode = 'sign-in' | 'sign-up' | 'reset';
 interface SignInDialogProps {
   /** Firebase is loaded: the Google button can open its popup straight from the click. */
   ready: boolean;
+  /** Firebase could not be downloaded. The email form still tries again on submit. */
+  failed: boolean;
+  /** Downloads Firebase again, after `failed`. */
+  onRetry: () => void;
   /** Must be called synchronously from the click - see AuthSession.signInWithGoogle. */
   onGoogle: () => Promise<void>;
   /** Email and password open no popup, so these may wait for Firebase to load. */
@@ -36,9 +40,10 @@ const SUBMIT: Record<Mode, { idle: string; pending: string }> = {
  * Success needs no step here - the Account store closes the dialog once
  * Firebase reports the user.
  */
-export function SignInDialog({ ready, onGoogle, emailAuth, onClose }: SignInDialogProps) {
+export function SignInDialog({ ready, failed, onRetry, onGoogle, emailAuth, onClose }: SignInDialogProps) {
   const titleId = useId();
   const googleErrorId = useId();
+  const googleFailedId = useId();
   const emailErrorId = useId();
   const passwordHintId = useId();
 
@@ -71,9 +76,13 @@ export function SignInDialog({ ready, onGoogle, emailAuth, onClose }: SignInDial
     setResetSentTo(null);
     if (focus) focusNext.current = focus;
   };
+  // What the Learner clicks. Switching while a request runs would show its answer under the wrong form.
+  const pickMode = (next: Mode, focus?: 'email' | 'password') => {
+    if (!busy) switchMode(next, focus);
+  };
 
   const continueWithGoogle = () => {
-    if (busy) return;
+    if (busy || !ready) return;
     setGoogleError(null);
     setGooglePending(true);
     // No await before this call: the popup has to open inside the click.
@@ -147,14 +156,29 @@ export function SignInDialog({ ready, onGoogle, emailAuth, onClose }: SignInDial
         <section aria-label="Sign in with Google">
           <Button
             variant="secondary"
-            className="w-full justify-center"
             onClick={continueWithGoogle}
-            disabled={!ready || googlePending}
-            aria-describedby={googleError ? googleErrorId : undefined}
+            // aria-disabled, not disabled: a disabled button drops focus out of the Modal.
+            aria-disabled={!ready || googlePending}
+            aria-describedby={googleError ? googleErrorId : failed ? googleFailedId : undefined}
+            className={cn('w-full justify-center', !ready && 'cursor-not-allowed opacity-60')}
           >
-            {!ready || googlePending ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden /> : <GoogleMark />}
-            {!ready ? 'Loading sign-in...' : googlePending ? 'Waiting for Google...' : 'Continue with Google'}
+            {!failed && (!ready || googlePending) ? (
+              <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
+            ) : (
+              <GoogleMark />
+            )}
+            {failed ? 'Continue with Google' : !ready ? 'Loading sign-in...' : googlePending ? 'Waiting for Google...' : 'Continue with Google'}
           </Button>
+          {failed ? (
+            <div role="alert" className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs">
+              <span id={googleFailedId} className="text-warn">
+                Sign-in could not load. Check your connection.
+              </span>
+              <button type="button" onClick={onRetry} className="rounded font-medium text-brand hover:underline">
+                Try again
+              </button>
+            </div>
+          ) : null}
           {googlePending ? (
             <p className="mt-2 text-xs text-muted">Finish in the Google window. Closing it cancels.</p>
           ) : null}
@@ -182,7 +206,7 @@ export function SignInDialog({ ready, onGoogle, emailAuth, onClose }: SignInDial
               fill
               value={mode}
               options={MODES}
-              onChange={(next) => switchMode(next)}
+              onChange={(next) => pickMode(next)}
               className="w-full"
             />
           )}
@@ -264,7 +288,7 @@ export function SignInDialog({ ready, onGoogle, emailAuth, onClose }: SignInDial
           {mode === 'sign-in' ? (
             <button
               type="button"
-              onClick={() => switchMode('reset', 'email')}
+              onClick={() => pickMode('reset', 'email')}
               className="rounded text-xs font-medium text-brand hover:underline"
             >
               Forgot password?
@@ -273,7 +297,7 @@ export function SignInDialog({ ready, onGoogle, emailAuth, onClose }: SignInDial
           {mode === 'reset' ? (
             <button
               type="button"
-              onClick={() => switchMode('sign-in', 'password')}
+              onClick={() => pickMode('sign-in', 'password')}
               className="rounded text-xs font-medium text-brand hover:underline"
             >
               Back to sign in

@@ -1,4 +1,4 @@
-import { useId, useState, type FormEvent } from 'react';
+import { useId, useRef, useState, type FormEvent } from 'react';
 import { Loader2, Trash2, TriangleAlert } from 'lucide-react';
 import { Button, Modal } from '@/components/ui';
 import { useAccount } from '@/app/providers/AccountProvider';
@@ -25,12 +25,14 @@ export function DeleteAccountDialog({ onClose, onDeleted }: DeleteAccountDialogP
   const titleId = useId();
   const passwordId = useId();
   const errorId = useId();
+  const passwordInput = useRef<HTMLInputElement>(null);
 
   const confirm = (event: FormEvent) => {
     event.preventDefault();
     if (pending) return;
     if (method === 'password' && !password) {
       setError('Type your password to confirm. Nothing was deleted.');
+      passwordInput.current?.focus();
       return;
     }
     setError(null);
@@ -43,6 +45,8 @@ export function DeleteAccountDialog({ onClose, onDeleted }: DeleteAccountDialogP
       }
       setPending(false);
       setError(deleteAccountMessage(result));
+      // A wrong password is the usual cause: put the cursor back where the fix goes.
+      if (method === 'password') passwordInput.current?.focus();
     });
   };
 
@@ -81,12 +85,15 @@ export function DeleteAccountDialog({ onClose, onDeleted }: DeleteAccountDialogP
                 Your password, to confirm it is you
               </label>
               <input
+                ref={passwordInput}
                 id={passwordId}
                 type="password"
                 autoComplete="current-password"
                 value={password}
                 onChange={(event) => setPassword(event.target.value)}
-                disabled={pending}
+                // readOnly and aria-disabled, not disabled: a disabled control drops focus out of the Modal.
+                readOnly={pending}
+                aria-disabled={pending}
                 aria-describedby={error ? errorId : undefined}
                 className="h-10 w-full rounded-xl border border-line bg-canvas px-3 text-sm text-ink focus:border-brand/60 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand/40 coarse:text-base"
               />
@@ -103,10 +110,10 @@ export function DeleteAccountDialog({ onClose, onDeleted }: DeleteAccountDialogP
         </div>
 
         <div className="flex flex-wrap justify-end gap-2 border-t border-line px-5 py-4">
-          <Button variant="secondary" onClick={onClose} disabled={pending}>
+          <Button variant="secondary" onClick={pending ? undefined : onClose} aria-disabled={pending}>
             Cancel
           </Button>
-          <Button type="submit" variant="danger" disabled={pending} aria-describedby={error ? errorId : undefined}>
+          <Button type="submit" variant="danger" aria-disabled={pending} aria-describedby={error ? errorId : undefined}>
             {pending ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden /> : <Trash2 className="h-4 w-4" aria-hidden />}
             {pending ? 'Deleting...' : 'Delete my Account'}
           </Button>

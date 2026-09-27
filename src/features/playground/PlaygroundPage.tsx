@@ -277,6 +277,7 @@ function PlaygroundCanvas() {
           <p className="text-[11px] text-faint">Drag components in, connect them, run traffic and see what breaks.</p>
         </div>
         <Select
+          aria-label="Preset"
           value={preset}
           options={PRESETS.map((item) => ({ value: item.id, label: item.name }))}
           onChange={loadPreset}

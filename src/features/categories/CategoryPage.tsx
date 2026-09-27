@@ -10,7 +10,11 @@ import type { CategoryId, Difficulty } from '@/types';
 
 export function CategoryPage() {
   const { categoryId } = useParams();
-  const category = categoryId ? CATEGORY_BY_ID[categoryId as CategoryId] : undefined;
+  // Own keys only: /categories/constructor must not find a built-in of the lookup object.
+  const category =
+    categoryId && Object.prototype.hasOwnProperty.call(CATEGORY_BY_ID, categoryId)
+      ? CATEGORY_BY_ID[categoryId as CategoryId]
+      : undefined;
   const [difficulty, setDifficulty] = useState<Difficulty | 'all'>('all');
   const { completed, categoryProgress } = useProgress();
 

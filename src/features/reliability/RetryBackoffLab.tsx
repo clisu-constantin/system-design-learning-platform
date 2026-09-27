@@ -395,13 +395,14 @@ export function RetryBackoffLab({ focus }: LabProps<'retry-backoff'>) {
                 <li key={attempt.index} className="flex items-center gap-3">
                   <span className="w-20 shrink-0 font-mono text-[11px] text-faint">attempt {attempt.index}</span>
                   <span
-                    className="h-4 shrink-0 rounded-sm bg-line"
+                    // It may shrink: at max delay a fixed 70% pushes the t+ label out of a phone-width card.
+                    className="h-4 min-w-0 rounded-sm bg-line"
                     style={{ width: `${Math.min(70, (attempt.delayMs / 1000) * 12)}%`, minWidth: attempt.delayMs ? 8 : 0 }}
                     title={`waited ${Math.round(attempt.delayMs)} ms`}
                   />
                   <span
                     className={cn(
-                      'rounded px-2 py-0.5 font-mono text-[11px]',
+                      'shrink-0 whitespace-nowrap rounded px-2 py-0.5 font-mono text-[11px]',
                       attempt.success ? 'bg-ok/15 text-ok' : 'bg-danger/15 text-danger',
                     )}
                   >
@@ -410,7 +411,7 @@ export function RetryBackoffLab({ focus }: LabProps<'retry-backoff'>) {
                   <span className="font-mono text-[11px] text-faint">
                     {attempt.delayMs > 0 ? `waited ${(attempt.delayMs / 1000).toFixed(2)}s` : 'no wait'}
                   </span>
-                  <span className="ml-auto font-mono text-[11px] text-muted">t+{(attempt.startMs / 1000).toFixed(2)}s</span>
+                  <span className="ml-auto shrink-0 whitespace-nowrap font-mono text-[11px] text-muted">t+{(attempt.startMs / 1000).toFixed(2)}s</span>
                 </li>
               ))}
             </ol>

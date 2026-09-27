@@ -30,7 +30,7 @@ export function TopBar({ onOpenSearch, onToggleSidebar, sidebarExpanded, difficu
   const canFold = useMediaQuery(LG_QUERY);
 
   return (
-    <header className="sticky top-0 z-30 flex h-14 items-center gap-3 border-b border-line bg-surface/85 px-3 backdrop-blur lg:px-5">
+    <header className="sticky top-0 z-30 flex h-14 items-center gap-1.5 border-b border-line bg-surface/85 px-2 backdrop-blur sm:gap-3 sm:px-3 lg:px-5">
       <Button
         size="icon"
         variant="ghost"
@@ -47,8 +47,8 @@ export function TopBar({ onOpenSearch, onToggleSidebar, sidebarExpanded, difficu
         )}
       </Button>
 
-      <Link to="/" className="flex items-center gap-2.5">
-        <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-gradient-to-br from-brand to-info text-white">
+      <Link to="/" className="flex min-w-0 items-center gap-2.5">
+        <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-gradient-to-br from-brand to-info text-white">
           <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden>
             <circle cx="12" cy="5" r="2" />
             <circle cx="5" cy="19" r="2" />
@@ -56,9 +56,14 @@ export function TopBar({ onOpenSearch, onToggleSidebar, sidebarExpanded, difficu
             <path d="M12 7v4M12 11H5v6M12 11h7v6" />
           </svg>
         </span>
-        <span className="hidden sm:block">
-          <span className="block text-sm font-semibold leading-tight text-ink">System Design Interactive</span>
-          <span className="block text-[11px] leading-tight text-faint">Learn. Visualize. Experiment. Design.</span>
+        {/* One line each, never wrapped: a wrapped name grows taller than the 56px bar. */}
+        <span className="hidden min-w-0 sm:block">
+          <span className="block truncate whitespace-nowrap text-sm font-semibold leading-tight text-ink">
+            System Design Interactive
+          </span>
+          <span className="hidden whitespace-nowrap text-[11px] leading-tight text-faint lg:block">
+            Learn. Visualize. Experiment. Design.
+          </span>
         </span>
       </Link>
 
@@ -67,7 +72,7 @@ export function TopBar({ onOpenSearch, onToggleSidebar, sidebarExpanded, difficu
       <button
         type="button"
         onClick={onOpenSearch}
-        className="flex h-9 items-center gap-2 rounded-xl border border-line bg-elevated px-3 text-sm text-faint transition-colors hover:border-brand/50 hover:text-ink"
+        className="flex h-9 shrink-0 items-center gap-2 whitespace-nowrap rounded-xl border border-line bg-elevated px-3 text-sm text-faint transition-colors hover:border-brand/50 hover:text-ink"
       >
         <Search className="h-4 w-4" />
         <span className="hidden md:inline">Search</span>
@@ -76,6 +81,7 @@ export function TopBar({ onOpenSearch, onToggleSidebar, sidebarExpanded, difficu
 
       <div className="hidden xl:block">
         <Select
+          aria-label="Difficulty"
           value={difficulty}
           options={DIFFICULTY_OPTIONS}
           onChange={onDifficultyChange}
@@ -85,7 +91,7 @@ export function TopBar({ onOpenSearch, onToggleSidebar, sidebarExpanded, difficu
 
       <Link
         to="/progress"
-        className="flex items-center gap-2 rounded-xl border border-line bg-elevated px-3 py-1.5 text-xs text-muted transition-colors hover:border-brand/50 hover:text-ink"
+        className="flex shrink-0 items-center gap-2 rounded-xl border border-line bg-elevated px-2 py-1.5 text-xs text-muted sm:px-3 transition-colors hover:border-brand/50 hover:text-ink"
         title="Learning progress"
       >
         <span className="relative hidden h-1.5 w-16 overflow-hidden rounded-full bg-line sm:block">
@@ -104,7 +110,7 @@ export function TopBar({ onOpenSearch, onToggleSidebar, sidebarExpanded, difficu
 }
 
 /**
- * "Sign in" for a Guest, the Account (its initial, and its email from md up)
+ * "Sign in" for a Guest, the Account (its initial, and its email from lg up)
  * once signed in. Nothing at all in a build without Firebase. The initial is
  * text, not the Google photo, so the CSP img-src stays 'self' data:.
  */
@@ -132,7 +138,7 @@ function AccountButton() {
       to="/account"
       aria-label={status === 'restoring' ? 'Account' : `Account: ${email ?? 'signed in'}`}
       title={email ?? 'Account'}
-      className="flex h-9 min-w-9 coarse:min-w-11 shrink-0 items-center justify-center gap-2 rounded-xl text-sm text-muted transition-colors hover:bg-elevated hover:text-ink md:px-1.5"
+      className="flex h-9 min-w-9 coarse:min-w-11 shrink-0 items-center justify-center gap-2 rounded-xl text-sm text-muted transition-colors hover:bg-elevated hover:text-ink lg:px-1.5"
     >
       <span
         className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-xs font-semibold ${
@@ -142,7 +148,7 @@ function AccountButton() {
       >
         {status === 'signed-in' && initial ? initial : <UserRound className="h-4 w-4" />}
       </span>
-      {status === 'signed-in' && email ? <span className="hidden max-w-40 truncate md:inline">{email}</span> : null}
+      {status === 'signed-in' && email ? <span className="hidden max-w-40 truncate lg:inline">{email}</span> : null}
     </Link>
   );
 }
