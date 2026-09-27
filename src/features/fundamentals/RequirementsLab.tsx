@@ -24,6 +24,7 @@ import {
   REQUIREMENTS,
   ROW,
   SLOTS,
+  alreadyMet,
   architecture,
   chosenOf,
   dauOf,
@@ -31,6 +32,7 @@ import {
   implicationsFor,
   legendFor,
   routesFor,
+  singlePointsHint,
   subtitleFor,
   switchProduct,
   targetApplies,
@@ -103,6 +105,12 @@ export function RequirementsLab({ focus }: LabProps<'requirements'>) {
     return { ...base, outcomes: [...base.outcomes, { outcome: 'failure' as const, label: 'Turned away: past the limit of the red part' }] };
   }, [arch, bottleneck]);
   const implications = useMemo(() => implicationsFor(setup, arch), [setup, arch]);
+  // A level that draws what an earlier choice already built says so, in words under its slider.
+  // Memoized: the lab re-renders with every animation frame, and each line builds two designs.
+  const alreadyMetLines = useMemo(
+    () => Object.fromEntries(NFRS.map((spec) => [spec.id, alreadyMet(spec.id, setup)])) as Partial<Record<NfrId, string>>,
+    [setup],
+  );
   // The red part turns away the share of its traffic past its limit; the rest goes through.
   const variants = useMemo(
     () => arch.flows.map((flow) => overloadedRoutes(flow, routesFor(flow, arch), bottleneck)),
@@ -271,11 +279,7 @@ export function RequirementsLab({ focus }: LabProps<'requirements'>) {
                 label: 'Single points',
                 value: chosen.length === 0 ? '-' : arch.singlePoints.length,
                 tone: chosen.length === 0 ? 'neutral' : arch.singlePoints.length > 0 ? 'warn' : 'ok',
-                hint: `${
-                  arch.singlePoints.length > 0
-                    ? `Parts drawn as one copy, so one failure stops the traffic through them: ${arch.singlePoints.join(', ')}.`
-                    : 'Parts drawn as one copy, so one failure stops the traffic through them. None here: every part drawn has a second copy.'
-                } Not counted: object storage and the CDN, managed services the provider already spreads over several zones.`,
+                hint: singlePointsHint(arch),
               },
               {
                 key: 'creep',
@@ -420,21 +424,26 @@ export function RequirementsLab({ focus }: LabProps<'requirements'>) {
             ) : (
               <>
                 <p className="text-xs font-medium text-muted">Non-functional targets</p>
-                {NFRS.map((spec) => (
-                  <Slider
-                    key={spec.id}
-                    label={spec.label}
-                    value={nfr[spec.id]}
-                    min={0}
-                    max={spec.values.length - 1}
-                    onChange={setTarget(spec.id)}
-                    format={(value) => spec.values[value]}
-                    scale={[spec.values[0], spec.values[spec.values.length - 1]]}
-                    tone={nfr[spec.id] >= spec.values.length - 1 ? 'danger' : 'brand'}
-                    disabled={!targetApplies(spec.id, arch)}
-                    hint={targetOffHint(spec.id, arch)}
-                  />
-                ))}
+                {NFRS.map((spec) => {
+                  const met = alreadyMetLines[spec.id];
+                  return (
+                    <div key={spec.id} className="space-y-1">
+                      <Slider
+                        label={spec.label}
+                        value={nfr[spec.id]}
+                        min={0}
+                        max={spec.values.length - 1}
+                        onChange={setTarget(spec.id)}
+                        format={(value) => spec.values[value]}
+                        scale={[spec.values[0], spec.values[spec.values.length - 1]]}
+                        tone={nfr[spec.id] >= spec.values.length - 1 ? 'danger' : 'brand'}
+                        disabled={!targetApplies(spec.id, arch)}
+                        hint={targetOffHint(spec.id, arch)}
+                      />
+                      {met ? <p className="text-[11px] text-muted">{met}</p> : null}
+                    </div>
+                  );
+                })}
                 <div className="rounded-xl border border-line bg-elevated p-3 text-[11px] text-muted">
                   <p className="label mb-2">Availability in practice</p>
                   <ul className="space-y-0.5 font-mono">

@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {
   DEFAULT_SETUP,
   FOCUS_SETUPS,
+  LOOP_USERS,
   NFRS,
   PART_ORDER,
   RELAXED,
@@ -11,6 +12,7 @@ import {
   SINGLE_POINT_EXEMPT,
   SLOTS,
   WRITE_FLOWS,
+  alreadyMet,
   architecture,
   targetApplies,
   targetOffHint,
@@ -20,9 +22,11 @@ import {
   instancesOf,
   legendFor,
   routesFor,
+  singlePointsHint,
   subtitleFor,
   switchProduct,
   wireKeyOf,
+  type InstancedPart,
   type Nfr,
   type PartId,
   type Setup,
@@ -343,17 +347,60 @@ test('from 99.99% the cache, queue + workers, index and media servers run one co
   }
 });
 
-test('Single points counts every drawn single-instance part that is not exempt, at every setting', () => {
+/**
+ * Copies of one slice of a part: a failure of one of them is survived only when this is above 1.
+ * The database counts its copies per partition - partitions split the data, they do not copy it.
+ */
+const copiesPerSlice = (id: InstancedPart, arch: ReturnType<typeof architecture>) =>
+  id === 'db' ? arch.dbCopies : instancesOf(id, arch);
+
+/** The drawn parts Single points must count: one copy of their slice, and not a managed service. */
+const singleCopyParts = (arch: ReturnType<typeof architecture>) =>
+  PART_ORDER.filter((id): id is InstancedPart => Boolean(arch.parts[id]) && id !== 'users' && id !== 'region2').filter(
+    (id) => !SINGLE_POINT_EXEMPT.has(id) && copiesPerSlice(id, arch) === 1,
+  );
+
+test('Single points counts every drawn part with one copy of its slice that is not exempt, at every setting', () => {
   let counted = 0;
   for (const s of everySetting()) {
     const arch = architecture({ ...s, showNotBuilt: true });
-    const single = PART_ORDER.filter(
-      (id) => arch.parts[id] && id !== 'users' && id !== 'region2' && !SINGLE_POINT_EXEMPT.has(id) && instancesOf(id, arch) === 1,
-    );
+    const single = singleCopyParts(arch);
     assert.equal(arch.singlePoints.length, single.length, `${single.join(', ')} vs ${arch.singlePoints.join(', ')} in ${JSON.stringify(s)}`);
     counted += single.length;
   }
   assert.ok(counted > 1000);
+});
+
+test('a partitioned database with one copy per partition is a single point, and the bill still counts every partition', () => {
+  // Uber at 100M daily users and 99%: two partitions, one copy each, no standby.
+  const uber = architecture({ ...FOCUS_SETUPS['non-functional-requirements'], nfr: { ...RELAXED, users: 3 } });
+  assert.equal(uber.parts.db?.title, 'DB: 2 partitions x1');
+  assert.ok(uber.singlePoints.includes('each database partition'), uber.singlePoints.join(', '));
+  assert.equal(instancesOf('db', uber), 2, 'billed: both partitions');
+
+  // The what-is-system-design loop, with the writes partitioned and no read replicas.
+  const loop = { ...FOCUS_SETUPS['what-is-system-design'], loop: { users: 3, fixes: ['scale-out' as const, 'cache' as const, 'partition' as const] } };
+  const partitioned = architecture(loop);
+  assert.ok(partitioned.sizing.database.partitions > 1);
+  assert.equal(partitioned.dbCopies, 1);
+  assert.ok(partitioned.singlePoints.includes('each database partition'), partitioned.singlePoints.join(', '));
+
+  // With a standby, each partition has a second copy.
+  const standby = architecture({ ...FOCUS_SETUPS['non-functional-requirements'], nfr: { ...RELAXED, users: 3, availability: 2 } });
+  assert.ok(!standby.singlePoints.some((name) => /database/.test(name)), standby.singlePoints.join(', '));
+});
+
+test('the Single points hint says every part has a second copy only when every counted part has one', () => {
+  let none = 0;
+  for (const s of everySetting()) {
+    const arch = architecture(s);
+    const hint = singlePointsHint(arch);
+    const everyPartCopied = singleCopyParts(arch).length === 0;
+    assert.equal(/every part drawn has a second copy/.test(hint), everyPartCopied, `${hint} in ${JSON.stringify(s)}`);
+    if (everyPartCopied) none += 1;
+    for (const name of arch.singlePoints) assert.ok(hint.includes(name), `${name} in ${hint}`);
+  }
+  assert.ok(none > 100);
 });
 
 test('below 99.99% a single cache, queue + workers or index is a single point, named as drawn', () => {
@@ -450,35 +497,72 @@ const BASELINES: [string, Nfr][] = [
   ['region 2 at 99.999%', { ...RELAXED, availability: 3 }],
 ];
 
-/**
- * The one known level that draws nothing new: 99.9% asks for two of each server behind a load
- * balancer pair, and when the load has already built exactly that (Uber drivers publishing their
- * location alone, at 100k users: six app servers and no other server tier), there is nothing left
- * to add - the step only names 99.9% in the part subtitles. Kept narrow so any other case fails.
- */
-const loadAlreadyRedundant = (s: Setup) => {
-  const arch = architecture(s);
-  const tiers = (['api', 'ws'] as const).filter((id) => arch.parts[id]);
-  return Boolean(arch.parts.lb) && !arch.parts.db && tiers.every((id) => instancesOf(id, arch) > 1);
-};
+/** Every combination of the target levels. */
+function* everyNfr(specs = NFRS, nfr: Nfr = RELAXED): Generator<Nfr> {
+  if (specs.length === 0) {
+    yield nfr;
+    return;
+  }
+  const [head, ...tail] = specs;
+  for (let level = 0; level < head.values.length; level += 1) yield* everyNfr(tail, { ...nfr, [head.id]: level });
+}
 
-test('every target level changes the diagram, or the target does not apply and its slider is off', () => {
+/**
+ * Some levels draw what an earlier choice already built: 99.9% when the load already runs more than
+ * two of each server, 100 ms when the users already put a cache in front of the reads, 99.999% when
+ * 100M users already built region 2, Critical when 99.99% and Strong already make each write wait
+ * for a standby. The slider stays on, so the Lab says so under it (`alreadyMet`). Every other level
+ * changes a part, a wire, a stat or status line, or the zones - checked from every combination of
+ * the other targets.
+ */
+test('every target level changes the diagram, or the target is off, or the Lab says it is already met', () => {
+  const met = new Set<string>();
   for (const product of PRODUCTS) {
     for (const ids of featureSets(product)) {
-      for (const [name, nfr] of BASELINES) {
+      for (const nfr of everyNfr()) {
         for (const spec of NFRS) {
-          for (let level = 1; level < spec.values.length; level += 1) {
-            const before = setup(product, ids, { ...nfr, [spec.id]: level - 1 });
-            const after = setup(product, ids, { ...nfr, [spec.id]: level });
-            if (!targetApplies(spec.id, architecture(before))) continue;
-            if (spec.id === 'availability' && level === 1 && loadAlreadyRedundant(before)) continue;
-            const where = `${product} [${ids.join(', ')}]: ${spec.label} ${spec.values[level]} at ${name}`;
-            assert.notEqual(drawn(after), drawn(before), where);
+          const level = nfr[spec.id];
+          if (level === 0) continue;
+          const before = setup(product, ids, { ...nfr, [spec.id]: level - 1 });
+          const after = setup(product, ids, nfr);
+          const hint = alreadyMet(spec.id, after);
+          const where = `${product} [${ids.join(', ')}]: ${spec.label} ${spec.values[level]} at ${JSON.stringify(nfr)}`;
+          if (!targetApplies(spec.id, architecture(before))) {
+            assert.equal(hint, undefined, where);
+            continue;
+          }
+          if (drawn(after) === drawn(before)) {
+            assert.match(hint ?? '', /^Already met: /, where);
+            met.add(`${spec.id} ${level}`);
+          } else {
+            assert.equal(hint, undefined, where);
           }
         }
       }
     }
   }
+  // The four levels the review found, and no other.
+  assert.deepEqual([...met].sort(), ['availability 1', 'availability 3', 'durability 1', 'latency 1']);
+});
+
+test('the already-met line names what built the part earlier', () => {
+  const core = (product: Product, nfr: Partial<Nfr>) => setup(product, Object.keys(coreOf(product)), nfr);
+  const uber = architecture(core('uber', { users: 2 })).sizing;
+
+  assert.equal(
+    alreadyMet('availability', core('uber', { users: 2, availability: 1 })),
+    `Already met: the load already needs ${uber.app.forLoad} app servers and ${uber.ws.forLoad} WebSocket servers behind a load balancer, more than the 2 copies of each 99.9% asks for.`,
+  );
+  assert.equal(alreadyMet('latency', core('whatsapp', { users: 2, latency: 1 })), 'Already met: 10M daily users already put a cache in front of the database reads.');
+  assert.equal(alreadyMet('availability', core('instagram', { users: 3, availability: 3 })), 'Already met: 100M daily users already built region 2, a full copy of region 1.');
+  assert.equal(
+    alreadyMet('durability', core('uber', { availability: 2, consistency: 2, durability: 1 })),
+    'Already met: 99.99% already keeps a standby copy, and Strong consistency already makes each write wait for it.',
+  );
+  // A level that draws something new, a level at the bottom and a target that is off say nothing.
+  assert.equal(alreadyMet('availability', core('uber', { availability: 1 })), undefined);
+  assert.equal(alreadyMet('availability', core('uber', { users: 2 })), undefined);
+  assert.equal(alreadyMet('latency', setup('uber', ['location'], { users: 2, latency: 1 })), undefined);
 });
 
 test('a target that does not apply draws nothing and says nothing at any level', () => {
@@ -525,14 +609,24 @@ test('once the database has a second copy, every consistency level changes the d
   assert.ok(consistency);
   for (const product of PRODUCTS) {
     const core = Object.keys(coreOf(product));
-    // A standby (99.99%), a sync standby (Critical durability) and a whole region 2 (99.999%).
-    for (const copies of [{ availability: 2 }, { durability: 1 }, { availability: 3 }]) {
-      for (let level = 1; level < consistency.values.length; level += 1) {
-        const before = setup(product, core, { ...copies, consistency: level - 1 });
-        const after = setup(product, core, { ...copies, consistency: level });
-        assert.notEqual(drawn(after), drawn(before), `${product}: ${consistency.values[level]} with ${JSON.stringify(copies)}`);
-      }
+    // A standby (99.99%), a sync standby (Critical durability), a whole region 2 (99.999%), and
+    // region 2 through the users (100M) - at 99% and 99.9%, where region 1 may hold one copy per partition.
+    for (const copies of [{ availability: 2 }, { durability: 1 }, { availability: 3 }, { users: 3 }, { users: 3, availability: 1 }]) {
+      assert.ok(targetApplies('consistency', architecture(setup(product, core, copies))), `${product} with ${JSON.stringify(copies)}`);
+      const shapes: string[] = consistency.values.map((_, level) => drawn(setup(product, core, { ...copies, consistency: level })));
+      assert.equal(new Set(shapes).size, consistency.values.length, `${product}: every level differs with ${JSON.stringify(copies)}`);
     }
+  }
+  // The case that drew nothing: Uber at 100M and 99%, two partitions with one copy each, and region 2.
+  const uber = (level: number) => architecture(setup('uber', Object.keys(coreOf('uber')), { users: 3, consistency: level }));
+  assert.equal(uber(0).parts.db?.title, 'DB: 2 partitions x1');
+  assert.equal(uber(0).region2, true);
+  assert.notEqual(uber(0).parts.db?.status, uber(1).parts.db?.status);
+  // Where the status line says the reads go, a forced-decision line says why.
+  const readsLine = [/any database copy/, /primary right after their own write/, /primary only/];
+  for (const level of [0, 1, 2]) {
+    const s = setup('uber', Object.keys(coreOf('uber')), { users: 3, consistency: level });
+    assert.ok(implicationsFor(s, architecture(s)).some((line) => readsLine[level].test(line)), `${uber(level).parts.db?.status}`);
   }
 });
 
@@ -556,6 +650,42 @@ test('the target levels that drew nothing are gone', () => {
 
   assert.deepEqual(values('latency'), ['500 ms', '100 ms', '20 ms']);
   assert.deepEqual(values('durability'), ['Normal', 'Critical']);
+});
+
+test('a line a latency level adds names only a part that level adds or changes', () => {
+  // The parts a latency line can name, and the words it names them by.
+  const named: [RegExp, PartId][] = [
+    [/\bCDN\b/, 'cdn'],
+    [/cach/i, 'cache'],
+  ];
+  const partOf = (s: Setup, id: PartId) => {
+    const part = architecture(s).parts[id];
+    return JSON.stringify(part ? [part.title, part.stat, part.status] : null);
+  };
+  let checked = 0;
+  for (const product of PRODUCTS) {
+    for (const ids of featureSets(product)) {
+      for (const [name, nfr] of BASELINES) {
+        for (let level = 1; level < 3; level += 1) {
+          const before = setup(product, ids, { ...nfr, latency: level - 1 });
+          const after = setup(product, ids, { ...nfr, latency: level });
+          const had = new Set(implicationsFor(before, architecture(before)));
+          for (const line of implicationsFor(after, architecture(after)).filter((entry) => !had.has(entry))) {
+            for (const [pattern, id] of named) {
+              if (!pattern.test(line)) continue;
+              checked += 1;
+              assert.notEqual(partOf(after, id), partOf(before, id), `"${line}" at ${product} [${ids.join(', ')}] ${name}, latency ${level}`);
+            }
+          }
+        }
+      }
+    }
+  }
+  assert.ok(checked > 10);
+  // The CDN is drawn by the features that send files; 100 ms does not add it, so no line credits it.
+  const images = setup('whatsapp', ['send', 'images'], { latency: 1 });
+  assert.ok(architecture(images).parts.cdn);
+  assert.ok(!implicationsFor(images, architecture(images)).some((line) => /\bCDN\b/.test(line)));
 });
 
 test('receipts push each message back to the sender over the WebSocket tier', () => {
@@ -810,6 +940,32 @@ test('the What is System Design Diagram draws the Lab at round 2, and no step cr
   const firstRed = steps.findIndex((step) => step.outcome === 'failure');
   assert.deepEqual([steps[firstRed].from, steps[firstRed].to], ['api', 'api']);
   for (const step of steps.slice(0, firstRed + 1)) assert.ok(step.from !== 'lb' && step.to !== 'lb', step.label);
+});
+
+test('every What is System Design step agrees with the nodes it plays on, or names the earlier round it tells', () => {
+  // The Diagram draws round 2 (10M users, after the round 1 fix). A caption about an earlier round
+  // says which one ("1M users"), and is held to the Lab at that round; any other caption is held to
+  // the nodes drawn.
+  const start = FOCUS_SETUPS['what-is-system-design'];
+  const labAt = (users: number) => architecture({ ...start, loop: { users, fixes: users >= 2 ? ['scale-out' as const] : [] } });
+  /** A count a caption claims for a part, and whether a Lab title agrees with it. */
+  const claims: [RegExp, PartId, (title: string) => boolean][] = [
+    [/\bone server\b|\bApp server\b(?!s)/, 'api', (title) => title === 'App server'],
+    [/\bmore servers\b|\bApp servers\b/, 'api', (title) => /^App servers x\d+$/.test(title)],
+    [/\bone Database\b/i, 'db', (title) => title === 'Database'],
+  ];
+  const steps = foundationVisuals['what-is-system-design'].steps ?? [];
+  const drawn = new Map(foundationVisuals['what-is-system-design'].nodes.map((node) => [node.id, node.label]));
+  for (const step of steps) {
+    const round = LOOP_USERS.findIndex((users) => new RegExp(`(^|\\s)${users}\\b`).test(step.label));
+    const arch = labAt(round === -1 ? 2 : round);
+    for (const [pattern, id, agrees] of claims) {
+      if (!pattern.test(step.label)) continue;
+      // Without a round, the caption describes the nodes on screen: they are the Lab at round 2.
+      const title = round === -1 ? drawn.get(id) : arch.parts[id]?.title;
+      assert.ok(title && agrees(title), `"${step.label}" against "${title}"`);
+    }
+  }
 });
 
 test('the Non-Functional Lesson numbers: single points 5, 3, 0 and about 32 requests a second', () => {

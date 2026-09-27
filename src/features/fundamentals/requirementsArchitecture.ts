@@ -7,7 +7,7 @@
  */
 import type { DiagramEdge, EdgeTone } from '../../components/architecture/DiagramCanvas.tsx';
 import type { LabFocus, NodeKind, RequestOutcome } from '../../types/index.ts';
-import { formatCompact } from '../../utils/format.ts';
+import { formatCompact, formatNumber } from '../../utils/format.ts';
 import { PRIMARY_WRITE_LIMIT } from './capacityModel.ts';
 import {
   AVAILABILITY_COPIES,
@@ -190,7 +190,8 @@ export type Nfr = Record<NfrId, number>;
  * Something a forced-decision line talks about. A line is shown only while it is on the diagram,
  * so no line names a part that is not drawn.
  * - `reads`: a picked feature reads from the database;
- * - `copies`: the database has more than one copy in region 1 (a standby or read replicas);
+ * - `copies`: the database has a second copy - a standby or read replicas in region 1, or region 2 -
+ *   so the database status line names where reads go;
  * - `one-copy`: it has exactly one, and no region 2 - so every read already sees the latest write;
  * - `sync-standby`: a write waits for the standby (Critical durability, or Strong with copies);
  * - `db-region2`: a database, copied to region 2 (two regions can take conflicting writes);
@@ -200,7 +201,6 @@ type Needs =
   | 'db'
   | 'reads'
   | 'cache'
-  | 'cdn'
   | 'replicas'
   | 'copies'
   | 'one-copy'
@@ -245,12 +245,11 @@ export const NFRS: NfrSpec[] = [
     // No 200 ms step: at these loads it is met by the same App server and Database as 500 ms,
     // so it drew nothing.
     values: ['500 ms', '100 ms', '20 ms'],
+    // No CDN line: the CDN is drawn by the features that send files, at every latency level, so
+    // naming it here would credit this target with a part it does not add.
     implications: [
       [{ text: 'Each read is one query to the database', needs: 'reads' }],
-      [
-        { text: 'Caching layer for hot reads', needs: 'cache' },
-        { text: 'CDN for images and static files', needs: 'cdn' },
-      ],
+      [{ text: 'Caching layer for hot reads', needs: 'cache' }],
       [{ text: 'Hot data held in memory: the cache answers 99% of reads (model)', needs: 'cache' }],
     ],
   },
@@ -477,8 +476,10 @@ export interface Architecture {
   syncStandby: boolean;
   syncToRegion2: boolean;
   /**
-   * Every drawn part with one instance, in PART_ORDER, named as drawn ("geo index"): when it fails,
-   * the traffic through it stops until it is replaced. SINGLE_POINT_EXEMPT parts are not counted.
+   * Every drawn part with one copy of its slice (`copiesOf`), in PART_ORDER, named as drawn ("geo
+   * index"): when it fails, the traffic through it stops until it is replaced. A partitioned
+   * database with one copy per partition is one entry, "each database partition": losing one loses
+   * that slice of the data. SINGLE_POINT_EXEMPT parts are not counted.
    */
   singlePoints: string[];
 }
@@ -514,6 +515,24 @@ export function instancesOf(id: InstancedPart, arch: Architecture): number {
     case 'cdn':
       return 1;
   }
+}
+
+/**
+ * How many copies hold the same slice of a part, so a failure of one is survived only when this is
+ * above 1 - what Single points counts. The same as `instancesOf`, except for a partitioned database:
+ * partitions split the data rather than copy it, so each partition has only its own copies.
+ */
+export function copiesOf(id: InstancedPart, arch: Architecture): number {
+  return id === 'db' ? arch.dbCopies : instancesOf(id, arch);
+}
+
+/** The hint on the Single points metric: which parts are one copy, or that none is. */
+export function singlePointsHint(arch: Architecture): string {
+  const list =
+    arch.singlePoints.length > 0
+      ? `Parts drawn as one copy, so one failure stops the traffic through them: ${arch.singlePoints.join(', ')}.`
+      : 'Parts drawn as one copy, so one failure stops the traffic through them. None here: every part drawn has a second copy.';
+  return `${list} Not counted: object storage and the CDN, managed services the provider already spreads over several zones.`;
 }
 
 const PART_KIND: Record<PartId, NodeKind> = {
@@ -684,9 +703,8 @@ export function architecture(setup: Setup): Architecture {
   if (nfr.availability >= 3) add('region2', availability);
   if (nfr.users >= 3) add('region2', users);
 
-  // A tight latency target serves files from the edge too - but only when a feature sends files,
-  // and only while some feature reads: with no read the latency target is off (`targetApplies`).
-  if (nfr.latency >= 1 && parts.cdn && flows.includes('read')) add('cdn', latency);
+  // The latency target does not name the CDN as a reason: the features that send files draw it at
+  // every latency level, so the target neither adds nor changes it.
   if (nfr.users >= 2) {
     // Anything slow (emails, notifications, exports) leaves the request path.
     flows.push('job');
@@ -733,9 +751,10 @@ export function architecture(setup: Setup): Architecture {
       value: `${about(database.peakWriteQps)}/s`,
       tone: partitioned ? 'text-warn' : 'text-ink',
     };
-    // With more than one copy, where reads go is the consistency choice; with one, the Capacity Lab decision.
+    // With a second copy - in region 1 or in region 2 - where reads go is the consistency choice, the
+    // same test that turns the consistency slider on; with one copy, the Capacity Lab decision.
     db.status =
-      dbCopies > 1
+      dbCopies > 1 || region2
         ? ['Reads: any copy', 'Reads: own writes on primary', 'Reads: primary only'][nfr.consistency]
         : partitioned
           ? 'Partition the writes'
@@ -800,7 +819,9 @@ export function architecture(setup: Setup): Architecture {
   for (const id of PART_ORDER) {
     const part = parts[id];
     if (!part || id === 'users' || id === 'region2' || SINGLE_POINT_EXEMPT.has(id)) continue;
-    if (instancesOf(id, arch) === 1) arch.singlePoints.push(id === 'ws' ? part.title : part.title.toLowerCase());
+    if (copiesOf(id, arch) > 1) continue;
+    if (id === 'db' && database.partitioned) arch.singlePoints.push('each database partition');
+    else arch.singlePoints.push(id === 'ws' ? part.title : part.title.toLowerCase());
   }
   return arch;
 }
@@ -852,12 +873,10 @@ function isDrawn(needs: Needs, arch: Architecture) {
       return db && arch.flows.includes('read');
     case 'cache':
       return Boolean(arch.parts.cache);
-    case 'cdn':
-      return Boolean(arch.parts.cdn);
     case 'replicas':
       return db && arch.sizing.database.readReplicas > 0;
     case 'copies':
-      return db && arch.dbCopies > 1;
+      return db && (arch.dbCopies > 1 || arch.region2);
     case 'one-copy':
       return db && arch.dbCopies === 1 && !arch.region2;
     case 'db-region2':
@@ -873,9 +892,11 @@ function isDrawn(needs: Needs, arch: Architecture) {
 
 /**
  * The targets that can have nothing to act on, what they need, and what the Lab says on the
- * slider it turns off - so a slider is never left on with nothing to change. While off, a level set
- * earlier is kept but draws nothing and forces no line (`architecture` and `implicationsFor`
- * ignore it), so ticking the feature back brings it back. Availability and users always apply.
+ * slider it turns off - so a slider is never left on with nothing to act on. (A level whose part an
+ * earlier choice already built stays on and says so under its slider: `alreadyMet`.) While off, a
+ * level set earlier is kept but draws nothing and forces no line (`architecture` and
+ * `implicationsFor` ignore it), so ticking the feature back brings it back. Availability and users
+ * always apply.
  * - P95 latency speeds up reads: the cache it adds sits in front of the database reads, and a
  *   CDN is already drawn by the features that serve files. No read, nothing to make faster.
  * - Durability decides how the database keeps a write. No database, nothing to keep.
@@ -905,6 +926,65 @@ export function targetApplies(id: NfrId, arch: Architecture): boolean {
 /** Why a target is off, for the hint on its slider, or undefined while it applies. */
 export function targetOffHint(id: NfrId, arch: Architecture): string | undefined {
   return targetApplies(id, arch) ? undefined : TARGET_NEEDS[id]?.hint;
+}
+
+/**
+ * What the learner sees of a design: each part with its title, stat row and status line, each wire
+ * with its tone, the zones and region 2. Not the subtitles - one more reason named is not a new part.
+ */
+function drawingOf(arch: Architecture): string {
+  const parts = PART_ORDER.flatMap((id) => {
+    const part = arch.parts[id];
+    return part ? [[id, part.title, part.stat?.label, part.stat?.value, part.status]] : [];
+  });
+  const wires = edgesFor(arch)
+    .map((edge) => [edge.from, edge.to, edge.tone, Boolean(edge.dashed)].join(' '))
+    .sort();
+  return JSON.stringify({ parts, wires, zones: arch.zones, region2: arch.region2, notBuilt: Object.keys(arch.notBuilt) });
+}
+
+/**
+ * Why a level draws what an earlier choice already built, read from the design one level below.
+ * Undefined when none of these explains it - so a new case shows up as a failing test, not as a
+ * vague line in the Lab.
+ */
+const ALREADY_MET: Partial<Record<NfrId, (below: Architecture, setup: Setup) => string | undefined>> = {
+  availability: (below, setup) => {
+    const { app, ws } = below.sizing;
+    if (setup.nfr.availability === 1 && app.forLoad >= 2) {
+      const servers = below.parts.ws
+        ? `${formatNumber(app.forLoad)} app servers and ${formatNumber(ws.forLoad)} WebSocket servers`
+        : `${formatNumber(app.forLoad)} app servers`;
+      return `Already met: the load already needs ${servers} behind a load balancer, more than the 2 copies${below.parts.ws ? ' of each' : ''} 99.9% asks for.`;
+    }
+    if (setup.nfr.availability === 3 && below.region2) {
+      return `Already met: ${usersLabelOf(setup)} daily users already built region 2, a full copy of region 1.`;
+    }
+    return undefined;
+  },
+  latency: (below, setup) =>
+    setup.nfr.latency === 1 && below.parts.cache
+      ? `Already met: ${usersLabelOf(setup)} daily users already put a cache in front of the database reads.`
+      : undefined,
+  durability: (below, setup) =>
+    below.syncStandby
+      ? `Already met: ${valueOf('availability', setup.nfr.availability)} already keeps a standby copy, and Strong consistency already makes each write wait for it.`
+      : undefined,
+};
+
+/**
+ * When the current level of a target draws the same as the level below it - an earlier choice
+ * already built what it asks for - the line the Lab shows under its slider, which stays on.
+ * Undefined at the lowest level, while the target is off, in the loop, or when the level draws something.
+ */
+export function alreadyMet(id: NfrId, setup: Setup): string | undefined {
+  const level = setup.nfr[id];
+  if (level === 0 || setup.loop) return undefined;
+  const arch = architecture(setup);
+  if (!targetApplies(id, arch)) return undefined;
+  const below = architecture({ ...setup, nfr: { ...setup.nfr, [id]: level - 1 } });
+  if (drawingOf(arch) !== drawingOf(below)) return undefined;
+  return ALREADY_MET[id]?.(below, setup);
 }
 
 /** The structural decisions the quality targets force, naming only parts that are drawn. */

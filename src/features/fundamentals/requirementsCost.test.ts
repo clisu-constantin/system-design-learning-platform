@@ -186,6 +186,17 @@ test('each part is billed per instance drawn', () => {
   }
 });
 
+test('a partitioned database bills every partition, although each one alone is a single point', () => {
+  // Uber at 100M daily users and 99%: "DB: 2 partitions x1".
+  const arch = architecture(core('uber', { users: 3 }));
+  const db = costLines(arch).find((entry) => entry.id === 'db');
+
+  assert.equal(arch.sizing.database.partitions, 2);
+  assert.equal(arch.dbCopies, 1);
+  assert.equal(db?.instances, 2);
+  assert.equal(db?.cost, 2 * PART_COST.db);
+});
+
 test('more users means more instances, and more instances cost more', () => {
   for (const product of PRODUCTS) {
     let previous = 0;
