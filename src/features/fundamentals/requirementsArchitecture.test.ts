@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {
   DEFAULT_SETUP,
   FOCUS_SETUPS,
+  LOOP_USERS,
   NFRS,
   PART_ORDER,
   RELAXED,
@@ -939,6 +940,32 @@ test('the What is System Design Diagram draws the Lab at round 2, and no step cr
   const firstRed = steps.findIndex((step) => step.outcome === 'failure');
   assert.deepEqual([steps[firstRed].from, steps[firstRed].to], ['api', 'api']);
   for (const step of steps.slice(0, firstRed + 1)) assert.ok(step.from !== 'lb' && step.to !== 'lb', step.label);
+});
+
+test('every What is System Design step agrees with the nodes it plays on, or names the earlier round it tells', () => {
+  // The Diagram draws round 2 (10M users, after the round 1 fix). A caption about an earlier round
+  // says which one ("1M users"), and is held to the Lab at that round; any other caption is held to
+  // the nodes drawn.
+  const start = FOCUS_SETUPS['what-is-system-design'];
+  const labAt = (users: number) => architecture({ ...start, loop: { users, fixes: users >= 2 ? ['scale-out' as const] : [] } });
+  /** A count a caption claims for a part, and whether a Lab title agrees with it. */
+  const claims: [RegExp, PartId, (title: string) => boolean][] = [
+    [/\bone server\b|\bApp server\b(?!s)/, 'api', (title) => title === 'App server'],
+    [/\bmore servers\b|\bApp servers\b/, 'api', (title) => /^App servers x\d+$/.test(title)],
+    [/\bone Database\b/i, 'db', (title) => title === 'Database'],
+  ];
+  const steps = foundationVisuals['what-is-system-design'].steps ?? [];
+  const drawn = new Map(foundationVisuals['what-is-system-design'].nodes.map((node) => [node.id, node.label]));
+  for (const step of steps) {
+    const round = LOOP_USERS.findIndex((users) => new RegExp(`(^|\\s)${users}\\b`).test(step.label));
+    const arch = labAt(round === -1 ? 2 : round);
+    for (const [pattern, id, agrees] of claims) {
+      if (!pattern.test(step.label)) continue;
+      // Without a round, the caption describes the nodes on screen: they are the Lab at round 2.
+      const title = round === -1 ? drawn.get(id) : arch.parts[id]?.title;
+      assert.ok(title && agrees(title), `"${step.label}" against "${title}"`);
+    }
+  }
 });
 
 test('the Non-Functional Lesson numbers: single points 5, 3, 0 and about 32 requests a second', () => {

@@ -9,7 +9,9 @@ export const foundationVisuals: Record<string, VisualSpec> = {
     // feed reads. The same parts under the same names and stat rows (Object storage and Queue +
     // workers are left out); every number is the sizing model (requirementsBottleneck.ts), and a
     // test holds each stat row to the Lab. The steps before round 1 was fixed never travel a wire
-    // through the Load balancer: the Lab has none until that fix, so they stay on one part.
+    // through the Load balancer: the Lab has none until that fix, so they stay on one part. The
+    // nodes show round 2, so a caption about an earlier round names its users ("at 100k", "1M
+    // users") and is held to the Lab at that round; every other caption agrees with the nodes.
     width: 800,
     height: 320,
     caption:
@@ -39,7 +41,7 @@ export const foundationVisuals: Record<string, VisualSpec> = {
     ],
     steps: [
       { from: 'users', to: 'users', label: 'Requirements: post, feed, follow, like' },
-      { from: 'api', to: 'db', label: 'Simplest design: one server, one database' },
+      { from: 'api', to: 'db', label: 'Simplest design at 100k: one server' },
       { from: 'api', to: 'api', label: '1M users: App server over limit', outcome: 'failure' },
       { from: 'lb', to: 'api', label: 'Add one component: more servers' },
       { from: 'api', to: 'api', label: 'Its cost: servers must be stateless', outcome: 'warning' },
