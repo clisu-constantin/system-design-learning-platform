@@ -144,13 +144,21 @@ export function VerticalScalingLab() {
       running={running}
       onToggleRun={() => setRunning((value) => !value)}
       onReset={reset}
-      legend={<ParticleLegend outcomes={['success', 'warning', 'failure']} />}
+      legend={
+        <ParticleLegend
+          outcomes={[
+            'success',
+            { outcome: 'warning', label: 'Slow: CPU above 85%' },
+            { outcome: 'failure', label: 'Request failed' },
+          ]}
+        />
+      }
       events={events}
       actions={
         <>
           <Button variant="secondary" onClick={downgrade} disabled={tierIndex === 0}>
             <ArrowDownToLine className="h-4 w-4" />
-            Downgrade
+            Downgrade server
           </Button>
           <Button variant="primary" onClick={upgrade} disabled={tierIndex >= MACHINE_TIERS.length - 1}>
             <ArrowBigUpDash className="h-4 w-4" />
@@ -171,7 +179,7 @@ export function VerticalScalingLab() {
               The machine is over capacity: CPU is pinned, latency is climbing through queueing, and{' '}
               {formatPercent(load.errorRate, 1)} of requests are being rejected. Upgrading to {comparison.name} would
               bring latency to roughly {formatLatency(nextLoad.latencyMs)} - but the server is still a single point of
-              failure, and the cost goes from ${tier.costPerMonth} to ${comparison.costPerMonth} per month.
+              failure, and the relative cost goes from ${tier.costPerMonth} to ${comparison.costPerMonth} per month.
             </>
           ) : (
             <>
@@ -255,6 +263,7 @@ export function VerticalScalingLab() {
                 <button
                   key={item.id}
                   type="button"
+                  aria-pressed={index === tierIndex}
                   onClick={() => selectTier(index)}
                   className={`rounded-xl border p-3 text-left transition-colors ${
                     index === tierIndex ? 'border-brand bg-brand/5' : 'border-line hover:border-brand/50'
@@ -289,7 +298,7 @@ export function VerticalScalingLab() {
             tone={load.saturated ? 'danger' : 'brand'}
             hint="Requests per second arriving at the single server."
           />
-          <div className="rounded-xl border border-line bg-elevated p-3 space-y-2">
+          <div className="space-y-2 border-t border-line pt-4">
             <p className="label">Current machine</p>
             <div className="flex items-center gap-2 text-xs text-muted">
               <Cpu className="h-3.5 w-3.5" /> {tier.cpu} vCPU
@@ -299,7 +308,7 @@ export function VerticalScalingLab() {
             </div>
             <Meter label="Utilization" value={load.cpu} />
           </div>
-          <div className="rounded-xl border border-line bg-elevated p-3">
+          <div className="border-t border-line pt-4">
             <p className="label mb-2">Still true after upgrading</p>
             <ul className="space-y-1 text-[11px] text-muted">
               <li>One machine - a single point of failure</li>
@@ -322,7 +331,7 @@ export function VerticalScalingLab() {
           alert={load.saturated}
         >
           <Meter label="CPU" value={load.cpu} />
-          <Meter label="Memory" value={Math.min(0.95, load.cpu * 0.8 + 0.1)} tone="violet" />
+          <Meter label="Memory (model)" value={Math.min(0.95, load.cpu * 0.8 + 0.1)} tone="violet" />
           <NodeStatRow label="Capacity" value={`${formatNumber(tier.capacity)}/s`} />
           <NodeStatRow
             label="Latency"

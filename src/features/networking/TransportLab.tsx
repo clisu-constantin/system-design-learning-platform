@@ -70,10 +70,12 @@ const RECEIVER_NAME: Record<Payload, string> = { voice: 'Voice player', file: 'F
 /* Layout: four lanes, each a client, a wire into the one shared Network, a wire out of it and a
    server. The wires end at small ports on the Network card edges (not at its centre), so each lane
    keeps its own straight wire and a dropped packet stops on its own lane. */
-const NODE = { w: 220, h: 110 };
+// A lane card renders 128px tall (title, subtitle, two stat rows, status): at 110 each TCP card overlapped the
+// UDP card below it.
+const NODE = { w: 220, h: 128 };
 const NET = { x: 370, w: 220 };
-const LANE_Y: Record<LaneId, number> = { 'voice-tcp': 16, 'voice-udp': 138, 'file-tcp': 282, 'file-udp': 404 };
-const HEIGHT = 530;
+const LANE_Y: Record<LaneId, number> = { 'voice-tcp': 16, 'voice-udp': 156, 'file-tcp': 318, 'file-udp': 458 };
+const HEIGHT = 602;
 
 const LAYOUT: Layout = {
   network: { x: NET.x, y: 16, w: NET.w, h: LANE_Y['file-udp'] + NODE.h - 16 },
@@ -213,7 +215,7 @@ export function TransportLab() {
       }
       controls={
         <>
-          <div className="rounded-xl border border-line bg-elevated p-3">
+          <div className="border-b border-line pb-4">
             <p className="label mb-2">What the client sends</p>
             <ul className="space-y-1 text-[11px] text-muted">
               <li>
@@ -235,7 +237,6 @@ export function TransportLab() {
             step={0.01}
             onChange={changeNetwork('lossRate')}
             format={(value) => formatPercent(value)}
-            tone="danger"
             hint="Share of data packets the network drops. TCP and UDP lose the same packet numbers."
           />
           <Slider
@@ -256,10 +257,9 @@ export function TransportLab() {
             step={5}
             onChange={changeNetwork('jitterMs')}
             format={(value) => `0-${value} ms`}
-            tone="warn"
             hint="Random extra delay per packet, so packets can overtake each other."
           />
-          <div className="rounded-xl border border-line bg-elevated p-3">
+          <div className="border-t border-line pt-4">
             <p className="label mb-2">Simplified model</p>
             <ul className="space-y-1 text-[11px] text-muted">
               <li>Shown {SLOW_MOTION}x slower than real time; times in the log are simulated.</li>
@@ -356,7 +356,7 @@ function Lane({ id, payload, transport, stream, rtt }: { id: LaneId; payload: Pa
             <NodeStatRow
               label="Never arrived"
               value={formatNumber(payload === 'voice' ? stream.stats.lost : stream.stats.missing)}
-              tone="text-danger"
+              tone={(payload === 'voice' ? stream.stats.lost : stream.stats.missing) > 0 ? 'text-danger' : 'text-ink'}
             />
           </>
         )}
@@ -383,7 +383,7 @@ function insightText({ lossRate, jitterMs }: NetworkSetup, sim: Sim) {
   const voice = `Voice call: TCP lost no frame, but ${voiceTcp.late} of ${decided} (${formatPercent(voiceTcp.late / decided, 1)}) came too late to play, because each resend comes at least a round trip later and the frames behind it wait too. UDP lost ${voiceUdp.lost} and had ${voiceUdp.late} late: each loss is one ${VOICE_FRAME_MS} ms gap the codec can hide. Late but complete is worth nothing to a live call.${
     jitterMs > PLAYOUT_BUFFER_MS ? ` Jitter above the ${PLAYOUT_BUFFER_MS} ms playout buffer also makes UDP frames late.` : ''
   }`;
-  const file = `File: TCP finished ${fileTcp.filesComplete} of ${fileTcp.files} files complete, in ${formatLatency(tcpAvg)} on average. UDP finished ${fileUdp.files} in ${formatLatency(udpAvg)}, but ${fileUdp.files - fileUdp.filesComplete} had holes. On time but lossy is worth nothing for a file.`;
+  const file = `File: TCP delivered ${fileTcp.filesComplete} of ${fileTcp.files} files whole, in ${formatLatency(tcpAvg)} on average. UDP finished ${fileUdp.files} in ${formatLatency(udpAvg)}, but ${fileUdp.files - fileUdp.filesComplete} had holes. On time but lossy is worth nothing for a file.`;
   return `${voice} ${file} Same network, opposite answers: what matters is whether late data still has value.`;
 }
 
@@ -478,7 +478,7 @@ function ReceiverStrips({ sim }: { sim: Sim }) {
           <p className="text-xs font-medium text-muted">
             {payload === 'voice'
               ? `Voice call: the last ${VOICE_CELLS} frames, oldest on the left`
-              : 'File: every packet of the file each one is sending now'}
+              : 'File: every packet of the file each stream is sending now'}
           </p>
           <StripRow stream={sim[`${payload}-tcp`]} now={sim.now} />
           <StripRow stream={sim[`${payload}-udp`]} now={sim.now} />

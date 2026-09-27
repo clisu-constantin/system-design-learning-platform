@@ -389,15 +389,15 @@ export function CdnLab({ focus }: LabProps<'cdn'>) {
     </>
   ) : cacheControl === 'no-store' ? (
     <>
-      private, no-store forbids a shared cache to keep a copy, so every request goes on to the origin and the hit rate is
-      0%. Misses are still a little faster than with no CDN, because the edge keeps warm connections to the origin - but
-      the origin carries all the traffic. Right for per-user data, wasteful for public files.
+      The header private, no-store forbids a shared cache to keep a copy, so every request goes on to the origin and
+      the hit rate is 0%. Misses are still a little faster than with no CDN, because the edge keeps warm connections to
+      the origin - but the origin carries all the traffic. Right for per-user data, wasteful for public files.
     </>
   ) : cacheControl === 'no-cache' ? (
     <>
-      no-cache does not mean do not cache: the edge keeps the copy but asks the origin before every use. Most answers
-      are a small 304 Not Modified ({formatNumber(revalidateQps)} per second), yet each still costs a trip to the origin
-      and the origin sees every request. Right for HTML, far too cautious for hashed files.
+      The header no-cache does not mean do not cache: the edge keeps the copy but asks the origin before every use.
+      Most answers are a small 304 Not Modified ({formatNumber(revalidateQps)} per second), yet each still costs a trip
+      to the origin and the origin sees every request. Right for HTML, far too cautious for hashed files.
     </>
   ) : cacheKey === 'cookie' ? (
     <>
@@ -593,7 +593,7 @@ export function CdnLab({ focus }: LabProps<'cdn'>) {
             onChange={change('cacheKey')}
             hint="What makes two requests count as the same object. Everything added here multiplies the copies."
           />
-          <div className="rounded-xl border border-line bg-elevated p-3">
+          <div className="border-t border-line pt-4">
             <p className="label mb-2">Origin load</p>
             <Meter value={totalQps > 0 ? Math.min(1, originQps / totalQps) : 0} label="Share reaching origin" tone="violet" />
             <p className="mt-2 text-[11px] text-faint">
@@ -639,7 +639,13 @@ export function CdnLab({ focus }: LabProps<'cdn'>) {
               status={!inUse ? 'down' : purging.has(edge.id) ? 'degraded' : 'healthy'}
               statusLabel={!inUse ? 'Off' : purging.has(edge.id) ? 'Purge pending' : undefined}
             >
-              <NodeStatRow label="Hit rate" value={inUse ? formatPercent(edgeHitRate) : '-'} tone="text-ok" />
+              <NodeStatRow
+                label="Hit rate"
+                value={inUse ? formatPercent(edgeHitRate) : '-'}
+                tone={
+                  !inUse ? 'text-ink' : edgeHitRate > 0.8 ? 'text-ok' : edgeHitRate > 0.5 ? 'text-warn' : 'text-danger'
+                }
+              />
               <NodeStatRow label="Edge RTT" value={formatLatency(rtt(nearest?.edgeKm ?? 0))} />
               <NodeStatRow label="Stored" value={inUse ? formatNumber(stats.store.size) : '-'} />
               <NodeStatRow

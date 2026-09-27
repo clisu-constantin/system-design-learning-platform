@@ -399,7 +399,7 @@ export function PartitioningLab() {
       return (
         <>
           One table of {TOTAL_ROWS}M rows: every query reads all of it under this model, whatever it filters on. Switch to
-          Range and run the dashboard query to see the planner skip five of six pieces.
+          Range and run the dashboard query to see the planner skip five of the six partitions.
         </>
       );
     if (pruned)
@@ -427,7 +427,15 @@ export function PartitioningLab() {
       running={running}
       onToggleRun={() => setRunning((value) => !value)}
       onReset={reset}
-      legend={<ParticleLegend outcomes={['success', 'warning', 'failure']} />}
+      legend={
+        <ParticleLegend
+          outcomes={[
+            { outcome: 'success', label: 'Query' },
+            { outcome: 'warning', label: 'DELETE batch' },
+            { outcome: 'failure', label: 'Query timed out' },
+          ]}
+        />
+      }
       events={events}
       insight={<Insight>{insight}</Insight>}
       metrics={
@@ -513,7 +521,7 @@ export function PartitioningLab() {
             onChange={(value) => setSetup((current) => ({ ...current, qps: value }))}
             format={(value) => `${value} q/s`}
           />
-          <div className="space-y-2 rounded-xl border border-line bg-elevated p-3">
+          <div className="space-y-2 border-t border-line pt-4">
             <p className="label">Retention: remove the oldest month</p>
             <Button className="w-full" variant="primary" size="sm" disabled={!canDrop} onClick={dropOldest}>
               <Scissors className="h-3.5 w-3.5" />

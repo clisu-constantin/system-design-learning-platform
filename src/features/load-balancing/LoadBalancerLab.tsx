@@ -46,7 +46,7 @@ const ALGORITHM_NOTE: Record<Algorithm, string> = {
   'round-robin': 'Each server takes the next request in turn. Even distribution, but it ignores how busy a server is. Turn on "Server 1 is slow" and compare it with Least Connections.',
   weighted: 'Bigger servers receive proportionally more requests. Server 1 has weight 3 (a machine three times the size), the rest weight 1.',
   'least-connections': 'The server with the fewest in-flight requests wins, so slow servers stop receiving new work.',
-  random: 'Uniformly random choice. Close to round robin at high volume, with no shared counter.',
+  random: 'Uniformly random choice. Close to Round Robin at high volume, with no shared counter.',
 };
 
 /** Every control of the lab, in one object so Reset cannot miss one. */
@@ -554,7 +554,7 @@ export function LoadBalancerLab({ focus }: LabProps<'load-balancer'>) {
     const xs = spread(count, 480, width, 12);
     const result: Layout = {
       users: { x: 390, y: 16, w: 180, h: 62 },
-      lb: { x: 370, y: 160, w: 220, h: 96 },
+      lb: { x: 360, y: 160, w: 240, h: 96 },
     };
     servers.forEach((server, index) => {
       result[server.id] = { x: xs[index], y: 352, w: width, h: 132 };
@@ -737,8 +737,8 @@ export function LoadBalancerLab({ focus }: LabProps<'load-balancer'>) {
             <LiveChart
               data={points}
               series={[
-                { key: 'avg', label: 'Avg latency (ms)', color: 'ok' },
-                { key: 'p95', label: 'P95 latency (ms)', color: 'warn' },
+                { key: 'avg', label: 'Avg latency (ms)', color: 'brand' },
+                { key: 'p95', label: 'P95 latency (ms)', color: 'violet' },
               ]}
               variant="line"
               height={150}
@@ -805,7 +805,7 @@ export function LoadBalancerLab({ focus }: LabProps<'load-balancer'>) {
             }}
             description="Each request takes 2x as long there. Compare Round Robin and Least Connections."
           />
-          <div className="rounded-xl border border-line bg-elevated p-3">
+          <div className="border-y border-line py-4">
             <p className="label mb-2">Pool capacity</p>
             <Meter
               value={poolCapacity ? traffic / poolCapacity : 1}
@@ -819,25 +819,29 @@ export function LoadBalancerLab({ focus }: LabProps<'load-balancer'>) {
             description={`Probe every server; eject after failed probes, readmit after ${RISE_THRESHOLD} passes.`}
             hint="Simplified: a probe here fails only when the process is down or booting. A real probe can also time out on an overloaded server."
           />
-          <Slider
-            label="Probe interval"
-            value={intervalSec}
-            min={1}
-            max={10}
-            step={1}
-            onChange={change('intervalSec')}
-            format={(value) => `every ${value} s`}
-            hint="How often the balancer probes each server. Shorter finds a dead server sooner, at the cost of more probe traffic."
-          />
-          <Stepper
-            label="Failures to eject"
-            value={failThreshold}
-            min={1}
-            max={5}
-            onChange={change('failThreshold')}
-            hint="Consecutive failed probes before a server leaves the pool. One is fast but ejects a healthy server on a single slow reply (flapping)."
-          />
-          <div className="rounded-xl border border-line bg-elevated p-3 text-xs text-muted">
+          {healthChecks ? (
+            <>
+              <Slider
+                label="Probe interval"
+                value={intervalSec}
+                min={1}
+                max={10}
+                step={1}
+                onChange={change('intervalSec')}
+                format={(value) => `every ${value} s`}
+                hint="How often the balancer probes each server. Shorter finds a dead server sooner, at the cost of more probe traffic."
+              />
+              <Stepper
+                label="Failures to eject"
+                value={failThreshold}
+                min={1}
+                max={5}
+                onChange={change('failThreshold')}
+                hint="Consecutive failed probes before a server leaves the pool. One is fast but ejects a healthy server on a single slow reply (flapping)."
+              />
+            </>
+          ) : null}
+          <p className="text-xs text-muted">
             {healthChecks ? (
               <>
                 A dead server keeps receiving requests for up to about{' '}
@@ -846,7 +850,7 @@ export function LoadBalancerLab({ focus }: LabProps<'load-balancer'>) {
             ) : (
               <>With no health checks a dead server is never taken out of the pool.</>
             )}
-          </div>
+          </p>
         </>
       }
     >
@@ -854,7 +858,7 @@ export function LoadBalancerLab({ focus }: LabProps<'load-balancer'>) {
         layout={layout}
         edges={edges}
         particles={particleViews}
-        height={505}
+        height={580}
         className="bg-canvas"
       >
         <ArchNode
