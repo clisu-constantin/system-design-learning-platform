@@ -489,7 +489,7 @@ export function CircuitBreakerLab() {
                 'info',
               );
             }}
-            description="Off: every call waits for the timeout before failing"
+            description="Off: every failing call waits for the timeout"
           />
           <Slider
             label="Downstream failure rate"
