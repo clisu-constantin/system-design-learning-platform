@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState, type ReactNode } from 'react';
+import { useMemo, useRef, type ReactNode } from 'react';
 import { Timer } from 'lucide-react';
 import {
   ArchNode,
@@ -31,6 +31,7 @@ import {
   type SpeedInputs,
   type UserRegion,
 } from './latencyModel';
+import { useLabRunning } from '@/hooks/useLabRunning';
 
 interface SpeedViewProps {
   inputs: SpeedInputs;
@@ -93,7 +94,7 @@ export function CapacitySpeedView({ inputs, change, onReset, viewSwitch }: Speed
   const far = region === 'other-continent';
 
   // ---- moving traffic -------------------------------------------------------
-  const [running, setRunning] = useState(true);
+  const [running, setRunning] = useLabRunning();
   const particles = useRef<Particle[]>([]);
   const rerender = useRerender(30);
 
@@ -138,7 +139,7 @@ export function CapacitySpeedView({ inputs, change, onReset, viewSwitch }: Speed
       title="Capacity Estimation Lab"
       description="Follow one request hop by hop, from the user to the data and back, and see which hop decides how long it takes."
       running={running}
-      onToggleRun={() => setRunning((value) => !value)}
+      onRunningChange={setRunning}
       onReset={() => {
         onReset();
         particles.current = [];

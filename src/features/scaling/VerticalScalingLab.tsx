@@ -10,6 +10,7 @@ import { MACHINE_TIERS } from '@/simulations/models/machine';
 import { useRerender } from '@/hooks/useRerender';
 import { sampleArrivals } from '@/utils/math';
 import { formatLatency, formatNumber, formatPercent } from '@/utils/format';
+import { useLabRunning } from '@/hooks/useLabRunning';
 
 const LAYOUT: Layout = {
   users: { x: 380, y: 20, w: 200, h: 62 },
@@ -36,7 +37,7 @@ const RESTARTING_LOAD: LoadResponse = { utilization: 0, cpu: 0, latencyMs: 0, er
  * The teaching moment is that upgrading fixes capacity but never redundancy.
  */
 export function VerticalScalingLab() {
-  const [running, setRunning] = useState(true);
+  const [running, setRunning] = useLabRunning();
   const [traffic, setTraffic] = useState(450);
   const [tierIndex, setTierIndex] = useState(0);
   const particles = useRef<Particle[]>([]);
@@ -142,7 +143,7 @@ export function VerticalScalingLab() {
       title="Vertical Scaling Lab"
       description="Push traffic past what one machine can serve, then buy a bigger machine and watch what improves - and what does not."
       running={running}
-      onToggleRun={() => setRunning((value) => !value)}
+      onRunningChange={setRunning}
       onReset={reset}
       legend={
         <ParticleLegend

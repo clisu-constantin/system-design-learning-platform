@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useRef } from 'react';
 import { Power, RotateCw, ShieldAlert } from 'lucide-react';
 import {
   ArchNode,
@@ -25,6 +25,7 @@ import { useRerender } from '@/hooks/useRerender';
 import { sampleArrivals } from '@/utils/math';
 import { formatLatency, formatNumber, formatPercent } from '@/utils/format';
 import type { LabFocus, LabProps, NodeStatus } from '@/types';
+import { useLabRunning } from '@/hooks/useLabRunning';
 
 /**
  * When the primary acknowledges a write:
@@ -204,7 +205,7 @@ export function ReplicationLab({ focus }: LabProps<'replication'>) {
   // Every control lives in one object, so Reset cannot miss one.
   const { setup, setSetup, change } = useLabSetup(start);
   const { mode, writeRate, readRate, lagMs, readFromReplicas, readYourWrites } = setup;
-  const [running, setRunning] = useState(true);
+  const [running, setRunning] = useLabRunning();
 
   const state = useRef<State>(createState());
   const rerender = useRerender(30);
@@ -601,7 +602,7 @@ export function ReplicationLab({ focus }: LabProps<'replication'>) {
       title="Database Replication Lab"
       description="Writes go to the primary (the leader) and stream to replicas (its followers). Watch replication lag create stale reads, choose when a write counts as saved, then kill the primary and see what a failover costs."
       running={running}
-      onToggleRun={() => setRunning((value) => !value)}
+      onRunningChange={setRunning}
       onReset={reset}
       legend={
         <ParticleLegend

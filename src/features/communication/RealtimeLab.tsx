@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useRef, useState } from 'react';
+import { useCallback, useMemo, useRef } from 'react';
 import { Zap } from 'lucide-react';
 import {
   ArchNode,
@@ -26,6 +26,7 @@ import {
   type RealtimeResult,
   type Technique,
 } from './realtimeModel';
+import { useLabRunning } from '@/hooks/useLabRunning';
 
 interface Setup {
   technique: Technique;
@@ -177,7 +178,7 @@ export function RealtimeLab({ focus }: LabProps<'realtime'>) {
   const { setup, setSetup, change } = useLabSetup(start);
   const { technique, clients, eventsPerMin, sendsPerMin, intervalS, holdS, etag } = setup;
 
-  const [running, setRunning] = useState(true);
+  const [running, setRunning] = useLabRunning();
   const sim = useRef<Sim>(createSim(start));
   const rerender = useRerender(30);
   const { events, log, clear } = useEventLog();
@@ -421,7 +422,7 @@ export function RealtimeLab({ focus }: LabProps<'realtime'>) {
       title="Realtime Lab"
       description="One server with new events and many clients waiting for them. Pick how the updates reach the clients and watch the delay, the wasted requests, the open connections and the server load."
       running={running}
-      onToggleRun={() => setRunning((value) => !value)}
+      onRunningChange={setRunning}
       onReset={reset}
       legend={<RealtimeLegend />}
       events={events}

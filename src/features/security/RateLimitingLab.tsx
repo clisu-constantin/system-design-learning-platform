@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useRef } from 'react';
 import { ArchNode, DiagramCanvas, NodeStatRow, ParticleLegend, type DiagramEdge, type Layout, type ParticleView } from '@/components/architecture';
 import { LiveChart } from '@/components/charts';
 import { Insight, LabShell, MetricsPanel } from '@/components/learning';
@@ -8,6 +8,7 @@ import { useLabSetup } from '@/hooks/useLabSetup';
 import { useRerender } from '@/hooks/useRerender';
 import { clamp, sampleArrivals } from '@/utils/math';
 import { formatNumber, formatPercent } from '@/utils/format';
+import { useLabRunning } from '@/hooks/useLabRunning';
 
 type Algorithm = 'fixed-window' | 'sliding-window' | 'token-bucket' | 'leaky-bucket';
 
@@ -92,7 +93,7 @@ const EDGES: DiagramEdge[] = [
 ];
 
 export function RateLimitingLab() {
-  const [running, setRunning] = useState(true);
+  const [running, setRunning] = useLabRunning();
   // Every control lives in one object, so Reset cannot miss one.
   const { setup, setSetup, change } = useLabSetup(DEFAULT_SETUP);
   const { algorithm, limit, windowSeconds, requestRate } = setup;
@@ -123,7 +124,7 @@ export function RateLimitingLab() {
     state.current.edgeBurst = { stage: 'armed', firstAt: 0, allowed: 0 };
     setRunning(true);
     log(`Armed: ${limit} requests 0.1 s before the next window edge, ${limit} more 0.1 s after it`, 'info');
-  }, [limit, log]);
+  }, [limit, log, setRunning]);
 
   useTicker(running, (dt) => {
     const current = state.current;
@@ -226,7 +227,7 @@ export function RateLimitingLab() {
       title="Rate Limiting Lab"
       description="Four algorithms, one traffic source. Watch tokens refill, windows roll and buckets leak - and see which one lets a burst through. Simplified: one client and one limiter instance; with several instances the counters live in a shared store such as Redis."
       running={running}
-      onToggleRun={() => setRunning((value) => !value)}
+      onRunningChange={setRunning}
       onReset={reset}
       legend={
         <ParticleLegend

@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useRef } from 'react';
 import { Hourglass, Power, RotateCw, Send } from 'lucide-react';
 import {
   ArchNode,
@@ -39,6 +39,7 @@ import {
   type PartitionMode,
   type RaftNode,
 } from './consensusModel';
+import { useLabRunning } from '@/hooks/useLabRunning';
 
 interface Setup {
   size: 3 | 5;
@@ -185,7 +186,7 @@ export function ConsensusLab({ focus }: LabProps<'consensus'>) {
   const { size, writeRate, timeoutS, randomTimeouts } = setup;
   const timing = { timeoutS, randomTimeouts };
 
-  const [running, setRunning] = useState(true);
+  const [running, setRunning] = useLabRunning();
   const state = useRef<ClusterState>(createCluster(start.size, start));
   const rerender = useRerender(30);
   const { events, log, clear } = useEventLog(60);
@@ -322,7 +323,7 @@ export function ConsensusLab({ focus }: LabProps<'consensus'>) {
       title="Consensus Lab"
       description="A Raft-style cluster, simplified: nodes elect a leader, and the leader commits each write once a majority stores it. Crash, pause or cut off nodes and watch elections, the quorum and when writes stop."
       running={running}
-      onToggleRun={() => setRunning((value) => !value)}
+      onRunningChange={setRunning}
       onReset={reset}
       legend={<ConsensusLegend />}
       events={events}

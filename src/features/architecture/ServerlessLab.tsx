@@ -24,6 +24,7 @@ import { useRerender } from '@/hooks/useRerender';
 import { percentile, sampleArrivals } from '@/utils/math';
 import { formatLatency, formatPercent } from '@/utils/format';
 import type { NodeStatus } from '@/types';
+import { useLabRunning } from '@/hooks/useLabRunning';
 
 /*
  * A simplified model of a function platform (shaped on AWS Lambda) next to one
@@ -163,7 +164,7 @@ const formatCost = (value: number | null) => (value === null ? '-' : value >= 10
  * with the same events also priced on one always-on server.
  */
 export function ServerlessLab() {
-  const [running, setRunning] = useState(true);
+  const [running, setRunning] = useLabRunning();
   const [setup, setSetup] = useState<Setup>(DEFAULT_SETUP);
   const state = useRef<SimState>(createState());
   const rerender = useRerender(30);
@@ -546,7 +547,7 @@ export function ServerlessLab() {
       title="Serverless Lab"
       description="Events reach a function platform that starts an instance per concurrent request and reclaims idle ones. Change the traffic shape and watch scale to zero, cold starts, the concurrency limit and the cost against an always-on server."
       running={running}
-      onToggleRun={() => setRunning((value) => !value)}
+      onRunningChange={setRunning}
       onReset={reset}
       legend={
         <ParticleLegend

@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react';
+import { useRef } from 'react';
 import { CreditCard, MousePointerClick } from 'lucide-react';
 import {
   ArchNode,
@@ -16,6 +16,7 @@ import { useLabSetup } from '@/hooks/useLabSetup';
 import { useRerender } from '@/hooks/useRerender';
 import { cn } from '@/utils/cn';
 import type { RequestOutcome } from '@/types';
+import { useLabRunning } from '@/hooks/useLabRunning';
 
 /**
  * Idempotency: a client pays over a network that loses responses. The first
@@ -158,7 +159,7 @@ export function IdempotencyLab() {
   // Every control lives in one object, so Reset cannot miss one.
   const { setup, setSetup, change } = useLabSetup(DEFAULT_SETUP);
   const { keyMode, responseLoss, maxAttempts, autoPay } = setup;
-  const [running, setRunning] = useState(true);
+  const [running, setRunning] = useLabRunning();
   const sim = useRef<SimState>(createState());
   const rerender = useRerender(30);
   const { events, log, clear } = useEventLog();
@@ -381,7 +382,7 @@ export function IdempotencyLab() {
       title="Idempotency Lab"
       description="Pay over a network that loses responses. Retry without a key and watch a double charge; send the same key on every retry and watch the retry answered from the keys table."
       running={running}
-      onToggleRun={() => setRunning((value) => !value)}
+      onRunningChange={setRunning}
       onReset={reset}
       legend={
         <ParticleLegend

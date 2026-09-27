@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState, type ReactNode } from 'react';
+import { useCallback, useRef, type ReactNode } from 'react';
 import { Zap } from 'lucide-react';
 import {
   ArchNode,
@@ -60,6 +60,7 @@ import {
   type Setup,
   type Trace,
 } from './monitoringModel';
+import { useLabRunning } from '@/hooks/useLabRunning';
 
 /** What the Lab opens on at /labs/monitoring, with no Lab focus: the whole-system dashboard, payments failing. */
 const DEFAULT_SETUP: Setup = {
@@ -232,7 +233,7 @@ export function MonitoringLab({ focus }: LabProps<'monitoring'>) {
   const start = focus ? FOCUS_SETUPS[focus] : DEFAULT_SETUP;
   // Every control lives in one object, so Reset cannot miss one.
   const { setup, setSetup, change } = useLabSetup(start);
-  const [running, setRunning] = useState(true);
+  const [running, setRunning] = useLabRunning();
   const state = useRef<SimState | null>(null);
   if (state.current === null) state.current = createState(start);
   const rerender = useRerender(30);
@@ -358,7 +359,7 @@ export function MonitoringLab({ focus }: LabProps<'monitoring'>) {
       title="Monitoring Lab"
       description="A small shop running live. Inject a fault, then read what comes out of every part: the log lines of one request, the metric graphs of the trend, the dashboard of the whole system and the alert rule that pages a human - or does not."
       running={running}
-      onToggleRun={() => setRunning((value) => !value)}
+      onRunningChange={setRunning}
       onReset={reset}
       events={events}
       actions={

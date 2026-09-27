@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useRef } from 'react';
 import { ArchNode, DiagramCanvas, NodeStatRow, ParticleLegend, type DiagramEdge, type Layout, type ParticleView } from '@/components/architecture';
 import { LiveChart } from '@/components/charts';
 import { Insight, LabShell, MetricsPanel, SIMULATED_HINT } from '@/components/learning';
@@ -19,6 +19,7 @@ import { useRerender } from '@/hooks/useRerender';
 import { sampleArrivals } from '@/utils/math';
 import { formatLatency, formatNumber, formatPercent } from '@/utils/format';
 import { cn } from '@/utils/cn';
+import { useLabRunning } from '@/hooks/useLabRunning';
 
 /*
  * Simplified model - chosen to teach, not measured:
@@ -129,7 +130,7 @@ export function BulkheadLab() {
   const { setup, setSetup, change } = useLabSetup(DEFAULT_SETUP);
   const { bulkheads, recsLatency, timeoutMs, recsPool, checkoutRate, recsRate } = setup;
 
-  const [running, setRunning] = useState(true);
+  const [running, setRunning] = useLabRunning();
   const state = useRef<SimState>(createState());
   const rerender = useRerender(30);
   const { events, log, clear } = useEventLog();
@@ -323,7 +324,7 @@ export function BulkheadLab() {
       title="Bulkhead Lab"
       description="One API calls two dependencies: Payments for checkout and Recommendations for the product page. Make Recommendations slow and watch its calls take every thread - then give each dependency its own pool."
       running={running}
-      onToggleRun={() => setRunning((value) => !value)}
+      onRunningChange={setRunning}
       onReset={reset}
       events={events}
       legend={

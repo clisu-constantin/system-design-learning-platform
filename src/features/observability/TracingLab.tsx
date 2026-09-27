@@ -15,6 +15,7 @@ import { nextParticleId, useEventLog, useTicker } from '@/simulations/engine';
 import type { NodeKind, RequestOutcome } from '@/types';
 import { cn } from '@/utils/cn';
 import { formatLatency, formatNumber } from '@/utils/format';
+import { useLabRunning } from '@/hooks/useLabRunning';
 
 /** The parts of the diagram. Every span belongs to exactly one of them. */
 type NodeId =
@@ -378,7 +379,7 @@ export function TracingLab() {
       setSetup((current) => ({ ...current, [key]: value }));
   const [selected, setSelected] = useState<string | null>(null);
   const [hovered, setHovered] = useState<string | null>(null);
-  const [running, setRunning] = useState(true);
+  const [running, setRunning] = useLabRunning();
   const state = useRef<SimState>({ dots: [], sinceSpawn: REQUEST_EVERY_S });
   const rerender = useRerender(30);
   const { events, log, clear } = useEventLog();
@@ -532,7 +533,7 @@ export function TracingLab() {
       title="Distributed Tracing Lab"
       description="One checkout request crosses five services, a cache, a database and a broker. Every hop records a span under the same trace_id. Point at a span in the waterfall to light up its hop, and change a latency to see which span owns the total."
       running={running}
-      onToggleRun={() => setRunning((value) => !value)}
+      onRunningChange={setRunning}
       onReset={reset}
       events={events}
       legend={

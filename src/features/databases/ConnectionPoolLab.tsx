@@ -18,6 +18,7 @@ import { useRerender } from '@/hooks/useRerender';
 import { sampleArrivals } from '@/utils/math';
 import { formatLatency, formatNumber, formatPercent } from '@/utils/format';
 import { cn } from '@/utils/cn';
+import { useLabRunning } from '@/hooks/useLabRunning';
 
 /*
  * Simplified database model - chosen to teach, not measured:
@@ -137,7 +138,7 @@ export function ConnectionPoolLab() {
     (value: Setup[K]) =>
       setSetup((current) => ({ ...current, [key]: value }));
 
-  const [running, setRunning] = useState(true);
+  const [running, setRunning] = useLabRunning();
   const state = useRef<SimState>(createState());
   const rerender = useRerender(30);
   const { events, log, clear } = useEventLog();
@@ -321,7 +322,7 @@ export function ConnectionPoolLab() {
       title="Connection Pool Lab"
       description="App instances borrow database connections from a pool. Size the pool, push the load and slow the queries, and watch where requests wait - in the pool, or inside an overloaded database."
       running={running}
-      onToggleRun={() => setRunning((value) => !value)}
+      onRunningChange={setRunning}
       onReset={reset}
       events={events}
       legend={

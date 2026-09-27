@@ -15,6 +15,7 @@ import { nextParticleId, useEventLog, useTicker, type EventTone } from '@/simula
 import { useRerender } from '@/hooks/useRerender';
 import { cn } from '@/utils/cn';
 import type { NodeStatus, RequestOutcome } from '@/types';
+import { useLabRunning } from '@/hooks/useLabRunning';
 
 /*
  * Simplified model, not a measurement. One saga runs at a time and its messages
@@ -458,7 +459,7 @@ const FAIL_LABEL: Record<FailAt, string> = {
  */
 export function SagaLab() {
   const [setup, setSetup] = useState<Setup>(DEFAULT_SETUP);
-  const [running, setRunning] = useState(true);
+  const [running, setRunning] = useLabRunning();
   const [results, setResults] = useState<RunResult[]>([]);
   const state = useRef<Sim>(createSim(DEFAULT_SETUP, 1));
   const rerender = useRerender(30);
@@ -529,9 +530,7 @@ export function SagaLab() {
     state.current = createSim(DEFAULT_SETUP, 1);
     setResults([]);
     clear();
-    setRunning(true);
-    rerender();
-  }, [clear, rerender]);
+  }, [clear]);
 
   const sim = state.current;
   const { world } = sim;
@@ -599,7 +598,7 @@ export function SagaLab() {
       title="Saga Lab"
       description="One order spans four services, each with its own database. Make a later step fail and watch the compensations undo the earlier ones in reverse - run by an orchestrator, or by services reacting to events."
       running={running}
-      onToggleRun={() => setRunning((value) => !value)}
+      onRunningChange={setRunning}
       onReset={reset}
       events={events}
       legend={

@@ -16,6 +16,7 @@ import { useEventLog, useTicker, type EventTone } from '@/simulations/engine';
 import { useRerender } from '@/hooks/useRerender';
 import { cn } from '@/utils/cn';
 import type { NodeStatus, RequestOutcome } from '@/types';
+import { useLabRunning } from '@/hooks/useLabRunning';
 
 /*
  * The authorization code flow with PKCE, one HTTP message at a time, between
@@ -660,7 +661,7 @@ export function OAuthLab() {
   const run = useMemo(() => buildRun(setup), [setup]);
   const { steps } = run;
 
-  const [running, setRunning] = useState(true);
+  const [running, setRunning] = useLabRunning();
   const sim = useRef<Sim>({ index: 0, t: 0, hold: 0, done: false, blocked: 0, breached: 0 });
   const rerender = useRerender(30);
   const { events, log, clear } = useEventLog(40);
@@ -720,9 +721,9 @@ export function OAuthLab() {
     rerender();
   };
 
-  const toggleRun = () => {
-    if (sim.current.done) restart();
-    setRunning((value) => !value);
+  const changeRunning = (next: boolean) => {
+    if (next && sim.current.done) restart();
+    setRunning(next);
   };
 
   const s = sim.current;
@@ -812,12 +813,11 @@ export function OAuthLab() {
       title="OAuth Lab"
       description="The authorization code flow with PKCE, one message at a time, between the user, the client app, the authorization server and the resource server. Then attack it and see which defence stops which attack."
       running={running}
-      onToggleRun={toggleRun}
+      onRunningChange={changeRunning}
       onReset={() => {
         setSetup(DEFAULT_SETUP);
         sim.current = { index: 0, t: 0, hold: 0, done: false, blocked: 0, breached: 0 };
         clear();
-        setRunning(true);
       }}
       actions={
         <Button onClick={nextStep}>

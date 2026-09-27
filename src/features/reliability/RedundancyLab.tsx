@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState, type ReactNode } from 'react';
+import { useCallback, useRef, type ReactNode } from 'react';
 import { ArrowUpFromLine, Dices, Target, Wrench, Zap } from 'lucide-react';
 import {
   ArchNode,
@@ -38,6 +38,7 @@ import {
   type Tier,
   type Zone,
 } from './redundancyModel';
+import { useLabRunning } from '@/hooks/useLabRunning';
 
 interface Setup {
   lbCopies: number;
@@ -243,7 +244,7 @@ export function RedundancyLab({ focus }: LabProps<'redundancy'>) {
   const challenge = focus === 'single-point-of-failure' ? 'find-spof' : focus === 'high-availability' ? 'target' : null;
   // Every control lives in one object, so Reset cannot miss one.
   const { setup, setSetup, change } = useLabSetup(start);
-  const [running, setRunning] = useState(true);
+  const [running, setRunning] = useLabRunning();
   const state = useRef<State>(createState());
   const rerender = useRerender(30);
   const { events, log, clear } = useEventLog();
@@ -593,7 +594,7 @@ export function RedundancyLab({ focus }: LabProps<'redundancy'>) {
       title="Redundancy Lab"
       description="A request needs a load balancer, an app server, the config service and the database. Add spare copies, then kill parts - click any box - and watch what keeps serving, how long a failover takes, and the availability the design reaches."
       running={running}
-      onToggleRun={() => setRunning((value) => !value)}
+      onRunningChange={setRunning}
       onReset={reset}
       legend={
         <ParticleLegend

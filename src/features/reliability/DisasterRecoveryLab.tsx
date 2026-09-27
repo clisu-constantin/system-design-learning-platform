@@ -18,6 +18,7 @@ import { sampleArrivals } from '@/utils/math';
 import { cn } from '@/utils/cn';
 import { formatSeconds } from '@/utils/format';
 import type { NodeStatus, RequestOutcome } from '@/types';
+import { useLabRunning } from '@/hooks/useLabRunning';
 
 /*
  * Simplified model, not a measurement. Every duration below is a round,
@@ -254,7 +255,7 @@ export function DisasterRecoveryLab() {
   const { setup, setSetup, change } = useLabSetup(DEFAULT_SETUP);
   const backupEvery = BACKUP_OPTIONS[setup.backupIndex];
 
-  const [running, setRunning] = useState(true);
+  const [running, setRunning] = useLabRunning();
   const [results, setResults] = useState<RunResult[]>([]);
   const state = useRef<SimState>(createState(backupEvery));
   const rerender = useRerender(30);
@@ -360,7 +361,7 @@ export function DisasterRecoveryLab() {
       }
       setRunning(true);
     },
-    [setup, log],
+    [setup, log, setRunning],
   );
 
   const rebuild = useCallback(() => {
@@ -473,7 +474,7 @@ export function DisasterRecoveryLab() {
       title="Disaster Recovery Lab"
       description="Choose how often you back up, where the backups live, how the database replicates and how much of region B runs. Then lose region A, or ship a bad migration, and read the data lost (RPO) and the time to recover (RTO)."
       running={running}
-      onToggleRun={() => setRunning((value) => !value)}
+      onRunningChange={setRunning}
       onReset={reset}
       legend={
         <div className="flex flex-wrap items-center justify-between gap-2">

@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState, type ReactNode } from 'react';
+import { useCallback, useRef, type ReactNode } from 'react';
 import { RefreshCcw, Rewind } from 'lucide-react';
 import { ArchNode, DiagramCanvas, NodeStatRow, ParticleLegend, type DiagramEdge, type Layout, type ParticleView } from '@/components/architecture';
 import { Insight, LabShell, MetricsPanel } from '@/components/learning';
@@ -37,6 +37,7 @@ import {
   type OffsetReset,
   type SeekResult,
 } from './eventLogModel';
+import { useLabRunning } from '@/hooks/useLabRunning';
 
 interface Setup {
   /** Commands per second sent to the write model. */
@@ -160,7 +161,7 @@ export function EventLogLab({ focus }: LabProps<'event-log'>) {
   const { writeRate, partitions, members, memberRate, replayFrom, offsetReset, projectorRate, delayMs, bug, snapshots, retention } =
     setup;
 
-  const [running, setRunning] = useState(true);
+  const [running, setRunning] = useLabRunning();
   const state = useRef<State>(createState(start));
   const rerender = useRerender(30);
   const { events, log, clear } = useEventLog();
@@ -410,7 +411,7 @@ export function EventLogLab({ focus }: LabProps<'event-log'>) {
       title="Event Log Lab"
       description="An append-only log split into partitions. A consumer group and a projector read it at their own offsets; the projector folds it into a read model you can throw away and rebuild."
       running={running}
-      onToggleRun={() => setRunning((value) => !value)}
+      onRunningChange={setRunning}
       onReset={reset}
       events={events}
       actions={

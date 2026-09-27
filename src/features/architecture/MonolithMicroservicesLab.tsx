@@ -1,4 +1,4 @@
-import { Fragment, useCallback, useRef, useState } from 'react';
+import { Fragment, useCallback, useRef } from 'react';
 import { Rocket, Zap } from 'lucide-react';
 import { ArchNode, DiagramCanvas, NodeStatRow, ParticleLegend, type DiagramEdge, type Layout, type ParticleView } from '@/components/architecture';
 import { Insight, LabShell, MetricsPanel, type MetricItem } from '@/components/learning';
@@ -19,6 +19,7 @@ import { useRerender } from '@/hooks/useRerender';
 import { sampleArrivals } from '@/utils/math';
 import { formatLatency, formatNumber, formatPercent } from '@/utils/format';
 import type { LabFocus, LabProps } from '@/types';
+import { useLabRunning } from '@/hooks/useLabRunning';
 
 /** The four architectures, from one process to one service per capability. */
 type Mode = 'monolith' | 'modular' | 'soa' | 'microservices';
@@ -370,7 +371,7 @@ export function MonolithMicroservicesLab({ focus }: LabProps<'monolith-microserv
   // Every control lives in one object, so Reset cannot miss one.
   const { setup, setSetup, change } = useLabSetup(start);
   const { mode, traffic, instances, broken, enforced, extracted, busLogic, busDown } = setup;
-  const [running, setRunning] = useState(true);
+  const [running, setRunning] = useLabRunning();
 
   const state = useRef<State>(createState());
   const rerender = useRerender(30);
@@ -841,7 +842,7 @@ export function MonolithMicroservicesLab({ focus }: LabProps<'monolith-microserv
       title="Monolith to Microservices Lab"
       description="One product, four architectures: a monolith, a modular monolith, SOA with a service bus, and microservices. Send traffic, break a part, and compare what actually changes."
       running={running}
-      onToggleRun={() => setRunning((value) => !value)}
+      onRunningChange={setRunning}
       onReset={reset}
       legend={
         <ParticleLegend

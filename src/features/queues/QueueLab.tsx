@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useRef } from 'react';
 import { Zap } from 'lucide-react';
 import {
   ArchNode,
@@ -19,6 +19,7 @@ import { useRerender } from '@/hooks/useRerender';
 import { clamp, sampleArrivals } from '@/utils/math';
 import { formatLatency, formatNumber, formatPercent } from '@/utils/format';
 import type { LabFocus, LabProps, RequestOutcome } from '@/types';
+import { useLabRunning } from '@/hooks/useLabRunning';
 
 /*
  * Simplified model - chosen to teach, not measured:
@@ -194,7 +195,7 @@ export function QueueLab({ focus }: LabProps<'queue'>) {
   const { queueOn, producerRate, workers, workerRate, bounded, maxDepth, timeoutMs, retries, failureRate, maxAttempts, retryDelay } =
     setup;
 
-  const [running, setRunning] = useState(true);
+  const [running, setRunning] = useLabRunning();
   const state = useRef<State>(createState());
   const rerender = useRerender(30);
   const { events, log, clear } = useEventLog();
@@ -591,7 +592,7 @@ export function QueueLab({ focus }: LabProps<'queue'>) {
       title="Message Queue Lab"
       description="Users, an API that produces work, a queue, and workers that consume it. Turn the queue off to make users wait for the workers."
       running={running}
-      onToggleRun={() => setRunning((value) => !value)}
+      onRunningChange={setRunning}
       onReset={() => {
         // Back to this Concept's starting setup, not the lab's global default.
         setSetup(start);

@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useRef } from 'react';
 import { ShieldAlert, ShieldCheck } from 'lucide-react';
 import { ArchNode, DiagramCanvas, NodeStatRow, ParticleLegend, type DiagramEdge, type Layout, type ParticleView } from '@/components/architecture';
 import { Insight, LabShell, MetricsPanel, SIMULATED_HINT } from '@/components/learning';
@@ -16,6 +16,7 @@ import { useRerender } from '@/hooks/useRerender';
 import { sampleArrivals } from '@/utils/math';
 import { LATENCY_TEXT, formatLatency, formatNumber, formatPercent, latencyTone } from '@/utils/format';
 import { cn } from '@/utils/cn';
+import { useLabRunning } from '@/hooks/useLabRunning';
 
 type BreakerState = 'closed' | 'open' | 'half-open';
 
@@ -147,7 +148,7 @@ export function CircuitBreakerLab() {
   // Every control lives in one object, so Reset cannot miss one.
   const { setup, setSetup, change } = useLabSetup(DEFAULT_SETUP);
   const { failureRate, threshold, cooldown, timeout, breakerEnabled, requestRate } = setup;
-  const [running, setRunning] = useState(true);
+  const [running, setRunning] = useLabRunning();
 
   const state = useRef<State>(createState());
   const rerender = useRerender(30);
@@ -341,7 +342,7 @@ export function CircuitBreakerLab() {
       title="Circuit Breaker Lab"
       description="Raise the downstream failure rate and watch the breaker trip, cool down, probe with trial calls, and either close or reopen."
       running={running}
-      onToggleRun={() => setRunning((value) => !value)}
+      onRunningChange={setRunning}
       onReset={reset}
       legend={
         <ParticleLegend

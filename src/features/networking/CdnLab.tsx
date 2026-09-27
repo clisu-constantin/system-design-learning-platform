@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useRef } from 'react';
 import { Eraser, Rocket } from 'lucide-react';
 import {
   ArchNode,
@@ -47,6 +47,7 @@ import {
   type EdgeFootprint,
   type Entry,
 } from './cdnModel';
+import { useLabRunning } from '@/hooks/useLabRunning';
 
 type EdgeId = 'eu-edge' | 'us-edge' | 'ap-edge';
 
@@ -178,7 +179,7 @@ export function CdnLab({ focus }: LabProps<'cdn'>) {
   // Every control lives in one object, so Reset cannot miss one.
   const { setup, setSetup, change } = useLabSetup(start);
   const { cdnEnabled, traffic, edges: footprint, cacheControl, ttlSec, cacheKey } = setup;
-  const [running, setRunning] = useState(true);
+  const [running, setRunning] = useLabRunning();
   const state = useRef<State>(createState());
   const rerender = useRerender(30);
   const { events, log, clear } = useEventLog();
@@ -436,7 +437,7 @@ export function CdnLab({ focus }: LabProps<'cdn'>) {
       title="CDN Lab"
       description="Three regions, one origin, and an edge cache in each region. Turn the CDN on to beat distance, then change the cache policy, deploy and purge to see what decides the hit rate."
       running={running}
-      onToggleRun={() => setRunning((value) => !value)}
+      onRunningChange={setRunning}
       onReset={reset}
       legend={
         <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5">

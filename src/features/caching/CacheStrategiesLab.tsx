@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useRef, useState } from 'react';
+import { useCallback, useMemo, useRef } from 'react';
 import {
   ArchNode,
   DiagramCanvas,
@@ -16,6 +16,7 @@ import { useRerender } from '@/hooks/useRerender';
 import type { RequestOutcome } from '@/types';
 // Imported directly: this lab is its own lazy chunk, and it needs the full trade-offs, not the index.
 import { performanceConcepts } from '@/data/concepts/performance';
+import { useLabRunning } from '@/hooks/useLabRunning';
 
 type Strategy = 'cache-aside' | 'read-through' | 'write-through' | 'write-behind' | 'write-around';
 type Operation = 'read' | 'write';
@@ -154,7 +155,7 @@ const DEFAULT_SETUP: { strategy: Strategy; operation: Operation; speed: number }
 };
 
 export function CacheStrategiesLab() {
-  const [running, setRunning] = useState(true);
+  const [running, setRunning] = useLabRunning();
   const { setup, setSetup, change } = useLabSetup(DEFAULT_SETUP);
   const { strategy, operation, speed } = setup;
   const progress = useRef({ step: 0, t: 0 });
@@ -216,7 +217,7 @@ export function CacheStrategiesLab() {
       title="Cache Strategies Lab"
       description="Step through the exact sequence of hops for each strategy, for both reads and writes."
       running={running}
-      onToggleRun={() => setRunning((value) => !value)}
+      onRunningChange={setRunning}
       onReset={reset}
       legend={
         <ParticleLegend

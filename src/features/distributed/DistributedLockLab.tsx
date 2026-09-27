@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useRef } from 'react';
 import { Pause, Power, RotateCw } from 'lucide-react';
 import {
   ArchNode,
@@ -15,6 +15,7 @@ import { nextParticleId, useEventLog, useTicker } from '@/simulations/engine';
 import { useLabSetup } from '@/hooks/useLabSetup';
 import { useRerender } from '@/hooks/useRerender';
 import type { NodeStatus, RequestOutcome } from '@/types';
+import { useLabRunning } from '@/hooks/useLabRunning';
 
 /*
  * Simplified model, not a measurement. Time is simulated seconds: the clock runs
@@ -177,7 +178,7 @@ const buildLayout = (count: WorkerCount): Layout => {
 const LAYOUTS: Record<WorkerCount, Layout> = { 2: buildLayout(2), 3: buildLayout(3) };
 
 export function DistributedLockLab() {
-  const [running, setRunning] = useState(true);
+  const [running, setRunning] = useLabRunning();
   // Every control lives in one object, so Reset cannot miss one.
   const { setup, setSetup, change } = useLabSetup(DEFAULT_SETUP);
   const { workerCount, fencing, ttlOn, ttlS, pauseS, checkRelease } = setup;
@@ -569,7 +570,7 @@ export function DistributedLockLab() {
       title="Distributed Lock Lab"
       description="Two or three workers share one resource through a lock service with a TTL. Freeze the holder past its lease, see two owners at once, then turn on fencing tokens."
       running={running}
-      onToggleRun={() => setRunning((value) => !value)}
+      onRunningChange={setRunning}
       onReset={reset}
       events={events}
       legend={

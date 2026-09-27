@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useRef } from 'react';
 import {
   ArchNode,
   DiagramCanvas,
@@ -25,6 +25,7 @@ import { useRerender } from '@/hooks/useRerender';
 import { sampleArrivals } from '@/utils/math';
 import { formatLatency, formatNumber, formatPercent } from '@/utils/format';
 import type { LabFocus, LabProps } from '@/types';
+import { useLabRunning } from '@/hooks/useLabRunning';
 
 /** Where the one proxy sits: nowhere, with the clients, or with the servers. */
 type Placement = 'none' | 'client' | 'server';
@@ -230,7 +231,7 @@ export function ProxyLab({ focus }: LabProps<'proxy'>) {
   const start = focus ? FOCUS_SETUPS[focus] : DEFAULT_SETUP;
   // Every control lives in one object, so Reset cannot miss one.
   const { setup, setSetup, change } = useLabSetup(start);
-  const [running, setRunning] = useState(true);
+  const [running, setRunning] = useLabRunning();
   const state = useRef<State>(createState());
   const rerender = useRerender(30);
   const { events, log, clear } = useEventLog();
@@ -425,7 +426,7 @@ export function ProxyLab({ focus }: LabProps<'proxy'>) {
       title="Proxy Lab"
       description="One proxy, placed with the clients or with the servers. Watch who it hides, what it can cache, where TLS ends, and which caller address the app server sees."
       running={running}
-      onToggleRun={() => setRunning((value) => !value)}
+      onRunningChange={setRunning}
       onReset={reset}
       legend={
         <div className="flex flex-wrap items-center justify-between gap-2">

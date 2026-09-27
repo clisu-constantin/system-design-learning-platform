@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useRef } from 'react';
 import { Split } from 'lucide-react';
 import {
   ArchNode,
@@ -27,6 +27,7 @@ import { useLabSetup } from '@/hooks/useLabSetup';
 import { useRerender } from '@/hooks/useRerender';
 import { clamp, sampleArrivals } from '@/utils/math';
 import { formatLatency, formatNumber, formatPercent } from '@/utils/format';
+import { useLabRunning } from '@/hooks/useLabRunning';
 
 type ShardKey = 'user-id' | 'country' | 'tenant' | 'created-at';
 
@@ -106,7 +107,7 @@ const DEFAULT_SETUP: { sharded: boolean; traffic: number; shardKey: ShardKey; cr
 };
 
 export function ShardingLab() {
-  const [running, setRunning] = useState(true);
+  const [running, setRunning] = useLabRunning();
   const { setup, setSetup, change } = useLabSetup(DEFAULT_SETUP);
   const { sharded, traffic, shardKey, crossShardRatio } = setup;
 
@@ -247,7 +248,7 @@ export function ShardingLab() {
       title="Database Sharding Lab"
       description="Split 10 million users across shards. Change the shard key and watch a badly chosen one concentrate traffic on a single node."
       running={running}
-      onToggleRun={() => setRunning((value) => !value)}
+      onRunningChange={setRunning}
       onReset={reset}
       legend={
         <ParticleLegend

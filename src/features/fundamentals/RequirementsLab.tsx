@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useRef, useState } from 'react';
+import { useCallback, useMemo, useRef } from 'react';
 import { AlertTriangle, Check, ListChecks, Sliders } from 'lucide-react';
 import { ArchNode, DiagramCanvas, NodeStatRow, ParticleLegend, type Layout, type ParticleView } from '@/components/architecture';
 import { Insight, LabShell, MetricsPanel } from '@/components/learning';
@@ -60,6 +60,7 @@ import {
   type FixOption,
   type LoopState,
 } from './requirementsBottleneck';
+import { useLabRunning } from '@/hooks/useLabRunning';
 
 const PRODUCT_NAME: Record<Product, string> = { whatsapp: 'WhatsApp', instagram: 'Instagram', uber: 'Uber' };
 
@@ -87,7 +88,7 @@ export function RequirementsLab({ focus }: LabProps<'requirements'>) {
   const start = focus ? FOCUS_SETUPS[focus] : DEFAULT_SETUP;
   // Every control lives in one object, so Reset cannot miss one.
   const { setup, setSetup, change } = useLabSetup<Setup>(start);
-  const [running, setRunning] = useState(true);
+  const [running, setRunning] = useLabRunning();
   const state = useRef<State>({ particles: [] });
   const rerender = useRerender(30);
   const { events, log, clear } = useEventLog();
@@ -238,7 +239,7 @@ export function RequirementsLab({ focus }: LabProps<'requirements'>) {
           : 'Pick what the system must do, then set how well it must do it - and watch each choice add the parts it forces to the diagram.'
       }
       running={running}
-      onToggleRun={() => setRunning((value) => !value)}
+      onRunningChange={setRunning}
       onReset={reset}
       actions={
         // The loop is tuned to the traffic of its Example product, so it keeps that product.

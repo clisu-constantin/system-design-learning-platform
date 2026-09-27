@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useRef } from 'react';
 import {
   ArchNode,
   DiagramCanvas,
@@ -51,6 +51,7 @@ import {
   type CacheLayersSetup,
   type ModelState,
 } from './cacheLayersModel';
+import { useLabRunning } from '@/hooks/useLabRunning';
 
 type Setup = CacheLayersSetup;
 
@@ -150,7 +151,7 @@ export function CacheLayersLab({ focus }: LabProps<'cache-layers'>) {
   const start = focus ? FOCUS_SETUPS[focus] : DEFAULT_SETUP;
   // Every control lives in one object, so Reset cannot miss one.
   const { setup, setSetup, change } = useLabSetup(start);
-  const [running, setRunning] = useState(true);
+  const [running, setRunning] = useLabRunning();
 
   const state = useRef<State>(createState());
   const rerender = useRerender(30);
@@ -296,7 +297,7 @@ export function CacheLayersLab({ focus }: LabProps<'cache-layers'>) {
       title="Cache Layers Lab"
       description="One product page, read through three cache layers: the in-process cache of each app instance, the database buffer pool, and a materialized view. Switch each one on or off."
       running={running}
-      onToggleRun={() => setRunning((value) => !value)}
+      onRunningChange={setRunning}
       onReset={reset}
       legend={
         <div className="space-y-1.5">

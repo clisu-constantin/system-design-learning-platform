@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState, type ReactNode } from 'react';
+import { useMemo, useRef, type ReactNode } from 'react';
 import { DatabaseZap } from 'lucide-react';
 import {
   ArchNode,
@@ -33,6 +33,7 @@ import {
   type View,
   type Workload,
 } from './dataModelsModel';
+import { useLabRunning } from '@/hooks/useLabRunning';
 
 const WORKLOADS: { value: Workload; label: string; blurb: string }[] = [
   { value: 'key', label: 'Key get/put at scale', blurb: 'Read or write one cart by its user id.' },
@@ -161,7 +162,7 @@ export function DataModelsLab({ focus }: LabProps<'data-models'>) {
   const { setup, setSetup, change } = useLabSetup(start);
   const { view, workload, keyOps, checkouts, sizeIndex, partitions, hotKey, crashRate, docTransactions, onlineMigration } =
     setup;
-  const [running, setRunning] = useState(true);
+  const [running, setRunning] = useLabRunning();
   const state = useRef<SimState>(createState());
   const rerender = useRerender(30);
   const { events, log, clear } = useEventLog();
@@ -193,7 +194,6 @@ export function DataModelsLab({ focus }: LabProps<'data-models'>) {
     setSetup(start);
     state.current = createState();
     clear();
-    setRunning(true);
   };
 
   const runMigration = () => {
@@ -412,7 +412,7 @@ export function DataModelsLab({ focus }: LabProps<'data-models'>) {
       title="Data Models Lab"
       description="The same shop data - carts, products, orders - in one relational database and in a partitioned document store. Run a workload and watch what each side makes cheap and what it makes expensive."
       running={running}
-      onToggleRun={() => setRunning((value) => !value)}
+      onRunningChange={setRunning}
       onReset={reset}
       legend={
         <div className="space-y-1.5">

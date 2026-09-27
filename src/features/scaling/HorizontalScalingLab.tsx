@@ -18,6 +18,7 @@ import { computeLoad, type LoadResponse } from '@/simulations/models/load';
 import { useRerender } from '@/hooks/useRerender';
 import { clamp, sampleArrivals } from '@/utils/math';
 import { formatLatency, formatNumber, formatPercent } from '@/utils/format';
+import { useLabRunning } from '@/hooks/useLabRunning';
 
 /**
  * Simplified numbers, chosen to match the Lesson (one server ~500 req/sec). Every request makes one
@@ -47,7 +48,7 @@ interface Snapshot {
  * other half of the idea: with N servers a failure costs 1/N of capacity; with one it costs everything.
  */
 export function HorizontalScalingLab() {
-  const [running, setRunning] = useState(true);
+  const [running, setRunning] = useLabRunning();
   const [traffic, setTraffic] = useState(DEFAULT_TRAFFIC);
   const [servers, setServers] = useState(1);
   const [serverDown, setServerDown] = useState(false);
@@ -242,7 +243,7 @@ export function HorizontalScalingLab() {
       title="Horizontal Scaling Lab"
       description="One server cannot keep up. Add instances behind the load balancer, watch each one take a share of the load - and watch the shared database become the next limit."
       running={running}
-      onToggleRun={() => setRunning((value) => !value)}
+      onRunningChange={setRunning}
       onReset={reset}
       legend={
         <ParticleLegend
