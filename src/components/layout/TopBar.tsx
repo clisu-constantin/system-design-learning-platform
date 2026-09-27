@@ -9,6 +9,8 @@ import type { Difficulty } from '@/types';
 
 interface TopBarProps {
   onOpenSearch: () => void;
+  /** The id of the sidebar column the menu button opens or folds. */
+  navId: string;
   /** Below lg this opens the drawer; from lg up it folds the sidebar into its icon strip. */
   onToggleSidebar: () => void;
   sidebarExpanded: boolean;
@@ -23,7 +25,7 @@ const DIFFICULTY_OPTIONS: { value: Difficulty | 'all'; label: string }[] = [
   { value: 'Advanced', label: 'Advanced' },
 ];
 
-export function TopBar({ onOpenSearch, onToggleSidebar, sidebarExpanded, difficulty, onDifficultyChange }: TopBarProps) {
+export function TopBar({ onOpenSearch, navId, onToggleSidebar, sidebarExpanded, difficulty, onDifficultyChange }: TopBarProps) {
   const { theme, toggle } = useTheme();
   const { overall } = useProgress();
   // Only the wide-screen sidebar folds; below lg the same button opens a drawer, as it always did.
@@ -37,6 +39,7 @@ export function TopBar({ onOpenSearch, onToggleSidebar, sidebarExpanded, difficu
         onClick={onToggleSidebar}
         aria-label="Toggle navigation"
         aria-expanded={sidebarExpanded}
+        aria-controls={navId}
         title={canFold ? (sidebarExpanded ? 'Fold navigation' : 'Open navigation') : undefined}
       >
         <Menu className="h-5 w-5 lg:hidden" />
@@ -47,7 +50,8 @@ export function TopBar({ onOpenSearch, onToggleSidebar, sidebarExpanded, difficu
         )}
       </Button>
 
-      <Link to="/" className="flex min-w-0 items-center gap-2.5">
+      {/* Named in full: below sm only the mark shows, and the mark alone has no text. */}
+      <Link to="/" aria-label="System Design Interactive, home" className="flex min-w-0 items-center gap-2.5 coarse:min-w-11">
         <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-gradient-to-br from-brand to-info text-white">
           <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden>
             <circle cx="12" cy="5" r="2" />
@@ -72,9 +76,12 @@ export function TopBar({ onOpenSearch, onToggleSidebar, sidebarExpanded, difficu
       <button
         type="button"
         onClick={onOpenSearch}
+        // The word is hidden on a narrow screen, and the button must still say what it does.
+        aria-label="Search"
+        aria-keyshortcuts="Control+K Meta+K /"
         className="flex h-9 shrink-0 items-center gap-2 whitespace-nowrap rounded-xl border border-line bg-elevated px-3 text-sm text-faint transition-colors hover:border-brand/50 hover:text-ink"
       >
-        <Search className="h-4 w-4" />
+        <Search className="h-4 w-4" aria-hidden />
         <span className="hidden md:inline">Search</span>
         <kbd className="hidden rounded border border-line px-1.5 py-0.5 font-mono text-[11px] md:inline">Ctrl K</kbd>
       </button>
@@ -91,10 +98,11 @@ export function TopBar({ onOpenSearch, onToggleSidebar, sidebarExpanded, difficu
 
       <Link
         to="/progress"
-        className="flex shrink-0 items-center gap-2 rounded-xl border border-line bg-elevated px-2 py-1.5 text-xs text-muted sm:px-3 transition-colors hover:border-brand/50 hover:text-ink"
+        className="flex h-9 shrink-0 items-center gap-2 rounded-xl border border-line bg-elevated px-2 text-xs text-muted transition-colors hover:border-brand/50 hover:text-ink sm:px-3"
         title="Learning progress"
+        aria-label={`Progress: ${overall.done} of ${overall.total} Concepts Done`}
       >
-        <span className="relative hidden h-1.5 w-16 overflow-hidden rounded-full bg-line sm:block">
+        <span className="relative hidden h-1.5 w-16 overflow-hidden rounded-full bg-line sm:block" aria-hidden>
           <span className="absolute inset-y-0 left-0 rounded-full bg-ok" style={{ width: `${overall.percent}%` }} />
         </span>
         <span className="font-mono tabular-nums">{overall.percent}%</span>
