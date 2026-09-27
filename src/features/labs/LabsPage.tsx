@@ -45,7 +45,7 @@ export function LabsPage() {
               key={lab.id}
               to={`/labs/${lab.id}`}
               style={categoryStyle(lab.category)}
-              className="group flex flex-col rounded-2xl border border-line bg-surface p-5 transition-all hover:border-brand/60 hover:shadow-glow"
+              className="group flex flex-col rounded-2xl border border-line bg-surface p-5 transition-all hover:border-brand/50 hover:shadow-card"
             >
               <div className="flex items-start justify-between gap-3">
                 <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-cat/10 text-cat">
@@ -61,7 +61,7 @@ export function LabsPage() {
         </div>
 
         {labs.length === 0 ? (
-          <p className="mt-10 text-center text-sm text-muted">No labs at this difficulty yet.</p>
+          <p className="mt-10 text-center text-sm text-muted">No labs at this difficulty.</p>
         ) : null}
       </div>
     </div>
