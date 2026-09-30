@@ -193,7 +193,9 @@ useTicker(running, (dt) => { /* mutate state.current */ rerender(); });
 ### The long-form lesson (`src/data/concepts/deep/`)
 
 Written for a junior who has never met the idea. Every concept has one, and the shape is fixed.
-It renders under the Diagram: the analogy shows open, the rest behind "Read the full explanation".
+It renders under the Diagram: first the "Read the full explanation" button, then `analogy` and
+`remember` side by side (stacked on a narrow screen), which always show; the rest waits behind the
+button. Opened cards fill the column, with prose lines held to about 80 characters (`PROSE`).
 
 - `analogy` — one everyday picture with a title. The thing they will still remember next week.
 - `deepDive` — 2-3 sections of real prose, optionally with `bullets` and one fixed-width `code`
@@ -257,14 +259,20 @@ The product complaint that shaped this app was "too much text". Concept pages th
 - `src/data/visuals/` maps every concept slug to a `VisualSpec` (nodes, edges with a particle
   `rate`, and `steps` - its Walkthrough). All 102 concepts have one - keep it that way.
 - `FlowVisual` renders a spec as a self-running Diagram. With `walkthrough` (the concept page only),
-  a spec with `steps` also gets a chip row under the canvas: "Live" for the traffic, then one chip
-  per step. Picking a step stops the traffic and walks one request along that hop, on the same
-  Diagram, with a caption of **six words or fewer**. Play advances the steps and loops.
+  a spec with `steps` is driven from one bar across the top of the canvas: back, play/pause, next,
+  `n/N` and the caption, then one clickable bar per step (on a phone, the caption drops to a second
+  line). It opens on Live, the traffic; next goes to step 1 and back from step 1 returns to Live.
+  A step stops the traffic and walks one request along that hop, on the same Diagram, with a caption
+  of **six words or fewer**. Play advances the steps and loops; left and right arrows walk Live and
+  the steps. The moves are pure functions in `walkthrough.ts`, tested on Node. A spec without steps
+  keeps its play/pause under the canvas.
 - The concept page has four tabs, in this order: Diagram, Interactive lab, Trade-offs (as chips),
   Quiz. A tab with nothing to show (no Lab or no Quiz yet) is hidden. The Diagram tab shows the Diagram with
-  its Walkthrough, then the Lesson under it: the Analogy is open, and all the other prose folds
-  behind one "Read the full explanation" button, which stays open while the learner stays on that
-  Concept. The right column is short cards only.
+  its Walkthrough, then the Lesson under it: the "Read the full explanation" button, then the
+  Analogy and "Remember this" side by side, always open; all the other prose folds behind the button,
+  which stays open while the learner stays on that Concept. The right column is short cards only; on
+  a wide screen it sticks 16px under the top bar, or, taller than the screen, with its bottom 16px
+  above the screen bottom (`notesStickyTop`), so every card can be reached.
 - Run `npm run check:visuals` after editing a spec. It covers `src/data/visuals`, the home hero and
   the `src/features/evolution` stage layouts, and fails the build on overlapping boxes, nodes past
   the canvas, labels too long for their box, step captions over six words, nodes with no edges, a
@@ -308,7 +316,7 @@ interchangeable, which contradicts the entire stateless/horizontal-scaling lesso
 - Work done inside one part (a browser parsing and painting a page) is a step whose `from` equals
   its `to`: that part lights up, every wire fades and no request travels, so it needs no wire.
   Use it only for real work in one part - a hop between two parts still travels a drawn wire.
-- A Walkthrough step shows its caption in a strip above the canvas - never as an edge label (on a
+- A Walkthrough step shows its caption in the bar above the canvas - never as an edge label (on a
   short edge it lands on a node) and never floated over the canvas (it covers the top-left node).
 - `FlowVisual` auto-fits its spec to the container width (0.5x-1.3x, via `DiagramCanvas`'s `fit`
   prop), so a spec authored at 760px fills a wider card instead of stopping halfway across it. Pass

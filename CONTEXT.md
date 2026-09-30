@@ -18,7 +18,8 @@ _Avoid_: Section, module, chapter
 
 **Lesson**:
 The long-form written explanation of one Concept, shown in the Diagram tab, under the Diagram. It is
-not a tab of its own.
+not a tab of its own. Its Analogy ("Think of it like") and its Remember lines ("Remember this") always
+show; the rest waits behind "Read the full explanation", which sits between the Diagram and them.
 _Avoid_: Deep dive, article
 
 **Diagram**:
@@ -28,7 +29,8 @@ under the same names, the same order of steps, and the same shape for the same o
 _Avoid_: Visual, flow, animation
 
 **Walkthrough**:
-The ordered steps of a Diagram, one hop at a time, each with a caption of six words or fewer. Shown on the same Diagram, not beside it. Every Concept has one.
+The ordered steps of a Diagram, one hop at a time, each with a caption of six words or fewer. Shown on the same Diagram, not beside it, and driven from one bar across its top: back, play/pause,
+next, the caption and one bar per step. Before step 1 is Live, the free-flowing traffic. Every Concept has one.
 _Avoid_: Step by step, sequence, tour
 
 **Lab**:

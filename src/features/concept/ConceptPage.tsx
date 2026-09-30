@@ -1,4 +1,4 @@
-import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type RefObject } from 'react';
 import { Link, useParams, useSearchParams } from 'react-router-dom';
 import {
   AlertTriangle,
@@ -30,6 +30,7 @@ import { useLayout } from '@/app/providers/LayoutProvider';
 import { XL_QUERY, useMediaQuery } from '@/hooks/useMediaQuery';
 import { getLab } from '@/features/labs/registry';
 import { cn } from '@/utils/cn';
+import { NOTES_GAP, notesStickyTop } from './notesSticky';
 import type {
   Analogy,
   Concept,
@@ -155,6 +156,12 @@ function useFullConcept(summary: ConceptSummary | undefined): {
 const ASIDE_ID = 'concept-notes';
 /** Links "Read the full explanation" to the part of the Lesson it unfolds. */
 const LESSON_ID = 'concept-lesson';
+/**
+ * A reading width for Lesson prose, about 80 characters a line of 14px text (not
+ * `80ch`: a "0" is wider than the average letter, so that ran to about 110). A card
+ * stays as wide as its column; code blocks and the steps of a worked example use all of it.
+ */
+const PROSE = 'max-w-[33rem]';
 /** One empty object, so a Concept with no answers yet does not rebuild its tabs on every render. */
 const NO_ANSWERS: QuizAnswers = {};
 
@@ -176,6 +183,8 @@ function ConceptBody({ concept }: { concept: Concept }) {
   // The control that was clicked disappears with the fold, so hand focus to
   // the one that replaces it instead of dropping it on the page body.
   const hideButton = useRef<HTMLButtonElement>(null);
+  const aside = useRef<HTMLElement>(null);
+  const notesTop = useNotesStickyTop(aside, isWide);
   const showTab = useRef<HTMLButtonElement>(null);
   const moveFocus = useRef(false);
   // Fade the column in only when the learner reopens it, not on every page load.
@@ -351,11 +360,13 @@ function ConceptBody({ concept }: { concept: Concept }) {
 
         {/* Short notes only. Anything longer lives in the Lesson under the Diagram. */}
         <aside
+          ref={aside}
           id={ASIDE_ID}
           aria-label="Notes"
+          style={{ '--notes-top': `${notesTop}px` } as CSSProperties}
           className={cn(
             // Stacked under the content below xl, it keeps a reading width instead of the full row.
-            'max-w-[38rem] space-y-3 xl:sticky xl:top-[4.5rem] xl:max-w-none xl:self-start',
+            'max-w-[38rem] space-y-3 xl:sticky xl:top-[var(--notes-top)] xl:max-w-none xl:self-start',
             reopened.current && 'xl:animate-fade-in',
             (asideFolded || inQuiz) && 'hidden',
           )}
@@ -450,7 +461,8 @@ function ConceptBody({ concept }: { concept: Concept }) {
           ) : null}
         </aside>
 
-        {/* Its own narrow grid column, so the reopen tab never covers the content (a lab's controls, say). */}
+        {/* Its own narrow grid column, so the reopen tab never covers the content (a lab's controls, say).
+            top-4 is NOTES_GAP: it sticks where short notes do. */}
         {asideFolded ? (
           <button
             type="button"
@@ -458,7 +470,7 @@ function ConceptBody({ concept }: { concept: Concept }) {
             onClick={() => foldAside(false)}
             aria-controls={ASIDE_ID}
             aria-expanded={false}
-            className="sticky top-[4.5rem] flex animate-fade-in flex-col items-center gap-2 self-start rounded-lg border border-line bg-surface px-1.5 py-3 text-xs font-medium text-muted shadow-card transition-colors hover:bg-elevated hover:text-ink"
+            className="sticky top-4 flex animate-fade-in flex-col items-center gap-2 self-start rounded-lg border border-line bg-surface px-1.5 py-3 text-xs font-medium text-muted shadow-card transition-colors hover:bg-elevated hover:text-ink"
           >
             <PanelRightOpen className="h-3.5 w-3.5" />
             <span className="[writing-mode:vertical-rl]">Show notes</span>
@@ -467,6 +479,32 @@ function ConceptBody({ concept }: { concept: Concept }) {
       </div>
     </div>
   );
+}
+
+/**
+ * The sticky `top` of the notes column, kept right as the notes or the visible
+ * area change height: another tab, the notes folded and back, a resized window.
+ * The page scrolls inside `<main>`, under the top bar, so that is the area it
+ * sticks in.
+ */
+function useNotesStickyTop(aside: RefObject<HTMLElement | null>, enabled: boolean) {
+  const [top, setTop] = useState(NOTES_GAP);
+
+  useLayoutEffect(() => {
+    const notes = aside.current;
+    const scroller = notes?.closest('main');
+    if (!enabled || !notes || !scroller) return;
+    // Syncs the measured heights of the notes and of the scrolling area.
+    const measure = () => setTop(notesStickyTop({ visible: scroller.clientHeight, notes: notes.offsetHeight }));
+    measure();
+    if (typeof ResizeObserver === 'undefined') return;
+    const observer = new ResizeObserver(measure);
+    observer.observe(notes);
+    observer.observe(scroller);
+    return () => observer.disconnect();
+  }, [aside, enabled]);
+
+  return top;
 }
 
 /** Gains and costs as two short lists per approach, then the mistakes people make with it. */
@@ -529,10 +567,11 @@ function TradeOffBoard({ concept }: { concept: Concept }) {
 }
 
 /**
- * The long-form lesson, under the Diagram. Only the Analogy shows at first - the
- * picture the learner already has in their head. Unfolded, it starts with what to
- * carry away and a worked example with real numbers; each longer section then
- * waits behind its own title, so the unfold never lands as one wall of text.
+ * The long-form lesson, under the Diagram. "Read the full explanation" comes
+ * first, then the two parts that always show: the Analogy, the picture the
+ * learner already has in their head, and the lines to carry away. Unfolded, it
+ * starts with a worked example with real numbers; each longer section then waits
+ * behind its own title, so the unfold never lands as one wall of text.
  */
 function Lesson({
   concept,
@@ -564,8 +603,25 @@ function Lesson({
   };
 
   return (
-    <div className="max-w-[38rem] space-y-3">
-      {depth ? <AnalogyCard analogy={depth.analogy} /> : null}
+    <div className="space-y-3">
+      <Button
+        ref={toggle}
+        variant="secondary"
+        onClick={onToggle}
+        aria-expanded={expanded}
+        aria-controls={expanded ? LESSON_ID : undefined}
+      >
+        <BookOpen className="h-3.5 w-3.5" aria-hidden />
+        {expanded ? 'Hide the full explanation' : 'Read the full explanation'}
+      </Button>
+
+      {/* The two parts that always show, side by side where the column is wide enough for two. */}
+      {depth ? (
+        <div className="grid gap-3 lg:grid-cols-2">
+          <AnalogyCard analogy={depth.analogy} />
+          <RememberCard lines={depth.remember} />
+        </div>
+      ) : null}
       {!depth && !failed ? (
         <div role="status" className="flex items-center gap-2 rounded-2xl border border-line bg-surface p-5 text-sm text-muted">
           <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
@@ -585,29 +641,20 @@ function Lesson({
         </div>
       ) : null}
 
-      <Button
-        ref={toggle}
-        variant="secondary"
-        onClick={onToggle}
-        aria-expanded={expanded}
-        aria-controls={expanded ? LESSON_ID : undefined}
-      >
-        <BookOpen className="h-3.5 w-3.5" aria-hidden />
-        {expanded ? 'Hide the full explanation' : 'Read the full explanation'}
-      </Button>
-
       {expanded ? (
         <div id={LESSON_ID} className="space-y-3 animate-fade-in">
-          {depth ? <RememberCard lines={depth.remember} /> : null}
-
           {depth?.examples.map((example) => <ExampleCard key={example.title} example={example} />)}
 
           {what ? (
             <ExplanationCard title="What is it?" tone="brand">
-              {what}
+              <p className={PROSE}>{what}</p>
             </ExplanationCard>
           ) : null}
-          {concept.why ? <ExplanationCard title="Why does it exist?">{concept.why}</ExplanationCard> : null}
+          {concept.why ? (
+            <ExplanationCard title="Why does it exist?">
+              <p className={PROSE}>{concept.why}</p>
+            </ExplanationCard>
+          ) : null}
 
           {depth?.deepDive.map((section) => (
             <Expandable key={section.heading} title={section.heading}>
@@ -617,7 +664,7 @@ function Lesson({
 
           {concept.how?.length ? (
             <Expandable title="How it works, step by step">
-              <ol className="space-y-2">
+              <ol className={cn('space-y-2', PROSE)}>
                 {concept.how.map((step, index) => (
                   <li key={step} className="flex gap-2.5">
                     <span className="font-mono text-[11px] text-faint">{index + 1}</span>
@@ -634,7 +681,7 @@ function Lesson({
           ) : null}
           {concept.when?.length ? (
             <Expandable title="When to use it">
-              <ul className="space-y-1.5">
+              <ul className={cn('space-y-1.5', PROSE)}>
                 {concept.when.map((item) => (
                   <li key={item}>{item}</li>
                 ))}
@@ -643,7 +690,7 @@ function Lesson({
           ) : null}
           {concept.realWorld?.length ? (
             <Expandable title="In production">
-              <ul className="space-y-1.5">
+              <ul className={cn('space-y-1.5', PROSE)}>
                 {concept.realWorld.map((item) => (
                   <li key={item}>{item}</li>
                 ))}
@@ -652,7 +699,7 @@ function Lesson({
           ) : null}
           {mistakes.length ? (
             <Expandable title="Common mistakes">
-              <ul className="space-y-1.5">
+              <ul className={cn('space-y-1.5', PROSE)}>
                 {mistakes.map((item) => (
                   <li key={item}>{item}</li>
                 ))}
@@ -728,7 +775,7 @@ function AnalogyCard({ analogy }: { analogy: Analogy }) {
       <div className="min-w-0">
         <p className="label text-violet">Think of it like</p>
         <h2 className="mt-1 text-sm font-semibold text-ink">{analogy.title}</h2>
-        <p className="mt-1.5 text-sm leading-relaxed text-muted">{analogy.body}</p>
+        <p className={cn('mt-1.5 text-sm leading-relaxed text-muted', PROSE)}>{analogy.body}</p>
       </div>
     </section>
   );
@@ -738,13 +785,13 @@ function AnalogyCard({ analogy }: { analogy: Analogy }) {
 function DeepDiveBody({ section }: { section: DeepDiveSection }) {
   return (
     <>
-      <div className="space-y-2.5">
+      <div className={cn('space-y-2.5', PROSE)}>
         {section.paragraphs.map((paragraph) => (
           <p key={paragraph}>{paragraph}</p>
         ))}
       </div>
       {section.bullets?.length ? (
-        <ul className="mt-3 space-y-2">
+        <ul className={cn('mt-3 space-y-2', PROSE)}>
           {section.bullets.map((item) => (
             <li key={item} className="flex gap-2.5">
               <span className="mt-[7px] h-1.5 w-1.5 shrink-0 rounded-full bg-faint" aria-hidden />
@@ -774,7 +821,7 @@ function ExampleCard({ example }: { example: WorkedExample }) {
         Worked example
       </p>
       <h2 className="mt-1 text-sm font-semibold text-ink">{example.title}</h2>
-      <p className="mt-1.5 text-sm leading-relaxed text-muted">{example.setup}</p>
+      <p className={cn('mt-1.5 text-sm leading-relaxed text-muted', PROSE)}>{example.setup}</p>
       <ol className="mt-3 space-y-2">
         {example.walkthrough.map((step, index) => (
           <li key={step} className="flex gap-2.5 text-sm leading-relaxed text-muted">
@@ -785,7 +832,9 @@ function ExampleCard({ example }: { example: WorkedExample }) {
           </li>
         ))}
       </ol>
-      <p className="mt-3 border-t border-info/20 pt-3 text-sm leading-relaxed text-ink">{example.result}</p>
+      <p className="mt-3 border-t border-info/20 pt-3 text-sm leading-relaxed text-ink">
+        <span className={cn('block', PROSE)}>{example.result}</span>
+      </p>
     </section>
   );
 }
@@ -802,7 +851,7 @@ function JargonCard({ terms }: { terms: JargonTerm[] }) {
         {terms.map((term) => (
           <div key={term.term} className="grid gap-1 sm:grid-cols-[minmax(0,180px)_minmax(0,1fr)] sm:gap-3">
             <dt className="text-sm font-medium text-ink">{term.term}</dt>
-            <dd className="text-sm leading-relaxed text-muted">{term.plain}</dd>
+            <dd className={cn('text-sm leading-relaxed text-muted', PROSE)}>{term.plain}</dd>
           </div>
         ))}
       </dl>
@@ -818,7 +867,7 @@ function RememberCard({ lines }: { lines: string[] }) {
         <Sparkles className="h-3.5 w-3.5" aria-hidden />
         Remember this
       </h2>
-      <ul className="mt-3 space-y-2">
+      <ul className={cn('mt-3 space-y-2', PROSE)}>
         {lines.map((line) => (
           <li key={line} className="flex gap-2.5 text-sm leading-relaxed text-ink">
             <Check className="mt-0.5 h-4 w-4 shrink-0 text-brand" aria-hidden />

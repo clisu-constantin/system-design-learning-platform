@@ -1,5 +1,5 @@
-import { useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from 'react';
-import { Pause, Play } from 'lucide-react';
+import { useMemo, useRef, useState, type KeyboardEvent, type ReactNode, type RefObject } from 'react';
+import { ChevronLeft, ChevronRight, Pause, Play } from 'lucide-react';
 import { cn } from '@/utils/cn';
 import type { NodeKind, NodeStatus, RequestOutcome } from '@/types';
 import { advanceParticles, nextParticleId, useTicker, type Particle } from '@/simulations/engine';
@@ -10,6 +10,16 @@ import { ArchNode, NodeStatRow } from './ArchNode';
 import { DiagramCanvas, type DiagramEdge, type ParticleView } from './DiagramCanvas';
 import type { FitRange } from '@/hooks/useFitScale';
 import type { Layout } from './geometry';
+import {
+  LIVE,
+  barFill,
+  canGoBack,
+  canGoNext,
+  nextStep,
+  playStep,
+  previousStep,
+  type WalkthroughPosition,
+} from './walkthrough';
 
 export interface VisualNode {
   id: string;
@@ -163,10 +173,11 @@ const renderNodes = (spec: VisualSpec, layout: Layout, activeIds?: Set<string>) 
  * Used as the primary content of a concept page, so the first thing a learner
  * meets is a working system rather than a paragraph.
  *
- * With `walkthrough`, a spec that has `steps` also gets a chip row under the
- * canvas: "Live" for the traffic, then one chip per step. Picking a step stops
- * the traffic and walks one request along that hop over the same diagram, so
- * the Walkthrough is never a second copy of the picture in another tab.
+ * With `walkthrough`, a spec that has `steps` is driven from one bar across the
+ * top of the canvas: back, play/pause, next, the caption and one bar per step.
+ * It opens on Live, the traffic; picking a step stops the traffic and walks one
+ * request along that hop over the same diagram, so the Walkthrough is never a
+ * second copy of the picture in another tab.
  */
 export function FlowVisual({
   spec,
@@ -180,12 +191,12 @@ export function FlowVisual({
   grid?: boolean;
   /** Fixes the scale instead of fitting to the container width. */
   zoom?: number;
-  /** Shows the Walkthrough chip row when the spec has steps. */
+  /** Drives the spec's steps, if it has any, from a bar across the top. */
   walkthrough?: boolean;
 }) {
   const steps = useMemo(() => (walkthrough ? (spec.steps ?? []) : []), [walkthrough, spec.steps]);
   // null is Live: free-flowing traffic. A number is the Walkthrough step on show.
-  const [stepIndex, setStepIndex] = useState<number | null>(null);
+  const [stepIndex, setStepIndex] = useState<WalkthroughPosition>(LIVE);
   const particles = useRef<Particle[]>([]);
   const carry = useRef<number[]>(spec.edges.map(() => 0));
   const rerender = useRerender(30);
@@ -249,7 +260,7 @@ export function FlowVisual({
       progress.current += dt * 0.85;
       if (progress.current >= STEP_HOLD) {
         progress.current = 0;
-        setStepIndex((value) => ((value ?? 0) + 1) % steps.length);
+        setStepIndex((value) => playStep(value ?? 0, steps.length));
       }
       rerender();
       return;
@@ -321,55 +332,100 @@ export function FlowVisual({
   };
 
   const showLive = () => {
-    setStepIndex(null);
+    setStepIndex(LIVE);
     autoplay.setPlaying(!autoplay.reducedMotion);
   };
 
-  // Left and right walk the chips like one control: Live, then each step in order.
-  const onChipKey = (event: KeyboardEvent<HTMLDivElement>) => {
+  const show = (position: WalkthroughPosition) => {
+    if (position === stepIndex) return;
+    if (position === null) showLive();
+    else showStep(position);
+  };
+
+  const bars = useRef<HTMLDivElement>(null);
+  const nextButton = useRef<HTMLButtonElement>(null);
+
+  // Left and right walk Live and the steps like one control, wherever focus is in the bar.
+  const onBarKey = (event: KeyboardEvent<HTMLDivElement>) => {
     if (event.key !== 'ArrowRight' && event.key !== 'ArrowLeft') return;
     event.preventDefault();
-    const current = stepIndex ?? -1;
-    const next = Math.max(-1, Math.min(steps.length - 1, current + (event.key === 'ArrowRight' ? 1 : -1)));
-    if (next === current) return;
-    if (next === -1) showLive();
-    else showStep(next);
-    event.currentTarget.querySelectorAll('button')[next + 1]?.focus();
+    const target = event.key === 'ArrowRight' ? nextStep(stepIndex, steps.length) : previousStep(stepIndex);
+    show(target);
+    // Focus on a step bar follows the step, so the next arrow press starts from there.
+    if (bars.current?.contains(document.activeElement)) {
+      const bar = target === null ? undefined : bars.current.querySelectorAll('button')[target];
+      (bar ?? nextButton.current)?.focus();
+    }
   };
 
   const width = spec.width ?? 760;
   const height = spec.height ?? 320;
+  const playing = autoplay.playing;
+  const togglePlay = () => autoplay.setPlaying((value) => !value);
 
   return (
     <figure ref={autoplay.ref} className={cn('overflow-hidden rounded-2xl border border-line bg-canvas', className)}>
       {steps.length > 0 ? (
-        // The step caption gets its own strip above the canvas. Not an edge label
-        // (on a short edge it lands on a node), and not floated over the canvas
-        // (it covered whichever node sat top-left). The strip is always there, so
-        // switching between Live and a step never shifts the Diagram.
-        // A live region, so a screen reader hears the step caption, not only "pressed".
-        <div aria-live="polite" className="flex items-center gap-2 border-b border-line px-4 py-2 text-xs font-medium">
-          {active && stepIndex !== null ? (
-            <>
-              <span className="font-mono text-faint">
-                {stepIndex + 1}/{steps.length}
-              </span>
-              <span
-                key={stepIndex}
-                className={cn('min-w-0 text-brand', turn.current.dir === 'next' ? 'step-in-next' : 'step-in-prev')}
-              >
-                {active.label}
-              </span>
-              <StepProgress
-                count={steps.length}
-                index={stepIndex}
-                // Playing, the current step fills up until the next one starts. Parked, it is full.
-                fill={autoplay.playing ? Math.min(1, progress.current / STEP_HOLD) : 1}
-              />
-            </>
-          ) : (
-            <span className="text-muted">Live traffic. Pick a numbered step below to follow one request.</span>
-          )}
+        // The Walkthrough bar sits above the canvas. The caption is not an edge label
+        // (on a short edge it lands on a node) and not floated over the canvas (it
+        // covered whichever node sat top-left). The bar is always there, so switching
+        // between Live and a step never shifts the Diagram.
+        // Narrow, it is two lines: the buttons and the step bars, then the caption.
+        <div
+          role="group"
+          aria-label="Walkthrough (left and right arrows move between steps)"
+          onKeyDown={onBarKey}
+          className="flex flex-wrap items-center gap-x-3 gap-y-1.5 border-b border-line px-3 py-2 text-xs font-medium"
+        >
+          <div className="flex shrink-0 items-center gap-1">
+            <BarButton
+              label="Previous step"
+              disabled={!canGoBack(stepIndex)}
+              onClick={() => show(previousStep(stepIndex))}
+            >
+              <ChevronLeft className="h-4 w-4" aria-hidden />
+            </BarButton>
+            <BarButton label={playing ? 'Pause' : 'Play'} onClick={togglePlay}>
+              {playing ? <Pause className="h-3.5 w-3.5" aria-hidden /> : <Play className="h-3.5 w-3.5" aria-hidden />}
+            </BarButton>
+            <BarButton
+              buttonRef={nextButton}
+              label="Next step"
+              disabled={!canGoNext(stepIndex, steps.length)}
+              onClick={() => show(nextStep(stepIndex, steps.length))}
+            >
+              <ChevronRight className="h-4 w-4" aria-hidden />
+            </BarButton>
+          </div>
+          {/* A live region, so a screen reader hears the step caption, not only the button. */}
+          <div
+            aria-live="polite"
+            className="order-last flex min-w-0 basis-full items-center gap-2 sm:order-none sm:flex-1 sm:basis-0"
+          >
+            {active && stepIndex !== null ? (
+              <>
+                <span className="shrink-0 font-mono text-faint">
+                  {stepIndex + 1}/{steps.length}
+                </span>
+                <span
+                  key={stepIndex}
+                  className={cn('min-w-0 text-brand', turn.current.dir === 'next' ? 'step-in-next' : 'step-in-prev')}
+                >
+                  {active.label}
+                </span>
+              </>
+            ) : (
+              <span className="text-muted">Live traffic. Press next to follow one request.</span>
+            )}
+          </div>
+          <StepBars
+            barsRef={bars}
+            steps={steps}
+            position={stepIndex}
+            // Playing, the current step fills up until the next one starts. Parked, it is full.
+            fill={playing ? Math.min(1, progress.current / STEP_HOLD) : 1}
+            onPick={showStep}
+          />
         </div>
       ) : null}
       <DiagramCanvas
@@ -385,42 +441,19 @@ export function FlowVisual({
       >
         {nodes}
       </DiagramCanvas>
-      {/* The controls sit under the canvas, not over it, so they can never cover a node. */}
-      <div className="space-y-2 border-t border-line px-4 py-2">
-        {steps.length > 0 ? (
-          <div
-            role="group"
-            aria-label="Walkthrough steps (left and right arrows move between them)"
-            onKeyDown={onChipKey}
-            className="flex flex-wrap items-center gap-1.5"
-          >
-            <WalkthroughChip selected={stepIndex === null} onClick={showLive}>
-              Live
-            </WalkthroughChip>
-            {steps.map((step, position) => (
-              <WalkthroughChip
-                key={`${step.from}-${step.to}-${position}`}
-                selected={position === stepIndex}
-                onClick={() => showStep(position)}
-              >
-                <span className="mr-1.5 font-mono text-faint">{position + 1}</span>
-                {step.label}
-              </WalkthroughChip>
-            ))}
-          </div>
-        ) : null}
-        <div className="flex items-center gap-3">
+      {/* Anything under the canvas sits under it, not over it, so it can never cover a node. */}
+      {spec.caption || steps.length === 0 ? (
+        <div className="flex items-center gap-3 border-t border-line px-4 py-2">
           {/* 12px text wraps before 80 characters instead of running across a wide card. */}
           {spec.caption ? (
             <figcaption className="min-w-0 max-w-[31rem] flex-1 text-xs text-muted">{spec.caption}</figcaption>
           ) : null}
-          <PlayPauseButton
-            playing={autoplay.playing}
-            onToggle={() => autoplay.setPlaying((value) => !value)}
-            className="ml-auto shrink-0"
-          />
+          {/* With a Walkthrough, play/pause lives in its bar at the top. */}
+          {steps.length === 0 ? (
+            <PlayPauseButton playing={playing} onToggle={togglePlay} className="ml-auto shrink-0" />
+          ) : null}
         </div>
-      </div>
+      ) : null}
     </figure>
   );
 }
@@ -431,32 +464,78 @@ const STEP_HOLD = 1.25;
 /**
  * One short bar per Walkthrough step: the steps already walked are full, the
  * current one fills while it plays, so the Learner sees how long the story is,
- * where they are in it and when the next step comes.
+ * where they are in it and when the next step comes. Each bar is a button that
+ * opens its step, and hovering it shows the caption.
+ *
+ * The bars stay small; on a touch screen the button around each grows to 44px
+ * tall and up to 44px wide, sharing the row when many steps would not fit.
+ * (`coarse:` sits before `sm:` in the CSS, so no property here sets both.)
  */
-function StepProgress({ count, index, fill }: { count: number; index: number; fill: number }) {
+function StepBars({
+  barsRef,
+  steps,
+  position,
+  fill,
+  onPick,
+}: {
+  barsRef: RefObject<HTMLDivElement>;
+  steps: VisualStep[];
+  position: WalkthroughPosition;
+  fill: number;
+  onPick: (position: number) => void;
+}) {
   return (
-    <span className="ml-auto flex shrink-0 items-center gap-1" aria-hidden>
-      {Array.from({ length: count }, (_, position) => (
-        <span key={position} className="h-1 w-2.5 overflow-hidden rounded-full bg-line sm:w-4">
-          <span
-            className="block h-full w-full origin-left rounded-full bg-brand"
-            style={{ transform: `scaleX(${position < index ? 1 : position === index ? fill : 0})` }}
-          />
-        </span>
+    <div ref={barsRef} className="ml-auto flex min-w-0 max-w-max flex-1 basis-0 items-center justify-end">
+      {steps.map((step, bar) => (
+        <button
+          key={`${step.from}-${step.to}-${bar}`}
+          type="button"
+          onClick={() => onPick(bar)}
+          aria-label={`Step ${bar + 1}: ${step.label}`}
+          aria-current={bar === position ? 'step' : undefined}
+          title={step.label}
+          className="group flex h-6 w-5 min-w-0 flex-auto items-center justify-center rounded coarse:min-h-11 coarse:min-w-0 coarse:w-11"
+        >
+          <span className="block h-1 w-2.5 overflow-hidden rounded-full bg-line transition-colors group-hover:bg-faint sm:w-4">
+            <span
+              className="block h-full w-full origin-left rounded-full bg-brand"
+              style={{ transform: `scaleX(${barFill(bar, position, fill)})` }}
+            />
+          </span>
+        </button>
       ))}
-    </span>
+    </div>
   );
 }
 
-function WalkthroughChip({ selected, onClick, children }: { selected: boolean; onClick: () => void; children: ReactNode }) {
+/**
+ * A small icon button in the Walkthrough bar. Disabled is `aria-disabled`, not
+ * `disabled`, so a button that stops applying (back, on reaching Live) keeps focus.
+ */
+function BarButton({
+  buttonRef,
+  label,
+  disabled = false,
+  onClick,
+  children,
+}: {
+  buttonRef?: RefObject<HTMLButtonElement>;
+  label: string;
+  disabled?: boolean;
+  onClick: () => void;
+  children: ReactNode;
+}) {
   return (
     <button
+      ref={buttonRef}
       type="button"
-      onClick={onClick}
-      aria-pressed={selected}
+      aria-label={label}
+      title={label}
+      aria-disabled={disabled || undefined}
+      onClick={disabled ? undefined : onClick}
       className={cn(
-        'rounded-lg border px-2.5 py-1.5 text-[11px] font-medium transition-colors',
-        selected ? 'border-brand bg-brand/10 text-brand' : 'border-line text-muted hover:border-brand/40 hover:text-ink',
+        'inline-flex h-7 w-7 items-center justify-center rounded-lg border border-line text-muted transition-colors',
+        disabled ? 'cursor-not-allowed opacity-40' : 'hover:border-brand hover:text-brand',
       )}
     >
       {children}
