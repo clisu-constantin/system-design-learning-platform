@@ -156,12 +156,6 @@ function useFullConcept(summary: ConceptSummary | undefined): {
 const ASIDE_ID = 'concept-notes';
 /** Links "Read the full explanation" to the part of the Lesson it unfolds. */
 const LESSON_ID = 'concept-lesson';
-/**
- * A reading width for Lesson prose, about 80 characters a line of 14px text (not
- * `80ch`: a "0" is wider than the average letter, so that ran to about 110). A card
- * stays as wide as its column; code blocks and the steps of a worked example use all of it.
- */
-const PROSE = 'max-w-[33rem]';
 /** One empty object, so a Concept with no answers yet does not rebuild its tabs on every render. */
 const NO_ANSWERS: QuizAnswers = {};
 
@@ -462,7 +456,7 @@ function ConceptBody({ concept }: { concept: Concept }) {
         </aside>
 
         {/* Its own narrow grid column, so the reopen tab never covers the content (a lab's controls, say).
-            top-4 is NOTES_GAP: it sticks where short notes do. */}
+            It sticks where short notes do. */}
         {asideFolded ? (
           <button
             type="button"
@@ -470,7 +464,8 @@ function ConceptBody({ concept }: { concept: Concept }) {
             onClick={() => foldAside(false)}
             aria-controls={ASIDE_ID}
             aria-expanded={false}
-            className="sticky top-4 flex animate-fade-in flex-col items-center gap-2 self-start rounded-lg border border-line bg-surface px-1.5 py-3 text-xs font-medium text-muted shadow-card transition-colors hover:bg-elevated hover:text-ink"
+            style={{ top: NOTES_GAP }}
+            className="sticky flex animate-fade-in flex-col items-center gap-2 self-start rounded-lg border border-line bg-surface px-1.5 py-3 text-xs font-medium text-muted shadow-card transition-colors hover:bg-elevated hover:text-ink"
           >
             <PanelRightOpen className="h-3.5 w-3.5" />
             <span className="[writing-mode:vertical-rl]">Show notes</span>
@@ -603,7 +598,8 @@ function Lesson({
   };
 
   return (
-    <div className="space-y-3">
+    // `lesson` holds its prose to a reading width (src/styles/index.css).
+    <div className="lesson space-y-3">
       <Button
         ref={toggle}
         variant="secondary"
@@ -647,12 +643,12 @@ function Lesson({
 
           {what ? (
             <ExplanationCard title="What is it?" tone="brand">
-              <p className={PROSE}>{what}</p>
+              <p>{what}</p>
             </ExplanationCard>
           ) : null}
           {concept.why ? (
             <ExplanationCard title="Why does it exist?">
-              <p className={PROSE}>{concept.why}</p>
+              <p>{concept.why}</p>
             </ExplanationCard>
           ) : null}
 
@@ -664,7 +660,7 @@ function Lesson({
 
           {concept.how?.length ? (
             <Expandable title="How it works, step by step">
-              <ol className={cn('space-y-2', PROSE)}>
+              <ol className="space-y-2">
                 {concept.how.map((step, index) => (
                   <li key={step} className="flex gap-2.5">
                     <span className="font-mono text-[11px] text-faint">{index + 1}</span>
@@ -681,7 +677,7 @@ function Lesson({
           ) : null}
           {concept.when?.length ? (
             <Expandable title="When to use it">
-              <ul className={cn('space-y-1.5', PROSE)}>
+              <ul className="space-y-1.5">
                 {concept.when.map((item) => (
                   <li key={item}>{item}</li>
                 ))}
@@ -690,7 +686,7 @@ function Lesson({
           ) : null}
           {concept.realWorld?.length ? (
             <Expandable title="In production">
-              <ul className={cn('space-y-1.5', PROSE)}>
+              <ul className="space-y-1.5">
                 {concept.realWorld.map((item) => (
                   <li key={item}>{item}</li>
                 ))}
@@ -699,7 +695,7 @@ function Lesson({
           ) : null}
           {mistakes.length ? (
             <Expandable title="Common mistakes">
-              <ul className={cn('space-y-1.5', PROSE)}>
+              <ul className="space-y-1.5">
                 {mistakes.map((item) => (
                   <li key={item}>{item}</li>
                 ))}
@@ -775,7 +771,7 @@ function AnalogyCard({ analogy }: { analogy: Analogy }) {
       <div className="min-w-0">
         <p className="label text-violet">Think of it like</p>
         <h2 className="mt-1 text-sm font-semibold text-ink">{analogy.title}</h2>
-        <p className={cn('mt-1.5 text-sm leading-relaxed text-muted', PROSE)}>{analogy.body}</p>
+        <p className="mt-1.5 text-sm leading-relaxed text-muted">{analogy.body}</p>
       </div>
     </section>
   );
@@ -785,13 +781,13 @@ function AnalogyCard({ analogy }: { analogy: Analogy }) {
 function DeepDiveBody({ section }: { section: DeepDiveSection }) {
   return (
     <>
-      <div className={cn('space-y-2.5', PROSE)}>
+      <div className="space-y-2.5">
         {section.paragraphs.map((paragraph) => (
           <p key={paragraph}>{paragraph}</p>
         ))}
       </div>
       {section.bullets?.length ? (
-        <ul className={cn('mt-3 space-y-2', PROSE)}>
+        <ul className="mt-3 space-y-2">
           {section.bullets.map((item) => (
             <li key={item} className="flex gap-2.5">
               <span className="mt-[7px] h-1.5 w-1.5 shrink-0 rounded-full bg-faint" aria-hidden />
@@ -821,8 +817,9 @@ function ExampleCard({ example }: { example: WorkedExample }) {
         Worked example
       </p>
       <h2 className="mt-1 text-sm font-semibold text-ink">{example.title}</h2>
-      <p className={cn('mt-1.5 text-sm leading-relaxed text-muted', PROSE)}>{example.setup}</p>
-      <ol className="mt-3 space-y-2">
+      <p className="mt-1.5 text-sm leading-relaxed text-muted">{example.setup}</p>
+      {/* Steps full of numbers may use the whole card width. */}
+      <ol className="lesson-wide mt-3 space-y-2">
         {example.walkthrough.map((step, index) => (
           <li key={step} className="flex gap-2.5 text-sm leading-relaxed text-muted">
             <span className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full border border-info/40 font-mono text-[11px] text-info">
@@ -832,9 +829,9 @@ function ExampleCard({ example }: { example: WorkedExample }) {
           </li>
         ))}
       </ol>
-      <p className="mt-3 border-t border-info/20 pt-3 text-sm leading-relaxed text-ink">
-        <span className={cn('block', PROSE)}>{example.result}</span>
-      </p>
+      <div className="mt-3 border-t border-info/20 pt-3">
+        <p className="text-sm leading-relaxed text-ink">{example.result}</p>
+      </div>
     </section>
   );
 }
@@ -851,7 +848,7 @@ function JargonCard({ terms }: { terms: JargonTerm[] }) {
         {terms.map((term) => (
           <div key={term.term} className="grid gap-1 sm:grid-cols-[minmax(0,180px)_minmax(0,1fr)] sm:gap-3">
             <dt className="text-sm font-medium text-ink">{term.term}</dt>
-            <dd className={cn('text-sm leading-relaxed text-muted', PROSE)}>{term.plain}</dd>
+            <dd className="text-sm leading-relaxed text-muted">{term.plain}</dd>
           </div>
         ))}
       </dl>
@@ -867,7 +864,7 @@ function RememberCard({ lines }: { lines: string[] }) {
         <Sparkles className="h-3.5 w-3.5" aria-hidden />
         Remember this
       </h2>
-      <ul className={cn('mt-3 space-y-2', PROSE)}>
+      <ul className="mt-3 space-y-2">
         {lines.map((line) => (
           <li key={line} className="flex gap-2.5 text-sm leading-relaxed text-ink">
             <Check className="mt-0.5 h-4 w-4 shrink-0 text-brand" aria-hidden />

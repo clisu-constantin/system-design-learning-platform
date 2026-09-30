@@ -1,6 +1,12 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { barFill, canGoBack, canGoNext, nextStep, playStep, previousStep, LIVE } from './walkthrough.ts';
+import { barFill, canGoBack, canGoNext, isLive, nextStep, playStep, previousStep, LIVE } from './walkthrough.ts';
+
+test('Live is the position before step 1, and no step is Live', () => {
+  assert.equal(isLive(LIVE), true);
+  assert.equal(isLive(0), false);
+  assert.equal(isLive(previousStep(0)), true);
+});
 
 test('next from Live opens step 1, and next walks the steps up to the last', () => {
   assert.equal(nextStep(LIVE, 4), 0);

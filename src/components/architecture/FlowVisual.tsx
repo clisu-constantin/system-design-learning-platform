@@ -13,6 +13,7 @@ import type { Layout } from './geometry';
 import {
   LIVE,
   barFill,
+  isLive,
   canGoBack,
   canGoNext,
   nextStep,
@@ -120,20 +121,38 @@ export function useAutoplay<T extends HTMLElement = HTMLElement>() {
   return { ref, playing, setPlaying, running: playing && inView, reducedMotion };
 }
 
-export function PlayPauseButton({ playing, onToggle, className }: { playing: boolean; onToggle: () => void; className?: string }) {
+/** Base look of the small controls on a Diagram: play/pause and the Walkthrough bar's buttons. */
+const CONTROL = 'inline-flex items-center rounded-lg border border-line bg-surface/90 text-muted transition-colors';
+
+/** Play/pause for a Diagram. `iconOnly` is the square form the Walkthrough bar uses beside back and next. */
+export function PlayPauseButton({
+  playing,
+  onToggle,
+  className,
+  iconOnly = false,
+}: {
+  playing: boolean;
+  onToggle: () => void;
+  className?: string;
+  iconOnly?: boolean;
+}) {
   const Icon = playing ? Pause : Play;
+  const label = playing ? 'Pause animation' : 'Play animation';
   return (
     <button
       type="button"
       onClick={onToggle}
-      aria-label={playing ? 'Pause animation' : 'Play animation'}
+      aria-label={label}
+      title={iconOnly ? label : undefined}
       className={cn(
-        'inline-flex items-center gap-1 rounded-lg border border-line bg-surface/90 px-2 py-1 text-[11px] text-muted transition-colors hover:border-brand hover:text-brand',
+        CONTROL,
+        'hover:border-brand hover:text-brand',
+        iconOnly ? 'h-7 w-7 justify-center' : 'gap-1 px-2 py-1 text-[11px]',
         className,
       )}
     >
-      <Icon className="h-3 w-3" aria-hidden />
-      {playing ? 'Pause' : 'Play'}
+      <Icon className={iconOnly ? 'h-3.5 w-3.5' : 'h-3 w-3'} aria-hidden />
+      {iconOnly ? null : playing ? 'Pause' : 'Play'}
     </button>
   );
 }
@@ -195,7 +214,7 @@ export function FlowVisual({
   walkthrough?: boolean;
 }) {
   const steps = useMemo(() => (walkthrough ? (spec.steps ?? []) : []), [walkthrough, spec.steps]);
-  // null is Live: free-flowing traffic. A number is the Walkthrough step on show.
+  // Live is free-flowing traffic. A number is the Walkthrough step on show.
   const [stepIndex, setStepIndex] = useState<WalkthroughPosition>(LIVE);
   const particles = useRef<Particle[]>([]);
   const carry = useRef<number[]>(spec.edges.map(() => 0));
@@ -205,7 +224,7 @@ export function FlowVisual({
   // mid-edge, where it is visible instead of hidden under the node card.
   const progress = useRef(0.5);
 
-  const active = stepIndex === null ? undefined : steps[Math.min(stepIndex, steps.length - 1)];
+  const active = isLive(stepIndex) ? undefined : steps[Math.min(stepIndex, steps.length - 1)];
   const activeFrom = active?.from;
   const activeTo = active?.to;
   const activeSkipped = active?.skipped ?? false;
@@ -256,7 +275,7 @@ export function FlowVisual({
   );
 
   useTicker(autoplay.running, (dt) => {
-    if (stepIndex !== null) {
+    if (!isLive(stepIndex)) {
       progress.current += dt * 0.85;
       if (progress.current >= STEP_HOLD) {
         progress.current = 0;
@@ -291,12 +310,12 @@ export function FlowVisual({
   // Which way the story moved, so the caption comes in from that side. Kept in a
   // ref next to the step it belongs to, so a second render of the same step
   // does not turn it round. Looping from the last step to the first is forward.
-  const turn = useRef<{ index: number | null; dir: 'next' | 'prev' }>({ index: null, dir: 'next' });
+  const turn = useRef<{ index: WalkthroughPosition; dir: 'next' | 'prev' }>({ index: LIVE, dir: 'next' });
   if (turn.current.index !== stepIndex) {
     const previous = turn.current.index;
     const forward =
-      previous === null ||
-      stepIndex === null ||
+      isLive(previous) ||
+      isLive(stepIndex) ||
       stepIndex > previous ||
       (previous === steps.length - 1 && stepIndex === 0);
     turn.current = { index: stepIndex, dir: forward ? 'next' : 'prev' };
@@ -336,10 +355,21 @@ export function FlowVisual({
     autoplay.setPlaying(!autoplay.reducedMotion);
   };
 
-  const show = (position: WalkthroughPosition) => {
+  const showPosition = (position: WalkthroughPosition) => {
     if (position === stepIndex) return;
-    if (position === null) showLive();
+    if (isLive(position)) showLive();
     else showStep(position);
+  };
+  // One move each for the buttons and the arrow keys. They return where they went.
+  const goNext = () => {
+    const target = nextStep(stepIndex, steps.length);
+    showPosition(target);
+    return target;
+  };
+  const goBack = () => {
+    const target = previousStep(stepIndex);
+    showPosition(target);
+    return target;
   };
 
   const bars = useRef<HTMLDivElement>(null);
@@ -349,11 +379,10 @@ export function FlowVisual({
   const onBarKey = (event: KeyboardEvent<HTMLDivElement>) => {
     if (event.key !== 'ArrowRight' && event.key !== 'ArrowLeft') return;
     event.preventDefault();
-    const target = event.key === 'ArrowRight' ? nextStep(stepIndex, steps.length) : previousStep(stepIndex);
-    show(target);
+    const target = event.key === 'ArrowRight' ? goNext() : goBack();
     // Focus on a step bar follows the step, so the next arrow press starts from there.
     if (bars.current?.contains(document.activeElement)) {
-      const bar = target === null ? undefined : bars.current.querySelectorAll('button')[target];
+      const bar = isLive(target) ? undefined : bars.current.querySelectorAll('button')[target];
       (bar ?? nextButton.current)?.focus();
     }
   };
@@ -381,18 +410,16 @@ export function FlowVisual({
             <BarButton
               label="Previous step"
               disabled={!canGoBack(stepIndex)}
-              onClick={() => show(previousStep(stepIndex))}
+              onClick={goBack}
             >
               <ChevronLeft className="h-4 w-4" aria-hidden />
             </BarButton>
-            <BarButton label={playing ? 'Pause' : 'Play'} onClick={togglePlay}>
-              {playing ? <Pause className="h-3.5 w-3.5" aria-hidden /> : <Play className="h-3.5 w-3.5" aria-hidden />}
-            </BarButton>
+            <PlayPauseButton playing={playing} onToggle={togglePlay} iconOnly />
             <BarButton
               buttonRef={nextButton}
               label="Next step"
               disabled={!canGoNext(stepIndex, steps.length)}
-              onClick={() => show(nextStep(stepIndex, steps.length))}
+              onClick={goNext}
             >
               <ChevronRight className="h-4 w-4" aria-hidden />
             </BarButton>
@@ -402,7 +429,7 @@ export function FlowVisual({
             aria-live="polite"
             className="order-last flex min-w-0 basis-full items-center gap-2 sm:order-none sm:flex-1 sm:basis-0"
           >
-            {active && stepIndex !== null ? (
+            {active && !isLive(stepIndex) ? (
               <>
                 <span className="shrink-0 font-mono text-faint">
                   {stepIndex + 1}/{steps.length}
@@ -468,7 +495,10 @@ const STEP_HOLD = 1.25;
  * opens its step, and hovering it shows the caption.
  *
  * The bars stay small; on a touch screen the button around each grows to 44px
- * tall and up to 44px wide, sharing the row when many steps would not fit.
+ * tall and up to 44px wide. This is the one known exception to the 44x44 rule
+ * (CLAUDE.md): on a phone the bars share line 1 with back, play and next, so with
+ * many steps each is narrower than 44px. Back and next stay full size, so every
+ * step is still reachable by a full-size target.
  * (`coarse:` sits before `sm:` in the CSS, so no property here sets both.)
  */
 function StepBars({
@@ -534,7 +564,8 @@ function BarButton({
       aria-disabled={disabled || undefined}
       onClick={disabled ? undefined : onClick}
       className={cn(
-        'inline-flex h-7 w-7 items-center justify-center rounded-lg border border-line text-muted transition-colors',
+        CONTROL,
+        'h-7 w-7 justify-center',
         disabled ? 'cursor-not-allowed opacity-40' : 'hover:border-brand hover:text-brand',
       )}
     >

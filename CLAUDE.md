@@ -195,7 +195,8 @@ useTicker(running, (dt) => { /* mutate state.current */ rerender(); });
 Written for a junior who has never met the idea. Every concept has one, and the shape is fixed.
 It renders under the Diagram: first the "Read the full explanation" button, then `analogy` and
 `remember` side by side (stacked on a narrow screen), which always show; the rest waits behind the
-button. Opened cards fill the column, with prose lines held to about 80 characters (`PROSE`).
+button. Opened cards fill the column, with prose lines held to about 80 characters by one rule,
+`.lesson` in `src/styles/index.css` (`.lesson-wide` opts a block out).
 
 - `analogy` — one everyday picture with a title. The thing they will still remember next week.
 - `deepDive` — 2-3 sections of real prose, optionally with `bullets` and one fixed-width `code`
@@ -380,6 +381,9 @@ These are editorial rules, not style preferences. They are the reason the app is
   for anything pinned that would crowd the rest. Both Tailwind variants are defined in
   `tailwind.config.js`. Controls inside a `DiagramCanvas` (`data-diagram`) are exempt: the diagram
   is fixed geometry, and a taller button in a node would push it over its neighbour.
+  One known exception: the Walkthrough step bars (`StepBars` in `FlowVisual.tsx`) are 44px tall but
+  share line 1 with back, play and next on a phone, so with many steps each is narrower than 44px.
+  Back and next stay full size, so every step is still reachable by a full-size target.
 
 ## Gotchas
 

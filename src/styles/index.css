@@ -294,6 +294,14 @@
   .ascii {
     @apply whitespace-pre overflow-x-auto rounded-xl border border-line bg-elevated p-4 font-mono text-xs leading-5 text-muted;
   }
+
+  /* Lesson prose stops at about 80 characters a line of 14px text: 33rem, not 80ch
+     (a "0" is wider than the average letter, so 80ch ran to about 110). The cards stay
+     as wide as the column; code blocks (pre) and .lesson-wide (the steps of a worked
+     example) use all of it. One rule, so a new block of Lesson prose cannot miss it. */
+  .lesson :is(p, ul, ol, dd):not(.lesson-wide) {
+    max-width: 33rem;
+  }
 }
 
 /* ---------------------------------------------------------------------------
