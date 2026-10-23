@@ -1,7 +1,8 @@
-import type { ReactNode } from 'react';
+import { useRef, type ReactNode } from 'react';
 import { Pause, Play, RotateCcw } from 'lucide-react';
 import { cn } from '@/utils/cn';
 import { useElementWidth } from '@/hooks/useElementWidth';
+import { useStickyTop } from '@/hooks/useStickyTop';
 import { Button, ErrorBoundary } from '@/components/ui';
 import type { SimEvent } from '@/simulations/engine';
 
@@ -49,6 +50,8 @@ export function LabShell({
   footer,
 }: LabShellProps) {
   const { ref, wide, columns } = useShellLayout();
+  const side = useRef<HTMLDivElement>(null);
+  const sideTop = useStickyTop(side, wide);
   const reset = () => {
     onReset?.();
     onRunningChange?.(false);
@@ -103,7 +106,7 @@ export function LabShell({
         </div>
 
         {wide ? (
-          <div className="sticky top-[4.5rem] space-y-4 self-start">
+          <div ref={side} className="sticky space-y-4 self-start" style={{ top: sideTop }}>
             {controlsCard}
             {events ? <EventLog events={events} running={running} /> : null}
           </div>
