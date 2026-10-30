@@ -28,6 +28,10 @@
     "reactflow": "^11.11.4",
     "serve": "^14.2.6"
   },
+  "overrides": {
+    "@grpc/grpc-js": "^1.13.6",
+    "compression": "^1.8.2"
+  },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
     "@types/node": "^26.5.1",
