@@ -217,6 +217,38 @@
     }
   }
 
+  /* The logo node rings twice when the app opens, and again while the pointer is on the logo.
+     It never loops on its own: the top bar is always on screen. */
+  .logo-pulse {
+    opacity: 0;
+    transform-box: fill-box;
+    transform-origin: center;
+    animation: logo-pulse 1.6s var(--ease-arrive) 400ms 2;
+  }
+  a:hover .logo-pulse {
+    animation: logo-pulse-hover 1.6s var(--ease-arrive) infinite;
+  }
+  @keyframes logo-pulse {
+    from {
+      opacity: 0.9;
+      transform: scale(1);
+    }
+    to {
+      opacity: 0;
+      transform: scale(2.1);
+    }
+  }
+  @keyframes logo-pulse-hover {
+    from {
+      opacity: 0.9;
+      transform: scale(1);
+    }
+    to {
+      opacity: 0;
+      transform: scale(2.1);
+    }
+  }
+
   /* A Walkthrough caption comes in from the side the story moves to. */
   .step-in-next {
     animation: step-in 260ms var(--ease-arrive) backwards;

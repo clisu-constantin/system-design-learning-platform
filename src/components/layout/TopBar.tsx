@@ -52,21 +52,24 @@ export function TopBar({ onOpenSearch, navId, onToggleSidebar, sidebarExpanded, 
 
       {/* Named in full: below sm only the mark shows, and the mark alone has no text. */}
       <Link to="/" aria-label="System Design Interactive, home" className="flex min-w-0 items-center gap-2.5 coarse:min-w-11">
-        <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-gradient-to-br from-brand to-info text-white">
-          <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden>
-            <circle cx="12" cy="5" r="2" />
-            <circle cx="5" cy="19" r="2" />
-            <circle cx="19" cy="19" r="2" />
-            <path d="M12 7v4M12 11H5v6M12 11h7v6" />
-          </svg>
-        </span>
-        {/* One line each, never wrapped: a wrapped name grows taller than the 56px bar. */}
-        <span className="hidden min-w-0 sm:block">
-          <span className="block truncate whitespace-nowrap text-sm font-semibold leading-tight text-ink">
-            System Design Interactive
-          </span>
-          <span className="hidden whitespace-nowrap text-[11px] leading-tight text-faint lg:block">
-            Learn. Visualize. Experiment. Design.
+        {/* The logo: code brackets around a live node. Same drawing as public/favicon.svg. */}
+        <svg viewBox="0 0 32 32" className="h-7 w-7 shrink-0 overflow-visible" aria-hidden>
+          <path
+            d="M10 7L3.5 16 10 25M22 7l6.5 9L22 25"
+            className="stroke-ink"
+            fill="none"
+            strokeWidth="2.6"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          />
+          <circle cx="16" cy="16" r="4" className="logo-pulse stroke-brand" fill="none" strokeWidth="1.5" />
+          <circle cx="16" cy="16" r="4" className="fill-brand" />
+        </svg>
+        {/* One line, never wrapped: a wrapped name grows taller than the 56px bar. */}
+        <span className="hidden min-w-0 items-center gap-2 sm:flex">
+          <span className="truncate whitespace-nowrap text-[15px] font-semibold tracking-tight text-ink">System Design</span>
+          <span className="hidden shrink-0 rounded-md border border-brand/60 px-1.5 font-mono text-[11px] leading-[18px] text-brand md:block">
+            interactive
           </span>
         </span>
       </Link>
