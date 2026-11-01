@@ -1,4 +1,4 @@
-import { Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type RefObject } from 'react';
+import { Suspense, useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 import { Link, useParams, useSearchParams } from 'react-router-dom';
 import {
   AlertTriangle,
@@ -28,9 +28,10 @@ import { getVisual } from '@/data/visuals';
 import { useProgress } from '@/app/providers/ProgressProvider';
 import { useLayout } from '@/app/providers/LayoutProvider';
 import { XL_QUERY, useMediaQuery } from '@/hooks/useMediaQuery';
+import { useStickyTop } from '@/hooks/useStickyTop';
 import { getLab } from '@/features/labs/registry';
 import { cn } from '@/utils/cn';
-import { NOTES_GAP, notesStickyTop } from './notesSticky';
+import { STICKY_GAP } from '@/utils/stickyTop';
 import type {
   Analogy,
   Concept,
@@ -178,7 +179,7 @@ function ConceptBody({ concept }: { concept: Concept }) {
   // the one that replaces it instead of dropping it on the page body.
   const hideButton = useRef<HTMLButtonElement>(null);
   const aside = useRef<HTMLElement>(null);
-  const notesTop = useNotesStickyTop(aside, isWide);
+  const notesTop = useStickyTop(aside, isWide);
   const showTab = useRef<HTMLButtonElement>(null);
   const moveFocus = useRef(false);
   // Fade the column in only when the learner reopens it, not on every page load.
@@ -464,7 +465,7 @@ function ConceptBody({ concept }: { concept: Concept }) {
             onClick={() => foldAside(false)}
             aria-controls={ASIDE_ID}
             aria-expanded={false}
-            style={{ top: NOTES_GAP }}
+            style={{ top: STICKY_GAP }}
             className="sticky flex animate-fade-in flex-col items-center gap-2 self-start rounded-lg border border-line bg-surface px-1.5 py-3 text-xs font-medium text-muted shadow-card transition-colors hover:bg-elevated hover:text-ink"
           >
             <PanelRightOpen className="h-3.5 w-3.5" />
@@ -474,32 +475,6 @@ function ConceptBody({ concept }: { concept: Concept }) {
       </div>
     </div>
   );
-}
-
-/**
- * The sticky `top` of the notes column, kept right as the notes or the visible
- * area change height: another tab, the notes folded and back, a resized window.
- * The page scrolls inside `<main>`, under the top bar, so that is the area it
- * sticks in.
- */
-function useNotesStickyTop(aside: RefObject<HTMLElement | null>, enabled: boolean) {
-  const [top, setTop] = useState(NOTES_GAP);
-
-  useLayoutEffect(() => {
-    const notes = aside.current;
-    const scroller = notes?.closest('main');
-    if (!enabled || !notes || !scroller) return;
-    // Syncs the measured heights of the notes and of the scrolling area.
-    const measure = () => setTop(notesStickyTop({ visible: scroller.clientHeight, notes: notes.offsetHeight }));
-    measure();
-    if (typeof ResizeObserver === 'undefined') return;
-    const observer = new ResizeObserver(measure);
-    observer.observe(notes);
-    observer.observe(scroller);
-    return () => observer.disconnect();
-  }, [aside, enabled]);
-
-  return top;
 }
 
 /** Gains and costs as two short lists per approach, then the mistakes people make with it. */

@@ -273,7 +273,8 @@ The product complaint that shaped this app was "too much text". Concept pages th
   Analogy and "Remember this" side by side, always open; all the other prose folds behind the button,
   which stays open while the learner stays on that Concept. The right column is short cards only; on
   a wide screen it sticks 16px under the top bar, or, taller than the screen, with its bottom 16px
-  above the screen bottom (`notesStickyTop`), so every card can be reached.
+  above the screen bottom (`useStickyTop`), so every card can be reached. The control column beside
+  a Lab sticks the same way.
 - Run `npm run check:visuals` after editing a spec. It covers `src/data/visuals`, the home hero and
   the `src/features/evolution` stage layouts, and fails the build on overlapping boxes, nodes past
   the canvas, labels too long for their box, step captions over six words, nodes with no edges, a
